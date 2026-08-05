@@ -1,0 +1,33 @@
+{
+  "id": "action-effects-5e",
+  "type": "module",
+  "title": "Action Effects 5e",
+  "description": "A reusable automation framework and collection of premade items and effects for Foundry VTT v14+ and the D&D 5e system.",
+  "version": "14.0.1",
+  "authors": [
+    {
+      "name": "svirfnebli76"
+    }
+  ],
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14.365"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system"
+      }
+    ],
+    "requires": [],
+    "recommends": []
+  },
+  "esmodules": [
+    "scripts/action-effects-5e.mjs"
+  ],
+  "socket": true,
+  "url": "https://github.com/svirfnebli76/action-effects-5e",
+  "bugs": "https://github.com/svirfnebli76/action-effects-5e/issues",
+  "media": []
+}
