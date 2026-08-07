@@ -1,6 +1,86 @@
+# Action Effects 5E
+# Foundry VTT module development
+
+# Dependencies
 node_modules/
-*.zip
-.DS_Store
-Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Test output and coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Build and release output
+dist/
+build/
+release/
+action-effects-5e-*.zip
+
+# Temporary files and caches
+.cache/
+.parcel-cache/
+.temp/
+.tmp/
+temp/
+tmp/
+*.tmp
+*.temp
+*.tsbuildinfo
+
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+
+# IDE and editor files
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+.history/
+
+# Operating-system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+$RECYCLE.BIN/
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+ehthumbs_vista.db
+
+# Windows shortcuts
+*.lnk
+
+# macOS resource forks
+._*
+
+# Local Foundry data or development installations
+foundrydata/
+foundry-data/
+FoundryVTT/
+Data/
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime process files
+pids/
+*.pid
+*.seed
+*.pid.lock
