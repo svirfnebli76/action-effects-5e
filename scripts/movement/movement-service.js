@@ -31,7 +31,7 @@ export class MovementService {
     this.#hookIds.push(Hooks.on("moveToken", this.#onMoveToken.bind(this)));
     this.#hookIds.push(Hooks.on("stopToken", this.#onStopToken.bind(this)));
 
-    Logger.info("Movement service initialized with one pre-move and one post-move listener.");
+    Logger.info("Movement service initialized with one pre-move, one post-move, and one stop listener.");
   }
 
   shutdown() {

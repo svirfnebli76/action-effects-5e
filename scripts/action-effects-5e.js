@@ -26,10 +26,14 @@ const api = new ActionEffects5eApi({
   socket
 });
 
+// Socketlib recommends registering for its ready hook while module scripts are
+// evaluated, before Foundry begins dispatching init callbacks. Required
+// dependencies can otherwise emit socketlib.ready before our own init callback.
+socket.initialize();
+
 Hooks.once("init", () => {
   Logger.log("Initializing module foundation.");
   registerSettings();
-  socket.initialize();
 
   const module = game.modules.get(MODULE_ID);
   if (module) module.api = api;

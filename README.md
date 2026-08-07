@@ -11,7 +11,7 @@ Action Effects 5E is a Foundry VTT v14+ module for reusable D&D5e automation inf
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Foundation build: 0.1.0
+## Foundation build: 0.1.1
 
 This build provides:
 

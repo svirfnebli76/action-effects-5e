@@ -1,3 +1,4 @@
+# Keep project text files consistent across Windows, macOS, and Linux
 * text=auto eol=lf
 
 *.js text eol=lf
@@ -6,11 +7,20 @@
 *.css text eol=lf
 *.md text eol=lf
 *.html text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
 
+# Binary assets
 *.png binary
 *.jpg binary
 *.jpeg binary
 *.gif binary
 *.webp binary
 *.webm binary
+*.mp4 binary
+*.ogg binary
+*.mp3 binary
+*.wav binary
 *.zip binary
+*.woff binary
+*.woff2 binary

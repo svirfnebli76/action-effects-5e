@@ -236,3 +236,33 @@ test("relationship service persists and reindexes leader/follower relationships"
   service.shutdown();
   game.scenes.delete(scene.id);
 });
+
+
+test("socket service registers handlers when socketlib becomes ready", async () => {
+  const registered = new Map();
+  globalThis.socketlib = {
+    registerModule(id) {
+      assert.equal(id, "action-effects-5e");
+      return {
+        register(name, handler) {
+          registered.set(name, handler);
+        },
+        async executeAsGM(name, ...args) {
+          return registered.get(name)(...args);
+        }
+      };
+    }
+  };
+
+  const { SocketService } = await import("../scripts/core/socket-service.js");
+  const service = new SocketService();
+  service.register("test.echo", (value) => value);
+  service.initialize();
+
+  assert.equal(service.ready, false);
+  Hooks.callAll("socketlib.ready");
+  assert.equal(service.ready, true);
+  assert.equal(await service.executeAsGM("test.echo", "ok"), "ok");
+
+  delete globalThis.socketlib;
+});

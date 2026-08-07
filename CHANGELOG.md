@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 — Socketlib initialization fix
+
+- Registered the `socketlib.ready` listener during module script evaluation rather than inside the Foundry `init` callback.
+- Added a defensive Socketlib API availability check.
+- Corrected the movement-service startup log to include its stop listener.
+
 ## 0.1.0 — Foundation
 
 - Added Foundry v14+ module manifest.

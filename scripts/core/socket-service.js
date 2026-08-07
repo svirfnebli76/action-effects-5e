@@ -10,7 +10,14 @@ export class SocketService {
     if (this.#hookId !== null || this.#socket) return;
 
     this.#hookId = Hooks.once("socketlib.ready", () => {
-      this.#socket = socketlib.registerModule(MODULE_ID);
+      this.#hookId = null;
+
+      if (!globalThis.socketlib?.registerModule) {
+        Logger.error("Socketlib reported ready, but its public API is unavailable.");
+        return;
+      }
+
+      this.#socket = globalThis.socketlib.registerModule(MODULE_ID);
       for (const [name, handler] of this.#registrations) {
         this.#socket.register(name, handler);
       }
