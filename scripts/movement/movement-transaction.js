@@ -20,14 +20,49 @@ function isTeleportAction(action) {
   return config?.teleport === true;
 }
 
+
+function movementActionCandidates(movement) {
+  return [
+    movement?.destination?.action,
+    movement?.action,
+    ...(Array.isArray(movement?.passed?.waypoints) ? movement.passed.waypoints.map((point) => point?.action) : []),
+    ...(Array.isArray(movement?.pending?.waypoints) ? movement.pending.waypoints.map((point) => point?.action) : []),
+    ...(Array.isArray(movement?.waypoints) ? movement.waypoints.map((point) => point?.action) : []),
+    ...(Array.isArray(movement?.history?.unrecorded?.waypoints) ? movement.history.unrecorded.waypoints.map((point) => point?.action) : []),
+    ...(Array.isArray(movement?.history?.recorded?.waypoints) ? movement.history.recorded.waypoints.map((point) => point?.action) : []),
+    ...(Array.isArray(movement?.history?.path) ? movement.history.path.map((point) => point?.action) : [])
+  ].filter(Boolean);
+}
+
+function movementUsesTeleportAction(movement) {
+  return movementActionCandidates(movement).some((action) => isTeleportAction(action));
+}
+
+function inferMovementMode(movement, metadata) {
+  if (metadata.movementMode) return metadata.movementMode;
+  const candidates = movementActionCandidates(movement);
+  return candidates.length ? candidates.at(-1) : null;
+}
+
+function operationHasOwnTeleportFlag(operation) {
+  if (!operation || typeof operation !== "object") return false;
+  // Foundry v14 exposes DatabaseUpdateOperation#teleport as a deprecated prototype
+  // accessor. Reading operation.teleport emits a compatibility warning and that
+  // accessor is scheduled for removal in Foundry v15. Only honor an explicit own
+  // data property supplied by an external caller; normal Foundry movement is
+  // classified from moveToken movement data and the movement action instead.
+  const descriptor = Object.getOwnPropertyDescriptor(operation, "teleport");
+  return descriptor?.value === true;
+}
+
 function inferPathType(movement, operation, metadata) {
   if (metadata.pathType) return metadata.pathType;
-  if (operation?.teleport === true || metadata.teleport === true) return PATH_TYPES.TELEPORT;
+  if (operationHasOwnTeleportFlag(operation) || metadata.teleport === true) return PATH_TYPES.TELEPORT;
 
   const method = String(movement?.method ?? "").toLowerCase();
   if (method.includes("teleport")) return PATH_TYPES.TELEPORT;
   if (method.includes("fall")) return PATH_TYPES.FALL;
-  if (isTeleportAction(movement?.destination?.action) || isTeleportAction(movement?.action)) return PATH_TYPES.TELEPORT;
+  if (movementUsesTeleportAction(movement)) return PATH_TYPES.TELEPORT;
   if (metadata.administrative === true) return PATH_TYPES.REPOSITION;
   return PATH_TYPES.TRAVERSE;
 }
@@ -124,7 +159,7 @@ export class MovementTransaction {
       pathType: inferPathType(movement, operation, metadata),
       agency: inferAgency(metadata, document.uuid),
       resource: inferResource(metadata, document.uuid),
-      movementMode: metadata.movementMode ?? movement?.destination?.action ?? movement?.action ?? null,
+      movementMode: inferMovementMode(movement, metadata),
       sourceUuid: metadata.sourceUuid ?? null,
       initiatorUuid: metadata.initiatorUuid ?? null,
       leaderUuid: metadata.leaderUuid ?? null,

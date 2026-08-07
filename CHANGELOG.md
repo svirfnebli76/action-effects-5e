@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.5 - Trailing followers and symmetric teleport breaks
+
+- Removed the deprecated `DatabaseUpdateOperation#teleport` prototype read that produced a Foundry v14 compatibility warning and is scheduled for removal in v15.
+- Teleport classification now relies on AE5E metadata, an explicit own caller property when present, movement method semantics, and Foundry movement action configuration such as `blink.teleport`.
+- Added follower-side teleport escape: a follower teleport bypasses the normal independent-movement lock and removes the follower relationship after the completed teleport is GM-validated.
+- Added primary-GM movement receipts for all relationship participants, not leaders only, so non-GM follower teleports can be verified without trusting client-supplied coordinates or semantics.
+- Added `queuedFollowerDetaches` and `indexedReceiptTokens` relationship-movement diagnostics.
+- Suppressed the generic unsafe-sync warning for an external leader teleport that intentionally uses `teleportPolicy: detach`.
+- Implemented true `adjacentFollower` trailing movement. For leader path `L0 -> L1 -> L2`, the follower path is `L0 -> L1`, so a one-square leader move places the follower in the leader's starting square. On a gridded Scene, declared path segments are expanded with Foundry's public grid `getDirectPath()` API so long drags still end one grid space behind.
+- Kept `rigidOffset` behavior unchanged for relationships which should mirror leader movement.
+- Kept `teleportPolicy: follow` fixed-offset even for `adjacentFollower`; teleporting together does not use the trailing path.
+- Updated the test harness to create `adjacentFollower` relationships.
+- Expanded the automated suite to 19 tests, including deprecated-accessor protection, trailing-path planning, GM follower-teleport detachment, and non-GM movement-receipt validation.
+
+## 0.2.4 - Explicit terminal movement checkpoints
+
+- Fixed coordinated `Scene.moveTokens()` operations resolving `false` in Foundry 14.365 when Action Effects 5E-generated terminal waypoints omitted an explicit checkpoint.
+- Leader and follower paths now force only the terminal generated waypoint to `checkpoint: true`; existing intermediate checkpoint state is preserved.
+- External follower synchronization uses the same terminal-checkpoint normalization.
+- Partial-movement rollback destinations now explicitly include `checkpoint: true`.
+- Deliberately did not inject `action` or `level`; live matrix testing showed neither field affected the failure.
+- Strengthened movement-boundary tests so every generated `Scene.moveTokens()` instruction must have a valid 16-character movement ID and an explicit terminal checkpoint.
+- Added a regression test proving checkpoint normalization does not add unrelated `action` or `level` fields.
+
 ## 0.2.3 - Deferred replacement movement
 
 - Fixed manual coordinated movement being started from a microtask while Foundry was still unwinding the `preMoveToken` workflow that Action Effects 5E had just cancelled.

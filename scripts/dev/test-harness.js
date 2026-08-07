@@ -95,7 +95,7 @@ export class TestHarness {
     const [leader, follower] = controlled;
     const relationship = await this.#relationships.create({
       type: RELATIONSHIP_TYPES.TEST,
-      attachmentMode: ATTACHMENT_MODES.RIGID_OFFSET,
+      attachmentMode: ATTACHMENT_MODES.ADJACENT_FOLLOWER,
       leaderUuid: leader.uuid,
       followerUuid: follower.uuid,
       followerCanSelfMove: false,

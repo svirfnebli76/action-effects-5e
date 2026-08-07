@@ -27,6 +27,7 @@ export class RelationshipMovementService {
   #hookIds = [];
   #queuedMovementIds = new Set();
   #queuedSyncIds = new Set();
+  #queuedFollowerDetachIds = new Set();
   #activeLeaders = new Set();
   #recentRequestIds = new Set();
 
@@ -36,6 +37,7 @@ export class RelationshipMovementService {
     this.#movement = movement;
     this.#socket.register("relationships.moveGroup", this.#moveGroupAsGM.bind(this));
     this.#socket.register("relationships.syncFollowers", this.#syncFollowersAsGM.bind(this));
+    this.#socket.register("relationships.detachFollowerTeleport", this.#detachFollowerAfterTeleportAsGM.bind(this));
   }
 
   initialize() {
@@ -64,6 +66,7 @@ export class RelationshipMovementService {
     this.#movementReceipts.clear();
     this.#queuedMovementIds.clear();
     this.#queuedSyncIds.clear();
+    this.#queuedFollowerDetachIds.clear();
     this.#activeLeaders.clear();
     this.#recentRequestIds.clear();
     this.#initialized = false;
@@ -73,10 +76,12 @@ export class RelationshipMovementService {
     return {
       initialized: this.#initialized,
       indexedTokens: this.#consumerRemovers.size,
-      indexedLeaderReceipts: this.#receiptConsumerRemovers.size,
+      indexedReceiptTokens: this.#receiptConsumerRemovers.size,
+      indexedLeaderReceipts: new Set(this.#relationships.list().map((relationship) => relationship.leaderUuid)).size,
       movementReceipts: this.#movementReceipts.size,
       queuedRequests: this.#queuedMovementIds.size,
       queuedExternalSyncs: this.#queuedSyncIds.size,
+      queuedFollowerDetaches: this.#queuedFollowerDetachIds.size,
       activeLeaders: this.#activeLeaders.size,
       recentRequests: this.#recentRequestIds.size
     };
@@ -84,11 +89,9 @@ export class RelationshipMovementService {
 
   #reconcileConsumers() {
     const involved = new Set();
-    const leaders = new Set();
     for (const relationship of this.#relationships.list()) {
       involved.add(relationship.leaderUuid);
       involved.add(relationship.followerUuid);
-      leaders.add(relationship.leaderUuid);
     }
 
     for (const [tokenUuid, remove] of this.#consumerRemovers) {
@@ -97,7 +100,7 @@ export class RelationshipMovementService {
       this.#consumerRemovers.delete(tokenUuid);
     }
     for (const [tokenUuid, remove] of this.#receiptConsumerRemovers) {
-      if (leaders.has(tokenUuid)) continue;
+      if (involved.has(tokenUuid)) continue;
       remove();
       this.#receiptConsumerRemovers.delete(tokenUuid);
     }
@@ -115,7 +118,10 @@ export class RelationshipMovementService {
       this.#consumerRemovers.set(tokenUuid, remove);
     }
 
-    for (const tokenUuid of leaders) {
+    // Primary-GM receipts are indexed for every relationship participant.
+    // Leader receipts authorize post-operation follower synchronization; follower
+    // receipts authorize relationship detachment after a follower teleports away.
+    for (const tokenUuid of involved) {
       if (this.#receiptConsumerRemovers.has(tokenUuid)) continue;
       const remove = this.#movement.registerConsumer({
         id: `${CONSUMER_PREFIX}.receipt.${tokenUuid}`,
@@ -166,7 +172,9 @@ export class RelationshipMovementService {
 
     const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid);
     const blockingRelationship = followerRelationships.find((relationship) => relationship.followerCanSelfMove === false);
-    if (blockingRelationship && MANUAL_SELF_MOVEMENT_METHODS.has(transaction.method)) {
+    if (blockingRelationship
+      && transaction.pathType !== PATH_TYPES.TELEPORT
+      && MANUAL_SELF_MOVEMENT_METHODS.has(transaction.method)) {
       ui?.notifications?.warn?.("This token is attached to another token and cannot move independently.");
       Logger.debug("Blocked independent follower movement", {
         tokenUuid: transaction.subjectUuid,
@@ -238,6 +246,38 @@ export class RelationshipMovementService {
 
   #handleAfterMovement(transaction) {
     if (!this.#positionChanged(transaction.origin, transaction.destination)) return true;
+
+    const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid);
+    if (followerRelationships.length && transaction.pathType === PATH_TYPES.TELEPORT) {
+      if (this.#queuedFollowerDetachIds.has(transaction.movementId)) return true;
+
+      const request = {
+        requestId: `${MODULE_ID}-follower-teleport-${randomId(20)}`,
+        requestingUserId: transaction.userId ?? game.user.id,
+        sceneId: transaction.sceneId,
+        followerUuid: transaction.subjectUuid,
+        originalMovementId: transaction.movementId,
+        origin: duplicateSafely(transaction.origin),
+        destination: duplicateSafely(transaction.destination),
+        pathType: transaction.pathType,
+        movementMode: transaction.movementMode,
+        sourceUuid: transaction.sourceUuid,
+        externalGeneratedBy: transaction.generatedBy
+      };
+
+      this.#queuedFollowerDetachIds.add(transaction.movementId);
+      setTimeout(() => {
+        void this.#socket.executeAsGM("relationships.detachFollowerTeleport", request)
+          .then((result) => this.#notifyResult(result))
+          .catch((error) => {
+            Logger.error("Follower teleport relationship detachment failed.", error);
+            ui?.notifications?.warn?.(`Action Effects 5E could not detach a teleported follower: ${error.message}`);
+          })
+          .finally(() => this.#queuedFollowerDetachIds.delete(transaction.movementId));
+      }, 0);
+      return true;
+    }
+
     if (!this.#relationships.getForLeader(transaction.subjectUuid).length) return true;
     if (this.#queuedSyncIds.has(transaction.movementId)) return true;
 
@@ -322,7 +362,9 @@ export class RelationshipMovementService {
       const instructions = RelationshipMovementPlanner.buildInstructions({
         leader,
         followers: followerEntries,
-        waypoints
+        waypoints,
+        pathType: normalized.pathType,
+        grid: this.#gridForScene(scene)
       });
 
       while (true) {
@@ -429,6 +471,7 @@ export class RelationshipMovementService {
 
       const isTeleport = normalized.pathType === PATH_TYPES.TELEPORT;
       const detach = new Set();
+      const expectedTeleportDetach = new Set();
       const followerEntries = [];
       const instructions = {};
       const groupTransactionId = `${MODULE_ID}-sync-${randomId(16)}`;
@@ -437,6 +480,7 @@ export class RelationshipMovementService {
       for (const relationship of relationships) {
         if (isTeleport && relationship.teleportPolicy !== "follow") {
           detach.add(relationship.id);
+          if (relationship.teleportPolicy === "detach") expectedTeleportDetach.add(relationship.id);
           continue;
         }
 
@@ -450,7 +494,9 @@ export class RelationshipMovementService {
           leader: leaderOrigin,
           follower: token,
           relationship,
-          waypoints
+          waypoints,
+          pathType: normalized.pathType,
+          grid: this.#gridForScene(scene)
         });
         instructions[token.id] = {
           waypoints: translated,
@@ -518,17 +564,88 @@ export class RelationshipMovementService {
 
       if (detach.size) await this.#relationships.removeManyAsGM(detach);
       const detachedRelationshipIds = [...detach];
+      const unexpectedDetach = detachedRelationshipIds.some((id) => !expectedTeleportDetach.has(id));
       return {
         completed: true,
         results,
         detachedRelationshipIds,
-        message: detachedRelationshipIds.length
+        message: unexpectedDetach
           ? "One or more relationships were detached because an external leader movement could not safely carry the follower."
           : null
       };
     } finally {
       this.#activeLeaders.delete(leader.uuid);
     }
+  }
+
+  async #detachFollowerAfterTeleportAsGM(request = {}) {
+    this.#assertExecutingAsGM();
+
+    const requestId = String(request.requestId ?? `${MODULE_ID}-follower-teleport-${randomId(20)}`);
+    if (this.#recentRequestIds.has(requestId)) {
+      return { completed: false, duplicate: true, message: "This follower teleport request was already processed." };
+    }
+    this.#rememberRequest(requestId);
+
+    const requester = game.users.get(request.requestingUserId);
+    if (!requester) throw new Error("The requesting user no longer exists.");
+
+    const scene = game.scenes.get(request.sceneId);
+    if (!scene) throw new Error("The requested Scene no longer exists.");
+
+    const follower = await fromUuid(request.followerUuid);
+    if (!(follower instanceof foundry.documents.TokenDocument) || follower.parent?.id !== scene.id) {
+      throw new Error("The relationship follower is not a valid token on the requested Scene.");
+    }
+
+    if (!requester.isGM) {
+      const owner = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
+      if (!follower.testUserPermission(requester, owner)) {
+        throw new Error("The requesting user does not own the teleported follower.");
+      }
+    }
+
+    let trusted;
+    if (requester.isGM) {
+      trusted = {
+        movementId: request.originalMovementId,
+        subjectUuid: request.followerUuid,
+        sceneId: request.sceneId,
+        userId: requester.id,
+        origin: request.origin,
+        destination: request.destination,
+        pathType: request.pathType,
+        movementMode: request.movementMode,
+        sourceUuid: request.sourceUuid,
+        generatedBy: request.externalGeneratedBy
+      };
+    } else {
+      trusted = await this.#waitForMovementReceipt(request.originalMovementId);
+      if (!trusted) throw new Error("The active GM could not verify the follower teleport.");
+      if (trusted.subjectUuid !== follower.uuid || trusted.sceneId !== scene.id || trusted.userId !== requester.id) {
+        throw new Error("The follower teleport receipt did not match the request.");
+      }
+    }
+
+    if (trusted.pathType !== PATH_TYPES.TELEPORT) {
+      throw new Error("Only a completed teleport can break the relationship through this operation.");
+    }
+
+    const destination = RelationshipMovementPlanner.sanitizePosition(trusted.destination, "verified teleport destination");
+    if (!RelationshipMovementPlanner.positionsEqual(destination, follower)) {
+      throw new Error("The follower changed position before teleport detachment could be validated.");
+    }
+
+    this.#movementReceipts.delete(request.originalMovementId);
+    const relationships = this.#relationships.getForFollower(follower.uuid);
+    const detachedRelationshipIds = relationships.map((relationship) => relationship.id);
+    if (detachedRelationshipIds.length) await this.#relationships.removeManyAsGM(detachedRelationshipIds);
+
+    return {
+      completed: true,
+      detachedRelationshipIds,
+      message: null
+    };
   }
 
   async #validateExternalSyncRequest(request) {
@@ -717,7 +834,12 @@ export class RelationshipMovementService {
     for (const [tokenId, completed] of Object.entries(results)) {
       if (!completed || !origins[tokenId]) continue;
       instructions[tokenId] = {
-        destination: origins[tokenId],
+        destination: {
+          ...origins[tokenId],
+          // Rollback uses Scene.moveTokens too, so its terminal destination must
+          // follow the same explicit-checkpoint rule as coordinated movement.
+          checkpoint: true
+        },
         method: "api",
         showRuler: false
       };
@@ -765,6 +887,12 @@ export class RelationshipMovementService {
     return () => {
       for (const remove of removers) remove();
     };
+  }
+
+  #gridForScene(scene) {
+    // Foundry v14 exposes a BaseGrid instance directly on every Scene, so path
+    // expansion does not depend on the active GM rendering the player's Scene.
+    return scene?.grid ?? null;
   }
 
   #hasDimensionChange(document, movement) {

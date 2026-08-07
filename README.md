@@ -11,25 +11,38 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.3: coordinated token relationships
+## Build 0.2.5: trailing followers and symmetric teleport breaks
 
 This build adds the first working attachment behavior on top of the validated 0.1.1 foundation:
 
 - A leader's normal Foundry movement is intercepted only when it has registered followers.
 - The original movement is replaced with one GM-authorized `Scene.moveTokens()` operation for the group.
-- Followers preserve their current X/Y offset from the leader across every waypoint.
+- `adjacentFollower` relationships trail through spaces just vacated by the leader; `rigidOffset` relationships continue to preserve their current X/Y offset.
 - Elevation follows by preserving the original elevation difference when configured.
 - Manual follower movement is blocked when `followerCanSelfMove` is false.
-- API-driven follower movement remains possible so other automations can still push, pull, teleport, or reposition it.
+- API-driven follower movement remains possible so other automations can still push, pull, teleport, or reposition it. A follower teleport now breaks its relationship after the completed teleport is GM-validated.
 - External API/undo/paste movement of a leader is allowed to complete normally, then followers are synchronized afterward so CPR/GPS or other callers do not receive a false movement result.
 - Internal movement metadata prevents recursive attachment movement.
 - Best-effort wall/surface preflight is performed through Foundry's public movement constraint API when the active GM has the Scene rendered.
 - If Foundry stops part of a coordinated move, completed group members are restored to their starting positions.
-- Teleport policies support `detach`, `follow`, and `block`.
+- Leader teleport policies support `detach`, `follow`, and `block`; a follower teleport is allowed to escape and breaks the relationship.
 - Collision policies support `stopGroup` and `detach`.
 - Relationship chains and cycles are rejected in this milestone.
 
 
+
+
+### v0.2.5 trailing and teleport correction
+
+`adjacentFollower` now represents a dragged/trailing relationship instead of behaving like `rigidOffset`. For a leader route `L0 -> L1 -> L2`, the follower route is `L0 -> L1`, so the follower occupies the space the leader just vacated. On a gridded Scene, AE5E expands straight or multi-waypoint segments through Foundry's public grid `getDirectPath()` API before dropping the leader's final space; this keeps a follower one grid space behind even when the leader is dragged several spaces in one operation. A one-square leader move therefore places the follower directly into the leader's starting square. `rigidOffset` remains available for mounts, passengers, carried objects, and other relationships that should mirror movement. Teleport-follow deliberately preserves offset instead of using the trailing route.
+
+Follower teleports are symmetric with leader detach behavior: the teleport itself is not blocked by `followerCanSelfMove: false`, and after the completed movement the active GM validates the teleport and removes the follower's relationship. Primary-GM movement receipts are now indexed for both leaders and followers so this also works for non-GM players without trusting a client-supplied detach request.
+
+Movement classification no longer reads Foundry's deprecated `DatabaseUpdateOperation#teleport` accessor. Teleports are detected from AE5E metadata, explicit own caller data, movement methods, and Foundry movement actions such as `blink`.
+
+### v0.2.4 terminal-checkpoint correction
+
+Live Foundry 14.365 testing demonstrated that programmatic `Scene.moveTokens()` relationship movement can resolve `false` when the generated terminal waypoint omits an explicit checkpoint, even though the final waypoint is terminal. Action Effects 5E now explicitly sets `checkpoint: true` on the final leader and follower waypoint for coordinated movement, follower synchronization, and rollback destinations. Intermediate waypoint checkpoint state is preserved. The fix does not inject `action` or `level`; those continue to use Foundry's normal movement state.
 
 ### v0.2.3 replacement-movement scheduling correction
 
@@ -41,7 +54,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.2.3 deliberately uses **fixed-offset following**. The `adjacentFollower` mode currently preserves its existing offset in the same way as `rigidOffset`; choosing a new legal adjacent square or rotating a grappled target around its grappler comes later.
+Version 0.2.5 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 
@@ -79,7 +92,7 @@ await ae5e.tests.createTestRelationshipFromControlledTokens();
 
 The harness releases the follower and leaves the leader controlled.
 
-4. Drag or keyboard-move the leader. The follower should preserve its offset and move in the same coordinated operation.
+4. Drag or keyboard-move the leader one square. The `adjacentFollower` should move into the square the leader just vacated.
 5. Try to drag the follower manually. The move should be rejected with a warning.
 6. Inspect either controlled token:
 

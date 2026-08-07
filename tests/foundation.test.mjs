@@ -79,6 +79,17 @@ globalThis.CONST = {
   DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 }
 };
 
+function assertGeneratedMovementInstructions(instructions) {
+  for (const [tokenId, instruction] of Object.entries(instructions)) {
+    assert.match(instruction.id, /^[A-Za-z0-9]{16}$/, `${tokenId} must have a Foundry-valid movement ID.`);
+    const terminal = Array.isArray(instruction.waypoints) && instruction.waypoints.length
+      ? instruction.waypoints.at(-1)
+      : instruction.destination;
+    assert.ok(terminal, `${tokenId} must have a terminal movement waypoint or destination.`);
+    assert.equal(terminal.checkpoint, true, `${tokenId} terminal movement must explicitly be a checkpoint.`);
+  }
+}
+
 const {
   MOVEMENT_AGENCIES,
   MOVEMENT_PHASES,
@@ -370,6 +381,29 @@ test("relationship movement planner preserves a rigid follower offset", async ()
   ]);
 });
 
+test("relationship movement planner explicitly checkpoints only the terminal generated waypoint", async () => {
+  const { RelationshipMovementPlanner } = await import("../scripts/relationships/relationship-movement-planner.js");
+
+  const waypoints = RelationshipMovementPlanner.sanitizeWaypoints([
+    { x: 100, y: 0, elevation: 0 },
+    { x: 200, y: 0, elevation: 0, checkpoint: false }
+  ]);
+
+  assert.equal("checkpoint" in waypoints[0], false);
+  assert.equal(waypoints[1].checkpoint, true);
+  assert.equal("action" in waypoints[1], false);
+  assert.equal("level" in waypoints[1], false);
+
+  const instructions = RelationshipMovementPlanner.buildInstructions({
+    leader: { id: "leader", x: 0, y: 0, elevation: 0 },
+    followers: [],
+    waypoints
+  });
+
+  assert.equal(instructions.leader.waypoints[0].checkpoint, undefined);
+  assert.equal(instructions.leader.waypoints.at(-1).checkpoint, true);
+});
+
 test("relationship follower transactions are classified as passenger movement", () => {
   const document = {
     uuid: "Scene.scene.Token.follower",
@@ -413,11 +447,14 @@ test("relationship follower transactions are classified as passenger movement", 
 });
 
 test("relationship movement service indexes only involved tokens and blocks follower self-movement", async () => {
-  const registered = new Map();
+  const registered = [];
   const fakeMovement = {
     registerConsumer(config) {
-      registered.set(config.tokenUuids[0], config);
-      return () => registered.delete(config.tokenUuids[0]);
+      registered.push(config);
+      return () => {
+        const index = registered.indexOf(config);
+        if (index >= 0) registered.splice(index, 1);
+      };
     },
     createOperationOptions(metadata) {
       return { actionEffects5e: metadata };
@@ -450,7 +487,11 @@ test("relationship movement service indexes only involved tokens and blocks foll
   service.initialize();
 
   assert.equal(service.getStats().indexedTokens, 2);
-  const followerHandler = registered.get(relationship.followerUuid).handler;
+  assert.equal(service.getStats().indexedReceiptTokens, 2);
+  const followerHandler = registered.find((consumer) => (
+    consumer.execution === "initiator"
+    && consumer.tokenUuids[0] === relationship.followerUuid
+  )).handler;
   const result = followerHandler({
     subjectUuid: relationship.followerUuid,
     movementId: "move-1",
@@ -584,11 +625,7 @@ test("GM relationship movement executes one coordinated Scene.moveTokens operati
     tokens: new FakeCollection(),
     moveCalls: [],
     async moveTokens(instructions, options) {
-      for (const instruction of Object.values(instructions)) {
-        if (instruction.id !== undefined && !/^[A-Za-z0-9]{16}$/.test(instruction.id)) {
-          throw new Error("Invalid movement ID");
-        }
-      }
+      assertGeneratedMovementInstructions(instructions);
       this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
       return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
     }
@@ -674,13 +711,15 @@ test("GM relationship movement executes one coordinated Scene.moveTokens operati
     x: 200,
     y: 100,
     elevation: 5,
-    action: "walk"
+    action: "walk",
+    checkpoint: true
   });
   assert.deepEqual(call.instructions.follower.waypoints[0], {
     x: 300,
     y: 100,
     elevation: 5,
-    action: "walk"
+    action: "walk",
+    checkpoint: true
   });
   assert.equal(call.instructions.leader.method, "dragging");
   assert.equal(call.instructions.follower.method, "api");
@@ -699,6 +738,7 @@ test("external API leader movement synchronizes followers after the leader has m
     tokens: new FakeCollection(),
     moveCalls: [],
     async moveTokens(instructions, options) {
+      assertGeneratedMovementInstructions(instructions);
       this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
       return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
     }
@@ -783,7 +823,8 @@ test("external API leader movement synchronizes followers after the leader has m
     x: 300,
     y: 50,
     elevation: 0,
-    action: "walk"
+    action: "walk",
+    checkpoint: true
   });
   assert.equal(scene.moveCalls[0].options.actionEffects5e.externalLeaderMovement, true);
 
@@ -799,6 +840,7 @@ test("non-GM external synchronization requires and trusts the GM movement receip
     tokens: new FakeCollection(),
     moveCalls: [],
     async moveTokens(instructions, options) {
+      assertGeneratedMovementInstructions(instructions);
       this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
       return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
     }
@@ -904,7 +946,8 @@ test("non-GM external synchronization requires and trusts the GM movement receip
     x: 300,
     y: 50,
     elevation: 0,
-    action: "walk"
+    action: "walk",
+    checkpoint: true
   });
 
   service.shutdown();
@@ -918,6 +961,7 @@ test("blocked follower path stops coordinated movement before Scene.moveTokens",
     tokens: new FakeCollection(),
     moveCalls: [],
     async moveTokens(instructions, options) {
+      assertGeneratedMovementInstructions(instructions);
       this.moveCalls.push({ instructions, options });
       return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
     }
@@ -1012,6 +1056,7 @@ test("partial coordinated movement is rolled back with suppressed automation", a
     tokens: new FakeCollection(),
     moveCalls: [],
     async moveTokens(instructions, options) {
+      assertGeneratedMovementInstructions(instructions);
       this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
       if (this.moveCalls.length === 1) return { leader: true, follower: false };
       return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
@@ -1088,8 +1133,438 @@ test("partial coordinated movement is rolled back with suppressed automation", a
   assert.equal(result.rolledBack, true);
   assert.equal(scene.moveCalls.length, 2);
   assert.deepEqual(Object.keys(scene.moveCalls[1].instructions), ["leader"]);
+  assert.equal(scene.moveCalls[1].instructions.leader.destination.checkpoint, true);
   assert.equal(scene.moveCalls[1].options.actionEffects5e.relationshipRollback, true);
   assert.equal(scene.moveCalls[1].options.actionEffects5e.suppressAutomation, true);
 
   game.scenes.delete(scene.id);
+});
+
+test("movement transaction avoids Foundry's deprecated operation.teleport accessor and classifies teleport actions", () => {
+  const previousConfig = globalThis.CONFIG;
+  globalThis.CONFIG = {
+    Token: {
+      movement: {
+        actions: new Map([
+          ["walk", { teleport: false }],
+          ["blink", { teleport: true }]
+        ])
+      }
+    }
+  };
+
+  try {
+    const document = {
+      uuid: "Scene.scene.Token.token",
+      id: "token",
+      x: 0,
+      y: 0,
+      elevation: 0,
+      parent: { id: "scene" },
+      actor: null
+    };
+
+    const operationPrototype = {};
+    Object.defineProperty(operationPrototype, "teleport", {
+      configurable: true,
+      get() {
+        throw new Error("Deprecated operation.teleport getter was accessed.");
+      }
+    });
+    const operation = Object.create(operationPrototype);
+
+    const traverse = MovementTransaction.fromTokenHook({
+      document,
+      movement: {
+        id: "movement-walk",
+        origin: { x: 0, y: 0, elevation: 0 },
+        destination: { x: 100, y: 0, elevation: 0, action: "walk" },
+        method: "api"
+      },
+      operation,
+      phase: MOVEMENT_PHASES.AFTER,
+      user: gmUser
+    });
+    assert.equal(traverse.pathType, PATH_TYPES.TRAVERSE);
+
+    const teleport = MovementTransaction.fromTokenHook({
+      document,
+      movement: {
+        id: "movement-blink",
+        origin: { x: 0, y: 0, elevation: 0 },
+        // Foundry's completed moveToken data may place the movement action on
+        // processed passed waypoints rather than on destination itself.
+        destination: { x: 500, y: 0, elevation: 0 },
+        passed: { waypoints: [{ x: 500, y: 0, elevation: 0, action: "blink", checkpoint: true }] },
+        pending: { waypoints: [] },
+        method: "api"
+      },
+      operation,
+      phase: MOVEMENT_PHASES.AFTER,
+      user: gmUser
+    });
+    assert.equal(teleport.pathType, PATH_TYPES.TELEPORT);
+    assert.equal(teleport.movementMode, "blink");
+
+    const explicitOwnTeleport = MovementTransaction.fromTokenHook({
+      document,
+      movement: {
+        id: "movement-own-teleport",
+        origin: { x: 0, y: 0, elevation: 0 },
+        destination: { x: 500, y: 0, elevation: 0 },
+        method: "api"
+      },
+      operation: { teleport: true },
+      phase: MOVEMENT_PHASES.AFTER,
+      user: gmUser
+    });
+    assert.equal(explicitOwnTeleport.pathType, PATH_TYPES.TELEPORT);
+  } finally {
+    globalThis.CONFIG = previousConfig;
+  }
+});
+
+test("adjacent follower trails through spaces vacated by the leader while teleport-follow preserves offset", async () => {
+  const { RelationshipMovementPlanner } = await import("../scripts/relationships/relationship-movement-planner.js");
+  const { ATTACHMENT_MODES } = await import("../scripts/core/constants.js");
+
+  const relationship = {
+    attachmentMode: ATTACHMENT_MODES.ADJACENT_FOLLOWER,
+    followElevation: true
+  };
+  const leader = { x: 0, y: 0, elevation: 0 };
+  const follower = { x: 0, y: 100, elevation: 0 };
+  const leaderWaypoints = [
+    { x: 100, y: 0, elevation: 0, action: "walk" },
+    { x: 100, y: 100, elevation: 0, action: "walk" },
+    { x: 200, y: 100, elevation: 5, action: "walk", checkpoint: true }
+  ];
+
+  const trailing = RelationshipMovementPlanner.translateWaypoints({
+    leader,
+    follower,
+    relationship,
+    waypoints: leaderWaypoints,
+    pathType: PATH_TYPES.TRAVERSE
+  });
+
+  assert.deepEqual(trailing.map(({ x, y, elevation }) => ({ x, y, elevation })), [
+    { x: 0, y: 0, elevation: 0 },
+    { x: 100, y: 0, elevation: 0 },
+    { x: 100, y: 100, elevation: 0 }
+  ]);
+  assert.equal(trailing.at(-1).checkpoint, true);
+  assert.equal(trailing[0].action, undefined);
+  assert.equal(trailing[1].action, "walk");
+
+  const teleportFollow = RelationshipMovementPlanner.translateWaypoints({
+    leader,
+    follower,
+    relationship,
+    waypoints: [{ x: 500, y: 500, elevation: 10, action: "blink", checkpoint: true }],
+    pathType: PATH_TYPES.TELEPORT
+  });
+
+  assert.deepEqual(teleportFollow.map(({ x, y, elevation }) => ({ x, y, elevation })), [
+    { x: 500, y: 600, elevation: 10 }
+  ]);
+  assert.equal(teleportFollow[0].action, "blink");
+  assert.equal(teleportFollow[0].checkpoint, true);
+
+  const fakeSquareGrid = {
+    isGridless: false,
+    getTopLeftPoint(coords) {
+      if (Number.isFinite(coords?.i) && Number.isFinite(coords?.j)) {
+        return { x: coords.i * 100, y: coords.j * 100 };
+      }
+      return {
+        x: Math.floor(coords.x / 100) * 100,
+        y: Math.floor(coords.y / 100) * 100
+      };
+    },
+    getDirectPath([start, end]) {
+      const startI = Math.round(start.x / 100);
+      const startJ = Math.round(start.y / 100);
+      const endI = Math.round(end.x / 100);
+      const endJ = Math.round(end.y / 100);
+      const di = Math.sign(endI - startI);
+      const dj = Math.sign(endJ - startJ);
+      const steps = Math.max(Math.abs(endI - startI), Math.abs(endJ - startJ));
+      return Array.from({ length: steps + 1 }, (_, index) => ({
+        i: startI + (di * index),
+        j: startJ + (dj * index)
+      }));
+    }
+  };
+
+  const longStraightDrag = RelationshipMovementPlanner.translateWaypoints({
+    leader,
+    follower,
+    relationship,
+    waypoints: [{ x: 300, y: 0, elevation: 0, action: "walk", checkpoint: true }],
+    pathType: PATH_TYPES.TRAVERSE,
+    grid: fakeSquareGrid
+  });
+
+  assert.deepEqual(longStraightDrag.map(({ x, y }) => ({ x, y })), [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 200, y: 0 }
+  ]);
+  assert.equal(longStraightDrag.at(-1).checkpoint, true);
+
+  assert.throws(() => RelationshipMovementPlanner.translateWaypoints({
+    leader,
+    follower,
+    relationship,
+    waypoints: [{ x: 10100, y: 0, elevation: 0, action: "walk", checkpoint: true }],
+    pathType: PATH_TYPES.TRAVERSE,
+    grid: fakeSquareGrid
+  }), /limited to 100 translated grid steps/);
+});
+
+test("follower teleport bypasses manual movement lock and detaches its relationship after completion", async () => {
+  const scene = {
+    id: "scene-follower-teleport",
+    tokens: new FakeCollection()
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({
+    uuid: "Scene.scene-follower-teleport.Token.leader",
+    id: "leader",
+    scene
+  });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, name: "Leader" });
+  const follower = new FakeTokenDocument({
+    uuid: "Scene.scene-follower-teleport.Token.follower",
+    id: "follower",
+    scene
+  });
+  Object.assign(follower, { x: 200, y: 0, elevation: 0, name: "Follower" });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+
+  const documents = new Map([
+    [leader.uuid, leader],
+    [follower.uuid, follower]
+  ]);
+  globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
+
+  let relationship = {
+    id: "relationship-follower-teleport",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    followerCanSelfMove: false,
+    followElevation: true,
+    followRotation: false,
+    teleportPolicy: "detach",
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    list: () => relationship ? [relationship] : [],
+    getForLeader: (uuid) => relationship && uuid === leader.uuid ? [structuredClone(relationship)] : [],
+    getForFollower: (uuid) => relationship && uuid === follower.uuid ? [structuredClone(relationship)] : [],
+    async removeManyAsGM(ids) {
+      const values = [...ids];
+      if (relationship && values.includes(relationship.id)) {
+        relationship = null;
+        return 1;
+      }
+      return 0;
+    }
+  };
+
+  const handlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { handlers.set(name, handler); },
+    async executeAsGM(name, request) { return handlers.get(name)(request); }
+  };
+  const consumers = [];
+  const fakeMovement = {
+    registerConsumer(config) {
+      consumers.push(config);
+      return () => {};
+    },
+    createOperationOptions(metadata) { return { actionEffects5e: { generatedBy: "action-effects-5e", ...metadata } }; },
+    registerMovementContext() { return () => {}; }
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({
+    socket: fakeSocket,
+    relationships: fakeRelationships,
+    movement: fakeMovement
+  });
+  service.initialize();
+
+  const followerConsumer = consumers.find((consumer) => (
+    consumer.execution === "initiator"
+    && consumer.tokenUuids[0] === follower.uuid
+  ));
+  assert.ok(followerConsumer);
+
+  const beforeResult = followerConsumer.handler({
+    subjectUuid: follower.uuid,
+    movementId: "follower-blink",
+    phase: MOVEMENT_PHASES.BEFORE,
+    method: "keyboard",
+    pathType: PATH_TYPES.TELEPORT,
+    origin: { x: 100, y: 0, elevation: 0 },
+    destination: { x: 200, y: 0, elevation: 0 },
+    metadata: {}
+  }, {});
+  assert.equal(beforeResult, true);
+
+  const afterResult = followerConsumer.handler({
+    subjectUuid: follower.uuid,
+    movementId: "follower-blink",
+    phase: MOVEMENT_PHASES.AFTER,
+    method: "api",
+    pathType: PATH_TYPES.TELEPORT,
+    movementMode: "blink",
+    sceneId: scene.id,
+    userId: gmUser.id,
+    origin: { x: 100, y: 0, elevation: 0 },
+    destination: { x: 200, y: 0, elevation: 0 },
+    sourceUuid: "Item.teleport",
+    generatedBy: "test",
+    metadata: {}
+  }, {});
+  assert.equal(afterResult, true);
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(relationship, null);
+  assert.equal(service.getStats().queuedFollowerDetaches, 0);
+
+  service.shutdown();
+  delete globalThis.ui;
+  game.scenes.delete(scene.id);
+});
+
+test("non-GM follower teleport detachment requires a matching primary-GM movement receipt", async () => {
+  const player = { id: "player-follower-teleport", isGM: false, active: true };
+  game.users.set(player.id, player);
+
+  const scene = {
+    id: "scene-follower-teleport-receipt",
+    tokens: new FakeCollection()
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({
+    uuid: "Scene.scene-follower-teleport-receipt.Token.leader",
+    id: "leader",
+    scene,
+    owner: false
+  });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, name: "Leader" });
+  const follower = new FakeTokenDocument({
+    uuid: "Scene.scene-follower-teleport-receipt.Token.follower",
+    id: "follower",
+    scene,
+    owner: true
+  });
+  Object.assign(follower, { x: 300, y: 0, elevation: 0, name: "Follower" });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+
+  const documents = new Map([
+    [leader.uuid, leader],
+    [follower.uuid, follower]
+  ]);
+  globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
+
+  let relationship = {
+    id: "relationship-follower-teleport-receipt",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    followerCanSelfMove: false,
+    teleportPolicy: "detach",
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    list: () => relationship ? [relationship] : [],
+    getForLeader: (uuid) => relationship && uuid === leader.uuid ? [structuredClone(relationship)] : [],
+    getForFollower: (uuid) => relationship && uuid === follower.uuid ? [structuredClone(relationship)] : [],
+    async removeManyAsGM(ids) {
+      if (relationship && [...ids].includes(relationship.id)) {
+        relationship = null;
+        return 1;
+      }
+      return 0;
+    }
+  };
+
+  const handlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { handlers.set(name, handler); },
+    async executeAsGM(name, request) { return handlers.get(name)(request); }
+  };
+  const consumers = [];
+  const fakeMovement = {
+    registerConsumer(config) {
+      consumers.push(config);
+      return () => {};
+    },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({
+    socket: fakeSocket,
+    relationships: fakeRelationships,
+    movement: fakeMovement
+  });
+  service.initialize();
+
+  const followerReceiptConsumer = consumers.find((consumer) => (
+    consumer.execution === "primaryGM"
+    && consumer.tokenUuids[0] === follower.uuid
+  ));
+  assert.ok(followerReceiptConsumer);
+
+  followerReceiptConsumer.handler({
+    movementId: "verified-follower-blink",
+    subjectUuid: follower.uuid,
+    sceneId: scene.id,
+    userId: player.id,
+    origin: { x: 100, y: 0, elevation: 0 },
+    destination: { x: 300, y: 0, elevation: 0 },
+    path: [{ x: 300, y: 0, elevation: 0, action: "blink", checkpoint: true }],
+    pathType: PATH_TYPES.TELEPORT,
+    movementMode: "blink",
+    sourceUuid: "Item.misty-step",
+    generatedBy: "external-module",
+    metadata: {},
+    toJSON() { return structuredClone({ ...this, toJSON: undefined }); }
+  });
+
+  const result = await handlers.get("relationships.detachFollowerTeleport")({
+    requestId: "request-follower-teleport-receipt",
+    requestingUserId: player.id,
+    sceneId: scene.id,
+    followerUuid: follower.uuid,
+    originalMovementId: "verified-follower-blink",
+    // Deliberately forged values: the GM receipt must override them.
+    origin: { x: 999, y: 999, elevation: 0 },
+    destination: { x: 999, y: 999, elevation: 0 },
+    pathType: PATH_TYPES.TRAVERSE,
+    movementMode: "walk"
+  });
+
+  assert.equal(result.completed, true);
+  assert.deepEqual(result.detachedRelationshipIds, ["relationship-follower-teleport-receipt"]);
+  assert.equal(relationship, null);
+  assert.equal(service.getStats().movementReceipts, 0);
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  game.users.delete(player.id);
 });

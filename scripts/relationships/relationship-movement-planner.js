@@ -1,4 +1,4 @@
-import { ATTACHMENT_MODES } from "../core/constants.js";
+import { ATTACHMENT_MODES, PATH_TYPES } from "../core/constants.js";
 import { duplicateSafely } from "../core/utils.js";
 
 const MAX_WAYPOINTS = 100;
@@ -44,6 +44,15 @@ function sanitizeWaypoint(waypoint = {}) {
   return clean;
 }
 
+function copyWaypointFields(source, target, { includeCheckpoint = true } = {}) {
+  const fields = ["action", "explicit", "snapped", "level", "shape"];
+  if (includeCheckpoint) fields.push("checkpoint");
+  for (const field of fields) {
+    if (source?.[field] !== undefined) target[field] = duplicateSafely(source[field]);
+  }
+  return target;
+}
+
 export class RelationshipMovementPlanner {
   static extractWaypoints(movement = {}) {
     const candidate = Array.isArray(movement?.pending?.waypoints) && movement.pending.waypoints.length
@@ -57,13 +66,23 @@ export class RelationshipMovementPlanner {
     const waypoints = candidate.map((waypoint) => sanitizeWaypoint(waypoint));
     if (waypoints.length > 1 && positionsEqual(waypoints[0], origin)) waypoints.shift();
     if (!waypoints.length) waypoints.push(this.sanitizePosition(movement.destination, "movement destination"));
-    return waypoints;
+    return this.ensureTerminalCheckpoint(waypoints);
   }
 
   static sanitizeWaypoints(waypoints) {
     if (!Array.isArray(waypoints) || !waypoints.length) throw new Error("The movement path is empty.");
     if (waypoints.length > MAX_WAYPOINTS) throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} waypoints.`);
-    return waypoints.map((waypoint) => sanitizeWaypoint(waypoint));
+    return this.ensureTerminalCheckpoint(waypoints.map((waypoint) => sanitizeWaypoint(waypoint)));
+  }
+
+  static ensureTerminalCheckpoint(waypoints) {
+    if (!Array.isArray(waypoints) || !waypoints.length) throw new Error("The movement path is empty.");
+    // Foundry 14.365 live testing showed programmatic Scene.moveTokens paths can
+    // resolve false unless the terminal waypoint is explicitly a checkpoint.
+    // Preserve all intermediate checkpoint state and normalize only the last point.
+    const normalized = waypoints.map((waypoint) => duplicateSafely(waypoint));
+    normalized[normalized.length - 1].checkpoint = true;
+    return normalized;
   }
 
   static extractTransactionWaypoints(transaction = {}) {
@@ -85,24 +104,130 @@ export class RelationshipMovementPlanner {
     return { x, y, elevation };
   }
 
-  static translateWaypoints({ leader, follower, relationship, waypoints }) {
+  static translateWaypoints({ leader, follower, relationship, waypoints, pathType = PATH_TYPES.TRAVERSE, grid = null }) {
     const leaderOrigin = this.sanitizePosition(leader, "leader position");
     const followerOrigin = this.sanitizePosition(follower, "follower position");
+    const cleanWaypoints = this.sanitizeWaypoints(waypoints);
+
+    switch (relationship.attachmentMode) {
+      case ATTACHMENT_MODES.ADJACENT_FOLLOWER:
+        // A trailing/dragged follower occupies each space just vacated by the
+        // leader. For L0 -> L1 -> L2, the follower path is L0 -> L1 and ends
+        // one leader waypoint behind. Teleport-follow is intentionally exempt:
+        // a follower that teleports with its leader preserves its prior offset.
+        if (pathType !== PATH_TYPES.TELEPORT) {
+          return this.#buildTrailingWaypoints({
+            leaderOrigin,
+            followerOrigin,
+            relationship,
+            leaderWaypoints: cleanWaypoints,
+            grid
+          });
+        }
+        return this.#translateRigidOffset({ leaderOrigin, followerOrigin, relationship, waypoints: cleanWaypoints });
+
+      case ATTACHMENT_MODES.RIGID_OFFSET:
+      case ATTACHMENT_MODES.ANCHORED_FOLLOWER:
+      case ATTACHMENT_MODES.PASSENGER:
+        return this.#translateRigidOffset({ leaderOrigin, followerOrigin, relationship, waypoints: cleanWaypoints });
+
+      default:
+        throw new Error(`Unsupported attachment mode '${relationship.attachmentMode}'.`);
+    }
+  }
+
+  static #buildTrailingWaypoints({ leaderOrigin, followerOrigin, relationship, leaderWaypoints, grid }) {
+    const expandedLeaderPositions = this.#expandLeaderGridPath({
+      leaderOrigin,
+      leaderWaypoints,
+      grid
+    });
+    const priorLeaderPositions = expandedLeaderPositions.slice(0, -1);
+    if (!priorLeaderPositions.length) priorLeaderPositions.push(leaderOrigin);
+    if (priorLeaderPositions.length > MAX_WAYPOINTS) {
+      throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} translated grid steps.`);
+    }
+
+    const trailingWaypoints = priorLeaderPositions.map((position) => {
+      const trailing = {
+        x: Math.round(position.x),
+        y: Math.round(position.y),
+        elevation: relationship.followElevation !== false
+          ? finiteNumber(position.elevation, leaderOrigin.elevation)
+          : followerOrigin.elevation
+      };
+      copyWaypointFields(position, trailing);
+      return trailing;
+    });
+
+    return this.ensureTerminalCheckpoint(trailingWaypoints);
+  }
+
+  static #expandLeaderGridPath({ leaderOrigin, leaderWaypoints, grid }) {
+    const fallback = [leaderOrigin, ...leaderWaypoints].map((point) => duplicateSafely(point));
+    if (!grid || grid.isGridless === true) return fallback;
+    if (typeof grid.getDirectPath !== "function" || typeof grid.getTopLeftPoint !== "function") return fallback;
+
+    // Grid expansion is used only when the leader route stays on a constant
+    // elevation and each declared endpoint is aligned to a grid-space top-left.
+    // Otherwise preserving the exact Foundry waypoints is safer than snapping an
+    // off-grid or vertical route to a different path.
+    const declared = [leaderOrigin, ...leaderWaypoints];
+    const sameElevation = declared.every((point) => (
+      finiteNumber(point.elevation, leaderOrigin.elevation) === leaderOrigin.elevation
+    ));
+    if (!sameElevation) return fallback;
+
+    try {
+      for (const point of declared) {
+        const topLeft = grid.getTopLeftPoint({ x: point.x, y: point.y });
+        if (!topLeft || Math.round(topLeft.x) !== Math.round(point.x) || Math.round(topLeft.y) !== Math.round(point.y)) {
+          return fallback;
+        }
+      }
+
+      const expanded = [duplicateSafely(leaderOrigin)];
+      let segmentStart = leaderOrigin;
+      for (const waypoint of leaderWaypoints) {
+        const offsets = grid.getDirectPath([
+          { x: segmentStart.x, y: segmentStart.y },
+          { x: waypoint.x, y: waypoint.y }
+        ]);
+        if (!Array.isArray(offsets) || !offsets.length) return fallback;
+
+        const segmentPoints = offsets.map((offset) => grid.getTopLeftPoint(offset));
+        if (!segmentPoints.every((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))) return fallback;
+
+        for (let index = 0; index < segmentPoints.length; index += 1) {
+          const point = segmentPoints[index];
+          const isSegmentEndpoint = index === segmentPoints.length - 1;
+          const expandedPoint = {
+            x: Math.round(point.x),
+            y: Math.round(point.y),
+            elevation: finiteNumber(waypoint.elevation, leaderOrigin.elevation)
+          };
+          copyWaypointFields(waypoint, expandedPoint, { includeCheckpoint: isSegmentEndpoint });
+
+          if (!positionsEqual(expanded.at(-1), expandedPoint)) expanded.push(expandedPoint);
+          else if (isSegmentEndpoint) copyWaypointFields(waypoint, expanded[expanded.length - 1]);
+        }
+        segmentStart = waypoint;
+      }
+
+      const expectedDestination = leaderWaypoints.at(-1);
+      if (!positionsEqual(expanded.at(-1), expectedDestination)) return fallback;
+      return expanded;
+    } catch {
+      return fallback;
+    }
+  }
+
+  static #translateRigidOffset({ leaderOrigin, followerOrigin, relationship, waypoints }) {
     const dx = followerOrigin.x - leaderOrigin.x;
     const dy = followerOrigin.y - leaderOrigin.y;
     const de = followerOrigin.elevation - leaderOrigin.elevation;
 
-    switch (relationship.attachmentMode) {
-      case ATTACHMENT_MODES.RIGID_OFFSET:
-      case ATTACHMENT_MODES.ADJACENT_FOLLOWER:
-      case ATTACHMENT_MODES.ANCHORED_FOLLOWER:
-      case ATTACHMENT_MODES.PASSENGER:
-        break;
-      default:
-        throw new Error(`Unsupported attachment mode '${relationship.attachmentMode}'.`);
-    }
-
-    return waypoints.map((waypoint) => {
+    const translatedWaypoints = waypoints.map((waypoint) => {
       const translated = {
         x: Math.round(waypoint.x + dx),
         y: Math.round(waypoint.y + dy)
@@ -114,17 +239,18 @@ export class RelationshipMovementPlanner {
         translated.elevation = followerOrigin.elevation;
       }
 
-      for (const field of ["action", "checkpoint", "explicit", "snapped", "level", "shape"]) {
-        if (waypoint[field] !== undefined) translated[field] = duplicateSafely(waypoint[field]);
-      }
+      copyWaypointFields(waypoint, translated);
       return translated;
     });
+
+    return this.ensureTerminalCheckpoint(translatedWaypoints);
   }
 
-  static buildInstructions({ leader, followers, waypoints }) {
+  static buildInstructions({ leader, followers, waypoints, pathType = PATH_TYPES.TRAVERSE, grid = null }) {
+    const leaderWaypoints = this.ensureTerminalCheckpoint(waypoints);
     const instructions = {
       [leader.id]: {
-        waypoints: duplicateSafely(waypoints),
+        waypoints: leaderWaypoints,
         method: "api",
         showRuler: false
       }
@@ -136,7 +262,9 @@ export class RelationshipMovementPlanner {
           leader,
           follower: token,
           relationship,
-          waypoints
+          waypoints: leaderWaypoints,
+          pathType,
+          grid
         }),
         method: "api",
         showRuler: false
