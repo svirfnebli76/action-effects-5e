@@ -1,0 +1,6 @@
+/* Reserved for Action Effects 5E applications and diagnostics.
+   The foundation build intentionally adds no persistent canvas UI. */
+
+.action-effects-5e-hidden {
+  display: none !important;
+}

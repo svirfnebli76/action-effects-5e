@@ -1,17 +1,16 @@
 {
   "id": "action-effects-5e",
-  "type": "module",
-  "title": "Action Effects 5e",
-  "description": "A reusable automation framework and collection of premade items and effects for Foundry VTT v14+ and the D&D 5e system.",
-  "version": "14.0.1",
+  "title": "Action Effects 5E",
+  "description": "Reusable D&D5e automation infrastructure and premade effects for Foundry VTT, beginning with a low-overhead movement and spatial-event framework.",
+  "version": "0.1.0",
   "authors": [
     {
-      "name": "svirfnebli76"
+      "name": "Matthew Larrivee"
     }
   ],
   "compatibility": {
     "minimum": "14",
-    "verified": "14.365"
+    "verified": "14"
   },
   "relationships": {
     "systems": [
@@ -20,14 +19,37 @@
         "type": "system"
       }
     ],
-    "requires": [],
-    "recommends": []
+    "requires": [
+      {
+        "id": "midi-qol",
+        "type": "module"
+      },
+      {
+        "id": "dae",
+        "type": "module"
+      },
+      {
+        "id": "socketlib",
+        "type": "module"
+      },
+      {
+        "id": "lib-wrapper",
+        "type": "module"
+      }
+    ]
   },
   "esmodules": [
-    "scripts/action-effects-5e.mjs"
+    "scripts/action-effects-5e.js"
   ],
-  "socket": true,
-  "url": "https://github.com/svirfnebli76/action-effects-5e",
-  "bugs": "https://github.com/svirfnebli76/action-effects-5e/issues",
-  "media": []
+  "styles": [
+    "styles/action-effects-5e.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "socket": true
 }

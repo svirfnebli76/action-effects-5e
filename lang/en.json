@@ -1,0 +1,14 @@
+{
+  "ACTION_EFFECTS_5E.Settings.MovementEnabled.Name": "Enable Movement Framework",
+  "ACTION_EFFECTS_5E.Settings.MovementEnabled.Hint": "Enables the Action Effects 5E movement transaction and relationship foundation. Processing exits immediately when no registered feature is interested in a movement.",
+  "ACTION_EFFECTS_5E.Settings.OverlapPolicy.Name": "Overlapping Automation Policy",
+  "ACTION_EFFECTS_5E.Settings.OverlapPolicy.Hint": "Controls the default owner when Action Effects 5E, Chris's Premades, or Gambit's Premades could automate the same feature. Future releases will add per-subsystem ownership settings.",
+  "ACTION_EFFECTS_5E.Settings.OverlapPolicy.AutoSafe": "Automatic: Prefer Existing Compatible Automation",
+  "ACTION_EFFECTS_5E.Settings.OverlapPolicy.PreferAE5E": "Prefer Action Effects 5E",
+  "ACTION_EFFECTS_5E.Settings.OverlapPolicy.PreferExternal": "Prefer CPR or GPS",
+  "ACTION_EFFECTS_5E.Settings.OverlapPolicy.Manual": "Manual Resolution",
+  "ACTION_EFFECTS_5E.Settings.DebugLogging.Name": "Debug Logging",
+  "ACTION_EFFECTS_5E.Settings.DebugLogging.Hint": "Writes additional Action Effects 5E diagnostics to the browser console.",
+  "ACTION_EFFECTS_5E.Settings.CaptureDiagnostics.Name": "Capture Recent Movement Transactions",
+  "ACTION_EFFECTS_5E.Settings.CaptureDiagnostics.Hint": "Records up to 50 recent movement transactions for development. Leave disabled during normal play for the lowest overhead."
+}
