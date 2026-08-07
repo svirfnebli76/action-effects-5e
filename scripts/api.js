@@ -1,5 +1,6 @@
 import {
   ATTACHMENT_MODES,
+  COLLISION_POLICIES,
   HOOKS,
   MODULE_ID,
   MODULE_VERSION,
@@ -7,7 +8,8 @@ import {
   MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
   PATH_TYPES,
-  RELATIONSHIP_TYPES
+  RELATIONSHIP_TYPES,
+  TELEPORT_POLICIES
 } from "./core/constants.js";
 
 export class ActionEffects5eApi {
@@ -16,6 +18,7 @@ export class ActionEffects5eApi {
     compatibility,
     movement,
     relationships,
+    relationshipMovement,
     tests,
     socket
   }) {
@@ -29,7 +32,9 @@ export class ActionEffects5eApi {
       MOVEMENT_AGENCIES,
       MOVEMENT_RESOURCES,
       RELATIONSHIP_TYPES,
-      ATTACHMENT_MODES
+      ATTACHMENT_MODES,
+      TELEPORT_POLICIES,
+      COLLISION_POLICIES
     });
 
     this.dependencies = Object.freeze({
@@ -58,13 +63,15 @@ export class ActionEffects5eApi {
       getForLeader: (uuid) => relationships.getForLeader(uuid),
       getForFollower: (uuid) => relationships.getForFollower(uuid),
       list: (filter) => relationships.list(filter),
-      getStats: () => relationships.getStats()
+      getStats: () => relationships.getStats(),
+      getMovementStats: () => relationshipMovement.getStats()
     });
 
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
       createTestRelationshipFromControlledTokens: () => tests.createTestRelationshipFromControlledTokens(),
-      removeTestRelationships: () => tests.removeTestRelationships()
+      removeTestRelationships: () => tests.removeTestRelationships(),
+      inspectControlledRelationship: () => tests.inspectControlledRelationship()
     });
 
     this.socket = Object.freeze({

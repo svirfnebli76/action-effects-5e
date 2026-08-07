@@ -7,6 +7,7 @@ import { SocketService } from "./core/socket-service.js";
 import { MovementRegistry } from "./movement/movement-registry.js";
 import { MovementService } from "./movement/movement-service.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
+import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -16,19 +17,30 @@ const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const relationships = new RelationshipService({ socket });
 const movement = new MovementService({ registry: movementRegistry, relationships });
-const tests = new TestHarness({ dependencies, compatibility, movement, relationships, socket });
+const relationshipMovement = new RelationshipMovementService({
+  socket,
+  relationships,
+  movement
+});
+const tests = new TestHarness({
+  dependencies,
+  compatibility,
+  movement,
+  relationships,
+  relationshipMovement,
+  socket
+});
 const api = new ActionEffects5eApi({
   dependencies,
   compatibility,
   movement,
   relationships,
+  relationshipMovement,
   tests,
   socket
 });
 
-// Socketlib recommends registering for its ready hook while module scripts are
-// evaluated, before Foundry begins dispatching init callbacks. Required
-// dependencies can otherwise emit socketlib.ready before our own init callback.
+// Register before Foundry begins init so Socketlib cannot emit its ready hook first.
 socket.initialize();
 
 Hooks.once("init", () => {
@@ -51,6 +63,7 @@ Hooks.once("ready", async () => {
   }
 
   await relationships.initialize();
+  relationshipMovement.initialize();
   movement.initialize();
   compatibility.refresh();
 

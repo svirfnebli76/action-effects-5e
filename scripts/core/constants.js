@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.1.1";
+export const MODULE_VERSION = "0.2.2";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -85,10 +85,22 @@ export const ATTACHMENT_MODES = Object.freeze({
   ANCHORED_FOLLOWER: "anchoredFollower"
 });
 
+export const TELEPORT_POLICIES = Object.freeze({
+  DETACH: "detach",
+  FOLLOW: "follow",
+  BLOCK: "block"
+});
+
+export const COLLISION_POLICIES = Object.freeze({
+  STOP_GROUP: "stopGroup",
+  DETACH: "detach"
+});
+
 export const HOOKS = Object.freeze({
   READY: `${MODULE_ID}.ready`,
   PRE_MOVEMENT_TRANSACTION: `${MODULE_ID}.preMovementTransaction`,
   MOVEMENT_TRANSACTION: `${MODULE_ID}.movementTransaction`,
   RELATIONSHIP_CREATED: `${MODULE_ID}.relationshipCreated`,
-  RELATIONSHIP_REMOVED: `${MODULE_ID}.relationshipRemoved`
+  RELATIONSHIP_REMOVED: `${MODULE_ID}.relationshipRemoved`,
+  RELATIONSHIPS_REINDEXED: `${MODULE_ID}.relationshipsReindexed`
 });

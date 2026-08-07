@@ -1,8 +1,10 @@
 import {
   ATTACHMENT_MODES,
+  COLLISION_POLICIES,
   MODULE_ID,
   MOVEMENT_PHASES,
-  RELATIONSHIP_TYPES
+  RELATIONSHIP_TYPES,
+  TELEPORT_POLICIES
 } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
 import { MovementTransaction } from "../movement/movement-transaction.js";
@@ -12,13 +14,15 @@ export class TestHarness {
   #compatibility;
   #movement;
   #relationships;
+  #relationshipMovement;
   #socket;
 
-  constructor({ dependencies, compatibility, movement, relationships, socket }) {
+  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
     this.#relationships = relationships;
+    this.#relationshipMovement = relationshipMovement;
     this.#socket = socket;
   }
 
@@ -59,6 +63,7 @@ export class TestHarness {
     });
 
     record("Relationship indexes", this.#relationships.getStats().relationships >= 0, this.#relationships.getStats());
+    record("Relationship movement service", this.#relationshipMovement.getStats().initialized, this.#relationshipMovement.getStats());
     record("Socketlib registration", this.#socket.ready, { ready: this.#socket.ready });
 
     const passed = checks.every((check) => check.passed);
@@ -67,6 +72,7 @@ export class TestHarness {
       checks,
       movement: this.#movement.getStats(),
       relationships: this.#relationships.getStats(),
+      relationshipMovement: this.#relationshipMovement.getStats(),
       compatibility: compatibilityStatus
     };
 
@@ -89,15 +95,21 @@ export class TestHarness {
     const [leader, follower] = controlled;
     const relationship = await this.#relationships.create({
       type: RELATIONSHIP_TYPES.TEST,
-      attachmentMode: ATTACHMENT_MODES.ADJACENT_FOLLOWER,
+      attachmentMode: ATTACHMENT_MODES.RIGID_OFFSET,
       leaderUuid: leader.uuid,
       followerUuid: follower.uuid,
       followerCanSelfMove: false,
-      teleportPolicy: "detach",
+      followElevation: true,
+      followRotation: false,
+      teleportPolicy: TELEPORT_POLICIES.DETACH,
+      collisionPolicy: COLLISION_POLICIES.STOP_GROUP,
       metadata: { createdByTestHarness: true }
     });
 
-    ui.notifications.info(`Created test relationship ${relationship.id}. This foundation build does not move the follower yet.`);
+    for (const token of canvas.tokens.controlled) token.release();
+    leader.object?.control?.({ releaseOthers: true });
+
+    ui.notifications.info(`Created test relationship ${relationship.id}. The leader remains controlled; move it to test coordinated following.`);
     return relationship;
   }
 
@@ -112,5 +124,21 @@ export class TestHarness {
 
     ui.notifications.info(`Removed ${results.filter((entry) => entry.removed).length} test relationship(s).`);
     return results;
+  }
+
+  inspectControlledRelationship() {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled.map((token) => token.document);
+    if (controlled.length !== 1) throw new Error("Control exactly one token to inspect its relationships.");
+
+    const token = controlled[0];
+    const result = {
+      tokenUuid: token.uuid,
+      asLeader: this.#relationships.getForLeader(token.uuid),
+      asFollower: this.#relationships.getForFollower(token.uuid),
+      movement: this.#relationshipMovement.getStats()
+    };
+    Logger.info("Controlled token relationship inspection", result);
+    return result;
   }
 }

@@ -17,6 +17,7 @@ export class MovementService {
   #pending = new Map();
   #recent = [];
   #hookIds = [];
+  #movementContexts = new Map();
 
   constructor({ registry, relationships }) {
     this.#registry = registry;
@@ -41,6 +42,7 @@ export class MovementService {
     Hooks.off("stopToken", this.#hookIds[2]);
     this.#hookIds = [];
     this.#pending.clear();
+    this.#movementContexts.clear();
     this.#initialized = false;
   }
 
@@ -50,6 +52,24 @@ export class MovementService {
 
   unregisterConsumer(id) {
     return this.#registry.unregister(id);
+  }
+
+  registerMovementContext(movementId, metadata = {}) {
+    if (typeof movementId !== "string" || !movementId.length) {
+      throw new TypeError("Movement context requires a non-empty movement ID.");
+    }
+
+    const source = metadata?.[OPERATION_METADATA_KEY] ?? metadata;
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+      throw new TypeError("Movement context metadata must be an object.");
+    }
+
+    const context = Object.freeze(duplicateSafely(source));
+    this.#movementContexts.set(movementId, context);
+
+    return () => {
+      if (this.#movementContexts.get(movementId) === context) this.#movementContexts.delete(movementId);
+    };
   }
 
   createOperationOptions({
@@ -99,6 +119,7 @@ export class MovementService {
       initialized: this.#initialized,
       pendingTransactions: this.#pending.size,
       recentTransactions: this.#recent.length,
+      movementContexts: this.#movementContexts.size,
       registry: this.#registry.getStats()
     };
   }
@@ -118,20 +139,35 @@ export class MovementService {
     return this.#registry.hasPotentialInterest(document, phase, { userId });
   }
 
+  #withMovementContext(movement, operation = {}) {
+    const context = this.#movementContexts.get(movement?.id);
+    if (!context) return operation ?? {};
+
+    const operationMetadata = operation?.[OPERATION_METADATA_KEY];
+    return {
+      ...(operation ?? {}),
+      [OPERATION_METADATA_KEY]: {
+        ...(operationMetadata && typeof operationMetadata === "object" ? operationMetadata : {}),
+        ...duplicateSafely(context)
+      }
+    };
+  }
+
   #onPreMoveToken(document, movement, operation) {
     if (!this.#isEnabled()) return;
-    if (!this.#hasPotentialInterest(document, MOVEMENT_PHASES.BEFORE, operation, game.user.id)) return;
+    const effectiveOperation = this.#withMovementContext(movement, operation);
+    if (!this.#hasPotentialInterest(document, MOVEMENT_PHASES.BEFORE, effectiveOperation, game.user.id)) return;
 
     const transaction = MovementTransaction.fromTokenHook({
       document,
       movement,
-      operation,
+      operation: effectiveOperation,
       phase: MOVEMENT_PHASES.BEFORE,
       user: game.user
     });
 
     this.#pending.set(movement.id, transaction);
-    const context = { document, movement, operation, service: this };
+    const context = { document, movement, operation: effectiveOperation, service: this };
 
     if (this.#registry.dispatchSync(transaction, MOVEMENT_PHASES.BEFORE, context) === false) {
       this.#pending.delete(movement.id);
@@ -147,13 +183,14 @@ export class MovementService {
   #onMoveToken(document, movement, operation, user) {
     if (!this.#isEnabled()) return;
 
+    const effectiveOperation = this.#withMovementContext(movement, operation);
     const wasPending = this.#pending.has(movement.id);
-    if (!wasPending && !this.#hasPotentialInterest(document, MOVEMENT_PHASES.AFTER, operation, user?.id)) return;
+    if (!wasPending && !this.#hasPotentialInterest(document, MOVEMENT_PHASES.AFTER, effectiveOperation, user?.id)) return;
 
     const transaction = MovementTransaction.fromTokenHook({
       document,
       movement,
-      operation,
+      operation: effectiveOperation,
       phase: MOVEMENT_PHASES.AFTER,
       user
     });
@@ -161,7 +198,7 @@ export class MovementService {
     this.#pending.delete(movement.id);
     if (this.#captureDiagnostics()) this.#remember(transaction);
 
-    const context = { document, movement, operation, user, service: this };
+    const context = { document, movement, operation: effectiveOperation, user, service: this };
     queueMicrotask(() => {
       void this.#dispatchAfter(transaction, context);
     });

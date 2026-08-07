@@ -1,64 +1,81 @@
-# Foundation Architecture
+# Movement and Relationship Architecture
 
 ## Startup lifecycle
 
-- `init`: register settings, prepare Socketlib, expose the API.
+- Module evaluation: register the Socketlib ready listener and socket handlers.
+- `init`: register settings and expose the public API.
 - `setup`: detect CPR and GPS.
-- `ready`: validate dependencies, load relationship indexes, and activate movement hooks.
+- `ready`: validate dependencies, load relationship indexes, index relationship movement consumers, and activate the central movement hooks.
 
-## Movement fast path
+## Normal movement fast path
 
 For a token with no registered movement consumer, no relationship, and diagnostics disabled:
 
 1. `preMoveToken` fires.
 2. Action Effects 5E performs indexed Boolean lookups.
-3. No transaction is constructed.
+3. No movement transaction is constructed.
 4. Processing ends.
 
-The same early-exit process occurs for `moveToken`.
+No Scene-wide scans occur.
 
-## Movement consumers
+## Relationship movement path
 
-Consumers register once with the central registry. They may target:
+Foundry v14's `preMoveToken` hook permits rejecting movement but not rewriting its finalized waypoints. Action Effects 5E therefore uses this sequence:
 
-- Specific token UUIDs
-- Specific Scene IDs
-- All movement
+1. The initiating client attempts to move a relationship leader.
+2. The central listener finds a token-indexed relationship movement consumer.
+3. The consumer extracts and sanitizes the final pending waypoints.
+4. The original move is rejected.
+5. A Socketlib request sends the plan to the active GM.
+6. The GM validates user ownership, Scene identity, leader origin, relationship state, and waypoint data.
+7. Follower paths are translated from the leader path using their current offsets.
+8. Foundry's public collision constraint API performs best-effort preflight where available.
+9. One `Scene.moveTokens()` call moves the leader and followers.
+10. Action Effects 5E metadata identifies the replacement as an internal relationship movement so it is not intercepted recursively.
 
-Consumers may subscribe to the synchronous `before` phase or asynchronous `after` phase, have an explicit priority, and declare an execution scope: initiating client, primary GM, or all clients. The default is the initiating client to prevent duplicate mechanical resolution.
+### External API movement
 
-## Movement transactions
+API, undo, and paste movement is not rejected in the before phase. Rejecting it would cause the calling module's movement promise to resolve as failed even though Action Effects 5E later moved the group. Instead, the leader completes its original operation and the initiating client requests a follower-only synchronization in the after phase. If a follower cannot safely synchronize after an external move, the affected relationship is detached rather than rewriting the external caller's completed result.
 
-Transactions preserve standardized semantic fields even when a feature does not use all of them yet:
+## Security
 
-- Path type
-- Agency
-- Resource
-- Movement mode
-- Source UUID
-- Initiator UUID
-- Leader and relationship IDs
-- Internal-operation and suppression metadata
+The GM-side socket handler does not trust arbitrary document or coordinate data blindly. It verifies:
 
-Action Effects 5E-initiated movements should use `api.movement.createOperationOptions()` so later systems can understand why a token moved.
+- The requesting user still exists.
+- The Scene and leader token still exist.
+- A non-GM requester owns the leader.
+- The leader remains at the intercepted origin.
+- Waypoints contain only approved primitive movement fields.
+- The current persisted relationship controls each follower.
+- Only a GM request may preserve an original ignore-walls movement option.
 
-## Relationships
+## Follower self-movement
 
-Relationships are persisted on the Scene under:
+Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are rejected when `followerCanSelfMove` is false. API, undo, and paste movement are not automatically blocked so external forced-movement and administrative systems remain possible. Later rules adapters will decide whether those movements break, preserve, or transform a relationship.
 
-```text
-flags.action-effects-5e.relationships
-```
+## Collision behavior
 
-Runtime maps provide constant-time checks by leader or follower UUID. Flags are changed only when a relationship is created, removed, or cleaned up.
+- `stopGroup`: reject the leader's requested movement when a rendered follower path is constrained.
+- `detach`: omit that follower and remove the relationship after successful leader movement.
+- If Foundry reports a partial group failure despite preflight, tokens that completed are restored to their origins with automation suppressed for Action Effects 5E.
 
-The foundation stores relationships but intentionally does not yet synchronize token positions. Automatic following will be implemented after the movement transaction layer has been tested in Foundry v14.
+Version 0.2.0 does not implement occupied-token collision or nearest-valid-square searching.
+
+## Teleport behavior
+
+- `detach`: move only the leader and remove the relationship after success.
+- `follow`: teleport the follower while preserving its offset.
+- `block`: reject the teleport.
+
+## Movement semantics
+
+The coordinated operation carries one transaction ID plus leader and relationship provenance. Movement transactions classify:
+
+- The leader as voluntary movement using its movement resource.
+- Each follower as passenger movement using no movement resource.
+
+This allows later Region, hazard, Opportunity Attack, and Grapple logic to distinguish traversal from agency.
 
 ## Compatibility
 
-The compatibility service detects:
-
-- `chris-premades`
-- `gambits-premades`
-
-No CPR or GPS API is required. The initial overlap policy is intentionally broad; later releases will add ownership controls for Opportunity Attacks, moving areas, auras, forced movement, and other overlapping subsystems.
+The coordinated movement uses ordinary Foundry movement APIs rather than private CPR or GPS functions. CPR and GPS can observe the resulting token movements normally. Action Effects 5E uses namespaced operation metadata and does not create reach Regions, reaction dialogs, or aura processing in this milestone.

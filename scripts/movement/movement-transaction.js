@@ -13,6 +13,13 @@ function getOperationMetadata(operation = {}) {
   return metadata && typeof metadata === "object" ? metadata : {};
 }
 
+function isTeleportAction(action) {
+  if (!action) return false;
+  const actions = globalThis.CONFIG?.Token?.movement?.actions;
+  const config = actions?.get?.(action) ?? actions?.[action];
+  return config?.teleport === true;
+}
+
 function inferPathType(movement, operation, metadata) {
   if (metadata.pathType) return metadata.pathType;
   if (operation?.teleport === true || metadata.teleport === true) return PATH_TYPES.TELEPORT;
@@ -20,30 +27,50 @@ function inferPathType(movement, operation, metadata) {
   const method = String(movement?.method ?? "").toLowerCase();
   if (method.includes("teleport")) return PATH_TYPES.TELEPORT;
   if (method.includes("fall")) return PATH_TYPES.FALL;
+  if (isTeleportAction(movement?.destination?.action) || isTeleportAction(movement?.action)) return PATH_TYPES.TELEPORT;
   if (metadata.administrative === true) return PATH_TYPES.REPOSITION;
   return PATH_TYPES.TRAVERSE;
 }
 
-function inferAgency(metadata) {
+function inferAgency(metadata, subjectUuid) {
+  if (metadata.relationshipMovement === true && metadata.leaderUuid && subjectUuid !== metadata.leaderUuid) {
+    return MOVEMENT_AGENCIES.PASSENGER;
+  }
   if (metadata.agency) return metadata.agency;
   if (metadata.administrative === true) return MOVEMENT_AGENCIES.ADMINISTRATIVE;
   return MOVEMENT_AGENCIES.UNKNOWN;
 }
 
-function inferResource(metadata) {
+function inferResource(metadata, subjectUuid) {
+  if (metadata.relationshipMovement === true && metadata.leaderUuid && subjectUuid !== metadata.leaderUuid) {
+    return MOVEMENT_RESOURCES.NONE;
+  }
   return metadata.resource ?? MOVEMENT_RESOURCES.UNKNOWN;
 }
 
 function extractWaypoints(movement) {
+  const passed = Array.isArray(movement?.passed?.waypoints) ? movement.passed.waypoints : [];
+  const pending = Array.isArray(movement?.pending?.waypoints) ? movement.pending.waypoints : [];
+  if (passed.length || pending.length) {
+    const combined = [...passed, ...pending];
+    return duplicateSafely(combined.filter((point, index) => {
+      if (!index) return true;
+      const previous = combined[index - 1];
+      return point?.x !== previous?.x
+        || point?.y !== previous?.y
+        || point?.elevation !== previous?.elevation;
+    }));
+  }
+
   const candidates = [
     movement?.waypoints,
-    movement?.passed?.waypoints,
-    movement?.history?.waypoints,
+    movement?.history?.unrecorded?.waypoints,
+    movement?.history?.recorded?.waypoints,
     movement?.history?.path
   ];
 
   for (const candidate of candidates) {
-    if (Array.isArray(candidate)) return duplicateSafely(candidate);
+    if (Array.isArray(candidate) && candidate.length) return duplicateSafely(candidate);
   }
 
   const points = [];
@@ -55,6 +82,9 @@ function extractWaypoints(movement) {
 export class MovementTransaction {
   constructor(data) {
     Object.assign(this, data);
+    if (this.origin && typeof this.origin === "object") Object.freeze(this.origin);
+    if (this.destination && typeof this.destination === "object") Object.freeze(this.destination);
+    if (Array.isArray(this.relationshipIds)) Object.freeze(this.relationshipIds);
     Object.freeze(this.metadata);
     Object.freeze(this.path);
     Object.freeze(this);
@@ -92,13 +122,15 @@ export class MovementTransaction {
       }),
       path: extractWaypoints(movement),
       pathType: inferPathType(movement, operation, metadata),
-      agency: inferAgency(metadata),
-      resource: inferResource(metadata),
+      agency: inferAgency(metadata, document.uuid),
+      resource: inferResource(metadata, document.uuid),
       movementMode: metadata.movementMode ?? movement?.destination?.action ?? movement?.action ?? null,
       sourceUuid: metadata.sourceUuid ?? null,
       initiatorUuid: metadata.initiatorUuid ?? null,
       leaderUuid: metadata.leaderUuid ?? null,
       relationshipId: metadata.relationshipId ?? null,
+      relationshipIds: duplicateSafely(metadata.relationshipIds ?? []),
+      requestingUserId: metadata.requestingUserId ?? null,
       generatedBy: metadata.generatedBy ?? null,
       internal: metadata.internal === true,
       suppressAutomation: metadata.suppressAutomation === true,
@@ -142,6 +174,8 @@ export class MovementTransaction {
       initiatorUuid: null,
       leaderUuid: null,
       relationshipId: null,
+      relationshipIds: [],
+      requestingUserId: null,
       generatedBy: MODULE_ID,
       internal: false,
       suppressAutomation: false,

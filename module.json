@@ -1,16 +1,16 @@
 {
   "id": "action-effects-5e",
   "title": "Action Effects 5E",
-  "description": "Reusable D&D5e automation infrastructure and premade effects for Foundry VTT, beginning with a low-overhead movement and spatial-event framework.",
-  "version": "0.1.1",
+  "description": "Reusable D&D5e automation infrastructure and premade effects for Foundry VTT, including a low-overhead movement and coordinated token relationship framework.",
+  "version": "0.2.2",
   "authors": [
     {
       "name": "Matthew Larrivee"
     }
   ],
   "compatibility": {
-    "minimum": "14",
-    "verified": "14"
+    "minimum": "14.357",
+    "verified": "14.365"
   },
   "relationships": {
     "systems": [

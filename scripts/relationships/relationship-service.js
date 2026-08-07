@@ -1,9 +1,11 @@
 import {
   ATTACHMENT_MODES,
+  COLLISION_POLICIES,
   HOOKS,
   MODULE_ID,
   RELATIONSHIP_TYPES,
-  SCENE_RELATIONSHIPS_FLAG
+  SCENE_RELATIONSHIPS_FLAG,
+  TELEPORT_POLICIES
 } from "../core/constants.js";
 import { duplicateSafely, nowIso, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
@@ -99,6 +101,15 @@ export class RelationshipService {
     });
   }
 
+  /**
+   * Remove relationships during a GM-authorized internal module operation.
+   * This is intentionally not exposed through the public API.
+   */
+  async removeManyAsGM(ids) {
+    this.#assertExecutingAsGM();
+    return this.#removeManyPersisted(new Set(ids));
+  }
+
   getStats() {
     return {
       relationships: this.#relationships.size,
@@ -120,6 +131,14 @@ export class RelationshipService {
       && relationship.type === normalized.type
     ));
     if (duplicate) throw new Error(`Relationship '${duplicate.id}' already links these tokens.`);
+
+    const existingFollower = this.getForFollower(normalized.followerUuid);
+    if (existingFollower.length) {
+      throw new Error(`Follower token is already controlled by relationship '${existingFollower[0].id}'.`);
+    }
+    if (this.getForFollower(normalized.leaderUuid).length || this.getForLeader(normalized.followerUuid).length) {
+      throw new Error("Relationship chains and cycles are not supported in Action Effects 5E v0.2.0.");
+    }
 
     const scene = game.scenes.get(normalized.sceneId);
     const relationships = this.#getSceneRelationships(scene);
@@ -158,22 +177,35 @@ export class RelationshipService {
       ...(this.#relationshipsByFollower.get(tokenUuid) ?? [])
     ]);
 
-    const affectedScenes = new Set();
+    return this.#removeManyPersisted(ids);
+  }
+
+  async #removeManyPersisted(ids) {
+    const affectedScenes = new Map();
+    const removed = [];
+
     for (const id of ids) {
       const relationship = this.#relationships.get(id);
       if (!relationship) continue;
-      affectedScenes.add(relationship.sceneId);
-      this.#unindex(relationship);
-      Hooks.callAll(HOOKS.RELATIONSHIP_REMOVED, duplicateSafely(relationship));
+      if (!affectedScenes.has(relationship.sceneId)) affectedScenes.set(relationship.sceneId, new Set());
+      affectedScenes.get(relationship.sceneId).add(id);
+      removed.push(relationship);
     }
 
-    for (const sceneId of affectedScenes) {
+    for (const [sceneId, sceneIds] of affectedScenes) {
       const scene = game.scenes.get(sceneId);
-      const relationships = this.#getSceneRelationships(scene).filter((entry) => !ids.has(entry.id));
+      if (!scene) continue;
+      const relationships = this.#getSceneRelationships(scene).filter((entry) => !sceneIds.has(entry.id));
       await scene.setFlag(MODULE_ID, SCENE_RELATIONSHIPS_FLAG, relationships);
     }
 
-    return ids.size;
+    for (const relationship of removed) {
+      this.#unindex(relationship);
+      Hooks.callAll(HOOKS.RELATIONSHIP_REMOVED, duplicateSafely(relationship));
+      Logger.debug("Removed relationship", relationship);
+    }
+
+    return removed.length;
   }
 
   async #normalizeRelationship(data = {}) {
@@ -202,8 +234,12 @@ export class RelationshipService {
       followerCanSelfMove: data.followerCanSelfMove ?? false,
       followElevation: data.followElevation ?? true,
       followRotation: data.followRotation ?? false,
-      teleportPolicy: data.teleportPolicy ?? "detach",
-      collisionPolicy: data.collisionPolicy ?? "stopGroup",
+      teleportPolicy: Object.values(TELEPORT_POLICIES).includes(data.teleportPolicy)
+        ? data.teleportPolicy
+        : TELEPORT_POLICIES.DETACH,
+      collisionPolicy: Object.values(COLLISION_POLICIES).includes(data.collisionPolicy)
+        ? data.collisionPolicy
+        : COLLISION_POLICIES.STOP_GROUP,
       breakDistance: Number.isFinite(Number(data.breakDistance)) ? Number(data.breakDistance) : null,
       sourceUuid: data.sourceUuid ?? null,
       metadata: duplicateSafely(data.metadata ?? {}),
@@ -246,6 +282,8 @@ export class RelationshipService {
       if (!relationship?.id || !relationship.leaderUuid || !relationship.followerUuid) continue;
       this.#index(Object.freeze(duplicateSafely(relationship)));
     }
+
+    Hooks.callAll(HOOKS.RELATIONSHIPS_REINDEXED, scene.id);
   }
 
   #onUpdateScene(scene, changes) {
@@ -260,6 +298,7 @@ export class RelationshipService {
       const relationship = this.#relationships.get(id);
       if (relationship) this.#unindex(relationship);
     }
+    Hooks.callAll(HOOKS.RELATIONSHIPS_REINDEXED, scene.id);
   }
 
   #getSceneRelationships(scene) {
