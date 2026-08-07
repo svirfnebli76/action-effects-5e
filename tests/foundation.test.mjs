@@ -479,6 +479,105 @@ test("relationship movement service indexes only involved tokens and blocks foll
   delete globalThis.ui;
 });
 
+test("manual leader replacement is deferred until the cancelled movement hook has unwound", async () => {
+  const registered = [];
+  const fakeMovement = {
+    registerConsumer(config) {
+      registered.push(config);
+      return () => {};
+    },
+    createOperationOptions(metadata) {
+      return { actionEffects5e: metadata };
+    },
+    registerMovementContext() { return () => {}; }
+  };
+  const relationship = {
+    id: "relationship-deferred",
+    leaderUuid: "Scene.scene.Token.leader",
+    followerUuid: "Scene.scene.Token.follower",
+    followerCanSelfMove: false
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === relationship.leaderUuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === relationship.followerUuid ? [relationship] : []
+  };
+
+  let executeCalls = 0;
+  let hookFrameOpen = true;
+  let executedWhileHookFrameOpen = null;
+  const fakeSocket = {
+    register() {},
+    async executeAsGM() {
+      executeCalls += 1;
+      executedWhileHookFrameOpen = hookFrameOpen;
+      return { completed: true };
+    }
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({
+    socket: fakeSocket,
+    relationships: fakeRelationships,
+    movement: fakeMovement
+  });
+  service.initialize();
+
+  const leaderHandler = registered.find((config) =>
+    config.tokenUuids?.includes(relationship.leaderUuid) && config.phases?.includes(MOVEMENT_PHASES.BEFORE)
+  )?.handler;
+  assert.equal(typeof leaderHandler, "function");
+
+  const result = leaderHandler({
+    subjectUuid: relationship.leaderUuid,
+    movementId: "manual-leader-move",
+    phase: MOVEMENT_PHASES.BEFORE,
+    method: "dragging",
+    pathType: PATH_TYPES.TRAVERSE,
+    movementMode: "walk",
+    sourceUuid: null,
+    origin: { x: 0, y: 0, elevation: 0 },
+    destination: { x: 100, y: 0, elevation: 0 },
+    metadata: {}
+  }, {
+    document: {
+      uuid: relationship.leaderUuid,
+      id: "leader",
+      parent: { id: "scene" },
+      x: 0,
+      y: 0,
+      elevation: 0
+    },
+    movement: {
+      method: "dragging",
+      autoRotate: false,
+      split: false,
+      constrainOptions: {},
+      origin: { x: 0, y: 0, elevation: 0 },
+      destination: { x: 100, y: 0, elevation: 0 },
+      pending: { waypoints: [{ x: 100, y: 0, elevation: 0, action: "walk" }] }
+    }
+  });
+
+  assert.equal(result, false);
+  assert.equal(executeCalls, 0);
+
+  // A microtask must not be sufficient to start the replacement. This models
+  // Foundry still unwinding the preMoveToken update which Action Effects rejected.
+  await Promise.resolve();
+  assert.equal(executeCalls, 0);
+
+  hookFrameOpen = false;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(executeCalls, 1);
+  assert.equal(executedWhileHookFrameOpen, false);
+  assert.equal(service.getStats().queuedRequests, 0);
+
+  service.shutdown();
+  delete globalThis.ui;
+});
+
 test("GM relationship movement executes one coordinated Scene.moveTokens operation", async () => {
   const scene = {
     id: "scene-group",

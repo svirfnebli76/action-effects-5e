@@ -11,7 +11,7 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.2: coordinated token relationships
+## Build 0.2.3: coordinated token relationships
 
 This build adds the first working attachment behavior on top of the validated 0.1.1 foundation:
 
@@ -30,13 +30,18 @@ This build adds the first working attachment behavior on top of the validated 0.
 - Relationship chains and cycles are rejected in this milestone.
 
 
+
+### v0.2.3 replacement-movement scheduling correction
+
+Manual leader movement is cancelled in `preMoveToken` and replaced with one coordinated `Scene.moveTokens()` operation. The replacement is now deferred to the **next event-loop task** rather than a microtask. This gives Foundry time to completely unwind the rejected original movement workflow before Action Effects 5E starts a new movement document update. External follower synchronization uses the same next-task boundary to avoid nested movement updates from inside `moveToken`.
+
 ### v0.2.2 movement identity correction
 
 Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those IDs must be valid Foundry UIDs. Action Effects 5E therefore uses opaque 16-character alphanumeric movement IDs and keeps module-specific semantic metadata in its transient movement-context registry. This prevents recursive relationship handling without placing namespaced strings into Foundry's validated movement-ID field.
 
 ### Current attachment scope
 
-Version 0.2.2 deliberately uses **fixed-offset following**. The `adjacentFollower` mode currently preserves its existing offset in the same way as `rigidOffset`; choosing a new legal adjacent square or rotating a grappled target around its grappler comes later.
+Version 0.2.3 deliberately uses **fixed-offset following**. The `adjacentFollower` mode currently preserves its existing offset in the same way as `rigidOffset`; choosing a new legal adjacent square or rotating a grappled target around its grappler comes later.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 

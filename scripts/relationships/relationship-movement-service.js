@@ -218,7 +218,10 @@ export class RelationshipMovementService {
     };
 
     this.#queuedMovementIds.add(transaction.movementId);
-    queueMicrotask(() => {
+    // Do not begin the replacement Scene.moveTokens() call from a microtask while
+    // Foundry is still unwinding the cancelled preMoveToken update. Yield to the
+    // next event-loop task so the original movement workflow fully concludes first.
+    setTimeout(() => {
       void this.#socket.executeAsGM("relationships.moveGroup", request)
         .then((result) => this.#notifyResult(result))
         .catch((error) => {
@@ -226,7 +229,7 @@ export class RelationshipMovementService {
           ui?.notifications?.error?.(`Action Effects 5E relationship movement failed: ${error.message}`);
         })
         .finally(() => this.#queuedMovementIds.delete(transaction.movementId));
-    });
+    }, 0);
 
     // Foundry v14 does not permit rewriting final waypoints in preMoveToken.
     // Cancel the original move and replace it with one Scene.moveTokens call.
@@ -262,7 +265,10 @@ export class RelationshipMovementService {
     };
 
     this.#queuedSyncIds.add(transaction.movementId);
-    queueMicrotask(() => {
+    // Avoid starting a second movement document update from inside Foundry's
+    // completed moveToken hook stack. A next-task handoff keeps relationship
+    // synchronization outside the movement workflow that triggered it.
+    setTimeout(() => {
       void this.#socket.executeAsGM("relationships.syncFollowers", request)
         .then((result) => this.#notifyResult(result))
         .catch((error) => {
@@ -270,7 +276,7 @@ export class RelationshipMovementService {
           ui?.notifications?.warn?.(`Action Effects 5E could not synchronize attached followers: ${error.message}`);
         })
         .finally(() => this.#queuedSyncIds.delete(transaction.movementId));
-    });
+    }, 0);
 
     return true;
   }
@@ -380,6 +386,12 @@ export class RelationshipMovementService {
       const failedIds = Object.entries(results).filter(([, completed]) => !completed).map(([id]) => id);
 
       if (failedIds.length) {
+        Logger.warn("Linked movement reported incomplete token movement; rolling back the group.", {
+          requestId,
+          leaderUuid: leader.uuid,
+          results,
+          failedIds
+        });
         await this.#rollbackCompletedTokens({ scene, results, origins, leaderUuid: leader.uuid });
         return {
           completed: false,

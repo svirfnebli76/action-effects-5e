@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 - Deferred replacement movement
+
+- Fixed manual coordinated movement being started from a microtask while Foundry was still unwinding the `preMoveToken` workflow that Action Effects 5E had just cancelled.
+- Replacement `Scene.moveTokens()` execution now yields to the next event-loop task before starting the coordinated group update.
+- External follower synchronization also yields to the next task so it does not begin a second token movement update from inside the completed `moveToken` hook stack.
+- Added a regression test that fails if the replacement request executes after only a microtask turn instead of waiting for the next task.
+- Added explicit failed-token result logging when Foundry reports an incomplete coordinated movement, making future live failures identify the rejected token IDs directly.
+
 ## 0.2.2 - Foundry-valid movement IDs
 
 - Fixed `Scene.moveTokens()` rejecting Action Effects 5E-generated movement IDs with `Invalid movement ID`.

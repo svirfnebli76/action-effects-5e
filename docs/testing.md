@@ -87,3 +87,8 @@ Look specifically for duplicate movement, duplicate reactions, movement freezing
 ## v0.2.2 regression check
 
 Generated internal movement IDs must be 16-character alphanumeric Foundry UIDs. After startup and before moving a linked token, `ae5e.relationships.getMovementStats()` should be idle and `ae5e.movement.getStats().movementContexts` should be `0`. During internal movement the context is transient and is removed when the operation completes. A non-zero value after movement settles indicates a leaked internal movement context.
+
+
+## v0.2.3 regression check
+
+For a manual leader drag or keyboard move, Action Effects 5E should reject the original `preMoveToken` operation and start the replacement coordinated movement only after the cancelled Foundry update has fully unwound. After movement settles, `movementContexts`, `pendingTransactions`, `queuedRequests`, and `activeLeaders` should all return to `0`. If Foundry reports a partial or stopped group move, the console now logs the exact `results` and `failedIds` before rollback.
