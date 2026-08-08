@@ -3407,6 +3407,133 @@ test("blocked orbital step atomically restores the triggering leader rotation an
   globalThis.CONFIG = previousConfig;
 });
 
+test("blocked orbital rollback restores the captured pre-update rotation when TokenDocument.rotation is stale", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const registrations = [];
+  const warnings = [];
+
+  globalThis.libWrapper = {
+    register(_moduleId, target, fn) { registrations.push({ target, fn }); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn(message) { warnings.push(message); }, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const scene = {
+    id: "scene-orbit-stale-rollback",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens() {
+      throw new Error("Blocked preflight must prevent follower movement.");
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({
+    uuid: "Scene.scene-orbit-stale-rollback.Token.leader",
+    id: "leader",
+    scene
+  });
+  Object.assign(leader, {
+    x: 100,
+    y: 100,
+    elevation: 0,
+    width: 1,
+    height: 1,
+    rotation: 270,
+    name: "Leader"
+  });
+  leader.update = async (changes, options = {}) => {
+    if (changes.rotation !== undefined) leader.rotation = changes.rotation;
+    Hooks.callAll("updateToken", leader, changes, options, game.user.id);
+    return leader;
+  };
+
+  const follower = new FakeTokenDocument({
+    uuid: "Scene.scene-orbit-stale-rollback.Token.follower",
+    id: "follower",
+    scene
+  });
+  Object.assign(follower, {
+    x: 0,
+    y: 100,
+    elevation: 0,
+    width: 1,
+    height: 1,
+    rotation: 0,
+    name: "Follower",
+    object: {
+      movementAnimationPromise: null,
+      constrainMovementPath(path) { return [path, true]; }
+    }
+  });
+
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  const leaderPlaceable = { document: leader };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-orbit-stale-rollback",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  const wheel = registrations.find((entry) => entry.target.includes("TokenLayer"));
+  const event = { ctrlKey: false, shiftKey: true, deltaY: 100 };
+
+  // Match the live Foundry v14.365 failure: updateToken announces 315° while
+  // TokenDocument.rotation is still the authoritative pre-update 270°. The GM
+  // can therefore still resolve the same document as 270° during preflight.
+  const wrappedNativeRotation = () => {
+    Hooks.callAll("updateToken", leader, { rotation: 315 }, {}, game.user.id);
+  };
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, wrappedNativeRotation, event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+
+  assert.equal(leader.rotation, 270, "Blocked +45° orbit must restore the captured 270° pre-update facing, not derive 225° from stale document state.");
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 100 }, "Blocked follower must remain in its original square.");
+  assert.match(warnings.at(-1), /cannot orbit/i);
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
 test("player mouse-wheel orbit is GM-authorized and never directly moves the follower on the player client", async () => {
   const previousLibWrapper = globalThis.libWrapper;
   const previousUi = globalThis.ui;

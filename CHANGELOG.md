@@ -1,3 +1,14 @@
+# Changelog
+
+## 0.3.1 - Deterministic blocked-orbit rollback
+
+- Fixed `collisionPolicy: stopGroup` orbital rotation restoring the leader one rotation quantum too far when Foundry v14 exposes the pre-update `TokenDocument.rotation` during asynchronous GM resolution.
+- Rotation events now capture the authoritative leader facing immediately before and after each native `updateToken` rotation and carry both snapshots through the GM-authorized Socketlib request.
+- GM orbit authorization validates that the captured before/after snapshots agree with the observed signed rotation delta.
+- Blocked, failed, and unsupported orbit paths now restore the exact captured pre-update leader rotation instead of reconstructing it from potentially stale document state.
+- Preserved the pre-event partial rotation accumulator so a blocked threshold can be retried naturally on a later qualifying increment.
+- Added a regression test matching the live Foundry v14.365 stale-document lifecycle that reproduced `270° -> requested 315° -> incorrect 225°`; the leader now restores exactly to `270°`.
+
 ## 0.3.0-hotfix.1 - Rotation lifecycle test hotfix
 
 - Fixed Foundry v14.365 `updateToken` rotation tracking to use `changes.rotation`, because the TokenDocument still exposes its pre-update rotation while the hook is running.
@@ -5,7 +16,6 @@
 - Added regression coverage for the live Foundry hook lifecycle and for resuming leader-controlled orbit after manually rotating the follower.
 - This is a focused test build; the planned v0.3.1 configuration/override work is not included.
 
-# Changelog
 
 ## 0.3.0 - Relationship orbital rotation
 

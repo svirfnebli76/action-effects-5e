@@ -277,12 +277,20 @@ export class RelationshipRotationService {
       return;
     }
 
-    const delta = RelationshipOrbitPlanner.signedRotationDelta(state.lastObservedRotation, currentRotation);
-    state.lastObservedRotation = currentRotation;
+    // Capture both ends of the native update before asynchronous GM
+    // authorization begins. Foundry v14 can still expose the pre-update
+    // TokenDocument.rotation while updateToken is running, so rollback must
+    // never reconstruct the previous facing from later document state.
+    const leaderRotationBefore = RelationshipOrbitPlanner.normalizeRotation(state.lastObservedRotation);
+    const leaderRotationAfter = currentRotation;
+    const delta = RelationshipOrbitPlanner.signedRotationDelta(leaderRotationBefore, leaderRotationAfter);
+    state.lastObservedRotation = leaderRotationAfter;
     if (Math.abs(delta) <= ROTATION_EPSILON) return;
 
     state.events.push({
       delta,
+      leaderRotationBefore,
+      leaderRotationAfter,
       generation: state.generation,
       observedAt: now
     });
@@ -398,7 +406,9 @@ export class RelationshipRotationService {
         followerPosition: { x: follower.x, y: follower.y, elevation: follower.elevation },
         direction,
         steps,
-        rotationDelta: event.delta
+        rotationDelta: event.delta,
+        leaderRotationBefore: event.leaderRotationBefore,
+        leaderRotationAfter: event.leaderRotationAfter
       };
 
       let result;
@@ -505,9 +515,21 @@ export class RelationshipRotationService {
     const direction = Math.sign(Number(request.direction));
     const steps = Math.trunc(Math.abs(Number(request.steps)));
     const rotationDelta = finiteNumber(request.rotationDelta);
-    if (!direction || !(steps >= 1 && steps <= 8) || rotationDelta === null || Math.abs(rotationDelta) > 360 + ROTATION_EPSILON) {
+    const leaderRotationBeforeValue = finiteNumber(request.leaderRotationBefore);
+    const leaderRotationAfterValue = finiteNumber(request.leaderRotationAfter);
+    if (!direction || !(steps >= 1 && steps <= 8) || rotationDelta === null
+      || leaderRotationBeforeValue === null || leaderRotationAfterValue === null
+      || Math.abs(rotationDelta) > 360 + ROTATION_EPSILON) {
       throw new Error("The orbital movement request contains invalid rotation data.");
     }
+
+    const leaderRotationBefore = RelationshipOrbitPlanner.normalizeRotation(leaderRotationBeforeValue);
+    const leaderRotationAfter = RelationshipOrbitPlanner.normalizeRotation(leaderRotationAfterValue);
+    const snapshotDelta = RelationshipOrbitPlanner.signedRotationDelta(leaderRotationBefore, leaderRotationAfter);
+    if (Math.abs(snapshotDelta - rotationDelta) > ROTATION_EPSILON) {
+      throw new Error("The orbital movement request contains inconsistent rotation data.");
+    }
+
     const maximumStepsForDelta = Math.max(1, Math.ceil((Math.abs(rotationDelta) + ORBIT_QUANTUM_DEGREES - ROTATION_EPSILON) / ORBIT_QUANTUM_DEGREES));
     if (steps > maximumStepsForDelta) throw new Error("The orbital movement request exceeds the observed rotation change.");
 
@@ -542,7 +564,7 @@ export class RelationshipRotationService {
           };
         }
 
-        const leaderRotation = await this.#rollbackLeaderRotation(leader, rotationDelta, requestId);
+        const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
         return {
           completed: false,
           collision: true,
@@ -608,7 +630,7 @@ export class RelationshipRotationService {
           };
         }
 
-        const leaderRotation = await this.#rollbackLeaderRotation(leader, rotationDelta, requestId);
+        const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
         return {
           completed: false,
           rolledBackRotation: true,
@@ -637,7 +659,7 @@ export class RelationshipRotationService {
       };
     } catch (error) {
       if (/currently supports|must occupy|square Scene grid/i.test(error.message ?? "")) {
-        const leaderRotation = await this.#rollbackLeaderRotation(leader, rotationDelta, requestId);
+        const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
         return {
           completed: false,
           unsupported: true,
@@ -670,9 +692,10 @@ export class RelationshipRotationService {
     return wasConstrained === true;
   }
 
-  async #rollbackLeaderRotation(leader, rotationDelta, requestId) {
-    const current = finiteNumber(leader.rotation, 0);
-    const target = RelationshipOrbitPlanner.normalizeRotation(current - rotationDelta);
+  async #rollbackLeaderRotation(leader, rollbackRotation, requestId) {
+    const target = RelationshipOrbitPlanner.normalizeRotation(
+      finiteNumber(rollbackRotation, leader.rotation)
+    );
     this.#rollbackLeaderUuids.add(leader.uuid);
     try {
       await leader.update({ rotation: target }, {
