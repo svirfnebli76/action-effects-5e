@@ -53,6 +53,10 @@ The GM-side socket handler does not trust arbitrary document or coordinate data 
 - Only a GM request may preserve an original ignore-walls movement option.
 - Primary-GM movement receipts are indexed for every relationship participant. Non-GM leader synchronization and follower-teleport detachment are validated against those receipts rather than trusting client-supplied coordinates or movement semantics.
 
+## External movement settlement
+
+External API/undo/paste leader movement is allowed to complete without replacing the caller's operation. In the after phase, AE5E deduplicates by stable `subpathId`, waits for logical `movement.finished`, and then waits for `movement.animation.ended` when Foundry provides that promise. This is necessary because Foundry 14.365 can commit the destination while the public TokenDocument and rendered token still expose animated/intermediate coordinates. Exact GM-side position validation and follower synchronization occur only after this settled lifecycle. Synthetic operations without animation metadata fall back to logical completion or the existing next-task handoff.
+
 ## Follower self-movement
 
 Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are rejected when `followerCanSelfMove` is false, except for movements classified as teleports. A follower teleport is allowed to complete and then breaks every relationship in which that token is the follower. API, undo, and paste movement are not automatically blocked so external forced-movement and administrative systems remain possible. Later rules adapters will decide whether other non-teleport movements break, preserve, or transform a relationship.
@@ -63,7 +67,7 @@ Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are reject
 - `detach`: omit that follower and remove the relationship after successful leader movement.
 - If Foundry reports a partial group failure despite preflight, tokens that completed are restored to their origins with automation suppressed for Action Effects 5E.
 
-Version 0.2.8 does not implement occupied-token collision or nearest-valid-square searching.
+Version 0.2.9 does not implement occupied-token collision or nearest-valid-square searching.
 
 ## Teleport behavior
 

@@ -1672,7 +1672,7 @@ test("adjacent follower preserves planar offset during pure vertical movement wh
   ]);
 });
 
-test("external elevation synchronization waits for movement.finished before validating the leader", async () => {
+test("external elevation synchronization waits for movement.finished and animation.ended before validating the leader", async () => {
   const scene = {
     id: "scene-external-elevation-finished",
     tokens: new FakeCollection(),
@@ -1751,7 +1751,9 @@ test("external elevation synchronization waits for movement.finished before vali
   assert.ok(leaderConsumer);
 
   let finishMovement;
+  let finishAnimation;
   const finished = new Promise((resolve) => { finishMovement = resolve; });
+  const animationEnded = new Promise((resolve) => { finishAnimation = resolve; });
   const transaction = {
     subjectUuid: leader.uuid,
     movementId: "elevation-move",
@@ -1773,12 +1775,25 @@ test("external elevation synchronization waits for movement.finished before vali
     metadata: {}
   };
 
-  const synchronization = leaderConsumer.handler(transaction, { movement: { finished } });
+  const synchronization = leaderConsumer.handler(transaction, {
+    movement: {
+      finished,
+      animation: { ended: animationEnded }
+    }
+  });
   await Promise.resolve();
-  assert.equal(scene.moveCalls.length, 0, "Follower synchronization must wait for the leader movement to finish.");
+  assert.equal(scene.moveCalls.length, 0, "Follower synchronization must wait for logical movement completion.");
+
+  // Live Foundry v14 can resolve movement.finished while the public TokenDocument
+  // is still animated at its origin even though the movement destination is final.
+  finishMovement(true);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(scene.moveCalls.length, 0, "Follower synchronization must also wait for animation.ended.");
+  assert.deepEqual({ x: leader.x, y: leader.y, elevation: leader.elevation }, { x: 2800, y: 2600, elevation: 0 });
 
   Object.assign(leader, { x: 2900, y: 2600, elevation: 10 });
-  finishMovement(true);
+  finishAnimation();
   assert.equal(await synchronization, true);
 
   assert.equal(scene.moveCalls.length, 1);
@@ -1792,7 +1807,7 @@ test("external elevation synchronization waits for movement.finished before vali
   game.scenes.delete(scene.id);
 });
 
-test("external checkpoint continuations synchronize once per stable Foundry subpath using the full route destination", async () => {
+test("external checkpoint continuations without an animation promise synchronize once per stable Foundry subpath", async () => {
   const scene = {
     id: "scene-external-subpath-finished",
     tokens: new FakeCollection(),
@@ -2012,7 +2027,12 @@ test("follower teleport bypasses manual movement lock and detaches its relations
   }, {});
   assert.equal(beforeResult, true);
 
-  const afterResult = await followerConsumer.handler({
+  let finishTeleportMovement;
+  let finishTeleportAnimation;
+  const teleportFinished = new Promise((resolve) => { finishTeleportMovement = resolve; });
+  const teleportAnimationEnded = new Promise((resolve) => { finishTeleportAnimation = resolve; });
+
+  const afterResultPromise = followerConsumer.handler({
     subjectUuid: follower.uuid,
     movementId: "follower-blink",
     phase: MOVEMENT_PHASES.AFTER,
@@ -2026,10 +2046,23 @@ test("follower teleport bypasses manual movement lock and detaches its relations
     sourceUuid: "Item.teleport",
     generatedBy: "test",
     metadata: {}
-  }, {});
-  assert.equal(afterResult, true);
+  }, {
+    movement: {
+      finished: teleportFinished,
+      animation: { ended: teleportAnimationEnded }
+    }
+  });
 
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await Promise.resolve();
+  assert.notEqual(relationship, null, "Follower teleport relationship must remain until movement completion.");
+  finishTeleportMovement(true);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.notEqual(relationship, null, "Follower teleport relationship must remain until animation settlement.");
+
+  finishTeleportAnimation();
+  const afterResult = await afterResultPromise;
+  assert.equal(afterResult, true);
   assert.equal(relationship, null);
   assert.equal(service.getStats().queuedFollowerDetaches, 0);
 

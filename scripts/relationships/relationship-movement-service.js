@@ -253,14 +253,14 @@ export class RelationshipMovementService {
       if (this.#queuedFollowerDetachIds.has(lifecycleKey)) return true;
 
       // Foundry's moveToken hook fires before the movement animation/document
-      // position has necessarily reached its final destination. The public
-      // TokenMovementOperation.finished promise resolves only after the entire
-      // movement has completed (including checkpoint continuations). Hold the
-      // stable subpath key while awaiting it so later continuation hooks cannot
-      // schedule duplicate detach operations.
+      // position has necessarily reached its final destination. Foundry can resolve
+      // TokenMovementOperation.finished while the live TokenDocument is still
+      // interpolating. Wait for both logical completion and animation settlement
+      // before exact-position validation. Hold the stable subpath key while
+      // awaiting so later continuation hooks cannot schedule duplicate detaches.
       this.#queuedFollowerDetachIds.add(lifecycleKey);
       try {
-        if (!await this.#awaitMovementFinished(context)) return true;
+        if (!await this.#awaitMovementSettled(context)) return true;
 
         const request = {
           requestId: `${MODULE_ID}-follower-teleport-${randomId(20)}`,
@@ -298,13 +298,13 @@ export class RelationshipMovementService {
       return true;
     }
 
-    // Hold the stable subpath key before awaiting movement.finished. Explicit
+    // Hold the stable subpath key before waiting for movement settlement. Explicit
     // checkpoints receive new movement IDs but keep the same subpathId, so only
     // the first after-hook for an external movement owns synchronization. Its
     // transaction already contains passed + pending waypoints for the full route.
     this.#queuedSyncIds.add(lifecycleKey);
     try {
-      if (!await this.#awaitMovementFinished(context)) return true;
+      if (!await this.#awaitMovementSettled(context)) return true;
 
       const destination = RelationshipMovementPlanner.finalWaypoint(waypoints)
         ?? transaction.destination;
@@ -335,8 +335,9 @@ export class RelationshipMovementService {
     return true;
   }
 
-  async #awaitMovementFinished(context = {}) {
-    const finished = context?.movement?.finished;
+  async #awaitMovementSettled(context = {}) {
+    const movement = context?.movement;
+    const finished = movement?.finished;
     if (!finished || typeof finished.then !== "function") {
       // Test/synthetic callers may not provide a live TokenMovementOperation.
       // Preserve the old next-task handoff as a compatibility fallback.
@@ -345,9 +346,20 @@ export class RelationshipMovementService {
     }
 
     try {
-      return await finished !== false;
+      if (await finished === false) return false;
     } catch (error) {
       Logger.debug("Movement completion promise rejected before relationship synchronization.", error);
+      return false;
+    }
+
+    const animationEnded = movement?.animation?.ended;
+    if (!animationEnded || typeof animationEnded.then !== "function") return true;
+
+    try {
+      await animationEnded;
+      return true;
+    } catch (error) {
+      Logger.debug("Movement animation promise rejected before relationship synchronization.", error);
       return false;
     }
   }

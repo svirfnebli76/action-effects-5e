@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.9 - Animation-settled external synchronization
+
+- Fixed the remaining external/API follower synchronization race observed during live elevation movement on Foundry 14.365.
+- Live timing confirmed `TokenMovementOperation.finished` can resolve while the live TokenDocument and canvas token are still animated at the origin, even though the movement destination is already committed.
+- Renamed the internal completion helper to `#awaitMovementSettled()` to reflect the distinction between logical movement completion and reliable final live coordinates.
+- External leader synchronization now waits for `movement.finished` and, when available, `movement.animation.ended` before exact-position validation.
+- Follower-teleport relationship detachment uses the same settled-movement lifecycle before GM-side validation.
+- Synthetic/test callers and movement operations without an animation promise retain the existing next-task/logical-completion fallback.
+- Added regression coverage that resolves `movement.finished` while leaving the leader at its origin, then moves the leader to the destination only when `animation.ended` resolves.
+- Strengthened follower-teleport coverage to prove relationships remain attached until both movement completion and animation settlement.
+
 ## 0.2.8 - Movement completion and elevation-safe trailing
 
 - Fixed external/API leader follower synchronization racing Foundry's movement animation/document state.
