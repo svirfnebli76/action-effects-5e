@@ -11,7 +11,7 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.9: animation-settled external sync and elevation trailing
+## Build 0.2.10: terminal-subpath external sync and elevation trailing
 
 This build adds the first working attachment behavior on top of the validated 0.1.1 foundation:
 
@@ -32,6 +32,11 @@ This build adds the first working attachment behavior on top of the validated 0.
 
 
 
+
+
+### v0.2.10 terminal-subpath external synchronization
+
+Foundry splits an external/API route at explicit checkpoints into multiple movement operations that share a stable `subpathId`. AE5E now waits for the **terminal** operation before synchronizing followers. Earlier checkpoint legs are ignored even when they already expose future `pending.waypoints`. On the terminal operation, AE5E reconstructs the complete route from Foundry's current-subpath history plus the terminal passed waypoints, then performs the existing logical + animation settlement checks before exact-position validation. This prevents the first checkpoint from racing the later continuation and keeps `adjacentFollower` one planar space behind across API-driven multi-turn routes. Primary-GM receipts use the same terminal full-subpath reconstruction so non-GM synchronization never trusts a client-supplied path.
 
 ### v0.2.9 animation-settled external synchronization
 
@@ -75,7 +80,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.2.9 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
+Version 0.2.10 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 

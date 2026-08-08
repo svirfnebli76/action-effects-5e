@@ -1128,6 +1128,179 @@ test("non-GM external synchronization requires and trusts the GM movement receip
   game.users.delete(player.id);
 });
 
+test("non-GM terminal checkpoint synchronization trusts a primary-GM full-subpath receipt", async () => {
+  const player = { id: "player-terminal-subpath", isGM: false, active: true };
+  game.users.set(player.id, player);
+
+  const scene = {
+    id: "scene-terminal-subpath-receipt",
+    tokens: new FakeCollection(),
+    moveCalls: [],
+    grid: null,
+    async moveTokens(instructions, options) {
+      assertGeneratedMovementInstructions(instructions);
+      this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
+      return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({
+    uuid: "Scene.scene-terminal-subpath-receipt.Token.leader",
+    id: "leader",
+    scene,
+    owner: true
+  });
+  Object.assign(leader, { x: 200, y: 200, elevation: 0, name: "Leader" });
+  const follower = new FakeTokenDocument({
+    uuid: "Scene.scene-terminal-subpath-receipt.Token.follower",
+    id: "follower",
+    scene
+  });
+  Object.assign(follower, { x: 0, y: -100, elevation: 0, name: "Follower", object: null });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+
+  const documents = new Map([[leader.uuid, leader], [follower.uuid, follower]]);
+  globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
+
+  const relationship = {
+    id: "relationship-terminal-subpath-receipt",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    followerCanSelfMove: false,
+    followElevation: true,
+    followRotation: false,
+    teleportPolicy: "detach",
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const handlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { handlers.set(name, handler); },
+    async executeAsGM(name, request) { return handlers.get(name)(request); }
+  };
+  const consumers = [];
+  const fakeMovement = {
+    registerConsumer(config) { consumers.push(config); return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: { generatedBy: "action-effects-5e", ...metadata } }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  const receiptConsumer = consumers.find((consumer) => (
+    consumer.execution === "primaryGM"
+    && consumer.tokenUuids[0] === leader.uuid
+  ));
+  assert.ok(receiptConsumer);
+
+  const subpathId = "receipt-subpath-id";
+  const toJsonTransaction = (data) => ({
+    ...data,
+    metadata: {},
+    toJSON() { return structuredClone({ ...this, toJSON: undefined }); }
+  });
+
+  receiptConsumer.handler(toJsonTransaction({
+    movementId: "receipt-first-leg",
+    subpathId,
+    subjectUuid: leader.uuid,
+    sceneId: scene.id,
+    userId: player.id,
+    origin: { x: 0, y: 0, elevation: 0 },
+    destination: { x: 200, y: 0, elevation: 0 },
+    path: [
+      { x: 100, y: 0, elevation: 0 },
+      { x: 200, y: 0, elevation: 0, checkpoint: true }
+    ],
+    pathType: PATH_TYPES.TRAVERSE,
+    movementMode: "walk",
+    sourceUuid: null,
+    generatedBy: "external-module"
+  }), {
+    movement: {
+      pending: { waypoints: [{ x: 200, y: 200, elevation: 0, subpathId, checkpoint: true }] }
+    }
+  });
+  assert.equal(service.getStats().movementReceipts, 0, "Non-terminal legs must not create GM synchronization receipts.");
+
+  const terminalTransaction = toJsonTransaction({
+    movementId: "receipt-terminal-leg",
+    subpathId,
+    subjectUuid: leader.uuid,
+    sceneId: scene.id,
+    userId: player.id,
+    origin: { x: 200, y: 0, elevation: 0 },
+    destination: { x: 200, y: 200, elevation: 0 },
+    path: [
+      { x: 200, y: 100, elevation: 0 },
+      { x: 200, y: 200, elevation: 0, checkpoint: true }
+    ],
+    pathType: PATH_TYPES.TRAVERSE,
+    movementMode: "walk",
+    sourceUuid: null,
+    generatedBy: "external-module"
+  });
+  receiptConsumer.handler(terminalTransaction, {
+    movement: {
+      id: "receipt-terminal-leg",
+      history: {
+        recorded: { waypoints: [] },
+        unrecorded: {
+          waypoints: [
+            { x: 0, y: 0, elevation: 0, subpathId, checkpoint: true },
+            { x: 100, y: 0, elevation: 0, subpathId, checkpoint: false },
+            { x: 200, y: 0, elevation: 0, subpathId, explicit: true, checkpoint: true }
+          ]
+        }
+      },
+      passed: {
+        waypoints: [
+          { x: 200, y: 100, elevation: 0, subpathId, checkpoint: false },
+          { x: 200, y: 200, elevation: 0, subpathId, checkpoint: true }
+        ]
+      },
+      pending: { waypoints: [] }
+    }
+  });
+  assert.equal(service.getStats().movementReceipts, 1);
+
+  const result = await handlers.get("relationships.syncFollowers")({
+    requestId: "request-terminal-subpath-receipt",
+    requestingUserId: player.id,
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    originalMovementId: "receipt-terminal-leg",
+    // Deliberately forged values. The primary-GM full-subpath receipt must win.
+    origin: { x: 999, y: 999, elevation: 99 },
+    destination: { x: 999, y: 999, elevation: 99 },
+    waypoints: [{ x: 999, y: 999, elevation: 99 }]
+  });
+
+  assert.equal(result.completed, true);
+  assert.deepEqual(scene.moveCalls[0].instructions.follower.waypoints, [
+    { x: 0, y: 0, elevation: 0, checkpoint: true },
+    { x: 100, y: 0, elevation: 0, checkpoint: false },
+    { x: 200, y: 0, elevation: 0, explicit: true, checkpoint: true },
+    { x: 200, y: 100, elevation: 0, checkpoint: true }
+  ]);
+  assert.equal(service.getStats().movementReceipts, 0, "The trusted terminal receipt should be consumed after synchronization.");
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  game.users.delete(player.id);
+});
+
 test("blocked follower path stops coordinated movement before Scene.moveTokens", async () => {
   const scene = {
     id: "scene-collision-stop",
@@ -1807,11 +1980,12 @@ test("external elevation synchronization waits for movement.finished and animati
   game.scenes.delete(scene.id);
 });
 
-test("external checkpoint continuations without an animation promise synchronize once per stable Foundry subpath", async () => {
+test("terminal external checkpoint operation reconstructs the full subpath and synchronizes exactly once", async () => {
   const scene = {
-    id: "scene-external-subpath-finished",
+    id: "scene-external-subpath-terminal",
     tokens: new FakeCollection(),
     moveCalls: [],
+    grid: null,
     async moveTokens(instructions, options) {
       assertGeneratedMovementInstructions(instructions);
       this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
@@ -1820,9 +1994,9 @@ test("external checkpoint continuations without an animation promise synchronize
   };
   game.scenes.set(scene.id, scene);
 
-  const leader = new FakeTokenDocument({ uuid: "Scene.scene-external-subpath-finished.Token.leader", id: "leader", scene });
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-external-subpath-terminal.Token.leader", id: "leader", scene });
   Object.assign(leader, { x: 0, y: 0, elevation: 0, name: "Leader" });
-  const follower = new FakeTokenDocument({ uuid: "Scene.scene-external-subpath-finished.Token.follower", id: "follower", scene });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-external-subpath-terminal.Token.follower", id: "follower", scene });
   Object.assign(follower, { x: 0, y: -100, elevation: 0, name: "Follower", object: null });
   scene.tokens.set(leader.id, leader);
   scene.tokens.set(follower.id, follower);
@@ -1831,7 +2005,7 @@ test("external checkpoint continuations without an animation promise synchronize
   globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
 
   const relationship = {
-    id: "relationship-external-subpath-finished",
+    id: "relationship-external-subpath-terminal",
     sceneId: scene.id,
     leaderUuid: leader.uuid,
     followerUuid: follower.uuid,
@@ -1867,12 +2041,11 @@ test("external checkpoint continuations without an animation promise synchronize
   const leaderConsumer = consumers.find((consumer) => consumer.execution === "initiator" && consumer.tokenUuids[0] === leader.uuid);
   assert.ok(leaderConsumer);
 
-  let finishMovement;
-  const finished = new Promise((resolve) => { finishMovement = resolve; });
-  const first = leaderConsumer.handler({
+  const subpathId = "stable-subpath-id";
+  const firstTransaction = {
     subjectUuid: leader.uuid,
     movementId: "first-leg-id",
-    subpathId: "stable-subpath-id",
+    subpathId,
     phase: MOVEMENT_PHASES.AFTER,
     method: "api",
     pathType: PATH_TYPES.TRAVERSE,
@@ -1884,52 +2057,125 @@ test("external checkpoint continuations without an animation promise synchronize
     path: [
       { x: 100, y: 0, elevation: 0, action: "walk", checkpoint: false },
       { x: 200, y: 0, elevation: 0, action: "walk", explicit: true, checkpoint: true },
-      { x: 200, y: 100, elevation: 0, action: "walk", checkpoint: true }
+      { x: 200, y: 100, elevation: 0, action: "walk", checkpoint: false },
+      { x: 200, y: 200, elevation: 0, action: "walk", checkpoint: true }
     ],
     sourceUuid: null,
     generatedBy: "external-module",
     metadata: {}
-  }, { movement: { finished } });
+  };
 
-  const continuation = await leaderConsumer.handler({
-    subjectUuid: leader.uuid,
-    movementId: "second-leg-id",
-    subpathId: "stable-subpath-id",
-    phase: MOVEMENT_PHASES.AFTER,
-    method: "api",
-    pathType: PATH_TYPES.TRAVERSE,
-    movementMode: "walk",
-    sceneId: scene.id,
-    userId: gmUser.id,
-    origin: { x: 200, y: 0, elevation: 0 },
-    destination: { x: 200, y: 100, elevation: 0 },
-    path: [{ x: 200, y: 100, elevation: 0, action: "walk", checkpoint: true }],
-    sourceUuid: null,
-    generatedBy: "external-module",
-    metadata: {}
-  }, { movement: { finished } });
-  assert.equal(continuation, true);
-  assert.equal(scene.moveCalls.length, 0);
-
-  Object.assign(leader, { x: 200, y: 100, elevation: 0 });
-  finishMovement(true);
-  assert.equal(await first, true);
-
-  assert.equal(scene.moveCalls.length, 1, "Only the first transaction in a stable subpath should synchronize followers.");
-  assert.deepEqual(scene.moveCalls[0].instructions.follower.waypoints.at(-1), {
-    x: 200,
-    y: 0,
-    elevation: 0,
-    action: "walk",
-    explicit: true,
-    checkpoint: true
+  const firstResult = await leaderConsumer.handler(firstTransaction, {
+    movement: {
+      id: "first-leg-id",
+      pending: {
+        waypoints: [
+          { x: 200, y: 100, elevation: 0, subpathId, checkpoint: false },
+          { x: 200, y: 200, elevation: 0, subpathId, checkpoint: true }
+        ]
+      }
+    }
   });
+  assert.equal(firstResult, true);
+  assert.equal(scene.moveCalls.length, 0, "A non-terminal checkpoint leg must not synchronize followers.");
+  assert.equal(service.getStats().queuedExternalSyncs, 0);
+
+  Object.assign(leader, { x: 200, y: 200, elevation: 0 });
+  const terminalTransaction = {
+    ...firstTransaction,
+    movementId: "terminal-leg-id",
+    origin: { x: 200, y: 0, elevation: 0 },
+    destination: { x: 200, y: 200, elevation: 0 },
+    path: [
+      { x: 200, y: 100, elevation: 0, action: "walk", checkpoint: false },
+      { x: 200, y: 200, elevation: 0, action: "walk", checkpoint: true }
+    ]
+  };
+
+  const terminalMovement = {
+    id: "terminal-leg-id",
+    origin: { x: 200, y: 0, elevation: 0, subpathId },
+    destination: { x: 200, y: 200, elevation: 0, subpathId },
+    history: {
+      recorded: { waypoints: [] },
+      unrecorded: {
+        waypoints: [
+          { x: 0, y: 0, elevation: 0, subpathId, checkpoint: true },
+          { x: 100, y: 0, elevation: 0, subpathId, checkpoint: false },
+          { x: 200, y: 0, elevation: 0, subpathId, explicit: true, checkpoint: true }
+        ]
+      }
+    },
+    passed: {
+      waypoints: [
+        { x: 200, y: 100, elevation: 0, subpathId, checkpoint: false },
+        { x: 200, y: 200, elevation: 0, subpathId, checkpoint: true }
+      ]
+    },
+    pending: { waypoints: [] }
+  };
+
+  assert.equal(await leaderConsumer.handler(terminalTransaction, { movement: terminalMovement }), true);
+  assert.equal(scene.moveCalls.length, 1, "Only the terminal operation should synchronize followers.");
+  assert.deepEqual(scene.moveCalls[0].instructions.follower.waypoints, [
+    { x: 0, y: 0, elevation: 0, checkpoint: true },
+    { x: 100, y: 0, elevation: 0, checkpoint: false },
+    { x: 200, y: 0, elevation: 0, explicit: true, checkpoint: true },
+    { x: 200, y: 100, elevation: 0, checkpoint: true }
+  ]);
   assert.equal(service.getStats().queuedExternalSyncs, 0);
 
   service.shutdown();
   delete globalThis.ui;
   game.scenes.delete(scene.id);
 });
+
+test("full subpath extraction preserves multiple checkpoint legs from Foundry history", async () => {
+  const { RelationshipMovementPlanner } = await import("../scripts/relationships/relationship-movement-planner.js");
+  const subpathId = "multi-checkpoint-subpath";
+  const movement = {
+    id: "terminal-id",
+    origin: { x: 200, y: 100, elevation: 0, subpathId },
+    destination: { x: 300, y: 200, elevation: 0, subpathId },
+    history: {
+      recorded: { waypoints: [] },
+      unrecorded: {
+        waypoints: [
+          { x: 0, y: 0, elevation: 0, subpathId, checkpoint: true },
+          { x: 100, y: 0, elevation: 0, subpathId, checkpoint: false },
+          { x: 200, y: 0, elevation: 0, subpathId, explicit: true, checkpoint: true },
+          { x: 200, y: 100, elevation: 0, subpathId, explicit: true, checkpoint: true }
+        ]
+      }
+    },
+    passed: {
+      waypoints: [
+        { x: 300, y: 100, elevation: 0, subpathId, checkpoint: false },
+        { x: 300, y: 200, elevation: 0, subpathId, explicit: true, checkpoint: true }
+      ]
+    },
+    pending: { waypoints: [] }
+  };
+
+  const route = RelationshipMovementPlanner.extractFullSubpathRoute(movement, {
+    subpathId,
+    origin: { x: 200, y: 100, elevation: 0 },
+    destination: { x: 300, y: 200, elevation: 0 },
+    path: movement.passed.waypoints
+  });
+
+  assert.equal(route.terminal, true);
+  assert.deepEqual(route.origin, { x: 0, y: 0, elevation: 0 });
+  assert.deepEqual(route.waypoints, [
+    { x: 100, y: 0, elevation: 0, checkpoint: false },
+    { x: 200, y: 0, elevation: 0, explicit: true, checkpoint: true },
+    { x: 200, y: 100, elevation: 0, explicit: true, checkpoint: true },
+    { x: 300, y: 100, elevation: 0, checkpoint: false },
+    { x: 300, y: 200, elevation: 0, explicit: true, checkpoint: true }
+  ]);
+  assert.deepEqual(route.destination, { x: 300, y: 200, elevation: 0 });
+});
+
 
 test("follower teleport bypasses manual movement lock and detaches its relationship after completion", async () => {
   const scene = {

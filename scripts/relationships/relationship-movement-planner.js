@@ -99,6 +99,93 @@ export class RelationshipMovementPlanner {
     return this.ensureTerminalCheckpoint(waypoints);
   }
 
+  static isTerminalSubpathMovement(movement = {}) {
+    const pending = movement?.pending?.waypoints;
+    return !Array.isArray(pending) || pending.length === 0;
+  }
+
+  static extractFullSubpathRoute(movement = {}, transaction = {}) {
+    const subpathId = transaction?.subpathId
+      ?? movement?.subpathId
+      ?? movement?.origin?.subpathId
+      ?? movement?.destination?.subpathId
+      ?? movement?.passed?.waypoints?.find?.((point) => typeof point?.subpathId === "string" && point.subpathId.length)?.subpathId
+      ?? movement?.pending?.waypoints?.find?.((point) => typeof point?.subpathId === "string" && point.subpathId.length)?.subpathId
+      ?? null;
+
+    const belongsToSubpath = (point) => {
+      if (!point) return false;
+      if (!subpathId) return true;
+      return point.subpathId === subpathId;
+    };
+
+    const recorded = Array.isArray(movement?.history?.recorded?.waypoints)
+      ? movement.history.recorded.waypoints.filter(belongsToSubpath)
+      : [];
+    const unrecorded = Array.isArray(movement?.history?.unrecorded?.waypoints)
+      ? movement.history.unrecorded.waypoints.filter(belongsToSubpath)
+      : [];
+    const passed = Array.isArray(movement?.passed?.waypoints)
+      ? movement.passed.waypoints.filter(belongsToSubpath)
+      : [];
+    const pending = Array.isArray(movement?.pending?.waypoints)
+      ? movement.pending.waypoints.filter(belongsToSubpath)
+      : [];
+
+    const history = unrecorded.length ? unrecorded : recorded;
+    const raw = [...history, ...passed, ...pending];
+
+    if (!raw.length) {
+      const origin = this.sanitizePosition(transaction?.origin ?? movement?.origin, "subpath origin");
+      const waypoints = this.extractTransactionWaypoints(transaction);
+      return {
+        subpathId,
+        terminal: this.isTerminalSubpathMovement(movement),
+        origin,
+        waypoints,
+        destination: this.sanitizePosition(this.finalWaypoint(waypoints) ?? transaction?.destination ?? movement?.destination, "subpath destination")
+      };
+    }
+
+    const normalized = [];
+    for (const candidate of raw) {
+      const waypoint = sanitizeWaypoint(candidate);
+      const previous = normalized.at(-1);
+      if (previous && positionsEqual(previous, waypoint)) {
+        const checkpoint = previous.checkpoint === true || candidate?.checkpoint === true;
+        const explicit = previous.explicit === true || candidate?.explicit === true;
+        copyWaypointFields(candidate, previous);
+        if (checkpoint) previous.checkpoint = true;
+        if (explicit) previous.explicit = true;
+        continue;
+      }
+      normalized.push(waypoint);
+    }
+
+    const fallbackOrigin = transaction?.origin ?? movement?.origin;
+    const first = normalized.at(0);
+    const origin = history.length
+      ? this.sanitizePosition(first, "subpath origin")
+      : this.sanitizePosition(fallbackOrigin, "subpath origin");
+
+    const waypoints = history.length ? normalized.slice(1) : normalized;
+    if (!waypoints.length) {
+      waypoints.push(this.sanitizePosition(transaction?.destination ?? movement?.destination, "subpath destination"));
+    }
+    if (waypoints.length > MAX_WAYPOINTS) {
+      throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} waypoints.`);
+    }
+
+    const cleanWaypoints = this.ensureTerminalCheckpoint(waypoints);
+    return {
+      subpathId,
+      terminal: this.isTerminalSubpathMovement(movement),
+      origin,
+      waypoints: cleanWaypoints,
+      destination: this.sanitizePosition(this.finalWaypoint(cleanWaypoints), "subpath destination")
+    };
+  }
+
   static sanitizeWaypoints(waypoints) {
     if (!Array.isArray(waypoints) || !waypoints.length) throw new Error("The movement path is empty.");
     if (waypoints.length > MAX_WAYPOINTS) throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} waypoints.`);

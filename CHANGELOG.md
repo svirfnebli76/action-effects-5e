@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.10 - Terminal-subpath external synchronization
+
+- Fixed external/API multi-checkpoint leader movement attempting follower synchronization after the first checkpoint operation instead of after the terminal Foundry movement operation.
+- Non-terminal checkpoint legs are now ignored for external follower synchronization; only the terminal operation of the stable `subpathId` can synchronize followers.
+- Added full-subpath reconstruction from Foundry movement history plus the terminal operation's passed waypoints, preserving the original route origin and every checkpoint leg.
+- External `adjacentFollower` synchronization now receives the complete historical route and ends one planar space behind the leader even when an API route contains one or more explicit checkpoints.
+- Primary-GM movement receipts are now terminal-subpath receipts: non-terminal legs do not create synchronization receipts, and the terminal receipt stores the GM-observed full route rather than trusting client-supplied path data.
+- Follower teleport detachment follows the same terminal-subpath rule for multi-operation teleports.
+- Retained v0.2.9 movement settlement: the terminal operation still waits for both `movement.finished` and `movement.animation.ended` when available before exact live-position validation.
+- Added regression coverage for terminal-only synchronization, full route reconstruction across multiple checkpoints, and non-GM full-subpath receipt validation.
+
 ## 0.2.9 - Animation-settled external synchronization
 
 - Fixed the remaining external/API follower synchronization race observed during live elevation movement on Foundry 14.365.

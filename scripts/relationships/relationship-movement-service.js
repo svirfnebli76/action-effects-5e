@@ -135,13 +135,33 @@ export class RelationshipMovementService {
     }
   }
 
-  #recordMovementReceipt(transaction) {
+  #recordMovementReceipt(transaction, context = {}) {
     const metadata = transaction.metadata ?? {};
     if (metadata.relationshipMovement === true && metadata.generatedBy === MODULE_ID) return true;
     if (!this.#positionChanged(transaction.origin, transaction.destination)) return true;
 
+    // Explicit checkpoints split one Foundry route into multiple movement
+    // operations. Only the terminal operation is authoritative for follower
+    // synchronization or follower-teleport detachment. Recording a receipt for
+    // an earlier leg lets a non-GM client request synchronization before the
+    // overall subpath has actually reached its final destination.
+    if (!RelationshipMovementPlanner.isTerminalSubpathMovement(context?.movement)) return true;
+
+    let trusted = transaction.toJSON();
+    try {
+      const route = RelationshipMovementPlanner.extractFullSubpathRoute(context?.movement, trusted);
+      trusted = {
+        ...trusted,
+        origin: duplicateSafely(route.origin),
+        destination: duplicateSafely(route.destination),
+        path: duplicateSafely(route.waypoints)
+      };
+    } catch (error) {
+      Logger.debug("Could not reconstruct the full terminal subpath for a primary-GM movement receipt; using the transaction path.", error);
+    }
+
     this.#movementReceipts.set(transaction.movementId, {
-      transaction: transaction.toJSON(),
+      transaction: trusted,
       recordedAt: Date.now()
     });
     while (this.#movementReceipts.size > MAX_RECENT_REQUESTS) {
@@ -248,28 +268,28 @@ export class RelationshipMovementService {
     if (!this.#positionChanged(transaction.origin, transaction.destination)) return true;
 
     const lifecycleKey = transaction.subpathId ?? transaction.movementId;
+    const terminalSubpath = RelationshipMovementPlanner.isTerminalSubpathMovement(context?.movement);
     const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid);
     if (followerRelationships.length && transaction.pathType === PATH_TYPES.TELEPORT) {
+      // A checkpointed teleport (or another module which models teleportation as
+      // multiple Foundry movement operations) may produce several after-hooks for
+      // one subpath. Detach only after the terminal operation has settled.
+      if (!terminalSubpath) return true;
       if (this.#queuedFollowerDetachIds.has(lifecycleKey)) return true;
 
-      // Foundry's moveToken hook fires before the movement animation/document
-      // position has necessarily reached its final destination. Foundry can resolve
-      // TokenMovementOperation.finished while the live TokenDocument is still
-      // interpolating. Wait for both logical completion and animation settlement
-      // before exact-position validation. Hold the stable subpath key while
-      // awaiting so later continuation hooks cannot schedule duplicate detaches.
       this.#queuedFollowerDetachIds.add(lifecycleKey);
       try {
         if (!await this.#awaitMovementSettled(context)) return true;
 
+        const route = RelationshipMovementPlanner.extractFullSubpathRoute(context?.movement, transaction);
         const request = {
           requestId: `${MODULE_ID}-follower-teleport-${randomId(20)}`,
           requestingUserId: transaction.userId ?? game.user.id,
           sceneId: transaction.sceneId,
           followerUuid: transaction.subjectUuid,
           originalMovementId: transaction.movementId,
-          origin: duplicateSafely(transaction.origin),
-          destination: duplicateSafely(transaction.destination),
+          origin: duplicateSafely(route.origin),
+          destination: duplicateSafely(route.destination),
           pathType: transaction.pathType,
           movementMode: transaction.movementMode,
           sourceUuid: transaction.sourceUuid,
@@ -288,35 +308,37 @@ export class RelationshipMovementService {
     }
 
     if (!this.#relationships.getForLeader(transaction.subjectUuid).length) return true;
+
+    // Foundry splits an external route at explicit checkpoints. Non-terminal
+    // operations can already expose future pending waypoints, but the live leader
+    // has only reached the current checkpoint. Synchronizing from that first leg
+    // races the continuation and causes exact-position validation against the
+    // overall final destination to fail. Ignore intermediate legs completely; the
+    // terminal operation carries the earlier route in movement.history.
+    if (!terminalSubpath) return true;
     if (this.#queuedSyncIds.has(lifecycleKey)) return true;
 
-    let waypoints;
+    let route;
     try {
-      waypoints = RelationshipMovementPlanner.extractTransactionWaypoints(transaction);
+      route = RelationshipMovementPlanner.extractFullSubpathRoute(context?.movement, transaction);
     } catch (error) {
-      Logger.error("Could not read an external leader movement path for follower synchronization.", error);
+      Logger.error("Could not reconstruct the terminal external leader subpath for follower synchronization.", error);
       return true;
     }
 
-    // Hold the stable subpath key before waiting for movement settlement. Explicit
-    // checkpoints receive new movement IDs but keep the same subpathId, so only
-    // the first after-hook for an external movement owns synchronization. Its
-    // transaction already contains passed + pending waypoints for the full route.
     this.#queuedSyncIds.add(lifecycleKey);
     try {
       if (!await this.#awaitMovementSettled(context)) return true;
 
-      const destination = RelationshipMovementPlanner.finalWaypoint(waypoints)
-        ?? transaction.destination;
       const request = {
         requestId: `${MODULE_ID}-external-sync-${randomId(20)}`,
         requestingUserId: transaction.userId ?? game.user.id,
         sceneId: transaction.sceneId,
         leaderUuid: transaction.subjectUuid,
         originalMovementId: transaction.movementId,
-        origin: duplicateSafely(transaction.origin),
-        destination: duplicateSafely(destination),
-        waypoints,
+        origin: duplicateSafely(route.origin),
+        destination: duplicateSafely(route.destination),
+        waypoints: duplicateSafely(route.waypoints),
         pathType: transaction.pathType,
         movementMode: transaction.movementMode,
         sourceUuid: transaction.sourceUuid,

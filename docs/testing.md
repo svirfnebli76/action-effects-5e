@@ -1,4 +1,4 @@
-# Testing Action Effects 5E 0.2.9
+# Testing Action Effects 5E 0.2.10
 
 ## Automated tests
 
@@ -103,6 +103,22 @@ Generated relationship movement must explicitly mark the final leader and follow
 For the live regression test on Foundry 14.365, create a two-token relationship and move the leader one grid square. Both the leader and follower should complete the coordinated movement without the `Linked movement reported incomplete token movement` rollback warning. After movement settles, `movementContexts`, `pendingTransactions`, `queuedRequests`, and `activeLeaders` should return to `0`.
 
 
+
+
+## v0.2.10 regression check
+
+External API/undo/paste movement with explicit checkpoints must synchronize followers only after the terminal Foundry operation for the stable `subpathId`. An earlier operation with non-empty `movement.pending.waypoints` must not move followers and must not create a primary-GM synchronization receipt. The terminal operation (`pending.waypoints` empty) reconstructs the full route from the current-subpath movement history plus terminal passed waypoints, waits for movement + animation settlement, validates the leader at the overall final destination, and synchronizes the follower along the complete historical route.
+
+For the live API checkpoint regression:
+
+1. Create an `adjacentFollower` relationship.
+2. Call `Scene.moveTokens()` for the leader with a route that moves horizontally to an explicit checkpoint, turns 90 degrees, and continues to a terminal checkpoint.
+3. The leader must complete the entire route without an AE5E follower-sync warning at the first checkpoint.
+4. The follower must synchronize only after the leader reaches the final destination and must finish one planar grid space behind on the full route.
+5. No `leader changed position before follower synchronization could be validated` warning should occur.
+6. For a non-GM initiator, the active GM must create no receipt for the first leg and a single trusted full-subpath receipt for the terminal movement ID.
+
+The automated regressions model both one-checkpoint and multi-checkpoint histories and verify terminal-only synchronization plus GM-receipt path authority.
 
 ## v0.2.9 regression check
 
