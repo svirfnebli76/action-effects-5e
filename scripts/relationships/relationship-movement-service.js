@@ -137,6 +137,11 @@ export class RelationshipMovementService {
   async waitForMovementSettled({ leaderUuid = null, timeoutMs = 5_000, pollMs = 25 } = {}) {
     const deadline = Date.now() + Math.max(100, Number(timeoutMs) || 5_000);
     const interval = Math.max(5, Number(pollMs) || 25);
+    // Foundry documents movementAnimationPromise as null when no animation is
+    // active. Keep a WeakSet anyway so a module or browser timing edge which
+    // temporarily retains an already-resolved Promise cannot trap this helper in
+    // a hot loop until timeout.
+    const observedAnimations = new WeakSet();
 
     while (Date.now() <= deadline) {
       const tokenUuids = new Set();
@@ -156,14 +161,23 @@ export class RelationshipMovementService {
       for (const uuid of tokenUuids) {
         const token = await fromUuid(uuid);
         const animation = token?.object?.movementAnimationPromise;
-        if (animation && typeof animation.then === "function") animations.push(animation);
+        if (animation && typeof animation.then === "function" && !observedAnimations.has(animation)) animations.push(animation);
       }
 
       if (animations.length) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        let timedOut = false;
         await Promise.race([
-          Promise.allSettled(animations),
-          new Promise((resolve) => setTimeout(resolve, interval))
+          Promise.allSettled(animations).then(() => {
+            for (const animation of animations) observedAnimations.add(animation);
+          }),
+          new Promise((resolve) => setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, remaining))
         ]);
+        if (timedOut) break;
         continue;
       }
 

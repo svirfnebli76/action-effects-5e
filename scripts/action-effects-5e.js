@@ -8,6 +8,7 @@ import { MovementRegistry } from "./movement/movement-registry.js";
 import { MovementService } from "./movement/movement-service.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
+import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -22,12 +23,18 @@ const relationshipMovement = new RelationshipMovementService({
   relationships,
   movement
 });
+const relationshipRotation = new RelationshipRotationService({
+  socket,
+  relationships,
+  movement
+});
 const tests = new TestHarness({
   dependencies,
   compatibility,
   movement,
   relationships,
   relationshipMovement,
+  relationshipRotation,
   socket
 });
 const api = new ActionEffects5eApi({
@@ -36,6 +43,7 @@ const api = new ActionEffects5eApi({
   movement,
   relationships,
   relationshipMovement,
+  relationshipRotation,
   tests,
   socket
 });
@@ -64,6 +72,7 @@ Hooks.once("ready", async () => {
 
   await relationships.initialize();
   relationshipMovement.initialize();
+  relationshipRotation.initialize();
   movement.initialize();
   compatibility.refresh();
 

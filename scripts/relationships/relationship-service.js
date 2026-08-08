@@ -4,6 +4,7 @@ import {
   HOOKS,
   MODULE_ID,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
   SCENE_RELATIONSHIPS_FLAG,
   TELEPORT_POLICIES
@@ -138,7 +139,7 @@ export class RelationshipService {
       throw new Error(`Follower token is already controlled by relationship '${existingFollower[0].id}'.`);
     }
     if (this.getForFollower(normalized.leaderUuid).length || this.getForLeader(normalized.followerUuid).length) {
-      throw new Error("Relationship chains and cycles are not supported in Action Effects 5E v0.2.0.");
+      throw new Error("Relationship chains and cycles are not supported in Action Effects 5E v0.3.0.");
     }
 
     const scene = game.scenes.get(normalized.sceneId);
@@ -244,6 +245,9 @@ export class RelationshipService {
       coordinationPolicy: Object.values(RELATIONSHIP_COORDINATION_POLICIES).includes(data.coordinationPolicy)
         ? data.coordinationPolicy
         : RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+      rotationPolicy: Object.values(RELATIONSHIP_ROTATION_POLICIES).includes(data.rotationPolicy)
+        ? data.rotationPolicy
+        : RELATIONSHIP_ROTATION_POLICIES.NONE,
       breakDistance: Number.isFinite(Number(data.breakDistance)) ? Number(data.breakDistance) : null,
       sourceUuid: data.sourceUuid ?? null,
       metadata: duplicateSafely(data.metadata ?? {}),

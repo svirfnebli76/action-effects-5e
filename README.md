@@ -11,28 +11,25 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.11: selective simultaneous external relationship movement
+## Build 0.3.0: relationship orbital rotation
 
-This build hardens the relationship-movement layer with selective simultaneous coordination while preserving the validated manual, elevation, teleport, collision, and post-sync behavior from earlier 0.2.x builds:
+This build adds rotation-driven spatial control to the relationship layer while retaining the live-validated v0.2.11 simultaneous translation system:
 
-- A leader's normal Foundry movement is intercepted only when it has registered followers.
-- The original movement is replaced with one GM-authorized `Scene.moveTokens()` operation for the group.
-- `adjacentFollower` relationships trail through spaces just vacated by the leader; `rigidOffset` relationships continue to preserve their current X/Y offset.
-- Elevation follows by preserving the original elevation difference when configured.
-- Manual follower movement is blocked when `followerCanSelfMove` is false.
-- API-driven follower movement remains possible so other automations can still push, pull, teleport, or reposition it. A follower teleport now breaks its relationship after the completed teleport is GM-validated.
-- Compatible external API/undo/paste movement of a coordinated relationship leader is upgraded at the `Scene.moveTokens()` boundary so leader and followers enter one movement operation and animate together. Unrelated API movement is untouched, while unsupported/mixed/teleport calls retain the v0.2.10 post-sync fallback.
-- Internal movement metadata prevents recursive attachment movement.
-- Best-effort wall/surface preflight is performed through Foundry's public movement constraint API when the active GM has the Scene rendered.
-- If Foundry stops part of a coordinated move, completed group members are restored to their starting positions.
-- Leader teleport policies support `detach`, `follow`, and `block`; a follower teleport is allowed to escape and breaks the relationship.
-- Collision policies support `stopGroup` and `detach`.
-- Relationship chains and cycles are rejected in this milestone.
+- A relationship can opt into `rotationPolicy: "orbitFollower"`; old relationships without the field remain `none` for compatibility.
+- Only a controlled orbit-enabled leader using native **Shift/Control + mouse wheel** arms the feature. Other token rotations and unrelated wheel events are untouched.
+- AE5E measures the leader TokenDocument's actual committed rotation change and accumulates it in 45-degree orbit quanta instead of counting physical wheel clicks.
+- For the initial 1x1/1x1 square-grid implementation, the follower moves around the eight-space perimeter surrounding the stationary leader: `W -> NW -> N -> NE -> E -> SE -> S -> SW`. Reverse leader rotation reverses the orbit.
+- The leader's facing rotates normally. The follower changes grid position only; its own artwork rotation remains unchanged.
+- Each follower orbit step is a real Foundry movement with `passenger` agency and no movement resource, so later spatial/rules consumers can observe the traversal without treating it as voluntary movement.
+- Orbit requests are GM-authorized through Socketlib and computed from the persisted relationship, not from a client-supplied arbitrary destination.
+- `stopGroup` collision handling is atomic: a blocked follower orbit does not move the follower and restores the precise leader rotation update that crossed the orbit threshold. Partial accumulated rotation is retained.
+- Orbit input is serialized per relationship so rapid wheel input cannot overlap follower movement animations.
+- Translation, elevation, checkpoint routing, teleport detach/follow/block, follower locking, selective external API coordination, and rollback behavior from v0.2.11 remain intact.
+- The public settlement helper now waits for both rotation queues and relationship movement and tolerates a retained already-resolved Foundry movement animation Promise.
 
+### v0.3.0 orbital rotation
 
-
-
-
+The rotation service uses a deliberately narrow libWrapper boundary at Foundry v14's `TokenLayer._onMouseWheel` only to identify the user's Shift/Control wheel gesture. The actual orbit trigger comes from the subsequently committed TokenDocument rotation update. This keeps click-count assumptions out of AE5E and allows Foundry's native rotation increments to vary. The initial planner intentionally supports only Medium-style 1x1 leader/follower footprints on square grids; larger/smaller footprints are a later geometry milestone rather than hidden assumptions in the 1x1 implementation.
 
 ### v0.2.11 selective simultaneous external coordination
 
@@ -86,7 +83,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.2.11 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
+Version 0.3.0 distinguishes **trailing adjacency**, **fixed-offset following**, and optional **orbital repositioning**. `adjacentFollower` follows the leader's vacated spaces, `rigidOffset` preserves the original relative offset, and `rotationPolicy: "orbitFollower"` lets a controlled 1x1 leader rotate a 1x1 follower around the eight neighboring square-grid spaces in 45-degree facing increments.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 

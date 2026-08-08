@@ -96,10 +96,12 @@ const {
   MOVEMENT_RESOURCES,
   OPERATION_METADATA_KEY,
   PATH_TYPES,
-  RELATIONSHIP_COORDINATION_POLICIES
+  RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_ROTATION_POLICIES
 } = await import("../scripts/core/constants.js");
 const { MovementTransaction } = await import("../scripts/movement/movement-transaction.js");
 const { MovementRegistry } = await import("../scripts/movement/movement-registry.js");
+const { RelationshipOrbitPlanner } = await import("../scripts/relationships/relationship-orbit-planner.js");
 
 test("movement transaction preserves Action Effects 5E semantic metadata", () => {
   const document = {
@@ -482,6 +484,7 @@ test("relationship service persists and reindexes leader/follower relationships"
   assert.equal(service.getForLeader(leader.uuid).length, 1);
   assert.equal(service.getForFollower(follower.uuid)[0].id, relationship.id);
   assert.equal(relationship.coordinationPolicy, RELATIONSHIP_COORDINATION_POLICIES.COORDINATED);
+  assert.equal(relationship.rotationPolicy, RELATIONSHIP_ROTATION_POLICIES.NONE, "Pre-v0.3.0/default relationships must not opt into orbital rotation implicitly.");
   assert.equal(scene.getFlag("action-effects-5e", "relationships").length, 1);
 
   const removed = await service.remove(relationship.id);
@@ -3004,4 +3007,392 @@ test("coordinated external API movement preflights follower collision before eit
   service.shutdown();
   globalThis.libWrapper = previousLibWrapper;
   globalThis.ui = previousUi;
+});
+
+test("relationship orbit planner advances a Medium follower around the 3x3 perimeter in 45-degree steps", () => {
+  const grid = { isGridless: false, isSquare: true, size: 100 };
+  const leader = { x: 100, y: 100, elevation: 0, width: 1, height: 1 };
+  const follower = { x: 0, y: 100, elevation: 0, width: 1, height: 1 };
+
+  const positive = RelationshipOrbitPlanner.buildWaypoints({
+    leader,
+    follower,
+    grid,
+    direction: 1,
+    steps: 4
+  });
+  assert.deepEqual(positive.map(({ x, y }) => ({ x, y })), [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 200, y: 0 },
+    { x: 200, y: 100 }
+  ]);
+  assert.ok(positive.every((waypoint) => waypoint.checkpoint === true));
+
+  const negative = RelationshipOrbitPlanner.buildWaypoints({
+    leader,
+    follower,
+    grid,
+    direction: -1,
+    steps: 2
+  });
+  assert.deepEqual(negative.map(({ x, y }) => ({ x, y })), [
+    { x: 0, y: 200 },
+    { x: 100, y: 200 }
+  ]);
+});
+
+test("relationship orbit planner measures actual signed rotation changes across 0/360", () => {
+  assert.equal(RelationshipOrbitPlanner.signedRotationDelta(350, 5), 15);
+  assert.equal(RelationshipOrbitPlanner.signedRotationDelta(5, 350), -15);
+  assert.equal(RelationshipOrbitPlanner.signedRotationDelta(0, 22.5), 22.5);
+  assert.equal(RelationshipOrbitPlanner.signedRotationDelta(22.5, 0), -22.5);
+});
+
+test("mouse-wheel relationship rotation accumulates actual leader rotation and orbits the follower after 45 degrees", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(moduleId, target, fn, type) { registrations.push({ moduleId, target, fn, type }); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const scene = {
+    id: "scene-orbit-wheel",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens(instructions) {
+      assertGeneratedMovementInstructions(instructions);
+      const instruction = instructions.follower;
+      const final = instruction.waypoints.at(-1);
+      follower.x = final.x;
+      follower.y = final.y;
+      follower.elevation = final.elevation;
+      return { follower: true };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-orbit-wheel.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 100, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, name: "Leader" });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-orbit-wheel.Token.follower", id: "follower", scene });
+  Object.assign(follower, {
+    x: 0,
+    y: 100,
+    elevation: 0,
+    width: 1,
+    height: 1,
+    rotation: 137,
+    name: "Follower",
+    object: { movementAnimationPromise: null, constrainMovementPath: (path) => [path, false] }
+  });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  const leaderPlaceable = { document: leader };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-orbit-wheel",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup",
+    sourceUuid: null
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { throw new Error("Orbit should not detach in this test."); }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].target, "foundry.canvas.layers.TokenLayer.prototype._onMouseWheel");
+  assert.equal(registrations[0].type, "MIXED");
+
+  const nativeWheel = (nextRotation) => () => {
+    leader.rotation = nextRotation;
+    Hooks.callAll("updateToken", leader, { rotation: nextRotation }, {}, game.user.id);
+  };
+  const event = { shiftKey: true, ctrlKey: false, deltaY: 1 };
+
+  registrations[0].fn.call({ controlled: [leaderPlaceable] }, nativeWheel(22.5), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 100 }, "22.5 degrees must not move the follower yet.");
+
+  // An API/configuration/other-client rotation is not an armed local wheel
+  // gesture and must clear the partial 22.5-degree accumulator. Otherwise an
+  // old fragment could unexpectedly fire on a later legitimate wheel gesture.
+  leader.rotation = 90;
+  Hooks.callAll("updateToken", leader, { rotation: 90 }, {}, "different-user");
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+
+  registrations[0].fn.call({ controlled: [leaderPlaceable] }, nativeWheel(112.5), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 100 }, "A remote/API rotation must reset the old partial accumulator.");
+
+  registrations[0].fn.call({ controlled: [leaderPlaceable] }, nativeWheel(135), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 0 }, "A fresh positive 45 degrees must move W -> NW.");
+  assert.equal(follower.rotation, 137, "Follower artwork rotation must remain unchanged.");
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
+test("blocked orbital step atomically restores the triggering leader rotation and preserves the partial accumulator", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const registrations = [];
+  const warnings = [];
+  globalThis.libWrapper = {
+    register(_moduleId, target, fn) { registrations.push({ target, fn }); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn(message) { warnings.push(message); }, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  let blocked = true;
+  const scene = {
+    id: "scene-orbit-collision",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens(instructions) {
+      const final = instructions.follower.waypoints.at(-1);
+      follower.x = final.x;
+      follower.y = final.y;
+      return { follower: true };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-orbit-collision.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 100, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, name: "Leader" });
+  leader.update = async (changes, options = {}) => {
+    if (changes.rotation !== undefined) leader.rotation = changes.rotation;
+    Hooks.callAll("updateToken", leader, changes, options, game.user.id);
+    return leader;
+  };
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-orbit-collision.Token.follower", id: "follower", scene });
+  Object.assign(follower, {
+    x: 0, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, name: "Follower",
+    object: {
+      movementAnimationPromise: null,
+      constrainMovementPath(path) { return [path, blocked]; }
+    }
+  });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  const leaderPlaceable = { document: leader };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-orbit-collision",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+  const wheel = registrations.find((entry) => entry.target.includes("TokenLayer"));
+  const event = { ctrlKey: true, shiftKey: false, deltaY: 1 };
+  const rotate = (value) => () => {
+    leader.rotation = value;
+    Hooks.callAll("updateToken", leader, { rotation: value }, {}, game.user.id);
+  };
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate(15), event);
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate(30), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.equal(leader.rotation, 30);
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 100 });
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate(45), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.equal(leader.rotation, 30, "Blocked threshold must undo only the triggering +15 degree rotation update.");
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 100 });
+  assert.match(warnings.at(-1), /cannot orbit/i);
+
+  blocked = false;
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate(45), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.equal(leader.rotation, 45);
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 0 }, "The preserved 30-degree accumulator plus a new 15 degrees must orbit once.");
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
+test("player mouse-wheel orbit is GM-authorized and never directly moves the follower on the player client", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const previousUser = game.user;
+  const player = { id: "player-orbit", isGM: false, active: true };
+  game.users.set(player.id, player);
+  const registrations = [];
+  globalThis.libWrapper = { register(_moduleId, target, fn) { registrations.push({ target, fn }); }, unregister() {} };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const scene = {
+    id: "scene-player-orbit",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens(instructions) {
+      const final = instructions.follower.waypoints.at(-1);
+      follower.x = final.x;
+      follower.y = final.y;
+      return { follower: true };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-player-orbit.Token.leader", id: "leader", scene, owner: true });
+  Object.assign(leader, { x: 100, y: 100, elevation: 0, width: 1, height: 1, rotation: 0 });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-player-orbit.Token.follower", id: "follower", scene });
+  Object.assign(follower, { x: 0, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, object: { movementAnimationPromise: null, constrainMovementPath: (path) => [path, false] } });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  const leaderPlaceable = { document: leader };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-player-orbit",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const socketHandlers = new Map();
+  const socketCalls = [];
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) {
+      socketCalls.push({ name, request: structuredClone(request) });
+      const caller = game.user;
+      game.user = gmUser;
+      try { return await socketHandlers.get(name)(request); }
+      finally { game.user = caller; }
+    }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  game.user = player;
+  const wheel = registrations.find((entry) => entry.target.includes("TokenLayer"));
+  wheel.fn.call({ controlled: [leaderPlaceable] }, () => {
+    leader.rotation = 45;
+    Hooks.callAll("updateToken", leader, { rotation: 45 }, {}, player.id);
+  }, { shiftKey: true, ctrlKey: false, deltaY: 1 });
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+
+  assert.equal(socketCalls.length, 1);
+  assert.equal(socketCalls[0].name, "relationships.orbitFollower");
+  assert.equal(socketCalls[0].request.requestingUserId, player.id);
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 0 });
+
+  service.shutdown();
+  game.user = previousUser;
+  game.users.delete(player.id);
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
+test("movement settlement helper tolerates a retained already-resolved animation promise", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const scene = { id: "scene-retained-settled-promise" };
+  const resolved = Promise.resolve();
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-retained-settled-promise.Token.leader", id: "leader", scene });
+  Object.assign(leader, { object: { movementAnimationPromise: resolved } });
+  const relationship = { id: "relationship-retained-promise", leaderUuid: leader.uuid, followerUuid: "Scene.scene-retained-settled-promise.Token.follower" };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: () => []
+  };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : null;
+  const fakeSocket = { register() {} };
+  const fakeMovement = { registerConsumer() { return () => {}; } };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+
+  await service.waitForMovementSettled({ leaderUuid: leader.uuid, timeoutMs: 100, pollMs: 5 });
+  globalThis.fromUuid = previousFromUuid;
 });

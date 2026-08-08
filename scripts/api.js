@@ -9,6 +9,8 @@ import {
   MOVEMENT_RESOURCES,
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
+  RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
   TELEPORT_POLICIES
 } from "./core/constants.js";
@@ -20,6 +22,7 @@ export class ActionEffects5eApi {
     movement,
     relationships,
     relationshipMovement,
+    relationshipRotation,
     tests,
     socket
   }) {
@@ -34,6 +37,8 @@ export class ActionEffects5eApi {
       MOVEMENT_RESOURCES,
       RELATIONSHIP_TYPES,
       RELATIONSHIP_COORDINATION_POLICIES,
+      RELATIONSHIP_ROTATION_POLICIES,
+      RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
       ATTACHMENT_MODES,
       TELEPORT_POLICIES,
       COLLISION_POLICIES
@@ -66,7 +71,11 @@ export class ActionEffects5eApi {
       getForFollower: (uuid) => relationships.getForFollower(uuid),
       list: (filter) => relationships.list(filter),
       moveGroup: (request) => relationshipMovement.moveGroup(request),
-      waitForMovementSettled: (options) => relationshipMovement.waitForMovementSettled(options),
+      waitForMovementSettled: async (options) => {
+        await relationshipRotation.waitForSettled(options);
+        return relationshipMovement.waitForMovementSettled(options);
+      },
+      getRotationStats: () => relationshipRotation.getStats(),
       getStats: () => relationships.getStats(),
       getMovementStats: () => relationshipMovement.getStats()
     });

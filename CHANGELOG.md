@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 - Relationship orbital rotation
+
+- Added a dedicated `RelationshipRotationService` and pure `RelationshipOrbitPlanner` for rotation-driven follower movement.
+- Added persisted relationship `rotationPolicy` values `none` and `orbitFollower`; existing relationships without the field remain opt-out, while new test-harness relationships enable orbital rotation.
+- Added a narrow libWrapper integration around Foundry v14 `TokenLayer._onMouseWheel`. It only arms when exactly one controlled token is an orbit-enabled AE5E leader and Shift or Control is held; all other wheel handling remains native Foundry behavior.
+- Orbital movement is driven by the leader TokenDocument's **actual committed rotation delta**, not mouse-wheel click counts. Signed deltas accumulate at a 45-degree quantum, so native/future rotation increments can vary without changing orbit behavior.
+- Initial geometry supports a 1x1 leader and 1x1 follower on square grids. Positive rotation advances `W -> NW -> N -> NE -> E -> SE -> S -> SW -> W`; reverse rotation walks the ring backward. Every orbital waypoint is an explicit checkpoint so multi-step bursts cannot cut across the leader.
+- The leader stays in place and retains native facing rotation; only the follower changes position, with follower artwork rotation explicitly disabled.
+- Orbit movement is GM-authorized through Socketlib. The GM validates requester ownership, relationship identity, Scene/token state, supported geometry, current leader/follower positions, direction, step count, and observed rotation magnitude before computing the destination itself.
+- Orbit follower movement is classified as `agency: passenger`, `resource: none`, `pathType: traverse`, and carries `relationshipOrbit` metadata for later Region/reaction consumers.
+- `collisionPolicy: stopGroup` is atomic for orbiting: follower path preflight occurs before movement, and a blocked/failed step restores the exact committed leader rotation delta which crossed the threshold. The pre-event partial accumulator is preserved so the next qualifying increment can retry naturally.
+- `collisionPolicy: detach` keeps the leader's native rotation but detaches the relationship if the follower cannot complete the orbit.
+- Rotation events are serialized per relationship. Rapid wheel input is converted into one or more full 45-degree ring steps without overlapping follower movement animations.
+- Partial orbit accumulation is runtime-only and is reset when control is released, the relationship changes/reindexes, the Scene is readied, either relationship participant translates outside AE5E orbit movement, or the leader receives an unarmed/API/configuration/other-client rotation.
+- Hardened `relationships.waitForMovementSettled()` against an already-resolved `movementAnimationPromise` being temporarily retained, and made the public helper wait for relationship rotation work before normal relationship movement settlement.
+- Expanded automated coverage from 39 to 45 tests, including ring geometry/direction, 0/360 rotation deltas, actual-delta accumulation, atomic collision rollback plus accumulator preservation, player-to-GM orbit authorization, and retained resolved animation promises.
+
 ## 0.2.11 - Selective simultaneous external relationship movement
 
 - Added a narrow libWrapper integration at Foundry v14's public `Scene.moveTokens()` boundary so compatible external/API relationship-leader movement can be upgraded before animation begins.

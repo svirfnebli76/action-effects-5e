@@ -1,4 +1,4 @@
-# Testing Action Effects 5E 0.2.11
+# Testing Action Effects 5E 0.3.0
 
 ## Automated tests
 
@@ -8,7 +8,7 @@ From the repository root:
 npm test
 ```
 
-The suite checks syntax plus 39 movement/relationship regressions: indexed consumers, relationship persistence, Socketlib registration, rigid and trailing waypoint planning, elevation handling, passenger classification, follower blocking, coordinated group instruction construction, selective simultaneous external/API coordination, compatibility passthrough, post-operation fallback synchronization, symmetric follower-teleport detachment, non-GM GM authorization/receipts, collision preflight, settlement waiting, and partial-movement rollback.
+The suite checks syntax plus 45 movement/relationship regressions: indexed consumers, relationship persistence, Socketlib registration, rigid and trailing waypoint planning, elevation handling, passenger classification, follower blocking, coordinated group instruction construction, selective simultaneous external/API coordination, compatibility passthrough, post-operation fallback synchronization, symmetric follower-teleport detachment, non-GM GM authorization/receipts, collision preflight, settlement waiting, and partial-movement rollback.
 
 ## Foundry smoke test
 
@@ -19,7 +19,7 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
-Expected result: `passed: true` with seven checks.
+Expected result: `passed: true` with eight checks, including the relationship rotation service.
 
 ## Live relationship movement test
 
@@ -103,6 +103,48 @@ Generated relationship movement must explicitly mark the final leader and follow
 For the live regression test on Foundry 14.365, create a two-token relationship and move the leader one grid square. Both the leader and follower should complete the coordinated movement without the `Linked movement reported incomplete token movement` rollback warning. After movement settles, `movementContexts`, `pendingTransactions`, `queuedRequests`, and `activeLeaders` should return to `0`.
 
 
+
+## v0.3.0 orbital-rotation regression check
+
+Create a fresh test relationship after installing v0.3.0 because pre-v0.3.0 persisted relationships intentionally default `rotationPolicy` to `none`:
+
+```js
+await ae5e.tests.removeTestRelationships();
+// Control leader first and follower second, then:
+await ae5e.tests.createTestRelationshipFromControlledTokens();
+```
+
+For the initial live geometry, use two 1x1 tokens on a square grid at the same elevation and arrange them as:
+
+```text
+1 2 3
+F L 6
+7 8 9
+```
+
+With only the leader controlled:
+
+1. Hold Shift and scroll in the direction which positively rotates the leader. AE5E must not count wheel clicks; observe the leader's actual facing. Until the cumulative committed change reaches 45 degrees the follower stays in square 4.
+2. When the cumulative change reaches +45 degrees, the follower must move exactly one grid space from square 4 to square 1 while the leader remains in square 5. The follower artwork facing must not rotate.
+3. Continue another +45 degrees: follower `1 -> 2`; continue around `2 -> 3 -> 6 -> 9 -> 8 -> 7 -> 4`. Reverse leader rotation and confirm the ring traverses backward.
+4. Mix Control and Shift wheel increments. Only the accumulated **actual rotation delta** matters; changing modifier must not reset the partial 45-degree accumulator.
+5. Reverse direction before reaching 45 degrees and confirm the partial angles cancel rather than producing a follower step.
+6. Place a wall across the follower's next ring step with `collisionPolicy: "stopGroup"`. The follower must not move. The exact leader rotation update which crossed the threshold must be restored, leaving any prior partial accumulator intact. Remove the wall and apply the missing rotation increment; the follower should then complete the pending threshold naturally.
+7. Confirm `collisionPolicy: "detach"` keeps the leader's native rotation but removes the relationship when the follower cannot take its orbit step.
+8. Rotate an unrelated token with Shift/Control + wheel and confirm AE5E does nothing. Change an orbit leader's rotation by a non-wheel/API/configuration path and confirm the follower does not orbit.
+9. Rapidly scroll enough to cross multiple 45-degree thresholds. Follower steps must serialize without overlapping and every intermediate ring space must be honored as a checkpoint.
+10. Repeat the basic threshold test from a non-GM player who owns the leader. The player should not need ownership of the follower; the orbit is authorized and executed by the active GM through Socketlib.
+
+Useful diagnostics:
+
+```js
+ae5e.relationships.getRotationStats();
+await ae5e.relationships.waitForMovementSettled({
+  leaderUuid: ae5e.relationships.list({ sceneId: canvas.scene.id })[0].leaderUuid
+});
+```
+
+When idle, `pendingEvents`, `processingRelationships`, `activeGmRequests`, and `rotationRollbacks` should all return to zero.
 
 
 ## v0.2.11 regression check

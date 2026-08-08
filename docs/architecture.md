@@ -5,7 +5,7 @@
 - Module evaluation: register the Socketlib ready listener and socket handlers.
 - `init`: register settings and expose the public API.
 - `setup`: detect CPR and GPS.
-- `ready`: validate dependencies, load relationship indexes, index relationship movement consumers, and activate the central movement hooks.
+- `ready`: validate dependencies, load relationship indexes, initialize relationship movement and rotation services, and activate the central movement hooks.
 
 ## Normal movement fast path
 
@@ -54,6 +54,34 @@ The integration is intentionally fail-open to compatibility. Unrelated tokens, f
 For `adjacentFollower`, both coordinated external traversal and fallback post-sync use the same historical-route planner, so the follower ends in the leader's most recently vacated space rather than mirroring the leader's delta.
 
 
+
+## Relationship orbital rotation
+
+Version 0.3.0 adds a separate `RelationshipRotationService`; orbital input is not folded into the normal translation service. Relationships opt in with `rotationPolicy: "orbitFollower"`. The default is `none`, including persisted pre-v0.3.0 relationships which do not have the field.
+
+The hot path is intentionally narrow:
+
+1. libWrapper observes Foundry v14 `TokenLayer._onMouseWheel`.
+2. If Shift/Control is not held, exactly one token is not controlled, or the controlled token is not an orbit-enabled relationship leader, AE5E does nothing and Foundry handles the wheel normally.
+3. A qualifying gesture arms only that relationship for a short window; Foundry still performs its native token rotation.
+4. The initiating client observes the resulting `updateToken` and measures the leader's **actual committed signed rotation delta**. Other clients see the update but never duplicate the Socketlib request.
+5. Signed deltas accumulate in runtime state. Each full 45 degrees becomes one orbit step; direction reversal naturally cancels partial accumulation.
+6. The request is sent to the active GM. The GM verifies ownership, relationship/Scene identity, positions, 1x1 square-grid support, direction and bounded step count, then calculates the ring route itself.
+7. Every ring space in a multi-step orbit is an explicit checkpoint, preventing Foundry from shortcutting diagonally across the leader.
+8. Follower movement uses ordinary `Scene.moveTokens()` with `autoRotate: false`, `agency: passenger`, `resource: none`, and `relationshipOrbit` metadata. The leader never translates as part of the orbit.
+
+For the initial 1x1 implementation, positive committed leader rotation advances the follower through `W -> NW -> N -> NE -> E -> SE -> S -> SW -> W`. Negative rotation reverses the same ring. This maps each 45-degree facing change to exactly one cardinal one-grid-space follower move around the surrounding 3x3 perimeter.
+
+### Atomic orbit collision behavior
+
+`stopGroup` orbit collision is atomic at the rotation-update level. The follower route is preflighted before follower movement. If it is blocked (or Foundry later reports the follower move incomplete), AE5E subtracts the **actual committed leader rotation delta for that triggering update** from the leader's current rotation. Subtracting the delta rather than restoring a stale absolute angle preserves any later rotation updates that may already have arrived. The local orbit accumulator returns to its pre-event value. `detach` instead keeps the leader rotation, leaves the follower in place, and removes the relationship.
+
+Rapid wheel updates are serialized per relationship. A single committed rotation change large enough to cross multiple 45-degree thresholds is planned as a multi-checkpoint ring route, and later rotation updates wait until the previous follower animation has settled locally before they are processed.
+
+Partial orbit accumulation is transient only. It resets on relationship changes, control release, Scene readiness, and non-orbit translation of either participant. API/configuration rotations which were not armed by a qualifying native wheel gesture do not orbit the follower and invalidate any old partial accumulator.
+
+The planner is deliberately footprint-aware at its boundary even though v0.3.0 accepts only 1x1/1x1 tokens. Larger leaders, Tiny followers, rectangular footprints, and alternate perimeter-contact geometry can therefore be added later without redefining the gesture/authorization service.
+
 ## Relationship coordination policy
 
 Relationships persist a `coordinationPolicy`:
@@ -98,7 +126,7 @@ Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are reject
 - `detach`: omit that follower and remove the relationship after successful leader movement.
 - If Foundry reports a partial group failure despite preflight, tokens that completed are restored to their origins with automation suppressed for Action Effects 5E.
 
-Version 0.2.11 does not implement occupied-token collision or nearest-valid-square searching.
+Version 0.3.0 does not implement occupied-token collision or nearest-valid-square searching. Orbital rotation additionally limits geometry to 1x1 leader/follower tokens on square grids.
 
 ## Teleport behavior
 

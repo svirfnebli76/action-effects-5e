@@ -4,6 +4,7 @@ import {
   MODULE_ID,
   MOVEMENT_PHASES,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
   TELEPORT_POLICIES
 } from "../core/constants.js";
@@ -16,14 +17,16 @@ export class TestHarness {
   #movement;
   #relationships;
   #relationshipMovement;
+  #relationshipRotation;
   #socket;
 
-  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, socket }) {
+  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
     this.#relationships = relationships;
     this.#relationshipMovement = relationshipMovement;
+    this.#relationshipRotation = relationshipRotation;
     this.#socket = socket;
   }
 
@@ -65,6 +68,7 @@ export class TestHarness {
 
     record("Relationship indexes", this.#relationships.getStats().relationships >= 0, this.#relationships.getStats());
     record("Relationship movement service", this.#relationshipMovement.getStats().initialized, this.#relationshipMovement.getStats());
+    record("Relationship rotation service", this.#relationshipRotation.getStats().initialized, this.#relationshipRotation.getStats());
     record("Socketlib registration", this.#socket.ready, { ready: this.#socket.ready });
 
     const passed = checks.every((check) => check.passed);
@@ -74,6 +78,7 @@ export class TestHarness {
       movement: this.#movement.getStats(),
       relationships: this.#relationships.getStats(),
       relationshipMovement: this.#relationshipMovement.getStats(),
+      relationshipRotation: this.#relationshipRotation.getStats(),
       compatibility: compatibilityStatus
     };
 
@@ -105,6 +110,7 @@ export class TestHarness {
       teleportPolicy: TELEPORT_POLICIES.DETACH,
       collisionPolicy: COLLISION_POLICIES.STOP_GROUP,
       coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+      rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
       metadata: { createdByTestHarness: true }
     });
 
@@ -138,7 +144,8 @@ export class TestHarness {
       tokenUuid: token.uuid,
       asLeader: this.#relationships.getForLeader(token.uuid),
       asFollower: this.#relationships.getForFollower(token.uuid),
-      movement: this.#relationshipMovement.getStats()
+      movement: this.#relationshipMovement.getStats(),
+      rotation: this.#relationshipRotation.getStats()
     };
     Logger.info("Controlled token relationship inspection", result);
     return result;
