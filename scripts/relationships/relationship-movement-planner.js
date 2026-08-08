@@ -185,6 +185,15 @@ export class RelationshipMovementPlanner {
       return trailing;
     });
 
+    // The follower's first trailing destination is the leader's vacated origin.
+    // Foundry treats non-checkpoint waypoints as intermediate hints inside the
+    // direct path to the next checkpoint. If this first anchor is not a checkpoint,
+    // a follower approaching from the side can cut diagonally toward the leader's
+    // later checkpoint instead of actually entering the leader's starting square.
+    // Force only this synthetic entry anchor (plus the existing terminal point)
+    // to be a checkpoint; user-authored leader checkpoints remain preserved.
+    if (trailingWaypoints.length) trailingWaypoints[0].checkpoint = true;
+
     return this.ensureTerminalCheckpoint(trailingWaypoints);
   }
 

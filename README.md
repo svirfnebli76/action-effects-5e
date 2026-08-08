@@ -11,7 +11,7 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.6: checkpoint-safe trailing routes
+## Build 0.2.7: checkpoint-safe follower entry and trailing routes
 
 This build adds the first working attachment behavior on top of the validated 0.1.1 foundation:
 
@@ -31,6 +31,10 @@ This build adds the first working attachment behavior on top of the validated 0.
 
 
 
+
+### v0.2.7 follower entry-anchor correction
+
+Foundry computes a direct path between checkpoints. For an `adjacentFollower`, the first synthetic trailing destination is the leader's vacated origin. If that destination is only a non-checkpoint waypoint, a follower starting to the side of the leader can skip the vacated origin and cut diagonally toward a later checkpoint. AE5E now marks the leader's vacated origin as the follower's first checkpoint, then preserves the leader's declared checkpoints and the follower's terminal trailing checkpoint. This makes the follower enter the leader's starting square first and then trace the leader's route one space behind.
 
 ### v0.2.6 checkpoint and continuation correction
 
@@ -60,7 +64,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.2.6 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
+Version 0.2.7 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 

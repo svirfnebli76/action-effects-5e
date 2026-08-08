@@ -1471,8 +1471,60 @@ test("adjacent follower trails one space behind the complete L-shaped Foundry ro
     { x: 3300, y: 1600 },
     { x: 3300, y: 1700 }
   ]);
+  assert.equal(trailing[0].checkpoint, true);
   assert.equal(trailing[2].checkpoint, true);
   assert.equal(trailing.at(-1).checkpoint, true);
+});
+
+test("adjacent follower checkpoints the leader origin before tracing later checkpoints", async () => {
+  const { RelationshipMovementPlanner } = await import("../scripts/relationships/relationship-movement-planner.js");
+  const { ATTACHMENT_MODES } = await import("../scripts/core/constants.js");
+
+  // Live Foundry 14.365 regression: the follower begins diagonally adjacent to
+  // the leader. Without a checkpoint at the leader origin, Foundry computes a
+  // direct path from the follower origin to the later explicit corner and can
+  // skip the leader's vacated starting square.
+  const trailing = RelationshipMovementPlanner.translateWaypoints({
+    leader: { x: 2800, y: 2300, elevation: 0 },
+    follower: { x: 2700, y: 2400, elevation: 0 },
+    relationship: {
+      attachmentMode: ATTACHMENT_MODES.ADJACENT_FOLLOWER,
+      followElevation: true
+    },
+    waypoints: [
+      { x: 2900, y: 2300, elevation: 0, action: "walk", checkpoint: false },
+      { x: 3000, y: 2300, elevation: 0, action: "walk", checkpoint: false },
+      { x: 3100, y: 2300, elevation: 0, action: "walk", explicit: true, checkpoint: true },
+      { x: 3100, y: 2400, elevation: 0, action: "walk", checkpoint: false },
+      { x: 3100, y: 2500, elevation: 0, action: "walk", checkpoint: false },
+      { x: 3100, y: 2600, elevation: 0, action: "walk", checkpoint: false },
+      { x: 3100, y: 2700, elevation: 0, action: "walk", explicit: true, checkpoint: true }
+    ],
+    pathType: PATH_TYPES.TRAVERSE
+  });
+
+  assert.deepEqual(trailing.map(({ x, y }) => ({ x, y })), [
+    { x: 2800, y: 2300 },
+    { x: 2900, y: 2300 },
+    { x: 3000, y: 2300 },
+    { x: 3100, y: 2300 },
+    { x: 3100, y: 2400 },
+    { x: 3100, y: 2500 },
+    { x: 3100, y: 2600 }
+  ]);
+
+  assert.equal(trailing[0].checkpoint, true, "Follower must first enter the leader's vacated origin.");
+  assert.notEqual(trailing[0].explicit, true, "The synthetic entry checkpoint is not a user-authored explicit waypoint.");
+  assert.equal(trailing[3].checkpoint, true, "The leader's explicit corner checkpoint must be preserved.");
+  assert.equal(trailing.at(-1).checkpoint, true, "Follower terminal trailing position must remain a checkpoint.");
+  assert.deepEqual(
+    trailing.filter((point) => point.checkpoint === true).map(({ x, y }) => ({ x, y })),
+    [
+      { x: 2800, y: 2300 },
+      { x: 3100, y: 2300 },
+      { x: 3100, y: 2600 }
+    ]
+  );
 });
 
 test("adjacent follower trails through spaces vacated by the leader while teleport-follow preserves offset", async () => {

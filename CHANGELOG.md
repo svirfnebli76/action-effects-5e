@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7 - Follower entry-anchor checkpoint
+
+- Fixed `adjacentFollower` movement cutting diagonally toward a later checkpoint when the follower begins beside the leader rather than already on the leader's route.
+- The follower's first synthetic trailing waypoint—the leader's vacated origin—is now an explicit Foundry movement checkpoint.
+- This makes Foundry complete the follower's entry into the leader's starting square before continuing along the leader's preserved route.
+- Existing user-authored leader checkpoints remain unchanged, and the follower still ends one grid step behind the leader.
+- Confirmed the v0.2.6 subpath-context fix remains the mechanism for keeping checkpoint continuation stages internal even though raw continuation operations do not retain `actionEffects5e` metadata.
+- Added regression coverage for a follower starting diagonally adjacent to the leader, matching the live Foundry 14.365 failure case.
+
 ## 0.2.6 - Full-route checkpoints and subpath identity
 
 - Fixed manual multi-waypoint relationship movement collapsing user-authored routes into a direct path after AE5E intercepted the leader.

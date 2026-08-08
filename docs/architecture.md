@@ -63,7 +63,7 @@ Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are reject
 - `detach`: omit that follower and remove the relationship after successful leader movement.
 - If Foundry reports a partial group failure despite preflight, tokens that completed are restored to their origins with automation suppressed for Action Effects 5E.
 
-Version 0.2.6 does not implement occupied-token collision or nearest-valid-square searching.
+Version 0.2.7 does not implement occupied-token collision or nearest-valid-square searching.
 
 ## Teleport behavior
 
