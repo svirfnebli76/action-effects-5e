@@ -25,6 +25,11 @@ function positionsEqual(a, b) {
     && finiteNumber(a?.elevation, 0) === finiteNumber(b?.elevation, 0);
 }
 
+function planarPositionsEqual(a, b) {
+  return finiteNumber(a?.x) === finiteNumber(b?.x)
+    && finiteNumber(a?.y) === finiteNumber(b?.y);
+}
+
 function sanitizeWaypoint(waypoint = {}) {
   const clean = {};
   for (const field of POSITION_FIELDS) {
@@ -167,7 +172,32 @@ export class RelationshipMovementPlanner {
       leaderWaypoints,
       grid
     });
-    const priorLeaderPositions = expandedLeaderPositions.slice(0, -1);
+    // Foundry can insert elevation interpolation waypoints at the same x/y
+    // coordinate (for example, moving one square while rising 10 ft can produce
+    // destination-space waypoints at +5 and +10). Those vertical interpolation
+    // points must not consume the follower's one-planar-space trailing offset.
+    // Collapse consecutive identical x/y positions, retaining the final elevation
+    // reached in each planar space and preserving any checkpoint/explicit marker.
+    const planarLeaderPositions = this.#collapsePlanarPositions(expandedLeaderPositions);
+
+    // Purely vertical movement has no vacated planar space. Keep the follower's
+    // x/y offset and follow only the elevation delta when requested. This avoids
+    // trying to place both tokens into the same grid space merely because the
+    // leader changed elevation in place.
+    if (planarLeaderPositions.length === 1) {
+      const finalLeader = expandedLeaderPositions.at(-1) ?? leaderOrigin;
+      const vertical = {
+        x: Math.round(followerOrigin.x),
+        y: Math.round(followerOrigin.y),
+        elevation: relationship.followElevation !== false
+          ? followerOrigin.elevation + (finiteNumber(finalLeader.elevation, leaderOrigin.elevation) - leaderOrigin.elevation)
+          : followerOrigin.elevation
+      };
+      copyWaypointFields(finalLeader, vertical);
+      return this.ensureTerminalCheckpoint([vertical]);
+    }
+
+    const priorLeaderPositions = planarLeaderPositions.slice(0, -1);
     if (!priorLeaderPositions.length) priorLeaderPositions.push(leaderOrigin);
     if (priorLeaderPositions.length > MAX_WAYPOINTS) {
       throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} translated grid steps.`);
@@ -195,6 +225,26 @@ export class RelationshipMovementPlanner {
     if (trailingWaypoints.length) trailingWaypoints[0].checkpoint = true;
 
     return this.ensureTerminalCheckpoint(trailingWaypoints);
+  }
+
+  static #collapsePlanarPositions(positions) {
+    const collapsed = [];
+    for (const position of positions) {
+      const candidate = duplicateSafely(position);
+      const previous = collapsed.at(-1);
+      if (!previous || !planarPositionsEqual(previous, candidate)) {
+        collapsed.push(candidate);
+        continue;
+      }
+
+      const checkpoint = previous.checkpoint === true || candidate.checkpoint === true;
+      const explicit = previous.explicit === true || candidate.explicit === true;
+      const merged = { ...previous, ...candidate };
+      if (checkpoint) merged.checkpoint = true;
+      if (explicit) merged.explicit = true;
+      collapsed[collapsed.length - 1] = merged;
+    }
+    return collapsed;
   }
 
   static #expandLeaderGridPath({ leaderOrigin, leaderWaypoints, grid }) {

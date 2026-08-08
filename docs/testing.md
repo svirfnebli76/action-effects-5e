@@ -1,4 +1,4 @@
-# Testing Action Effects 5E 0.2.7
+# Testing Action Effects 5E 0.2.8
 
 ## Automated tests
 
@@ -102,6 +102,25 @@ Generated relationship movement must explicitly mark the final leader and follow
 
 For the live regression test on Foundry 14.365, create a two-token relationship and move the leader one grid square. Both the leader and follower should complete the coordinated movement without the `Linked movement reported incomplete token movement` rollback warning. After movement settles, `movementContexts`, `pendingTransactions`, `queuedRequests`, and `activeLeaders` should return to `0`.
 
+
+
+## v0.2.8 regression check
+
+External API/undo/paste leader synchronization must wait for Foundry's completed movement lifecycle before validating the live TokenDocument. A `moveToken` hook may expose the final movement destination while the rendered/document position is still animated between origin and destination; AE5E must not reject that as a stale leader movement.
+
+For the live elevation regression:
+
+1. Create an `adjacentFollower` relationship with `followElevation: true`.
+2. Place follower and leader horizontally adjacent at elevation 0.
+3. Move the leader one grid square horizontally while increasing elevation by 10 ft through `Scene.moveTokens()`.
+4. The leader should finish one square away at elevation 10.
+5. The follower should occupy the leader's vacated starting square at elevation 0.
+6. No `External leader movement follower synchronization failed` or `leader changed position before follower synchronization could be validated` warning should occur.
+7. Repeat a second horizontal +10 ft step. The follower should then occupy the leader's previous square at elevation 10.
+
+Foundry can interpolate elevation with multiple processed waypoints at the same x/y coordinate. `adjacentFollower` must treat those as one planar destination rather than consuming the one-space trailing offset. Pure vertical movement should preserve the follower's x/y offset while applying the elevation delta when `followElevation` is enabled.
+
+External multi-checkpoint routes must synchronize once per stable `subpathId`, after the full movement finishes, and must use the final full-route waypoint as the validated leader destination.
 
 ## v0.2.7 regression check
 

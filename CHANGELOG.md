@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.8 - Movement completion and elevation-safe trailing
+
+- Fixed external/API leader follower synchronization racing Foundry's movement animation/document state.
+- External synchronization now waits for the public `TokenMovementOperation.finished` promise before validating the leader's final position.
+- Stable `subpathId` now deduplicates external synchronization across explicit-checkpoint continuation movement IDs.
+- External synchronization validates against the final reconstructed route waypoint rather than a current-leg `movement.destination`.
+- Fixed `adjacentFollower` treating Foundry's same-x/y elevation interpolation waypoints as additional trailing spaces.
+- Consecutive identical planar positions are collapsed while preserving the final elevation plus checkpoint/explicit semantics for that space.
+- Pure vertical leader movement preserves the follower's planar offset and applies the elevation delta when `followElevation` is enabled.
+- Follower teleport detachment now also waits for movement completion before GM-side validation.
+- Added live-regression-style automated coverage for one-square +10 ft movement, delayed movement completion, stable-subpath external continuations, and pure vertical following.
+
 ## 0.2.7 - Follower entry-anchor checkpoint
 
 - Fixed `adjacentFollower` movement cutting diagonally toward a later checkpoint when the follower begins beside the leader rather than already on the leader's route.

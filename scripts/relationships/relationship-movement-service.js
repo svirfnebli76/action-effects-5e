@@ -159,7 +159,7 @@ export class RelationshipMovementService {
     }
 
     if (transaction.phase === MOVEMENT_PHASES.AFTER) {
-      return this.#handleAfterMovement(transaction);
+      return this.#handleAfterMovement(transaction, context);
     }
 
     return true;
@@ -244,42 +244,51 @@ export class RelationshipMovementService {
     return false;
   }
 
-  #handleAfterMovement(transaction) {
+  async #handleAfterMovement(transaction, context = {}) {
     if (!this.#positionChanged(transaction.origin, transaction.destination)) return true;
 
+    const lifecycleKey = transaction.subpathId ?? transaction.movementId;
     const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid);
     if (followerRelationships.length && transaction.pathType === PATH_TYPES.TELEPORT) {
-      if (this.#queuedFollowerDetachIds.has(transaction.movementId)) return true;
+      if (this.#queuedFollowerDetachIds.has(lifecycleKey)) return true;
 
-      const request = {
-        requestId: `${MODULE_ID}-follower-teleport-${randomId(20)}`,
-        requestingUserId: transaction.userId ?? game.user.id,
-        sceneId: transaction.sceneId,
-        followerUuid: transaction.subjectUuid,
-        originalMovementId: transaction.movementId,
-        origin: duplicateSafely(transaction.origin),
-        destination: duplicateSafely(transaction.destination),
-        pathType: transaction.pathType,
-        movementMode: transaction.movementMode,
-        sourceUuid: transaction.sourceUuid,
-        externalGeneratedBy: transaction.generatedBy
-      };
+      // Foundry's moveToken hook fires before the movement animation/document
+      // position has necessarily reached its final destination. The public
+      // TokenMovementOperation.finished promise resolves only after the entire
+      // movement has completed (including checkpoint continuations). Hold the
+      // stable subpath key while awaiting it so later continuation hooks cannot
+      // schedule duplicate detach operations.
+      this.#queuedFollowerDetachIds.add(lifecycleKey);
+      try {
+        if (!await this.#awaitMovementFinished(context)) return true;
 
-      this.#queuedFollowerDetachIds.add(transaction.movementId);
-      setTimeout(() => {
-        void this.#socket.executeAsGM("relationships.detachFollowerTeleport", request)
-          .then((result) => this.#notifyResult(result))
-          .catch((error) => {
-            Logger.error("Follower teleport relationship detachment failed.", error);
-            ui?.notifications?.warn?.(`Action Effects 5E could not detach a teleported follower: ${error.message}`);
-          })
-          .finally(() => this.#queuedFollowerDetachIds.delete(transaction.movementId));
-      }, 0);
+        const request = {
+          requestId: `${MODULE_ID}-follower-teleport-${randomId(20)}`,
+          requestingUserId: transaction.userId ?? game.user.id,
+          sceneId: transaction.sceneId,
+          followerUuid: transaction.subjectUuid,
+          originalMovementId: transaction.movementId,
+          origin: duplicateSafely(transaction.origin),
+          destination: duplicateSafely(transaction.destination),
+          pathType: transaction.pathType,
+          movementMode: transaction.movementMode,
+          sourceUuid: transaction.sourceUuid,
+          externalGeneratedBy: transaction.generatedBy
+        };
+
+        const result = await this.#socket.executeAsGM("relationships.detachFollowerTeleport", request);
+        this.#notifyResult(result);
+      } catch (error) {
+        Logger.error("Follower teleport relationship detachment failed.", error);
+        ui?.notifications?.warn?.(`Action Effects 5E could not detach a teleported follower: ${error.message}`);
+      } finally {
+        this.#queuedFollowerDetachIds.delete(lifecycleKey);
+      }
       return true;
     }
 
     if (!this.#relationships.getForLeader(transaction.subjectUuid).length) return true;
-    if (this.#queuedSyncIds.has(transaction.movementId)) return true;
+    if (this.#queuedSyncIds.has(lifecycleKey)) return true;
 
     let waypoints;
     try {
@@ -289,36 +298,58 @@ export class RelationshipMovementService {
       return true;
     }
 
-    const request = {
-      requestId: `${MODULE_ID}-external-sync-${randomId(20)}`,
-      requestingUserId: transaction.userId ?? game.user.id,
-      sceneId: transaction.sceneId,
-      leaderUuid: transaction.subjectUuid,
-      originalMovementId: transaction.movementId,
-      origin: duplicateSafely(transaction.origin),
-      destination: duplicateSafely(transaction.destination),
-      waypoints,
-      pathType: transaction.pathType,
-      movementMode: transaction.movementMode,
-      sourceUuid: transaction.sourceUuid,
-      externalGeneratedBy: transaction.generatedBy
-    };
+    // Hold the stable subpath key before awaiting movement.finished. Explicit
+    // checkpoints receive new movement IDs but keep the same subpathId, so only
+    // the first after-hook for an external movement owns synchronization. Its
+    // transaction already contains passed + pending waypoints for the full route.
+    this.#queuedSyncIds.add(lifecycleKey);
+    try {
+      if (!await this.#awaitMovementFinished(context)) return true;
 
-    this.#queuedSyncIds.add(transaction.movementId);
-    // Avoid starting a second movement document update from inside Foundry's
-    // completed moveToken hook stack. A next-task handoff keeps relationship
-    // synchronization outside the movement workflow that triggered it.
-    setTimeout(() => {
-      void this.#socket.executeAsGM("relationships.syncFollowers", request)
-        .then((result) => this.#notifyResult(result))
-        .catch((error) => {
-          Logger.error("External leader movement follower synchronization failed.", error);
-          ui?.notifications?.warn?.(`Action Effects 5E could not synchronize attached followers: ${error.message}`);
-        })
-        .finally(() => this.#queuedSyncIds.delete(transaction.movementId));
-    }, 0);
+      const destination = RelationshipMovementPlanner.finalWaypoint(waypoints)
+        ?? transaction.destination;
+      const request = {
+        requestId: `${MODULE_ID}-external-sync-${randomId(20)}`,
+        requestingUserId: transaction.userId ?? game.user.id,
+        sceneId: transaction.sceneId,
+        leaderUuid: transaction.subjectUuid,
+        originalMovementId: transaction.movementId,
+        origin: duplicateSafely(transaction.origin),
+        destination: duplicateSafely(destination),
+        waypoints,
+        pathType: transaction.pathType,
+        movementMode: transaction.movementMode,
+        sourceUuid: transaction.sourceUuid,
+        externalGeneratedBy: transaction.generatedBy
+      };
+
+      const result = await this.#socket.executeAsGM("relationships.syncFollowers", request);
+      this.#notifyResult(result);
+    } catch (error) {
+      Logger.error("External leader movement follower synchronization failed.", error);
+      ui?.notifications?.warn?.(`Action Effects 5E could not synchronize attached followers: ${error.message}`);
+    } finally {
+      this.#queuedSyncIds.delete(lifecycleKey);
+    }
 
     return true;
+  }
+
+  async #awaitMovementFinished(context = {}) {
+    const finished = context?.movement?.finished;
+    if (!finished || typeof finished.then !== "function") {
+      // Test/synthetic callers may not provide a live TokenMovementOperation.
+      // Preserve the old next-task handoff as a compatibility fallback.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return true;
+    }
+
+    try {
+      return await finished !== false;
+    } catch (error) {
+      Logger.debug("Movement completion promise rejected before relationship synchronization.", error);
+      return false;
+    }
   }
 
   async #moveGroupAsGM(request = {}) {
@@ -692,7 +723,11 @@ export class RelationshipMovementService {
     }
 
     const origin = RelationshipMovementPlanner.sanitizePosition(trusted.origin, "verified movement origin");
-    const destination = RelationshipMovementPlanner.sanitizePosition(trusted.destination, "verified movement destination");
+    const waypoints = RelationshipMovementPlanner.extractTransactionWaypoints(trusted);
+    const destination = RelationshipMovementPlanner.sanitizePosition(
+      RelationshipMovementPlanner.finalWaypoint(waypoints) ?? trusted.destination,
+      "verified movement destination"
+    );
     if (!RelationshipMovementPlanner.positionsEqual(destination, leader)) {
       throw new Error("The leader changed position before follower synchronization could be validated.");
     }
@@ -704,7 +739,7 @@ export class RelationshipMovementService {
       leader,
       origin,
       destination,
-      waypoints: RelationshipMovementPlanner.extractTransactionWaypoints(trusted),
+      waypoints,
       originalMovementId: trusted.movementId ?? request.originalMovementId ?? null,
       pathType: Object.values(PATH_TYPES).includes(trusted.pathType) ? trusted.pathType : PATH_TYPES.TRAVERSE,
       movementMode: trusted.movementMode ?? null,

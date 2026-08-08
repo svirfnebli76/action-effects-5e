@@ -11,7 +11,7 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.7: checkpoint-safe follower entry and trailing routes
+## Build 0.2.8: movement-completion-safe external sync and elevation trailing
 
 This build adds the first working attachment behavior on top of the validated 0.1.1 foundation:
 
@@ -31,6 +31,13 @@ This build adds the first working attachment behavior on top of the validated 0.
 
 
 
+
+
+### v0.2.8 external movement completion and elevation correction
+
+Foundry v14 exposes `TokenMovementOperation.finished`, a promise that resolves after the entire token movement has completed. AE5E now waits for that public lifecycle signal before validating and synchronizing followers after external API/undo/paste leader movement. This removes the race where `moveToken` fired while the live TokenDocument was still at an animated/interpolated position. External synchronization is deduplicated by stable `subpathId`, and its destination is taken from the final reconstructed route waypoint so explicit-checkpoint continuations synchronize exactly once after the complete route.
+
+For `adjacentFollower`, consecutive elevation interpolation points at the same x/y coordinate are collapsed into one planar space before applying the one-space trailing offset. A leader that moves one square while rising therefore leaves the follower in the leader's vacated x/y/elevation position instead of consuming the trailing offset on an intermediate elevation-only point. Pure vertical movement preserves the follower's planar offset while applying the leader's elevation delta when `followElevation` is enabled.
 
 ### v0.2.7 follower entry-anchor correction
 
@@ -64,7 +71,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.2.7 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
+Version 0.2.8 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 
