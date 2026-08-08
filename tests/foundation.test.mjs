@@ -3168,6 +3168,134 @@ test("mouse-wheel relationship rotation accumulates actual leader rotation and o
   globalThis.CONFIG = previousConfig;
 });
 
+test("live Foundry updateToken lifecycle uses changes.rotation and survives follower artwork rotation", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(moduleId, target, fn, type) { registrations.push({ moduleId, target, fn, type }); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const followerMoves = [];
+  const scene = {
+    id: "scene-orbit-live-update-lifecycle",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens(instructions) {
+      assertGeneratedMovementInstructions(instructions);
+      const instruction = instructions.follower;
+      const final = instruction.waypoints.at(-1);
+      follower.x = final.x;
+      follower.y = final.y;
+      follower.elevation = final.elevation;
+      followerMoves.push({ x: final.x, y: final.y });
+      return { follower: true };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-orbit-live-update-lifecycle.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 100, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, name: "Leader" });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-orbit-live-update-lifecycle.Token.follower", id: "follower", scene });
+  Object.assign(follower, {
+    x: 0,
+    y: 100,
+    elevation: 0,
+    width: 1,
+    height: 1,
+    rotation: 0,
+    name: "Follower",
+    object: { movementAnimationPromise: null, constrainMovementPath: (path) => [path, false] }
+  });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  const leaderPlaceable = { document: leader };
+  const followerPlaceable = { document: follower };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-orbit-live-update-lifecycle",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup",
+    sourceUuid: null
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { throw new Error("Orbit should not detach in this test."); }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+  const wheel = registrations.find((entry) => entry.target.includes("TokenLayer"));
+  const event = { shiftKey: true, ctrlKey: false, deltaY: 1 };
+
+  // Match Foundry 14.365 live behavior: during updateToken, document.rotation
+  // still exposes the old value while changes.rotation contains the new value.
+  const liveWheelRotation = (nextRotation) => () => {
+    const oldRotation = leader.rotation;
+    Hooks.callAll("updateToken", leader, { rotation: nextRotation }, {}, game.user.id);
+    assert.equal(leader.rotation, oldRotation, "The fake lifecycle must keep TokenDocument.rotation stale while updateToken fires.");
+    leader.rotation = nextRotation;
+  };
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, liveWheelRotation(45), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 0 }, "The first real +45° update must orbit W -> NW immediately.");
+  assert.equal(followerMoves.length, 1);
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, liveWheelRotation(90), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 0 }, "A second +45° update must orbit NW -> N.");
+  assert.equal(followerMoves.length, 2);
+
+  // Releasing the leader intentionally clears transient state. Rotating the
+  // follower artwork must not alter or disable the leader -> follower relation.
+  Hooks.callAll("controlToken", leaderPlaceable, false);
+  const oldFollowerRotation = follower.rotation;
+  Hooks.callAll("updateToken", follower, { rotation: 45 }, {}, game.user.id);
+  assert.equal(follower.rotation, oldFollowerRotation);
+  follower.rotation = 45;
+  globalThis.canvas.tokens.controlled = [leaderPlaceable];
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, liveWheelRotation(135), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 200, y: 0 }, "Leader orbital control must resume after the follower artwork is rotated manually.");
+  assert.equal(follower.rotation, 45, "Orbital movement must not overwrite the follower artwork rotation.");
+  assert.equal(followerMoves.length, 3);
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
 test("blocked orbital step atomically restores the triggering leader rotation and preserves the partial accumulator", async () => {
   const previousLibWrapper = globalThis.libWrapper;
   const previousUi = globalThis.ui;

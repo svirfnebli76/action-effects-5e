@@ -224,10 +224,18 @@ export class RelationshipRotationService {
     if (!(document instanceof foundry.documents.TokenDocument)) return;
     if (!Object.prototype.hasOwnProperty.call(changes ?? {}, "rotation")) return;
 
+    // Foundry v14.365 fires updateToken while TokenDocument.rotation still
+    // contains the pre-update value. The authoritative committed destination
+    // for this hook is changes.rotation. Reading document.rotation here makes
+    // orbit tracking lag one rotation update behind the visible token.
+    const changedRotation = finiteNumber(changes.rotation);
+    if (changedRotation === null) return;
+    const currentRotation = RelationshipOrbitPlanner.normalizeRotation(changedRotation);
+
     const metadata = options?.[OPERATION_METADATA_KEY];
     if (this.#rollbackLeaderUuids.has(document.uuid)
       || (metadata?.relationshipOrbitRollback === true && metadata?.generatedBy === MODULE_ID)) {
-      this.#syncKnownRotation(document.uuid, document.rotation);
+      this.#syncKnownRotation(document.uuid, currentRotation);
       return;
     }
 
@@ -244,8 +252,8 @@ export class RelationshipRotationService {
       // orbit rollbacks are handled above through namespaced operation metadata.
       for (const relationship of enabled) {
         this.#resetRelationship(relationship.id, "remote-rotation");
-        const state = this.#stateFor(relationship, document.rotation);
-        state.lastObservedRotation = RelationshipOrbitPlanner.normalizeRotation(document.rotation);
+        const state = this.#stateFor(relationship, currentRotation);
+        state.lastObservedRotation = currentRotation;
       }
       return;
     }
@@ -256,9 +264,8 @@ export class RelationshipRotationService {
     }
 
     const relationship = enabled[0];
-    const state = this.#stateFor(relationship, document.rotation);
+    const state = this.#stateFor(relationship, currentRotation);
     const now = Date.now();
-    const currentRotation = RelationshipOrbitPlanner.normalizeRotation(document.rotation);
 
     if (state.armedUntil < now) {
       // A non-wheel/API/configuration rotation invalidates any partial orbit

@@ -1,3 +1,10 @@
+## 0.3.0-hotfix.1 - Rotation lifecycle test hotfix
+
+- Fixed Foundry v14.365 `updateToken` rotation tracking to use `changes.rotation`, because the TokenDocument still exposes its pre-update rotation while the hook is running.
+- This removes the one-update lag that caused the first 45° leader rotation to be ignored and could make follower orbiting appear to require extra leader rotation.
+- Added regression coverage for the live Foundry hook lifecycle and for resuming leader-controlled orbit after manually rotating the follower.
+- This is a focused test build; the planned v0.3.1 configuration/override work is not included.
+
 # Changelog
 
 ## 0.3.0 - Relationship orbital rotation
