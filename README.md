@@ -11,9 +11,9 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.10: terminal-subpath external sync and elevation trailing
+## Build 0.2.11: selective simultaneous external relationship movement
 
-This build adds the first working attachment behavior on top of the validated 0.1.1 foundation:
+This build hardens the relationship-movement layer with selective simultaneous coordination while preserving the validated manual, elevation, teleport, collision, and post-sync behavior from earlier 0.2.x builds:
 
 - A leader's normal Foundry movement is intercepted only when it has registered followers.
 - The original movement is replaced with one GM-authorized `Scene.moveTokens()` operation for the group.
@@ -21,7 +21,7 @@ This build adds the first working attachment behavior on top of the validated 0.
 - Elevation follows by preserving the original elevation difference when configured.
 - Manual follower movement is blocked when `followerCanSelfMove` is false.
 - API-driven follower movement remains possible so other automations can still push, pull, teleport, or reposition it. A follower teleport now breaks its relationship after the completed teleport is GM-validated.
-- External API/undo/paste movement of a leader is allowed to complete normally, then followers are synchronized afterward so CPR/GPS or other callers do not receive a false movement result.
+- Compatible external API/undo/paste movement of a coordinated relationship leader is upgraded at the `Scene.moveTokens()` boundary so leader and followers enter one movement operation and animate together. Unrelated API movement is untouched, while unsupported/mixed/teleport calls retain the v0.2.10 post-sync fallback.
 - Internal movement metadata prevents recursive attachment movement.
 - Best-effort wall/surface preflight is performed through Foundry's public movement constraint API when the active GM has the Scene rendered.
 - If Foundry stops part of a coordinated move, completed group members are restored to their starting positions.
@@ -33,6 +33,12 @@ This build adds the first working attachment behavior on top of the validated 0.
 
 
 
+
+### v0.2.11 selective simultaneous external coordination
+
+AE5E now uses a narrow libWrapper integration at Foundry v14's public `Scene.moveTokens()` boundary. The wrapper performs only indexed relationship lookups for normal calls and changes nothing unless exactly one token instruction is moving the leader of an active relationship whose `coordinationPolicy` is `coordinated`. Compatible planar/elevation API, undo, and paste movement is converted into one leader+follower movement operation before animation begins, preserving `adjacentFollower` trailing, elevation, checkpoints, wall/surface preflight, rollback, and transient movement identity. GM callers are augmented in-place at the API boundary; player callers are routed through the existing GM-authorized Socketlib group-movement handler.
+
+The integration deliberately falls back to v0.2.10 terminal post-sync when safe pre-coordination cannot be guaranteed: teleports, resize/mixed token-update payloads, multi-token external calls, unavailable followers, `coordinationPolicy: "postSync"`, or Socketlib/GM handoff failure. AE5E-generated movement is tagged and bypasses the wrapper, preventing recursion. A public `relationships.moveGroup()` API and `relationships.waitForMovementSettled()` helper are also available for future consumers and deterministic live tests.
 
 ### v0.2.10 terminal-subpath external synchronization
 
@@ -80,7 +86,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.2.10 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
+Version 0.2.11 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 
@@ -104,6 +110,27 @@ Run the non-destructive foundation test:
 
 ```js
 await ae5e.tests.runFoundationSmokeTest();
+```
+
+Future consumers can request GM-authorized relationship movement without constructing Foundry movement instructions themselves:
+
+```js
+await ae5e.relationships.moveGroup({
+  leaderUuid: leader.uuid,
+  destination: {
+    x: leader.x + canvas.grid.size,
+    y: leader.y,
+    elevation: leader.elevation,
+    action: "walk",
+    checkpoint: true
+  }
+});
+```
+
+For live tests, wait for the relationship movement/animation state rather than guessing a timeout:
+
+```js
+await ae5e.relationships.waitForMovementSettled({ leaderUuid: leader.uuid });
 ```
 
 ## Coordinated movement test

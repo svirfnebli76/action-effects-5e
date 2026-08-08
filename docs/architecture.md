@@ -18,7 +18,7 @@ For a token with no registered movement consumer, no relationship, and diagnosti
 
 No Scene-wide scans occur.
 
-## Relationship movement path
+## Manual / AE5E-owned relationship movement path
 
 Foundry v14's `preMoveToken` hook permits rejecting movement but not rewriting its finalized waypoints. Action Effects 5E therefore uses this sequence:
 
@@ -36,9 +36,38 @@ Foundry v14's `preMoveToken` hook permits rejecting movement but not rewriting i
 
 ### External API movement
 
-API, undo, and paste movement is not rejected in the before phase. Rejecting it would cause the calling module's movement promise to resolve as failed even though Action Effects 5E later moved the group. Instead, the leader completes its original operation and the initiating client requests a follower-only synchronization in the after phase. If a follower cannot safely synchronize after an external move, the affected relationship is detached rather than rewriting the external caller's completed result.
+Version 0.2.11 adds a deliberately narrow libWrapper integration at Foundry v14's public `Scene.moveTokens()` boundary. The wrapper is present so AE5E can coordinate followers **before animation begins**, but its hot path is only indexed relationship lookups and conservative shape checks. It changes a call only when all of the following are true:
 
-For `adjacentFollower`, external traversal synchronization uses the verified leader origin plus prior leader waypoints, so the follower ends in the leader's most recently vacated space instead of mirroring the leader's delta.
+- exactly one token instruction is present;
+- that token is an active AE5E relationship leader;
+- every active relationship for that leader uses `coordinationPolicy: "coordinated"`;
+- the method is a supported external style (`api`, `undo`, or `paste`);
+- the instruction is pure movement rather than a resize or mixed token update;
+- the movement is traversal rather than teleportation.
+
+For a GM caller, AE5E reconstructs the declared route directly from the incoming instruction, plans follower routes, preflights the whole group, adds followers to the same operation, marks the operation with transient AE5E metadata, and invokes the original wrapped `Scene.moveTokens()` once. The external caller still receives only the result key it originally supplied. Leader and followers therefore share one Foundry movement operation and can animate together.
+
+For a non-GM caller, the compatible request is handed to the active GM through the existing Socketlib group-movement handler. The GM revalidates leader ownership, origin, relationship state, and route before moving the group, so the player does not need ownership of attached followers.
+
+The integration is intentionally fail-open to compatibility. Unrelated tokens, follower-only movement, multi-token external calls, teleports, mixed/resize payloads, unavailable followers, `postSync` policy, and failed player-to-GM handoff use the original `Scene.moveTokens()` call. The v0.2.10 terminal-subpath after-phase synchronizer remains available as the fallback for compatible relationship movement that could not be safely pre-coordinated.
+
+For `adjacentFollower`, both coordinated external traversal and fallback post-sync use the same historical-route planner, so the follower ends in the leader's most recently vacated space rather than mirroring the leader's delta.
+
+
+## Relationship coordination policy
+
+Relationships persist a `coordinationPolicy`:
+
+- `coordinated` (default): eligible manual and compatible external leader movement is planned as a group before movement begins. Existing pre-v0.2.11 relationships without this field are treated as coordinated at runtime.
+- `postSync`: external movement is deliberately left to the original caller and the validated after-phase follower synchronizer is used instead.
+
+Teleport behavior is not selected by this policy. Teleports continue to use the relationship's explicit `teleportPolicy` because teleporting does not traverse the intervening path.
+
+## Public relationship movement entry points
+
+`relationships.moveGroup()` provides a GM-authorized group-movement entry point for future consumers such as Grapple, mounts, passengers, and carried tokens. Callers provide a leader UUID plus destination/waypoints and movement semantics; the relationship service owns route normalization, follower planning, authorization, movement IDs, terminal checkpoints, collision preflight, rollback, and operation metadata.
+
+`relationships.waitForMovementSettled()` is a testing/consumer helper which observes public token `movementAnimationPromise` values plus AE5E's active/queued relationship state. It avoids fixed sleeps when a leader operation can be followed by additional relationship movement.
 
 ## Security
 
@@ -53,9 +82,9 @@ The GM-side socket handler does not trust arbitrary document or coordinate data 
 - Only a GM request may preserve an original ignore-walls movement option.
 - Primary-GM movement receipts are indexed for every relationship participant. Non-GM leader synchronization and follower-teleport detachment are validated against those receipts rather than trusting client-supplied coordinates or movement semantics.
 
-## External movement settlement
+## External movement fallback settlement
 
-External API/undo/paste leader movement is allowed to complete without replacing the caller's operation. Foundry can split one route at explicit checkpoints into several movement operations sharing a stable `subpathId`. AE5E ignores non-terminal operations while `movement.pending.waypoints` remains non-empty. The terminal operation reconstructs the complete current subpath from Foundry movement history plus its passed waypoints, then waits for logical `movement.finished` and `movement.animation.ended` when Foundry provides that promise. This is necessary because Foundry 14.365 can commit the destination while the public TokenDocument and rendered token still expose animated/intermediate coordinates. Exact GM-side position validation and follower synchronization therefore occur only after the **terminal subpath operation** has settled. Synthetic operations without animation metadata fall back to logical completion or the existing next-task handoff.
+When the v0.2.11 pre-coordination wrapper intentionally passes an external relationship movement through, API/undo/paste leader movement is allowed to complete without replacing the caller's operation. Foundry can split one route at explicit checkpoints into several movement operations sharing a stable `subpathId`. AE5E ignores non-terminal operations while `movement.pending.waypoints` remains non-empty. The terminal operation reconstructs the complete current subpath from Foundry movement history plus its passed waypoints, then waits for logical `movement.finished` and `movement.animation.ended` when Foundry provides that promise. This is necessary because Foundry 14.365 can commit the destination while the public TokenDocument and rendered token still expose animated/intermediate coordinates. Exact GM-side position validation and follower synchronization therefore occur only after the **terminal subpath operation** has settled. Synthetic operations without animation metadata fall back to logical completion or the existing next-task handoff.
 
 Primary-GM receipts follow the same rule. Intermediate checkpoint operations do not create trusted synchronization receipts; the terminal movement ID receives one receipt containing the GM-observed full origin/path/destination for that subpath. This lets non-GM clients request follower synchronization without supplying authoritative route geometry.
 
@@ -69,7 +98,7 @@ Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are reject
 - `detach`: omit that follower and remove the relationship after successful leader movement.
 - If Foundry reports a partial group failure despite preflight, tokens that completed are restored to their origins with automation suppressed for Action Effects 5E.
 
-Version 0.2.10 does not implement occupied-token collision or nearest-valid-square searching.
+Version 0.2.11 does not implement occupied-token collision or nearest-valid-square searching.
 
 ## Teleport behavior
 

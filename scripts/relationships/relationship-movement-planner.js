@@ -59,6 +59,51 @@ function copyWaypointFields(source, target, { includeCheckpoint = true } = {}) {
 }
 
 export class RelationshipMovementPlanner {
+  static extractInstructionWaypoints(instruction = {}, leader = {}) {
+    const raw = Array.isArray(instruction?.waypoints) && instruction.waypoints.length
+      ? instruction.waypoints
+      : [instruction?.destination].filter(Boolean);
+    if (!raw.length) throw new Error("The token movement instruction did not contain a destination or waypoints.");
+
+    const origin = this.sanitizePosition(leader, "instruction leader origin");
+    let previous = origin;
+    const waypoints = [];
+    for (const candidate of raw) {
+      if (!candidate || typeof candidate !== "object") throw new Error("Movement instruction waypoints must be objects.");
+      const resolved = {
+        ...duplicateSafely(candidate),
+        x: candidate.x ?? previous.x,
+        y: candidate.y ?? previous.y,
+        elevation: candidate.elevation ?? previous.elevation
+      };
+      const waypoint = sanitizeWaypoint(resolved);
+      if (positionsEqual(waypoints.at(-1), waypoint)) {
+        const existing = waypoints[waypoints.length - 1];
+        const checkpoint = existing.checkpoint === true || waypoint.checkpoint === true;
+        const explicit = existing.explicit === true || waypoint.explicit === true;
+        Object.assign(existing, waypoint);
+        if (checkpoint) existing.checkpoint = true;
+        if (explicit) existing.explicit = true;
+      } else if (!positionsEqual(previous, waypoint) || waypoint.checkpoint === true || waypoint.explicit === true) {
+        waypoints.push(waypoint);
+      }
+      previous = waypoint;
+    }
+
+    if (waypoints.length > 1 && positionsEqual(waypoints[0], origin)) waypoints.shift();
+    if (!waypoints.length) {
+      const last = raw.at(-1);
+      waypoints.push(sanitizeWaypoint({
+        ...duplicateSafely(last),
+        x: last.x ?? origin.x,
+        y: last.y ?? origin.y,
+        elevation: last.elevation ?? origin.elevation
+      }));
+    }
+    if (waypoints.length > MAX_WAYPOINTS) throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} waypoints.`);
+    return this.ensureTerminalCheckpoint(waypoints);
+  }
+
   static extractWaypoints(movement = {}) {
     // Foundry v14 splits a user-authored multi-checkpoint route into the leg
     // currently being processed (`passed.waypoints`) plus the still-pending legs

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.11 - Selective simultaneous external relationship movement
+
+- Added a narrow libWrapper integration at Foundry v14's public `Scene.moveTokens()` boundary so compatible external/API relationship-leader movement can be upgraded before animation begins.
+- The integration is intentionally selective: it acts only on exactly one moved token that is the leader of an active `coordinationPolicy: "coordinated"` relationship and leaves unrelated, follower-only, multi-token, mixed-update, teleport, and explicit `postSync` calls untouched.
+- GM external movement now augments the original leader instruction with planned follower instructions and submits the group through the caller's single `Scene.moveTokens()` operation, allowing leader and followers to animate together while preserving the external caller's leader-only result shape.
+- Non-GM external movement is coordinated through the existing GM-authorized Socketlib `relationships.moveGroup` handler so a player does not need ownership of the attached follower. If GM handoff fails, the original call is allowed through and the v0.2.10 terminal post-sync path remains the compatibility fallback.
+- Added persisted relationship `coordinationPolicy` values `coordinated` and `postSync`; pre-v0.2.11 relationships default to `coordinated` at runtime.
+- Preserved teleport `detach` / `follow` / `block` semantics on the existing validated teleport path instead of converting teleports into ordinary trailing movement.
+- Coordinated external movement now performs follower path preflight before either token begins moving and retains the existing partial-result rollback defense.
+- Added instruction-route normalization for pre-operation `Scene.moveTokens()` data, including partial waypoint coordinates, checkpoints, action, and elevation.
+- Added public `relationships.moveGroup()` for future relationship consumers and `relationships.waitForMovementSettled()` for deterministic live tests without arbitrary timeout guesses.
+- Added debug-only coordinated-movement diagnostics reporting source, leader, follower count, relationship IDs/modes, path type, method, checkpoints, and elevation change.
+- Expanded automated coverage to 39 tests, including simultaneous GM coordination, player-to-GM coordination, recursion prevention, unrelated/post-sync/follower passthrough, teleport/mixed-payload fallback, public group movement, settlement waiting, and preflight-before-movement behavior.
+
 ## 0.2.10 - Terminal-subpath external synchronization
 
 - Fixed external/API multi-checkpoint leader movement attempting follower synchronization after the first checkpoint operation instead of after the terminal Foundry movement operation.

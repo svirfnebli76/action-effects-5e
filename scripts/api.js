@@ -8,6 +8,7 @@ import {
   MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
   PATH_TYPES,
+  RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_TYPES,
   TELEPORT_POLICIES
 } from "./core/constants.js";
@@ -32,6 +33,7 @@ export class ActionEffects5eApi {
       MOVEMENT_AGENCIES,
       MOVEMENT_RESOURCES,
       RELATIONSHIP_TYPES,
+      RELATIONSHIP_COORDINATION_POLICIES,
       ATTACHMENT_MODES,
       TELEPORT_POLICIES,
       COLLISION_POLICIES
@@ -63,6 +65,8 @@ export class ActionEffects5eApi {
       getForLeader: (uuid) => relationships.getForLeader(uuid),
       getForFollower: (uuid) => relationships.getForFollower(uuid),
       list: (filter) => relationships.list(filter),
+      moveGroup: (request) => relationshipMovement.moveGroup(request),
+      waitForMovementSettled: (options) => relationshipMovement.waitForMovementSettled(options),
       getStats: () => relationships.getStats(),
       getMovementStats: () => relationshipMovement.getStats()
     });

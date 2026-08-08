@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.2.10";
+export const MODULE_VERSION = "0.2.11";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -94,6 +94,11 @@ export const TELEPORT_POLICIES = Object.freeze({
 export const COLLISION_POLICIES = Object.freeze({
   STOP_GROUP: "stopGroup",
   DETACH: "detach"
+});
+
+export const RELATIONSHIP_COORDINATION_POLICIES = Object.freeze({
+  COORDINATED: "coordinated",
+  POST_SYNC: "postSync"
 });
 
 export const HOOKS = Object.freeze({

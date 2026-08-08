@@ -95,7 +95,8 @@ const {
   MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
   OPERATION_METADATA_KEY,
-  PATH_TYPES
+  PATH_TYPES,
+  RELATIONSHIP_COORDINATION_POLICIES
 } = await import("../scripts/core/constants.js");
 const { MovementTransaction } = await import("../scripts/movement/movement-transaction.js");
 const { MovementRegistry } = await import("../scripts/movement/movement-registry.js");
@@ -480,6 +481,7 @@ test("relationship service persists and reindexes leader/follower relationships"
   assert.equal(service.involves(leader.uuid), true);
   assert.equal(service.getForLeader(leader.uuid).length, 1);
   assert.equal(service.getForFollower(follower.uuid)[0].id, relationship.id);
+  assert.equal(relationship.coordinationPolicy, RELATIONSHIP_COORDINATION_POLICIES.COORDINATED);
   assert.equal(scene.getFlag("action-effects-5e", "relationships").length, 1);
 
   const removed = await service.remove(relationship.id);
@@ -2439,4 +2441,567 @@ test("non-GM follower teleport detachment requires a matching primary-GM movemen
   service.shutdown();
   game.scenes.delete(scene.id);
   game.users.delete(player.id);
+});
+
+test("instruction waypoint extraction resolves partial Foundry waypoints without losing checkpoints", async () => {
+  const { RelationshipMovementPlanner } = await import("../scripts/relationships/relationship-movement-planner.js");
+  const waypoints = RelationshipMovementPlanner.extractInstructionWaypoints({
+    waypoints: [
+      { x: 100, action: "walk" },
+      { elevation: 5, explicit: true },
+      { y: 100, checkpoint: true },
+      { elevation: 10 }
+    ]
+  }, { x: 0, y: 0, elevation: 0 });
+
+  assert.deepEqual(waypoints.map(({ x, y, elevation, checkpoint, explicit }) => ({
+    x, y, elevation, checkpoint: checkpoint ?? false, explicit: explicit ?? false
+  })), [
+    { x: 100, y: 0, elevation: 0, checkpoint: false, explicit: false },
+    { x: 100, y: 0, elevation: 5, checkpoint: false, explicit: true },
+    { x: 100, y: 100, elevation: 5, checkpoint: true, explicit: false },
+    { x: 100, y: 100, elevation: 10, checkpoint: true, explicit: false }
+  ]);
+});
+
+test("GM external API leader movement is selectively augmented into one simultaneous relationship move", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(moduleId, target, fn, type) {
+      registrations.push({ moduleId, target, fn, type });
+    },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+
+  const scene = {
+    id: "scene-wrapper-coordinated",
+    grid: { isGridless: true },
+    tokens: new FakeCollection()
+  };
+  const leader = new FakeTokenDocument({
+    uuid: "Scene.scene-wrapper-coordinated.Token.leader",
+    id: "leader",
+    scene
+  });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, name: "Leader", object: null });
+  const follower = new FakeTokenDocument({
+    uuid: "Scene.scene-wrapper-coordinated.Token.follower",
+    id: "follower",
+    scene
+  });
+  Object.assign(follower, { x: -100, y: 0, elevation: 0, name: "Follower", object: null });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-wrapper-coordinated",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    followerCanSelfMove: false,
+    followElevation: true,
+    followRotation: false,
+    teleportPolicy: "detach",
+    collisionPolicy: "stopGroup",
+    // Omit coordinationPolicy to verify persisted pre-v0.2.11 relationships
+    // default to coordinated behavior at runtime.
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const registeredContexts = [];
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext(id, options) {
+      registeredContexts.push({ id, options });
+      return () => {};
+    }
+  };
+  const fakeSocket = { register() {}, async executeAsGM() { throw new Error("Wrapper test must not use post-sync Socketlib."); } };
+
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].moduleId, "action-effects-5e");
+  assert.equal(registrations[0].target, "foundry.documents.Scene.prototype.moveTokens");
+  assert.equal(registrations[0].type, "MIXED");
+
+  let wrappedCalls = 0;
+  let captured = null;
+  const wrapped = async (instructions, options) => {
+    wrappedCalls += 1;
+    captured = { instructions: structuredClone(instructions), options: structuredClone(options) };
+    assertGeneratedMovementInstructions(instructions);
+    return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
+  };
+
+  const result = await registrations[0].fn.call(scene, wrapped, {
+    leader: {
+      id: "ExternalMove0001",
+      waypoints: [
+        { x: 100, y: 0, elevation: 0, action: "walk", checkpoint: false },
+        { x: 200, y: 0, elevation: 0, action: "walk", explicit: true, checkpoint: true },
+        { x: 200, y: 100, elevation: 5, action: "walk", checkpoint: false },
+        { x: 200, y: 200, elevation: 10, action: "walk", checkpoint: true }
+      ],
+      method: "api",
+      showRuler: false
+    }
+  }, {
+    method: "api",
+    showRuler: false,
+    pan: false
+  });
+
+  assert.equal(wrappedCalls, 1, "Leader and follower must enter one Scene.moveTokens operation.");
+  assert.deepEqual(Object.keys(captured.instructions).sort(), ["follower", "leader"]);
+  assert.deepEqual(captured.instructions.follower.waypoints.map(({ x, y, elevation }) => ({ x, y, elevation })), [
+    { x: 0, y: 0, elevation: 0 },
+    { x: 100, y: 0, elevation: 0 },
+    { x: 200, y: 0, elevation: 0 },
+    { x: 200, y: 100, elevation: 5 }
+  ]);
+  assert.equal(captured.instructions.follower.waypoints[0].checkpoint, true);
+  assert.equal(captured.instructions.follower.waypoints.at(-1).checkpoint, true);
+  assert.equal(captured.options.actionEffects5e.relationshipMovement, true);
+  assert.equal(captured.options.actionEffects5e.coordinatedExternalMovement, true);
+  assert.equal(captured.options.actionEffects5e.generatedBy, "action-effects-5e");
+  assert.equal(registeredContexts.length, 2);
+  assert.deepEqual(result, { leader: true }, "The external caller must receive only its original result key.");
+
+  service.shutdown();
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("Scene.moveTokens integration leaves unrelated and post-sync API movements untouched", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousFromUuid = globalThis.fromUuid;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+
+  const scene = { id: "scene-wrapper-passthrough", grid: { isGridless: true }, tokens: new FakeCollection() };
+  const unrelated = new FakeTokenDocument({
+    uuid: "Scene.scene-wrapper-passthrough.Token.unrelated",
+    id: "unrelated",
+    scene
+  });
+  Object.assign(unrelated, { x: 0, y: 0, elevation: 0 });
+  const leader = new FakeTokenDocument({
+    uuid: "Scene.scene-wrapper-passthrough.Token.leader",
+    id: "leader",
+    scene
+  });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0 });
+  const follower = new FakeTokenDocument({
+    uuid: "Scene.scene-wrapper-passthrough.Token.follower",
+    id: "follower",
+    scene
+  });
+  Object.assign(follower, { x: -100, y: 0, elevation: 0 });
+  scene.tokens.set(unrelated.id, unrelated);
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => [unrelated, leader, follower].find((token) => token.uuid === uuid) ?? null;
+
+  const relationship = {
+    id: "relationship-post-sync",
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.POST_SYNC
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : []
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  let captured = [];
+  const wrapped = async (instructions, options) => {
+    captured.push({ instructions, options });
+    return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
+  };
+
+  const unrelatedInstructions = { unrelated: { destination: { x: 100, y: 0, elevation: 0 }, method: "api" } };
+  await registrations[0].call(scene, wrapped, unrelatedInstructions, { method: "api" });
+  assert.equal(captured[0].instructions, unrelatedInstructions, "Unrelated API instructions must be passed through by identity.");
+
+  const leaderInstructions = { leader: { destination: { x: 100, y: 0, elevation: 0 }, method: "api" } };
+  await registrations[0].call(scene, wrapped, leaderInstructions, { method: "api" });
+  assert.equal(captured[1].instructions, leaderInstructions, "postSync policy must preserve the external leader call unchanged.");
+
+  const followerInstructions = { follower: { destination: { x: 0, y: 100, elevation: 0 }, method: "api" } };
+  await registrations[0].call(scene, wrapped, followerInstructions, { method: "api" });
+  assert.equal(captured[2].instructions, followerInstructions, "Follower-only API movement must not be treated as leader coordination.");
+
+  const multiTokenInstructions = {
+    leader: { destination: { x: 200, y: 0, elevation: 0 }, method: "api" },
+    unrelated: { destination: { x: 200, y: 100, elevation: 0 }, method: "api" }
+  };
+  await registrations[0].call(scene, wrapped, multiTokenInstructions, { method: "api" });
+  assert.equal(captured[3].instructions, multiTokenInstructions, "Multi-token external API calls must remain untouched.");
+
+  service.shutdown();
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("Scene.moveTokens integration does not recurse into AE5E-generated relationship movement", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+  const scene = { id: "scene-wrapper-recursion", tokens: new FakeCollection() };
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-wrapper-recursion.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0 });
+  scene.tokens.set(leader.id, leader);
+  const relationship = { id: "relationship-recursion", leaderUuid: leader.uuid, followerUuid: "Scene.scene-wrapper-recursion.Token.follower" };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: () => []
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  const instructions = { leader: { destination: { x: 100, y: 0, elevation: 0, checkpoint: true }, method: "api" } };
+  const options = {
+    method: "api",
+    actionEffects5e: { relationshipMovement: true, generatedBy: "action-effects-5e" }
+  };
+  let called = 0;
+  await registrations[0].call(scene, async (receivedInstructions, receivedOptions) => {
+    called += 1;
+    assert.equal(receivedInstructions, instructions);
+    assert.equal(receivedOptions, options);
+    return { leader: true };
+  }, instructions, options);
+  assert.equal(called, 1);
+
+  service.shutdown();
+  globalThis.libWrapper = previousLibWrapper;
+});
+
+test("relationship movement settlement helper waits for active token animation promises", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const scene = { id: "scene-settlement-helper" };
+  let resolveAnimation;
+  const animationPromise = new Promise((resolve) => { resolveAnimation = resolve; });
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-settlement-helper.Token.leader", id: "leader", scene });
+  Object.assign(leader, { object: { movementAnimationPromise: animationPromise } });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-settlement-helper.Token.follower", id: "follower", scene });
+  Object.assign(follower, { object: { movementAnimationPromise: null } });
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = { id: "relationship-settlement-helper", leaderUuid: leader.uuid, followerUuid: follower.uuid };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : []
+  };
+  const fakeMovement = { registerConsumer() { return () => {}; } };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+
+  let settled = false;
+  const waiting = service.waitForMovementSettled({ leaderUuid: leader.uuid, timeoutMs: 500, pollMs: 5 }).then(() => { settled = true; });
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(settled, false);
+  leader.object.movementAnimationPromise = null;
+  resolveAnimation();
+  await waiting;
+  assert.equal(settled, true);
+
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("player external API relationship movement is coordinated through the GM without running the original leader-only call", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousUser = game.user;
+  const previousUi = globalThis.ui;
+  const player = { id: "player-wrapper", isGM: false, active: true };
+  game.users.set(player.id, player);
+  game.user = player;
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+
+  const scene = { id: "scene-player-wrapper", grid: { isGridless: true }, tokens: new FakeCollection() };
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-player-wrapper.Token.leader", id: "leader", scene, owner: true });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0 });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-player-wrapper.Token.follower", id: "follower", scene });
+  Object.assign(follower, { x: -100, y: 0, elevation: 0 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-player-wrapper",
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : []
+  };
+  const socketCalls = [];
+  const fakeSocket = {
+    register() {},
+    async executeAsGM(name, request) {
+      socketCalls.push({ name, request: structuredClone(request) });
+      return { completed: true, results: { leader: true, follower: true } };
+    }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  let wrappedCalls = 0;
+  const result = await registrations[0].call(scene, async () => {
+    wrappedCalls += 1;
+    return { leader: true };
+  }, {
+    leader: {
+      id: "PlayerMove000001",
+      destination: { x: 100, y: 0, elevation: 0, action: "walk", checkpoint: true },
+      method: "api"
+    }
+  }, { method: "api" });
+
+  assert.equal(wrappedCalls, 0, "The player's original leader-only Scene.moveTokens call must be replaced, not executed.");
+  assert.equal(socketCalls.length, 1);
+  assert.equal(socketCalls[0].name, "relationships.moveGroup");
+  assert.equal(socketCalls[0].request.requestingUserId, player.id);
+  assert.equal(socketCalls[0].request.leaderUuid, leader.uuid);
+  assert.deepEqual(socketCalls[0].request.waypoints.map(({ x, y, elevation }) => ({ x, y, elevation })), [
+    { x: 100, y: 0, elevation: 0 }
+  ]);
+  assert.deepEqual(result, { leader: true });
+
+  service.shutdown();
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.ui = previousUi;
+  game.user = previousUser;
+  game.users.delete(player.id);
+});
+
+test("teleport and mixed-payload API movement stay on the compatibility fallback path", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+
+  const scene = { id: "scene-wrapper-fallbacks", grid: { isGridless: true }, tokens: new FakeCollection() };
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-wrapper-fallbacks.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0 });
+  scene.tokens.set(leader.id, leader);
+  const relationship = {
+    id: "relationship-wrapper-fallbacks",
+    leaderUuid: leader.uuid,
+    followerUuid: "Scene.scene-wrapper-fallbacks.Token.follower",
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: () => []
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  const calls = [];
+  const wrapped = async (instructions, options) => {
+    calls.push({ instructions, options });
+    return { leader: true };
+  };
+
+  const teleportInstructions = { leader: { destination: { x: 500, y: 0, elevation: 0, action: "walk" }, method: "api" } };
+  const teleportOptions = { method: "api", actionEffects5e: { pathType: PATH_TYPES.TELEPORT } };
+  await registrations[0].call(scene, wrapped, teleportInstructions, teleportOptions);
+  assert.equal(calls[0].instructions, teleportInstructions);
+
+  const mixedInstructions = {
+    leader: {
+      destination: { x: 100, y: 0, elevation: 0, texture: { tint: "#ff0000" } },
+      method: "api"
+    }
+  };
+  await registrations[0].call(scene, wrapped, mixedInstructions, { method: "api" });
+  assert.equal(calls[1].instructions, mixedInstructions, "Movement carrying unrelated token updates must remain untouched.");
+
+  service.shutdown();
+  globalThis.libWrapper = previousLibWrapper;
+});
+
+test("public relationship moveGroup API delegates a normalized route through Socketlib", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const scene = { id: "scene-public-move" };
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-public-move.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 10, y: 20, elevation: 5 });
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : null;
+
+  let received = null;
+  const fakeSocket = {
+    register() {},
+    async executeAsGM(name, request) {
+      assert.equal(name, "relationships.moveGroup");
+      received = structuredClone(request);
+      return { completed: true };
+    }
+  };
+  const fakeRelationships = { list: () => [], getForLeader: () => [] };
+  const fakeMovement = {};
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+
+  const result = await service.moveGroup({
+    leaderUuid: leader.uuid,
+    waypoints: [
+      { x: 110, action: "walk" },
+      { y: 120, elevation: 10 }
+    ],
+    movementMode: "walk",
+    sourceUuid: "Item.test"
+  });
+
+  assert.equal(result.completed, true);
+  assert.deepEqual(received.origin, { x: 10, y: 20, elevation: 5 });
+  assert.deepEqual(received.waypoints.map(({ x, y, elevation, checkpoint }) => ({ x, y, elevation, checkpoint: checkpoint ?? false })), [
+    { x: 110, y: 20, elevation: 5, checkpoint: false },
+    { x: 110, y: 120, elevation: 10, checkpoint: true }
+  ]);
+  assert.equal(received.sourceUuid, "Item.test");
+
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("coordinated external API movement preflights follower collision before either token moves", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const registrations = [];
+  let warned = null;
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn(message) { warned = message; }, error() {} } };
+
+  const scene = { id: "scene-wrapper-collision", grid: { isGridless: true }, tokens: new FakeCollection() };
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-wrapper-collision.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, name: "Leader", object: null });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-wrapper-collision.Token.follower", id: "follower", scene });
+  Object.assign(follower, {
+    x: -100,
+    y: 0,
+    elevation: 0,
+    name: "Follower",
+    object: {
+      constrainMovementPath(path) { return [path, true]; }
+    }
+  });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+
+  const relationship = {
+    id: "relationship-wrapper-collision",
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    followElevation: true,
+    followRotation: false,
+    collisionPolicy: "stopGroup",
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  let wrappedCalls = 0;
+  const result = await registrations[0].call(scene, async () => {
+    wrappedCalls += 1;
+    return { leader: true };
+  }, {
+    leader: {
+      destination: { x: 100, y: 0, elevation: 0, action: "walk", checkpoint: true },
+      method: "api"
+    }
+  }, { method: "api" });
+
+  assert.equal(wrappedCalls, 0);
+  assert.deepEqual(result, { leader: false });
+  assert.match(warned, /cannot follow that path/i);
+
+  service.shutdown();
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
 });

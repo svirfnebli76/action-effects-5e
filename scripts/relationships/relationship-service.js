@@ -3,6 +3,7 @@ import {
   COLLISION_POLICIES,
   HOOKS,
   MODULE_ID,
+  RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_TYPES,
   SCENE_RELATIONSHIPS_FLAG,
   TELEPORT_POLICIES
@@ -240,6 +241,9 @@ export class RelationshipService {
       collisionPolicy: Object.values(COLLISION_POLICIES).includes(data.collisionPolicy)
         ? data.collisionPolicy
         : COLLISION_POLICIES.STOP_GROUP,
+      coordinationPolicy: Object.values(RELATIONSHIP_COORDINATION_POLICIES).includes(data.coordinationPolicy)
+        ? data.coordinationPolicy
+        : RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
       breakDistance: Number.isFinite(Number(data.breakDistance)) ? Number(data.breakDistance) : null,
       sourceUuid: data.sourceUuid ?? null,
       metadata: duplicateSafely(data.metadata ?? {}),

@@ -1,4 +1,4 @@
-# Testing Action Effects 5E 0.2.10
+# Testing Action Effects 5E 0.2.11
 
 ## Automated tests
 
@@ -8,7 +8,7 @@ From the repository root:
 npm test
 ```
 
-The suite checks syntax, movement transactions, indexed consumers, relationship persistence, Socketlib registration, rigid and trailing waypoint planning, passenger classification, follower blocking, coordinated group instruction construction, post-operation synchronization for external API movement, symmetric follower-teleport detachment, non-GM GM-receipt validation, collision preflight, and partial-movement rollback.
+The suite checks syntax plus 39 movement/relationship regressions: indexed consumers, relationship persistence, Socketlib registration, rigid and trailing waypoint planning, elevation handling, passenger classification, follower blocking, coordinated group instruction construction, selective simultaneous external/API coordination, compatibility passthrough, post-operation fallback synchronization, symmetric follower-teleport detachment, non-GM GM authorization/receipts, collision preflight, settlement waiting, and partial-movement rollback.
 
 ## Foundry smoke test
 
@@ -104,6 +104,49 @@ For the live regression test on Foundry 14.365, create a two-token relationship 
 
 
 
+
+## v0.2.11 regression check
+
+Compatible external `Scene.moveTokens()` calls for exactly one active `coordinationPolicy: "coordinated"` leader should be converted into a single leader+follower Foundry movement operation **before animation begins**. This is a selective integration, not a global movement takeover: unrelated tokens, follower-only calls, multi-token external calls, teleports, resize/mixed update payloads, and relationships using `postSync` must continue through the original call unchanged. If safe pre-coordination is unavailable, v0.2.10 terminal post-sync remains the fallback.
+
+For the primary live regression:
+
+1. Create an `adjacentFollower` relationship and leave normal modules enabled.
+2. Call `Scene.moveTokens()` for only the leader with a route that moves horizontally to an explicit checkpoint, turns 90 degrees, and continues to a terminal checkpoint.
+3. **Visually verify that leader and follower begin/animate together.** The follower should trail the same route one planar space behind; it should not wait for the leader to finish and then catch up.
+4. Wait deterministically rather than using a guessed timeout:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+const rel = ae5e.relationships.list({ sceneId: canvas.scene.id })[0];
+await ae5e.relationships.waitForMovementSettled({ leaderUuid: rel.leaderUuid });
+```
+
+5. Confirm the settled leader is at the terminal waypoint and the follower is at the leader's immediately preceding planar route position.
+6. Repeat with a route containing an elevation change. Leader and follower should still animate as one coordinated operation while `adjacentFollower` preserves the historical 3D trailing position.
+7. Move an unrelated token through a one-token API call and confirm AE5E does not alter the instruction or movement.
+8. Issue a multi-token external `Scene.moveTokens()` call and confirm AE5E leaves it untouched rather than trying to rewrite only one member.
+9. A relationship set to `coordinationPolicy: "postSync"` should intentionally retain sequential post-operation follower synchronization.
+10. Teleports must retain the relationship's `detach` / `follow` / `block` policy and must not be converted into ordinary coordinated traversal.
+11. With a blocking follower wall and `collisionPolicy: "stopGroup"`, neither token should begin the coordinated external move.
+12. After each settled movement, `ae5e.relationships.getMovementStats()` should return no queued/active movement work.
+
+The public group-movement entry point can also be exercised directly:
+
+```js
+await ae5e.relationships.moveGroup({
+  leaderUuid: rel.leaderUuid,
+  destination: {
+    x: leader.x + canvas.grid.size,
+    y: leader.y,
+    elevation: leader.elevation,
+    action: "walk",
+    checkpoint: true
+  }
+});
+```
+
+The automated suite verifies GM augmentation happens in one wrapped call, player calls are handed to the active GM without running the original leader-only move, AE5E-generated calls bypass the wrapper recursively, and compatibility fallbacks stay untouched.
 
 ## v0.2.10 regression check
 

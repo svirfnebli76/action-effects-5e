@@ -4,7 +4,9 @@ import {
   MOVEMENT_AGENCIES,
   MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
-  PATH_TYPES
+  OPERATION_METADATA_KEY,
+  PATH_TYPES,
+  RELATIONSHIP_COORDINATION_POLICIES
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
@@ -15,6 +17,7 @@ const MAX_RECENT_REQUESTS = 100;
 const MANUAL_SELF_MOVEMENT_METHODS = new Set(["dragging", "keyboard", "hud", "config"]);
 const PASSTHROUGH_LEADER_METHODS = new Set(["api", "undo", "paste"]);
 const SUPPORTED_METHODS = new Set(["api", "config", "hud", "dragging", "keyboard", "paste", "undo"]);
+const SCENE_MOVE_TOKENS_WRAPPER_TARGET = "foundry.documents.Scene.prototype.moveTokens";
 
 export class RelationshipMovementService {
   #socket;
@@ -30,6 +33,7 @@ export class RelationshipMovementService {
   #queuedFollowerDetachIds = new Set();
   #activeLeaders = new Set();
   #recentRequestIds = new Set();
+  #sceneMoveWrapperRegistered = false;
 
   constructor({ socket, relationships, movement }) {
     this.#socket = socket;
@@ -48,6 +52,7 @@ export class RelationshipMovementService {
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_REMOVED, () => this.#reconcileConsumers()));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIPS_REINDEXED, () => this.#reconcileConsumers()));
     this.#reconcileConsumers();
+    this.#registerSceneMoveTokensWrapper();
 
     Logger.info(`Relationship movement service indexed ${this.#consumerRemovers.size} involved token(s).`);
   }
@@ -69,6 +74,7 @@ export class RelationshipMovementService {
     this.#queuedFollowerDetachIds.clear();
     this.#activeLeaders.clear();
     this.#recentRequestIds.clear();
+    this.#unregisterSceneMoveTokensWrapper();
     this.#initialized = false;
   }
 
@@ -83,8 +89,442 @@ export class RelationshipMovementService {
       queuedExternalSyncs: this.#queuedSyncIds.size,
       queuedFollowerDetaches: this.#queuedFollowerDetachIds.size,
       activeLeaders: this.#activeLeaders.size,
-      recentRequests: this.#recentRequestIds.size
+      recentRequests: this.#recentRequestIds.size,
+      sceneMoveWrapperRegistered: this.#sceneMoveWrapperRegistered
     };
+  }
+
+  async moveGroup({
+    leaderUuid,
+    waypoints = null,
+    destination = null,
+    pathType = PATH_TYPES.TRAVERSE,
+    movementMode = null,
+    sourceUuid = null,
+    autoRotate = false,
+    method = "api",
+    split = false,
+    ignoreWallsRequested = false
+  } = {}) {
+    const leader = await fromUuid(leaderUuid);
+    if (!(leader instanceof foundry.documents.TokenDocument)) {
+      throw new Error("Relationship group movement requires a valid leader TokenDocument UUID.");
+    }
+
+    const cleanWaypoints = RelationshipMovementPlanner.extractInstructionWaypoints({
+      waypoints: Array.isArray(waypoints) && waypoints.length ? waypoints : undefined,
+      destination: !Array.isArray(waypoints) || !waypoints.length ? destination : undefined
+    }, leader);
+
+    return this.#socket.executeAsGM("relationships.moveGroup", {
+      requestId: `${MODULE_ID}-public-group-${randomId(20)}`,
+      requestingUserId: game.user.id,
+      sceneId: leader.parent?.id,
+      leaderUuid: leader.uuid,
+      originalMovementId: null,
+      origin: { x: leader.x, y: leader.y, elevation: leader.elevation },
+      waypoints: cleanWaypoints,
+      pathType,
+      movementMode,
+      sourceUuid,
+      autoRotate: autoRotate === true,
+      method: SUPPORTED_METHODS.has(method) ? method : "api",
+      split: split === true,
+      ignoreWallsRequested: ignoreWallsRequested === true
+    });
+  }
+
+  async waitForMovementSettled({ leaderUuid = null, timeoutMs = 5_000, pollMs = 25 } = {}) {
+    const deadline = Date.now() + Math.max(100, Number(timeoutMs) || 5_000);
+    const interval = Math.max(5, Number(pollMs) || 25);
+
+    while (Date.now() <= deadline) {
+      const tokenUuids = new Set();
+      if (leaderUuid) {
+        tokenUuids.add(leaderUuid);
+        for (const relationship of this.#relationships.getForLeader(leaderUuid)) {
+          tokenUuids.add(relationship.followerUuid);
+        }
+      } else {
+        for (const relationship of this.#relationships.list()) {
+          tokenUuids.add(relationship.leaderUuid);
+          tokenUuids.add(relationship.followerUuid);
+        }
+      }
+
+      const animations = [];
+      for (const uuid of tokenUuids) {
+        const token = await fromUuid(uuid);
+        const animation = token?.object?.movementAnimationPromise;
+        if (animation && typeof animation.then === "function") animations.push(animation);
+      }
+
+      if (animations.length) {
+        await Promise.race([
+          Promise.allSettled(animations),
+          new Promise((resolve) => setTimeout(resolve, interval))
+        ]);
+        continue;
+      }
+
+      const busy = leaderUuid
+        ? this.#activeLeaders.has(leaderUuid)
+        : this.#activeLeaders.size > 0 || this.#queuedMovementIds.size > 0 || this.#queuedSyncIds.size > 0;
+      if (!busy) return true;
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+
+    throw new Error("Timed out while waiting for Action Effects 5E relationship movement to settle.");
+  }
+
+  #registerSceneMoveTokensWrapper() {
+    if (this.#sceneMoveWrapperRegistered) return;
+    const wrapperApi = globalThis.libWrapper;
+    if (!wrapperApi?.register) {
+      Logger.debug("libWrapper Scene.moveTokens integration is unavailable; external relationship movement will use post-sync fallback.");
+      return;
+    }
+
+    const service = this;
+    try {
+      wrapperApi.register(
+        MODULE_ID,
+        SCENE_MOVE_TOKENS_WRAPPER_TARGET,
+        function ae5eSceneMoveTokensWrapper(wrapped, instructions, options = {}) {
+          return service.#wrapSceneMoveTokens(this, wrapped, instructions, options);
+        },
+        "MIXED"
+      );
+      this.#sceneMoveWrapperRegistered = true;
+    } catch (error) {
+      // Relationship movement must remain usable even if another module or a
+      // future Foundry/libWrapper change prevents this optional coordination
+      // boundary from registering. The existing after-phase post-sync path is
+      // deliberately retained as the compatibility fallback.
+      Logger.warn("Could not register the Scene.moveTokens coordination wrapper; external relationship movement will use post-sync fallback.", error);
+      this.#sceneMoveWrapperRegistered = false;
+    }
+  }
+
+  #unregisterSceneMoveTokensWrapper() {
+    if (!this.#sceneMoveWrapperRegistered) return;
+    try {
+      globalThis.libWrapper?.unregister?.(MODULE_ID, SCENE_MOVE_TOKENS_WRAPPER_TARGET);
+    } catch (error) {
+      Logger.debug("Could not unregister the Scene.moveTokens relationship wrapper during shutdown.", error);
+    }
+    this.#sceneMoveWrapperRegistered = false;
+  }
+
+  async #wrapSceneMoveTokens(scene, wrapped, instructions = {}, options = {}) {
+    const metadata = options?.[OPERATION_METADATA_KEY];
+    if (metadata?.relationshipMovement === true && metadata?.generatedBy === MODULE_ID) {
+      return wrapped(instructions, options);
+    }
+
+    // The wrapper is intentionally narrow. It sees Scene.moveTokens calls because
+    // that is the only public API boundary where AE5E can add followers before
+    // animation starts, but it changes nothing unless exactly one active coordinated
+    // relationship leader is being moved by a compatible external-style method.
+    if (!instructions || typeof instructions !== "object" || Array.isArray(instructions)) {
+      return wrapped(instructions, options);
+    }
+
+    const entries = Object.entries(instructions);
+    if (entries.length !== 1) return wrapped(instructions, options);
+
+    const [leaderId, leaderInstruction] = entries[0];
+    const leader = scene?.tokens?.get?.(leaderId);
+    if (!(leader instanceof foundry.documents.TokenDocument)) return wrapped(instructions, options);
+
+    const relationships = this.#relationships.getForLeader(leader.uuid);
+    if (!relationships.length) return wrapped(instructions, options);
+    if (!relationships.every((relationship) => this.#coordinationPolicy(relationship) === RELATIONSHIP_COORDINATION_POLICIES.COORDINATED)) {
+      return wrapped(instructions, options);
+    }
+
+    const method = leaderInstruction?.method ?? options?.method ?? "api";
+    if (!PASSTHROUGH_LEADER_METHODS.has(method)) return wrapped(instructions, options);
+    if (this.#instructionHasDimensionChange(leaderInstruction)) return wrapped(instructions, options);
+    if (!this.#instructionIsPureMovement(leaderInstruction)) return wrapped(instructions, options);
+
+    const pathType = this.#inferInstructionPathType(leaderInstruction, options);
+    // Teleport follow/detach/block has explicit relationship semantics and remains
+    // on the validated post-sync path instead of being converted into trailing
+    // movement by this wrapper.
+    if (pathType === PATH_TYPES.TELEPORT) return wrapped(instructions, options);
+
+    if (this.#activeLeaders.has(leader.uuid)) {
+      ui?.notifications?.warn?.("This token is already resolving linked movement.");
+      return { [leaderId]: false };
+    }
+
+    let waypoints;
+    try {
+      waypoints = RelationshipMovementPlanner.extractInstructionWaypoints(leaderInstruction, leader);
+    } catch (error) {
+      Logger.debug("External API relationship movement could not be safely coordinated before execution; using post-sync fallback.", error);
+      return wrapped(instructions, options);
+    }
+
+    if (!game.user?.isGM) {
+      const externalMetadata = metadata && typeof metadata === "object" ? metadata : {};
+      const request = {
+        requestId: `${MODULE_ID}-external-group-${randomId(20)}`,
+        requestingUserId: game.user.id,
+        sceneId: scene.id,
+        leaderUuid: leader.uuid,
+        originalMovementId: leaderInstruction?.id ?? null,
+        origin: { x: leader.x, y: leader.y, elevation: leader.elevation },
+        waypoints: duplicateSafely(waypoints),
+        pathType,
+        movementMode: externalMetadata.movementMode ?? this.#instructionMovementMode(leaderInstruction),
+        sourceUuid: externalMetadata.sourceUuid ?? null,
+        autoRotate: (leaderInstruction?.autoRotate ?? options?.autoRotate) === true,
+        method,
+        split: (leaderInstruction?.split ?? options?.split) === true,
+        ignoreWallsRequested: leaderInstruction?.constrainOptions?.ignoreWalls === true
+          || options?.constrainOptions?.ignoreWalls === true
+      };
+
+      Logger.debug("Coordinating player external relationship movement through the active GM.", {
+        source: "external-api",
+        leaderUuid: leader.uuid,
+        relationships: relationships.map((relationship) => relationship.id),
+        pathType,
+        method
+      });
+
+      try {
+        const result = await this.#socket.executeAsGM("relationships.moveGroup", request);
+        this.#notifyResult(result);
+        return { [leaderId]: result?.completed === true && result?.results?.[leaderId] !== false };
+      } catch (error) {
+        // If Socketlib/GM coordination is unavailable, preserve compatibility by
+        // allowing the caller's original movement. The existing terminal post-sync
+        // path will still attempt to carry the follower afterward.
+        Logger.debug("Could not coordinate player external movement through the GM; using post-sync fallback.", error);
+        return wrapped(instructions, options);
+      }
+    }
+
+    const followerEntries = [];
+    for (const relationship of relationships) {
+      const followerId = relationship.followerUuid.split(".").at(-1);
+      const token = scene.tokens.get(followerId);
+      if (!(token instanceof foundry.documents.TokenDocument)) {
+        Logger.debug("External API relationship movement has an unavailable follower; using post-sync fallback.", {
+          leaderUuid: leader.uuid,
+          relationshipId: relationship.id,
+          followerUuid: relationship.followerUuid
+        });
+        return wrapped(instructions, options);
+      }
+      followerEntries.push({ token, relationship });
+    }
+
+    const planned = RelationshipMovementPlanner.buildInstructions({
+      leader,
+      followers: followerEntries,
+      waypoints,
+      pathType,
+      grid: this.#gridForScene(scene)
+    });
+
+    const augmentedInstructions = {
+      [leaderId]: duplicateSafely(leaderInstruction)
+    };
+    this.#ensureInstructionTerminalCheckpoint(augmentedInstructions[leaderId]);
+    for (const { token, relationship } of followerEntries) {
+      const followerInstruction = duplicateSafely(planned[token.id]);
+      followerInstruction.method = "api";
+      followerInstruction.showRuler = false;
+      followerInstruction.autoRotate = (leaderInstruction?.autoRotate ?? options?.autoRotate) === true
+        && relationship.followRotation === true;
+      augmentedInstructions[token.id] = followerInstruction;
+    }
+
+    const detachAfterSuccess = new Set();
+    while (true) {
+      const activeFollowers = followerEntries.filter(({ token }) => augmentedInstructions[token.id]);
+      const collisionResult = this.#validateFollowerPaths({
+        followers: activeFollowers,
+        instructions: augmentedInstructions,
+        allowIgnoreWalls: (leaderInstruction?.constrainOptions?.ignoreWalls === true || options?.constrainOptions?.ignoreWalls === true),
+        isTeleport: false
+      });
+      if (collisionResult.valid) break;
+
+      if (collisionResult.relationship?.collisionPolicy === "detach") {
+        detachAfterSuccess.add(collisionResult.relationship.id);
+        delete augmentedInstructions[collisionResult.token.id];
+        continue;
+      }
+
+      ui?.notifications?.warn?.(collisionResult.message);
+      Logger.debug("Blocked coordinated external relationship movement during follower preflight.", {
+        leaderUuid: leader.uuid,
+        relationshipId: collisionResult.relationship?.id ?? null,
+        followerUuid: collisionResult.token?.uuid ?? null
+      });
+      return { [leaderId]: false };
+    }
+
+    const externalMetadata = metadata && typeof metadata === "object" ? metadata : {};
+    const relationshipIds = relationships.map((relationship) => relationship.id);
+    const finalWaypoint = RelationshipMovementPlanner.finalWaypoint(waypoints);
+    const checkpointCount = waypoints.filter((point) => point.checkpoint === true).length;
+    const elevationChange = Number(finalWaypoint?.elevation ?? leader.elevation) - Number(leader.elevation ?? 0);
+    const groupTransactionId = `${MODULE_ID}-external-group-${randomId(16)}`;
+    const coordinatedMetadata = {
+      ...duplicateSafely(externalMetadata),
+      transactionId: groupTransactionId,
+      pathType,
+      agency: externalMetadata.agency ?? MOVEMENT_AGENCIES.VOLUNTARY,
+      resource: externalMetadata.resource ?? MOVEMENT_RESOURCES.MOVEMENT,
+      movementMode: externalMetadata.movementMode ?? this.#instructionMovementMode(leaderInstruction),
+      sourceUuid: externalMetadata.sourceUuid ?? null,
+      initiatorUuid: leader.uuid,
+      leaderUuid: leader.uuid,
+      relationshipIds,
+      requestingUserId: game.user.id,
+      relationshipMovement: true,
+      coordinatedExternalMovement: true,
+      externalGeneratedBy: externalMetadata.generatedBy ?? null,
+      generatedBy: MODULE_ID,
+      internal: true
+    };
+    const coordinatedOptions = {
+      ...options,
+      [OPERATION_METADATA_KEY]: coordinatedMetadata
+    };
+
+    Logger.debug("Coordinated relationship movement", {
+      source: "external-api",
+      leaderUuid: leader.uuid,
+      followers: Object.keys(augmentedInstructions).length - 1,
+      relationshipIds,
+      mode: relationships.map((relationship) => relationship.attachmentMode),
+      pathType,
+      method,
+      checkpoints: checkpointCount,
+      elevationChange
+    });
+
+    const origins = this.#captureOrigins(scene, Object.keys(augmentedInstructions));
+    this.#activeLeaders.add(leader.uuid);
+    const releaseMovementContexts = this.#registerInstructionMovementContexts(
+      augmentedInstructions,
+      coordinatedOptions,
+      { preserveExistingIds: true }
+    );
+
+    try {
+      const results = await wrapped(augmentedInstructions, coordinatedOptions);
+      const failedIds = Object.entries(results ?? {})
+        .filter(([, completed]) => !completed)
+        .map(([id]) => id);
+
+      if (failedIds.length) {
+        Logger.warn("Coordinated external relationship movement reported incomplete token movement; rolling back the group.", {
+          leaderUuid: leader.uuid,
+          results,
+          failedIds
+        });
+        await this.#rollbackCompletedTokens({ scene, results, origins, leaderUuid: leader.uuid });
+        ui?.notifications?.warn?.("Linked movement was stopped, so Action Effects 5E restored the group to its starting positions.");
+        return { [leaderId]: false };
+      }
+
+      if (detachAfterSuccess.size) await this.#relationships.removeManyAsGM(detachAfterSuccess);
+      // Preserve the external caller's result shape. Followers were an AE5E
+      // implementation detail and are not added to the object returned to the caller.
+      return { [leaderId]: results?.[leaderId] === true };
+    } catch (error) {
+      Logger.error("Coordinated external relationship movement failed before completion.", error);
+      throw error;
+    } finally {
+      releaseMovementContexts();
+      this.#activeLeaders.delete(leader.uuid);
+    }
+  }
+
+  #coordinationPolicy(relationship) {
+    return relationship?.coordinationPolicy ?? RELATIONSHIP_COORDINATION_POLICIES.COORDINATED;
+  }
+
+  #instructionIsPureMovement(instruction = {}) {
+    const allowedInstructionFields = new Set([
+      "id", "destination", "waypoints", "method", "showRuler", "autoRotate",
+      "constrainOptions", "measureOptions", "terrainOptions", "split"
+    ]);
+    if (Object.keys(instruction).some((key) => !allowedInstructionFields.has(key))) return false;
+
+    const allowedWaypointFields = new Set([
+      "x", "y", "elevation", "action", "checkpoint", "explicit", "snapped", "level"
+    ]);
+    const points = [
+      ...(Array.isArray(instruction?.waypoints) ? instruction.waypoints : []),
+      instruction?.destination
+    ].filter(Boolean);
+    return points.every((point) => (
+      point && typeof point === "object"
+      && Object.keys(point).every((key) => allowedWaypointFields.has(key))
+    ));
+  }
+
+  #instructionHasDimensionChange(instruction = {}) {
+    if (instruction?.dimensions && typeof instruction.dimensions === "object") return true;
+    const points = [
+      ...(Array.isArray(instruction?.waypoints) ? instruction.waypoints : []),
+      instruction?.destination
+    ].filter(Boolean);
+    return points.some((point) => ["width", "height", "depth", "shape"].some((field) => point?.[field] !== undefined));
+  }
+
+  #instructionMovementMode(instruction = {}) {
+    const points = Array.isArray(instruction?.waypoints) && instruction.waypoints.length
+      ? instruction.waypoints
+      : [instruction?.destination].filter(Boolean);
+    return points.map((point) => point?.action).filter(Boolean).at(-1) ?? null;
+  }
+
+  #inferInstructionPathType(instruction = {}, options = {}) {
+    const metadata = options?.[OPERATION_METADATA_KEY];
+    if (metadata?.pathType && Object.values(PATH_TYPES).includes(metadata.pathType)) return metadata.pathType;
+
+    const ownTeleport = Object.getOwnPropertyDescriptor(options ?? {}, "teleport")?.value === true;
+    if (ownTeleport || metadata?.teleport === true) return PATH_TYPES.TELEPORT;
+
+    const method = String(instruction?.method ?? options?.method ?? "api").toLowerCase();
+    if (method.includes("teleport")) return PATH_TYPES.TELEPORT;
+    if (method.includes("fall")) return PATH_TYPES.FALL;
+
+    const points = [
+      ...(Array.isArray(instruction?.waypoints) ? instruction.waypoints : []),
+      instruction?.destination
+    ].filter(Boolean);
+    for (const action of points.map((point) => point?.action).filter(Boolean)) {
+      const actions = globalThis.CONFIG?.Token?.movement?.actions;
+      const config = actions?.get?.(action) ?? actions?.[action];
+      if (config?.teleport === true) return PATH_TYPES.TELEPORT;
+    }
+
+    return PATH_TYPES.TRAVERSE;
+  }
+
+  #ensureInstructionTerminalCheckpoint(instruction = {}) {
+    if (Array.isArray(instruction.waypoints) && instruction.waypoints.length) {
+      instruction.waypoints[instruction.waypoints.length - 1] = {
+        ...instruction.waypoints.at(-1),
+        checkpoint: true
+      };
+      return instruction;
+    }
+    if (instruction.destination && typeof instruction.destination === "object") {
+      instruction.destination = { ...instruction.destination, checkpoint: true };
+    }
+    return instruction;
   }
 
   #reconcileConsumers() {
@@ -940,11 +1380,13 @@ export class RelationshipMovementService {
     }
   }
 
-  #registerInstructionMovementContexts(instructions, operationOptions) {
+  #registerInstructionMovementContexts(instructions, operationOptions, { preserveExistingIds = false } = {}) {
     const removers = [];
     try {
-      for (const [tokenId, instruction] of Object.entries(instructions)) {
-        const movementId = randomId(16);
+      for (const instruction of Object.values(instructions)) {
+        const movementId = preserveExistingIds && typeof instruction.id === "string" && instruction.id.length
+          ? instruction.id
+          : randomId(16);
         instruction.id = movementId;
         removers.push(this.#movement.registerMovementContext(movementId, operationOptions));
       }

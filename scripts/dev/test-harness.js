@@ -3,6 +3,7 @@ import {
   COLLISION_POLICIES,
   MODULE_ID,
   MOVEMENT_PHASES,
+  RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_TYPES,
   TELEPORT_POLICIES
 } from "../core/constants.js";
@@ -103,6 +104,7 @@ export class TestHarness {
       followRotation: false,
       teleportPolicy: TELEPORT_POLICIES.DETACH,
       collisionPolicy: COLLISION_POLICIES.STOP_GROUP,
+      coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
       metadata: { createdByTestHarness: true }
     });
 
