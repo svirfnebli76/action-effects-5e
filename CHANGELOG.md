@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.6 - Full-route checkpoints and subpath identity
+
+- Fixed manual multi-waypoint relationship movement collapsing user-authored routes into a direct path after AE5E intercepted the leader.
+- Relationship movement now reconstructs Foundry v14 routes from `movement.passed.waypoints` plus `movement.pending.waypoints`, preserving explicit checkpoints and their declared order.
+- Added duplicate-seam normalization so a waypoint repeated at the passed/pending boundary does not create a zero-length segment.
+- Added subpath-aware transient movement identity. Foundry may assign a new `movement.id` after an explicit checkpoint while retaining the original instruction ID as `subpathId`; AE5E now resolves internal movement context by either identifier.
+- Added `subpathId` to movement transactions for diagnostics and future spatial consumers.
+- Prevented checkpoint continuations of AE5E-owned coordinated movement from being mistaken for a new manual leader request.
+- Added regression coverage based on live Foundry 14.365 movement data for L-shaped passed/pending routes, explicit checkpoint preservation, and movement-ID changes across a stable subpath.
+
 ## 0.2.5 - Trailing followers and symmetric teleport breaks
 
 - Removed the deprecated `DatabaseUpdateOperation#teleport` prototype read that produced a Foundry v14 compatibility warning and is scheduled for removal in v15.

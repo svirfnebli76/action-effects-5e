@@ -241,6 +241,179 @@ test("movement service restores transient metadata from an explicit movement ID"
 });
 
 
+test("movement service restores AE5E context from a stable Foundry subpath after movement ID changes", async () => {
+  const previousSettings = game.settings;
+  game.settings = {
+    get(_module, key) {
+      if (key === "movementEnabled") return true;
+      if (key === "captureMovementDiagnostics") return false;
+      return undefined;
+    }
+  };
+
+  const relationships = { involves: () => true };
+  const registry = new MovementRegistry();
+  const { MovementService } = await import("../scripts/movement/movement-service.js");
+  const service = new MovementService({ registry, relationships });
+  service.initialize();
+
+  let seen = null;
+  const removeConsumer = service.registerConsumer({
+    id: "test-subpath-context",
+    tokenUuids: ["Scene.scene.Token.leader"],
+    phases: [MOVEMENT_PHASES.BEFORE],
+    handler: (transaction) => {
+      seen = transaction;
+    }
+  });
+
+  const stableSubpathId = "AbCdEfGh12345678";
+  const continuedMovementId = "QsebH0X5zxLnfjj0";
+  const releaseContext = service.registerMovementContext(stableSubpathId, {
+    relationshipMovement: true,
+    leaderUuid: "Scene.scene.Token.leader",
+    agency: MOVEMENT_AGENCIES.VOLUNTARY,
+    resource: MOVEMENT_RESOURCES.MOVEMENT,
+    generatedBy: "action-effects-5e"
+  });
+
+  const document = {
+    uuid: "Scene.scene.Token.leader",
+    id: "leader",
+    x: 3300,
+    y: 1600,
+    elevation: 0,
+    parent: { id: "scene" },
+    actor: null
+  };
+  const movement = {
+    id: continuedMovementId,
+    origin: { x: 3300, y: 1600, elevation: 0 },
+    destination: { x: 3300, y: 1800, elevation: 0 },
+    passed: {
+      waypoints: [
+        { x: 3300, y: 1700, elevation: 0, subpathId: stableSubpathId, checkpoint: false },
+        { x: 3300, y: 1800, elevation: 0, subpathId: stableSubpathId, checkpoint: true }
+      ]
+    },
+    pending: { waypoints: [] },
+    history: {
+      unrecorded: {
+        waypoints: [
+          { x: 3100, y: 1600, elevation: 0, movementId: stableSubpathId, subpathId: stableSubpathId }
+        ]
+      }
+    },
+    method: "dragging"
+  };
+
+  assert.equal(Hooks.call("preMoveToken", document, movement, {}), true);
+  assert.ok(seen);
+  assert.equal(seen.movementId, continuedMovementId);
+  assert.equal(seen.subpathId, stableSubpathId);
+  assert.equal(seen.metadata.relationshipMovement, true);
+  assert.equal(seen.generatedBy, "action-effects-5e");
+  assert.equal(seen.agency, MOVEMENT_AGENCIES.VOLUNTARY);
+
+  releaseContext();
+  removeConsumer();
+  service.shutdown();
+  game.settings = previousSettings;
+});
+
+test("relationship movement ignores an AE5E-owned checkpoint continuation instead of starting another group request", async () => {
+  const previousSettings = game.settings;
+  const previousUi = globalThis.ui;
+  game.settings = {
+    get(_module, key) {
+      if (key === "movementEnabled") return true;
+      if (key === "captureMovementDiagnostics") return false;
+      return undefined;
+    }
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+
+  const leaderUuid = "Scene.scene.Token.leader";
+  const followerUuid = "Scene.scene.Token.follower";
+  const relationship = {
+    id: "relationship-subpath",
+    leaderUuid,
+    followerUuid,
+    followerCanSelfMove: false
+  };
+  const relationships = {
+    involves: (uuid) => uuid === leaderUuid || uuid === followerUuid,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leaderUuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === followerUuid ? [relationship] : []
+  };
+
+  let socketExecutions = 0;
+  const socketHandlers = new Map();
+  const socket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM() { socketExecutions += 1; return { completed: true }; }
+  };
+
+  const registry = new MovementRegistry();
+  const { MovementService } = await import("../scripts/movement/movement-service.js");
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const movementService = new MovementService({ registry, relationships });
+  const relationshipMovement = new RelationshipMovementService({
+    socket,
+    relationships,
+    movement: movementService
+  });
+  movementService.initialize();
+  relationshipMovement.initialize();
+
+  const stableSubpathId = "AbCdEfGh12345678";
+  const releaseContext = movementService.registerMovementContext(stableSubpathId, {
+    transactionId: "action-effects-5e-group",
+    relationshipMovement: true,
+    internal: true,
+    generatedBy: "action-effects-5e",
+    leaderUuid,
+    initiatorUuid: leaderUuid,
+    agency: MOVEMENT_AGENCIES.VOLUNTARY,
+    resource: MOVEMENT_RESOURCES.MOVEMENT
+  });
+
+  const document = {
+    uuid: leaderUuid,
+    id: "leader",
+    x: 3300,
+    y: 1600,
+    elevation: 0,
+    parent: { id: "scene" },
+    actor: null
+  };
+  const continuation = {
+    id: "QsebH0X5zxLnfjj0",
+    origin: { x: 3300, y: 1600, elevation: 0 },
+    destination: { x: 3300, y: 1800, elevation: 0 },
+    passed: {
+      waypoints: [
+        { x: 3300, y: 1700, elevation: 0, subpathId: stableSubpathId },
+        { x: 3300, y: 1800, elevation: 0, subpathId: stableSubpathId, checkpoint: true }
+      ]
+    },
+    pending: { waypoints: [] },
+    method: "dragging"
+  };
+
+  assert.equal(Hooks.call("preMoveToken", document, continuation, {}), true);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(socketExecutions, 0);
+
+  releaseContext();
+  relationshipMovement.shutdown();
+  movementService.shutdown();
+  game.settings = previousSettings;
+  globalThis.ui = previousUi;
+});
+
+
 test("relationship service persists and reindexes leader/follower relationships", async () => {
   class FakeScene {
     constructor(id) {
@@ -1222,6 +1395,84 @@ test("movement transaction avoids Foundry's deprecated operation.teleport access
   } finally {
     globalThis.CONFIG = previousConfig;
   }
+});
+
+test("relationship movement planner preserves Foundry passed plus pending checkpoint routes", async () => {
+  const { RelationshipMovementPlanner } = await import("../scripts/relationships/relationship-movement-planner.js");
+
+  const movement = {
+    id: "c7gPmz250VwNimCY",
+    origin: { x: 3100, y: 1600, elevation: 0 },
+    // Foundry's destination is only the end of the currently executing leg.
+    destination: { x: 3300, y: 1600, elevation: 0 },
+    passed: {
+      waypoints: [
+        { x: 3200, y: 1600, elevation: 0, action: "walk", explicit: false, checkpoint: false },
+        { x: 3300, y: 1600, elevation: 0, action: "walk", explicit: true, checkpoint: true }
+      ]
+    },
+    pending: {
+      waypoints: [
+        { x: 3300, y: 1700, elevation: 0, action: "walk", explicit: false, checkpoint: false },
+        { x: 3300, y: 1800, elevation: 0, action: "walk", explicit: true, checkpoint: true }
+      ]
+    }
+  };
+
+  const waypoints = RelationshipMovementPlanner.extractWaypoints(movement);
+  assert.deepEqual(waypoints.map(({ x, y }) => ({ x, y })), [
+    { x: 3200, y: 1600 },
+    { x: 3300, y: 1600 },
+    { x: 3300, y: 1700 },
+    { x: 3300, y: 1800 }
+  ]);
+  assert.equal(waypoints[1].explicit, true);
+  assert.equal(waypoints[1].checkpoint, true);
+  assert.equal(waypoints[2].checkpoint, false);
+  assert.equal(waypoints.at(-1).checkpoint, true);
+});
+
+test("adjacent follower trails one space behind the complete L-shaped Foundry route", async () => {
+  const { RelationshipMovementPlanner } = await import("../scripts/relationships/relationship-movement-planner.js");
+  const { ATTACHMENT_MODES } = await import("../scripts/core/constants.js");
+
+  const movement = {
+    origin: { x: 3100, y: 1600, elevation: 0 },
+    destination: { x: 3300, y: 1600, elevation: 0 },
+    passed: {
+      waypoints: [
+        { x: 3200, y: 1600, elevation: 0, action: "walk", checkpoint: false },
+        { x: 3300, y: 1600, elevation: 0, action: "walk", explicit: true, checkpoint: true }
+      ]
+    },
+    pending: {
+      waypoints: [
+        { x: 3300, y: 1700, elevation: 0, action: "walk", checkpoint: false },
+        { x: 3300, y: 1800, elevation: 0, action: "walk", explicit: true, checkpoint: true }
+      ]
+    }
+  };
+
+  const leaderWaypoints = RelationshipMovementPlanner.extractWaypoints(movement);
+  const trailing = RelationshipMovementPlanner.translateWaypoints({
+    leader: { x: 3100, y: 1600, elevation: 0 },
+    follower: { x: 3100, y: 1500, elevation: 0 },
+    relationship: {
+      attachmentMode: ATTACHMENT_MODES.ADJACENT_FOLLOWER,
+      followElevation: true
+    },
+    waypoints: leaderWaypoints,
+    pathType: PATH_TYPES.TRAVERSE
+  });
+
+  assert.deepEqual(trailing.map(({ x, y }) => ({ x, y })), [
+    { x: 3100, y: 1600 },
+    { x: 3200, y: 1600 },
+    { x: 3300, y: 1600 },
+    { x: 3300, y: 1700 }
+  ]);
+  assert.equal(trailing[2].checkpoint, true);
+  assert.equal(trailing.at(-1).checkpoint, true);
 });
 
 test("adjacent follower trails through spaces vacated by the leader while teleport-follow preserves offset", async () => {

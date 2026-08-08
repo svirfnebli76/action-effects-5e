@@ -11,7 +11,7 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.2.5: trailing followers and symmetric teleport breaks
+## Build 0.2.6: checkpoint-safe trailing routes
 
 This build adds the first working attachment behavior on top of the validated 0.1.1 foundation:
 
@@ -29,6 +29,12 @@ This build adds the first working attachment behavior on top of the validated 0.
 - Collision policies support `stopGroup` and `detach`.
 - Relationship chains and cycles are rejected in this milestone.
 
+
+
+
+### v0.2.6 checkpoint and continuation correction
+
+Foundry v14 processes a user-authored route with explicit checkpoints as multiple movement operations. At each checkpoint the current `movement.id` can change, while waypoint `subpathId` continues to identify the original movement instruction. The current leg is exposed through `movement.passed.waypoints` and later legs through `movement.pending.waypoints`. AE5E now reconstructs the full intercepted route from both collections and resolves transient internal movement metadata through either the current movement ID or the stable subpath ID. This preserves L-shaped and other multi-checkpoint routes and prevents Foundry continuation stages from being mistaken for new manual relationship movement.
 
 
 
@@ -54,7 +60,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.2.5 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
+Version 0.2.6 distinguishes **trailing adjacency** from **fixed-offset following**. `adjacentFollower` follows the leader's vacated spaces, while `rigidOffset` preserves the original relative offset. Selecting an alternate legal adjacent square or rotating a grappled target around its grappler is still future work.
 
 Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
 

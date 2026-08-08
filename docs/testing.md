@@ -1,4 +1,4 @@
-# Testing Action Effects 5E 0.2.5
+# Testing Action Effects 5E 0.2.6
 
 ## Automated tests
 
@@ -103,7 +103,16 @@ Generated relationship movement must explicitly mark the final leader and follow
 For the live regression test on Foundry 14.365, create a two-token relationship and move the leader one grid square. Both the leader and follower should complete the coordinated movement without the `Linked movement reported incomplete token movement` rollback warning. After movement settles, `movementContexts`, `pendingTransactions`, `queuedRequests`, and `activeLeaders` should return to `0`.
 
 
-## v0.2.5 regression check
+## v0.2.6 regression check
+
+Before broader relationship testing, verify an explicit-checkpoint route:
+
+1. Create an `adjacentFollower` test relationship.
+2. Drag the leader two grid spaces horizontally, place an explicit Foundry waypoint, turn 90 degrees, and continue two more spaces in the same movement.
+3. The leader must preserve the L-shaped route rather than shortcut diagonally.
+4. The follower must traverse the same route and finish one grid space behind the leader.
+5. No second AE5E relationship request or `leader changed position before the linked movement request could be validated` error should occur at the explicit checkpoint.
+6. Repeat with more than one explicit checkpoint before continuing to wall, elevation, API-sync, and teleport tests.
 
 Movement classification must not access Foundry's deprecated `DatabaseUpdateOperation#teleport` prototype accessor. A `blink` movement action should classify as `pathType: "teleport"` and `movementMode: "blink"` without producing the deprecation warning.
 

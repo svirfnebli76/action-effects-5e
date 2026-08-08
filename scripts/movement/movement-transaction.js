@@ -83,6 +83,19 @@ function inferResource(metadata, subjectUuid) {
   return metadata.resource ?? MOVEMENT_RESOURCES.UNKNOWN;
 }
 
+function inferSubpathId(movement) {
+  const candidates = [
+    movement?.subpathId,
+    movement?.origin?.subpathId,
+    movement?.destination?.subpathId,
+    ...(Array.isArray(movement?.passed?.waypoints) ? movement.passed.waypoints.map((point) => point?.subpathId) : []),
+    ...(Array.isArray(movement?.pending?.waypoints) ? movement.pending.waypoints.map((point) => point?.subpathId) : []),
+    ...(Array.isArray(movement?.history?.unrecorded?.waypoints) ? movement.history.unrecorded.waypoints.map((point) => point?.subpathId) : []),
+    ...(Array.isArray(movement?.history?.recorded?.waypoints) ? movement.history.recorded.waypoints.map((point) => point?.subpathId) : [])
+  ];
+  return candidates.find((value) => typeof value === "string" && value.length) ?? null;
+}
+
 function extractWaypoints(movement) {
   const passed = Array.isArray(movement?.passed?.waypoints) ? movement.passed.waypoints : [];
   const pending = Array.isArray(movement?.pending?.waypoints) ? movement.pending.waypoints : [];
@@ -139,6 +152,7 @@ export class MovementTransaction {
     return new MovementTransaction({
       id: transactionId,
       movementId,
+      subpathId: inferSubpathId(movement),
       phase,
       subjectType: SUBJECT_TYPES.TOKEN,
       subjectUuid: document.uuid,
@@ -192,6 +206,7 @@ export class MovementTransaction {
     return new MovementTransaction({
       id: `${MODULE_ID}-synthetic-${randomId()}`,
       movementId: `synthetic-${randomId()}`,
+      subpathId: null,
       phase,
       subjectType: SUBJECT_TYPES.TOKEN,
       subjectUuid,

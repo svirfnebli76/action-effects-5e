@@ -55,17 +55,42 @@ function copyWaypointFields(source, target, { includeCheckpoint = true } = {}) {
 
 export class RelationshipMovementPlanner {
   static extractWaypoints(movement = {}) {
-    const candidate = Array.isArray(movement?.pending?.waypoints) && movement.pending.waypoints.length
-      ? movement.pending.waypoints
+    // Foundry v14 splits a user-authored multi-checkpoint route into the leg
+    // currently being processed (`passed.waypoints`) plus the still-pending legs
+    // (`pending.waypoints`). At an explicit checkpoint, `destination` is only the
+    // end of the current leg. Reconstruct the full declared route before AE5E
+    // cancels and replaces the native movement, otherwise an L-shaped route can
+    // collapse into a direct diagonal from origin to the final pending point.
+    const passed = Array.isArray(movement?.passed?.waypoints) ? movement.passed.waypoints : [];
+    const pending = Array.isArray(movement?.pending?.waypoints) ? movement.pending.waypoints : [];
+    const combined = passed.length || pending.length
+      ? [...passed, ...pending]
       : [movement?.destination].filter(Boolean);
 
-    if (!candidate.length) throw new Error("The intercepted token movement did not contain a destination.");
-    if (candidate.length > MAX_WAYPOINTS) throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} waypoints.`);
+    if (!combined.length) throw new Error("The intercepted token movement did not contain a destination.");
 
     const origin = this.sanitizePosition(movement.origin, "movement origin");
-    const waypoints = candidate.map((waypoint) => sanitizeWaypoint(waypoint));
+    const waypoints = [];
+    for (const candidate of combined) {
+      const waypoint = sanitizeWaypoint(candidate);
+      if (positionsEqual(waypoints.at(-1), waypoint)) {
+        // A passed/pending seam can repeat the checkpoint coordinate. Merge the
+        // copies without allowing the pending leg to erase an explicit checkpoint
+        // or explicit-route marker already established by the completed leg.
+        const existing = waypoints[waypoints.length - 1];
+        const checkpoint = existing.checkpoint === true || candidate?.checkpoint === true;
+        const explicit = existing.explicit === true || candidate?.explicit === true;
+        copyWaypointFields(candidate, existing);
+        if (checkpoint) existing.checkpoint = true;
+        if (explicit) existing.explicit = true;
+        continue;
+      }
+      waypoints.push(waypoint);
+    }
+
     if (waypoints.length > 1 && positionsEqual(waypoints[0], origin)) waypoints.shift();
     if (!waypoints.length) waypoints.push(this.sanitizePosition(movement.destination, "movement destination"));
+    if (waypoints.length > MAX_WAYPOINTS) throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} waypoints.`);
     return this.ensureTerminalCheckpoint(waypoints);
   }
 

@@ -10,6 +10,33 @@ import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { MovementTransaction } from "./movement-transaction.js";
 
+function addMovementContextKey(keys, value) {
+  if (typeof value === "string" && value.length) keys.add(value);
+}
+
+function movementContextKeys(movement = {}) {
+  const keys = new Set();
+  addMovementContextKey(keys, movement?.id);
+  addMovementContextKey(keys, movement?.subpathId);
+  addMovementContextKey(keys, movement?.origin?.subpathId);
+  addMovementContextKey(keys, movement?.destination?.subpathId);
+
+  const collections = [
+    movement?.passed?.waypoints,
+    movement?.pending?.waypoints,
+    movement?.waypoints,
+    movement?.history?.unrecorded?.waypoints,
+    movement?.history?.recorded?.waypoints,
+    movement?.history?.path
+  ];
+  for (const collection of collections) {
+    if (!Array.isArray(collection)) continue;
+    for (const point of collection) addMovementContextKey(keys, point?.subpathId);
+  }
+
+  return [...keys];
+}
+
 export class MovementService {
   #registry;
   #relationships;
@@ -140,7 +167,15 @@ export class MovementService {
   }
 
   #withMovementContext(movement, operation = {}) {
-    const context = this.#movementContexts.get(movement?.id);
+    // Foundry assigns a new movement.id when it continues through an explicit
+    // checkpoint, while waypoint.subpathId remains tied to the original movement
+    // instruction ID. Resolve semantic ownership by either identifier so every
+    // continuation of an AE5E-generated route stays internal and recursion-safe.
+    let context = null;
+    for (const key of movementContextKeys(movement)) {
+      context = this.#movementContexts.get(key);
+      if (context) break;
+    }
     if (!context) return operation ?? {};
 
     const operationMetadata = operation?.[OPERATION_METADATA_KEY];
