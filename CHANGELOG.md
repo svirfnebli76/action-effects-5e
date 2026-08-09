@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 - Atomic partial-movement rollback
+
+- Fixed linked `stopGroup` rollback leaving a follower partially advanced into a wall when Foundry returned that follower's `Scene.moveTokens()` result as `false`.
+- Atomic relationship rollback now restores every surviving participant from the pre-move origin snapshot instead of restoring only tokens whose movement result was `true`.
+- Preserved rollback movement as administrative, wall-ignoring, automation-suppressed internal movement so restoring a partially constrained token cannot recursively trigger relationship automation.
+- Strengthened the partial-movement regression to simulate the leader completing while the follower is physically constrained partway and reported incomplete; both tokens must now be included in the rollback operation and return to their captured origins.
+
 ## 0.3.1 - Deterministic blocked-orbit rollback
 
 - Fixed `collisionPolicy: stopGroup` orbital rotation restoring the leader one rotation quantum too far when Foundry v14 exposes the pre-update `TokenDocument.rotation` during asynchronous GM resolution.

@@ -445,7 +445,7 @@ export class RelationshipMovementService {
           results,
           failedIds
         });
-        await this.#rollbackCompletedTokens({ scene, results, origins, leaderUuid: leader.uuid });
+        await this.#rollbackGroupTokens({ scene, origins, leaderUuid: leader.uuid });
         ui?.notifications?.warn?.("Linked movement was stopped, so Action Effects 5E restored the group to its starting positions.");
         return { [leaderId]: false };
       }
@@ -953,7 +953,7 @@ export class RelationshipMovementService {
           results,
           failedIds
         });
-        await this.#rollbackCompletedTokens({ scene, results, origins, leaderUuid: leader.uuid });
+        await this.#rollbackGroupTokens({ scene, origins, leaderUuid: leader.uuid });
         return {
           completed: false,
           results,
@@ -1352,13 +1352,18 @@ export class RelationshipMovementService {
     }));
   }
 
-  async #rollbackCompletedTokens({ scene, results, origins, leaderUuid }) {
+  async #rollbackGroupTokens({ scene, origins, leaderUuid }) {
     const instructions = {};
-    for (const [tokenId, completed] of Object.entries(results)) {
-      if (!completed || !origins[tokenId]) continue;
+    for (const [tokenId, origin] of Object.entries(origins)) {
+      // Foundry can report a token movement as incomplete after constraining that
+      // token partway along its attempted route. A false result therefore does
+      // not mean the token is still at its origin. Atomic linked rollback must
+      // restore every surviving participant from the pre-move origin snapshot,
+      // not only tokens whose Scene.moveTokens() result was true.
+      if (!scene.tokens.get(tokenId)) continue;
       instructions[tokenId] = {
         destination: {
-          ...origins[tokenId],
+          ...origin,
           // Rollback uses Scene.moveTokens too, so its terminal destination must
           // follow the same explicit-checkpoint rule as coordinated movement.
           checkpoint: true

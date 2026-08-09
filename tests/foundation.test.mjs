@@ -1401,7 +1401,7 @@ test("blocked follower path stops coordinated movement before Scene.moveTokens",
   game.scenes.delete(scene.id);
 });
 
-test("partial coordinated movement is rolled back with suppressed automation", async () => {
+test("partial coordinated movement restores completed and partially constrained failed tokens", async () => {
   const scene = {
     id: "scene-rollback",
     tokens: new FakeCollection(),
@@ -1409,7 +1409,27 @@ test("partial coordinated movement is rolled back with suppressed automation", a
     async moveTokens(instructions, options) {
       assertGeneratedMovementInstructions(instructions);
       this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
-      if (this.moveCalls.length === 1) return { leader: true, follower: false };
+
+      if (this.moveCalls.length === 1) {
+        // Reproduce Foundry's live constrained-movement behavior: the leader can
+        // complete while the follower is reported false after already advancing
+        // partway into the blocked path.
+        Object.assign(leader, { x: 200, y: 0, elevation: 0 });
+        Object.assign(follower, { x: 150, y: 0, elevation: 0 });
+        return { leader: true, follower: false };
+      }
+
+      for (const [id, instruction] of Object.entries(instructions)) {
+        const token = this.tokens.get(id);
+        const destination = instruction.waypoints?.at?.(-1) ?? instruction.destination;
+        if (token && destination) {
+          Object.assign(token, {
+            x: destination.x,
+            y: destination.y,
+            elevation: destination.elevation
+          });
+        }
+      }
       return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
     }
   };
@@ -1482,9 +1502,28 @@ test("partial coordinated movement is rolled back with suppressed automation", a
 
   assert.equal(result.completed, false);
   assert.equal(result.rolledBack, true);
+  assert.deepEqual(result.failedIds, ["follower"]);
   assert.equal(scene.moveCalls.length, 2);
-  assert.deepEqual(Object.keys(scene.moveCalls[1].instructions), ["leader"]);
+  assert.deepEqual(Object.keys(scene.moveCalls[1].instructions).sort(), ["follower", "leader"]);
   assert.equal(scene.moveCalls[1].instructions.leader.destination.checkpoint, true);
+  assert.equal(scene.moveCalls[1].instructions.follower.destination.checkpoint, true);
+  assert.deepEqual(
+    {
+      x: scene.moveCalls[1].instructions.leader.destination.x,
+      y: scene.moveCalls[1].instructions.leader.destination.y
+    },
+    { x: 0, y: 0 }
+  );
+  assert.deepEqual(
+    {
+      x: scene.moveCalls[1].instructions.follower.destination.x,
+      y: scene.moveCalls[1].instructions.follower.destination.y
+    },
+    { x: 100, y: 0 }
+  );
+  assert.deepEqual({ x: leader.x, y: leader.y }, { x: 0, y: 0 });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 0 });
+  assert.equal(scene.moveCalls[1].options.constrainOptions.ignoreWalls, true);
   assert.equal(scene.moveCalls[1].options.actionEffects5e.relationshipRollback, true);
   assert.equal(scene.moveCalls[1].options.actionEffects5e.suppressAutomation, true);
 
