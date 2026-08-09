@@ -11,7 +11,7 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.3.0: relationship orbital rotation
+## Build 0.3.21: relationship orbital rotation and allied endpoint grace
 
 This build adds rotation-driven spatial control to the relationship layer while retaining the live-validated v0.2.11 simultaneous translation system:
 
@@ -22,14 +22,15 @@ This build adds rotation-driven spatial control to the relationship layer while 
 - The leader's facing rotates normally. The follower changes grid position only; its own artwork rotation remains unchanged.
 - Each follower orbit step is a real Foundry movement with `passenger` agency and no movement resource, so later spatial/rules consumers can observe the traversal without treating it as voluntary movement.
 - Orbit requests are GM-authorized through Socketlib and computed from the persisted relationship, not from a client-supplied arbitrary destination.
-- `stopGroup` collision handling is atomic: a blocked follower orbit does not move the follower and restores the precise leader rotation update that crossed the orbit threshold. Partial accumulated rotation is retained.
+- `stopGroup` collision handling is atomic: a blocked follower orbit does not move the follower and restores the exact captured pre-update leader facing which crossed the orbit threshold. Partial accumulated rotation is retained.
+- A successful orbit may temporarily finish in a same-side creature's occupied square. Hostile+Hostile and Friendly+Friendly are treated as allied; a 3.5-second grace window allows the user to continue rotating through that space. If no later movement clears the overlap, AE5E restores the follower and the corresponding leader facing to the last legal orbit state.
 - Orbit input is serialized per relationship so rapid wheel input cannot overlap follower movement animations.
 - Translation, elevation, checkpoint routing, teleport detach/follow/block, follower locking, selective external API coordination, and rollback behavior from v0.2.11 remain intact.
 - The public settlement helper now waits for both rotation queues and relationship movement and tolerates a retained already-resolved Foundry movement animation Promise.
 
-### v0.3.0 orbital rotation
+### v0.3.21 allied endpoint grace and v0.3.x orbital rotation
 
-The rotation service uses a deliberately narrow libWrapper boundary at Foundry v14's `TokenLayer._onMouseWheel` only to identify the user's Shift/Control wheel gesture. The actual orbit trigger comes from the subsequently committed TokenDocument rotation update. This keeps click-count assumptions out of AE5E and allows Foundry's native rotation increments to vary. The initial planner intentionally supports only Medium-style 1x1 leader/follower footprints on square grids; larger/smaller footprints are a later geometry milestone rather than hidden assumptions in the 1x1 implementation.
+The rotation service uses a deliberately narrow libWrapper boundary at Foundry v14's `TokenLayer._onMouseWheel` only to identify the user's Shift/Control wheel gesture. The actual orbit trigger comes from the subsequently committed TokenDocument rotation update. This keeps click-count assumptions out of AE5E and allows Foundry's native rotation increments to vary. The initial planner intentionally supports only Medium-style 1x1 leader/follower footprints on square grids; larger/smaller footprints are a later geometry milestone rather than hidden assumptions in the 1x1 implementation. v0.3.21 adds a policy-driven allied endpoint grace state: ordinary Foundry path constraints still govern walls and creature traversal, while AE5E only watches a successful terminal overlap with a same-side Friendly/Friendly or Hostile/Hostile token and rolls it back after 3.5 seconds if the user does not continue out of the shared square.
 
 ### v0.2.11 selective simultaneous external coordination
 
@@ -85,7 +86,7 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 Version 0.3.0 distinguishes **trailing adjacency**, **fixed-offset following**, and optional **orbital repositioning**. `adjacentFollower` follows the leader's vacated spaces, `rigidOffset` preserves the original relative offset, and `rotationPolicy: "orbitFollower"` lets a controlled 1x1 leader rotate a 1x1 follower around the eight neighboring square-grid spaces in 45-degree facing increments.
 
-Core token occupancy is not treated as a collision in this build. Wall/surface checking is best-effort, while Foundry's final movement result remains authoritative.
+Core token occupancy is not globally treated as a collision. Foundry remains authoritative for wall/surface and creature-transit constraints. For orbital movement only, v0.3.21 adds a temporary grace state when a follower ends in a same-side creature's occupied endpoint; unresolved overlap is restored to the prior legal orbit state after 3.5 seconds.
 
 ## Installation for development
 

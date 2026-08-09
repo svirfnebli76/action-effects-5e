@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.2";
+export const MODULE_VERSION = "0.3.21";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -106,7 +106,13 @@ export const RELATIONSHIP_ROTATION_POLICIES = Object.freeze({
   ORBIT_FOLLOWER: "orbitFollower"
 });
 
+export const RELATIONSHIP_ALLIED_ENDPOINT_POLICIES = Object.freeze({
+  ALLOW: "allow",
+  GRACE: "grace"
+});
+
 export const RELATIONSHIP_ORBIT_QUANTUM_DEGREES = 45;
+export const RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS = 3_500;
 
 export const HOOKS = Object.freeze({
   READY: `${MODULE_ID}.ready`,

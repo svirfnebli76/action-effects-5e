@@ -134,6 +134,9 @@ With only the leader controlled:
 8. Rotate an unrelated token with Shift/Control + wheel and confirm AE5E does nothing. Change an orbit leader's rotation by a non-wheel/API/configuration path and confirm the follower does not orbit.
 9. Rapidly scroll enough to cross multiple 45-degree thresholds. Follower steps must serialize without overlapping and every intermediate ring space must be honored as a checkpoint.
 10. Repeat the basic threshold test from a non-GM player who owns the leader. The player should not need ownership of the follower; the orbit is authorized and executed by the active GM through Socketlib.
+11. For v0.3.21, set the follower and a third NPC to the same `HOSTILE` disposition (same side relative to PCs) and place that NPC in the follower's next terminal orbit square. The follower may land there temporarily. If no further relationship movement occurs, after 3.5 seconds the follower and leader must return to their exact pre-overlap position/facing.
+12. Repeat step 11 but rotate again before 3.5 seconds so the follower leaves the shared square. The pending overlap must clear and no delayed rollback may occur.
+13. Keep the follower `HOSTILE` and change the third NPC to `FRIENDLY`. That is an opposing-side NPC test, not an allied test; `pendingAlliedOverlaps` must remain zero.
 
 Useful diagnostics:
 
@@ -144,7 +147,7 @@ await ae5e.relationships.waitForMovementSettled({
 });
 ```
 
-When idle, `pendingEvents`, `processingRelationships`, `activeGmRequests`, and `rotationRollbacks` should all return to zero.
+When idle, `pendingEvents`, `processingRelationships`, `activeGmRequests`, `rotationRollbacks`, and `pendingAlliedOverlaps` should all return to zero. During the 3.5-second allied endpoint grace window, `pendingAlliedOverlaps` should be `1`.
 
 
 ## v0.2.11 regression check

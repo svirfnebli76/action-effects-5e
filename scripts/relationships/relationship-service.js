@@ -3,6 +3,8 @@ import {
   COLLISION_POLICIES,
   HOOKS,
   MODULE_ID,
+  RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
+  RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
@@ -248,6 +250,12 @@ export class RelationshipService {
       rotationPolicy: Object.values(RELATIONSHIP_ROTATION_POLICIES).includes(data.rotationPolicy)
         ? data.rotationPolicy
         : RELATIONSHIP_ROTATION_POLICIES.NONE,
+      alliedEndpointPolicy: Object.values(RELATIONSHIP_ALLIED_ENDPOINT_POLICIES).includes(data.alliedEndpointPolicy)
+        ? data.alliedEndpointPolicy
+        : RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE,
+      alliedEndpointGraceMs: Number.isFinite(Number(data.alliedEndpointGraceMs)) && Number(data.alliedEndpointGraceMs) > 0
+        ? Number(data.alliedEndpointGraceMs)
+        : RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
       breakDistance: Number.isFinite(Number(data.breakDistance)) ? Number(data.breakDistance) : null,
       sourceUuid: data.sourceUuid ?? null,
       metadata: duplicateSafely(data.metadata ?? {}),

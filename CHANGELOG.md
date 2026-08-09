@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.21 - Allied orbit endpoint grace
+
+- Added a 3.5-second grace window when an orbiting follower finishes a rotation step in a same-side creature's occupied space.
+- Same-side detection is pairwise: Hostile+Hostile and Friendly+Friendly are treated as allied for this purpose; Neutral/Secret and opposing dispositions do not arm the grace timer. This avoids interpreting a token's disposition label in isolation.
+- The grace window starts after the follower's orbital movement animation settles. A continued rotation into an open space clears the pending rollback; another same-side occupied endpoint retains the original last-legal anchor and restarts the grace window.
+- If the follower remains in the allied occupied endpoint when the timer expires, AE5E administratively restores the follower to the pre-overlap orbit position and restores the leader's exact corresponding pre-overlap rotation.
+- Non-orbit translation of either relationship participant cancels the pending overlap state so normal trailing movement supersedes the temporary orbit endpoint.
+- Added persisted `alliedEndpointPolicy` (`grace`/`allow`) and `alliedEndpointGraceMs` relationship fields. Existing persisted orbit relationships without these fields use `grace` and 3500 ms at runtime.
+- Added rotation diagnostics for `pendingAlliedOverlaps`.
+- Added regression coverage for same-side Hostile NPC overlap expiry, continued rotation out of the occupied square, opposing Hostile/Friendly NPC disposition handling, and relationship default persistence.
+
 ## 0.3.2 - Atomic partial-movement rollback
 
 - Fixed linked `stopGroup` rollback leaving a follower partially advanced into a wall when Foundry returned that follower's `Scene.moveTokens()` result as `false`.

@@ -76,7 +76,8 @@ globalThis.game = {
 };
 
 globalThis.CONST = {
-  DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 }
+  DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 },
+  TOKEN_DISPOSITIONS: { FRIENDLY: 1, NEUTRAL: 0, HOSTILE: -1, SECRET: -2 }
 };
 
 function assertGeneratedMovementInstructions(instructions) {
@@ -96,6 +97,8 @@ const {
   MOVEMENT_RESOURCES,
   OPERATION_METADATA_KEY,
   PATH_TYPES,
+  RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
+  RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES
 } = await import("../scripts/core/constants.js");
@@ -485,6 +488,8 @@ test("relationship service persists and reindexes leader/follower relationships"
   assert.equal(service.getForFollower(follower.uuid)[0].id, relationship.id);
   assert.equal(relationship.coordinationPolicy, RELATIONSHIP_COORDINATION_POLICIES.COORDINATED);
   assert.equal(relationship.rotationPolicy, RELATIONSHIP_ROTATION_POLICIES.NONE, "Pre-v0.3.0/default relationships must not opt into orbital rotation implicitly.");
+  assert.equal(relationship.alliedEndpointPolicy, RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE);
+  assert.equal(relationship.alliedEndpointGraceMs, RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS);
   assert.equal(scene.getFlag("action-effects-5e", "relationships").length, 1);
 
   const removed = await service.remove(relationship.id);
@@ -3563,6 +3568,341 @@ test("blocked orbital rollback restores the captured pre-update rotation when To
   assert.equal(leader.rotation, 270, "Blocked +45° orbit must restore the captured 270° pre-update facing, not derive 225° from stale document state.");
   assert.deepEqual({ x: follower.x, y: follower.y }, { x: 0, y: 100 }, "Blocked follower must remain in its original square.");
   assert.match(warnings.at(-1), /cannot orbit/i);
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
+
+test("allied occupied orbit endpoint starts a grace window and restores the last legal orbit state after expiry", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const registrations = [];
+
+  globalThis.libWrapper = {
+    register(_moduleId, target, fn) { registrations.push({ target, fn }); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const scene = {
+    id: "scene-orbit-allied-grace-expiry",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens(instructions) {
+      assertGeneratedMovementInstructions(instructions);
+      const instruction = instructions.follower;
+      const final = Array.isArray(instruction.waypoints) && instruction.waypoints.length
+        ? instruction.waypoints.at(-1)
+        : instruction.destination;
+      follower.x = final.x;
+      follower.y = final.y;
+      follower.elevation = final.elevation;
+      return { follower: true };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-orbit-allied-grace-expiry.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 100, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, disposition: -1, name: "Leader" });
+  leader.update = async (changes, options = {}) => {
+    if (changes.rotation !== undefined) leader.rotation = changes.rotation;
+    Hooks.callAll("updateToken", leader, changes, options, game.user.id);
+    return leader;
+  };
+
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-orbit-allied-grace-expiry.Token.follower", id: "follower", scene });
+  Object.assign(follower, {
+    x: 200, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, disposition: -1, name: "Follower",
+    object: { movementAnimationPromise: null, constrainMovementPath: (path) => [path, false] }
+  });
+  const ally = new FakeTokenDocument({ uuid: "Scene.scene-orbit-allied-grace-expiry.Token.ally", id: "ally", scene });
+  Object.assign(ally, { x: 200, y: 200, elevation: 0, width: 1, height: 1, disposition: -1, name: "Ally" });
+
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  scene.tokens.set(ally.id, ally);
+  const leaderPlaceable = { document: leader };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : uuid === ally.uuid ? ally : null;
+
+  const relationship = {
+    id: "relationship-orbit-allied-grace-expiry",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup",
+    alliedEndpointPolicy: RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE,
+    alliedEndpointGraceMs: 600,
+    sourceUuid: null
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+  const wheel = registrations.find((entry) => entry.target.includes("TokenLayer"));
+  const event = { shiftKey: true, ctrlKey: false, deltaY: 1 };
+  const rotate = (value) => () => {
+    leader.rotation = value;
+    Hooks.callAll("updateToken", leader, { rotation: value }, {}, game.user.id);
+  };
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate(45), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 200, y: 200 }, "Follower may temporarily land in the same-side NPC space.");
+  assert.equal(leader.rotation, 45);
+  assert.equal(service.getStats().pendingAlliedOverlaps, 1, "The allied occupied endpoint must arm one grace timer.");
+
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 200, y: 100 }, "Expired grace must restore the follower's last legal orbit slot.");
+  assert.equal(leader.rotation, 0, "Expired grace must restore the corresponding pre-overlap leader facing.");
+  assert.equal(service.getStats().pendingAlliedOverlaps, 0);
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
+test("continued orbit out of an allied occupied endpoint cancels the grace rollback", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const registrations = [];
+
+  globalThis.libWrapper = {
+    register(_moduleId, target, fn) { registrations.push({ target, fn }); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const scene = {
+    id: "scene-orbit-allied-grace-continue",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens(instructions) {
+      assertGeneratedMovementInstructions(instructions);
+      const instruction = instructions.follower;
+      const final = Array.isArray(instruction.waypoints) && instruction.waypoints.length
+        ? instruction.waypoints.at(-1)
+        : instruction.destination;
+      follower.x = final.x;
+      follower.y = final.y;
+      follower.elevation = final.elevation;
+      return { follower: true };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-orbit-allied-grace-continue.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 100, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, disposition: -1, name: "Leader" });
+  leader.update = async (changes, options = {}) => {
+    if (changes.rotation !== undefined) leader.rotation = changes.rotation;
+    Hooks.callAll("updateToken", leader, changes, options, game.user.id);
+    return leader;
+  };
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-orbit-allied-grace-continue.Token.follower", id: "follower", scene });
+  Object.assign(follower, {
+    x: 200, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, disposition: -1, name: "Follower",
+    object: { movementAnimationPromise: null, constrainMovementPath: (path) => [path, false] }
+  });
+  const ally = new FakeTokenDocument({ uuid: "Scene.scene-orbit-allied-grace-continue.Token.ally", id: "ally", scene });
+  Object.assign(ally, { x: 200, y: 200, elevation: 0, width: 1, height: 1, disposition: -1, name: "Ally" });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  scene.tokens.set(ally.id, ally);
+  const leaderPlaceable = { document: leader };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : uuid === ally.uuid ? ally : null;
+
+  const relationship = {
+    id: "relationship-orbit-allied-grace-continue",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup",
+    alliedEndpointPolicy: RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE,
+    alliedEndpointGraceMs: 600,
+    sourceUuid: null
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+  const wheel = registrations.find((entry) => entry.target.includes("TokenLayer"));
+  const event = { shiftKey: true, ctrlKey: false, deltaY: 1 };
+  const rotate = (value) => () => {
+    leader.rotation = value;
+    Hooks.callAll("updateToken", leader, { rotation: value }, {}, game.user.id);
+  };
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate(45), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 200, y: 200 });
+  assert.equal(service.getStats().pendingAlliedOverlaps, 1);
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate(90), event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 200 }, "Next rotation must carry the follower through the ally to the next open slot.");
+  assert.equal(leader.rotation, 90);
+  assert.equal(service.getStats().pendingAlliedOverlaps, 0, "Leaving the occupied endpoint must cancel the pending rollback.");
+
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 200 }, "A cancelled grace timer must not later pull the follower back.");
+  assert.equal(leader.rotation, 90);
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+  globalThis.canvas = previousCanvas;
+  globalThis.CONFIG = previousConfig;
+});
+
+
+test("opposing NPC dispositions do not arm the allied endpoint grace timer", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousConfig = globalThis.CONFIG;
+  const registrations = [];
+
+  globalThis.libWrapper = {
+    register(_moduleId, target, fn) { registrations.push({ target, fn }); },
+    unregister() {}
+  };
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const scene = {
+    id: "scene-orbit-opposing-endpoint",
+    grid: { isGridless: false, isSquare: true, size: 100 },
+    tokens: new FakeCollection(),
+    async moveTokens(instructions) {
+      assertGeneratedMovementInstructions(instructions);
+      const instruction = instructions.follower;
+      const final = Array.isArray(instruction.waypoints) && instruction.waypoints.length
+        ? instruction.waypoints.at(-1)
+        : instruction.destination;
+      follower.x = final.x;
+      follower.y = final.y;
+      follower.elevation = final.elevation;
+      return { follower: true };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-orbit-opposing-endpoint.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 100, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, disposition: -1 });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-orbit-opposing-endpoint.Token.follower", id: "follower", scene });
+  Object.assign(follower, {
+    x: 200, y: 100, elevation: 0, width: 1, height: 1, rotation: 0, disposition: -1,
+    object: { movementAnimationPromise: null, constrainMovementPath: (path) => [path, false] }
+  });
+  const opponent = new FakeTokenDocument({ uuid: "Scene.scene-orbit-opposing-endpoint.Token.opponent", id: "opponent", scene });
+  Object.assign(opponent, { x: 200, y: 200, elevation: 0, width: 1, height: 1, disposition: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  scene.tokens.set(opponent.id, opponent);
+  const leaderPlaceable = { document: leader };
+  leader.object = leaderPlaceable;
+  globalThis.canvas = { tokens: { controlled: [leaderPlaceable] } };
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : uuid === opponent.uuid ? opponent : null;
+
+  const relationship = {
+    id: "relationship-orbit-opposing-endpoint",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+    collisionPolicy: "stopGroup",
+    alliedEndpointPolicy: RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE,
+    alliedEndpointGraceMs: 50
+  };
+  const fakeRelationships = {
+    get: (id) => id === relationship.id ? relationship : null,
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  const service = new RelationshipRotationService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+  const wheel = registrations.find((entry) => entry.target.includes("TokenLayer"));
+  const event = { shiftKey: true, ctrlKey: false, deltaY: 1 };
+  const rotate = () => {
+    leader.rotation = 45;
+    Hooks.callAll("updateToken", leader, { rotation: 45 }, {}, game.user.id);
+  };
+
+  wheel.fn.call({ controlled: [leaderPlaceable] }, rotate, event);
+  await service.waitForSettled({ leaderUuid: leader.uuid });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 200, y: 200 });
+  assert.equal(service.getStats().pendingAlliedOverlaps, 0, "Hostile-vs-friendly NPC dispositions are opposing sides, not allies.");
 
   service.shutdown();
   game.scenes.delete(scene.id);
