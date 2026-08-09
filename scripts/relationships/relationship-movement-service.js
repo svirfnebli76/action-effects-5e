@@ -53,6 +53,7 @@ export class RelationshipMovementService {
     this.#initialized = true;
 
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_CREATED, () => this.#reconcileConsumers()));
+    this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_UPDATED, () => this.#reconcileConsumers()));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_REMOVED, () => this.#reconcileConsumers()));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIPS_REINDEXED, () => this.#reconcileConsumers()));
     this.#reconcileConsumers();
@@ -64,8 +65,9 @@ export class RelationshipMovementService {
   shutdown() {
     if (!this.#initialized) return;
     Hooks.off(HOOKS.RELATIONSHIP_CREATED, this.#hookIds[0]);
-    Hooks.off(HOOKS.RELATIONSHIP_REMOVED, this.#hookIds[1]);
-    Hooks.off(HOOKS.RELATIONSHIPS_REINDEXED, this.#hookIds[2]);
+    Hooks.off(HOOKS.RELATIONSHIP_UPDATED, this.#hookIds[1]);
+    Hooks.off(HOOKS.RELATIONSHIP_REMOVED, this.#hookIds[2]);
+    Hooks.off(HOOKS.RELATIONSHIPS_REINDEXED, this.#hookIds[3]);
     this.#hookIds = [];
 
     for (const remove of this.#consumerRemovers.values()) remove();
@@ -296,7 +298,11 @@ export class RelationshipMovementService {
         // still exposing its animated/intermediate position. Break distance must
         // be measured from settled participant coordinates, not that stale state.
         await this.#awaitTokenAnimations([leader]);
-        await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships: independentRelationships });
+        await this.#detachRelationshipsBeyondBreakDistance({
+          scene,
+          relationships: independentRelationships,
+          reanchorCoordinationDistance: agency === MOVEMENT_AGENCIES.FORCED
+        });
       }
       return results;
     }
@@ -828,7 +834,8 @@ export class RelationshipMovementService {
           requestingUserId: transaction.userId ?? game.user.id,
           sceneId: transaction.sceneId,
           movedTokenUuid: transaction.subjectUuid,
-          relationshipIds: followerRelationships.map((relationship) => relationship.id)
+          relationshipIds: followerRelationships.map((relationship) => relationship.id),
+          reanchorCoordinationDistance: transaction.agency === MOVEMENT_AGENCIES.FORCED
         });
         this.#notifyResult(result);
       } catch (error) {
@@ -1060,7 +1067,11 @@ export class RelationshipMovementService {
       if (detachAfterSuccess.length) await this.#relationships.removeManyAsGM(detachAfterSuccess);
       if (independentRelationships.length) await this.#awaitTokenAnimations([leader]);
       const separation = independentRelationships.length
-        ? await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships: independentRelationships })
+        ? await this.#detachRelationshipsBeyondBreakDistance({
+          scene,
+          relationships: independentRelationships,
+          reanchorCoordinationDistance: normalized.agency === MOVEMENT_AGENCIES.FORCED
+        })
         : { detachedRelationshipIds: [] };
       const detachedRelationshipIds = [...new Set([
         ...detachAfterSuccess,
@@ -1194,7 +1205,11 @@ export class RelationshipMovementService {
 
       if (detach.size) await this.#relationships.removeManyAsGM(detach);
       const separation = independentRelationships.length
-        ? await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships: independentRelationships })
+        ? await this.#detachRelationshipsBeyondBreakDistance({
+          scene,
+          relationships: independentRelationships,
+          reanchorCoordinationDistance: normalized.agency === MOVEMENT_AGENCIES.FORCED
+        })
         : { detachedRelationshipIds: [] };
       const detachedRelationshipIds = [...new Set([
         ...detach,
@@ -1324,7 +1339,11 @@ export class RelationshipMovementService {
       && entries.findIndex((entry) => entry.id === relationship.id) === index
     ));
 
-    const result = await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships });
+    const result = await this.#detachRelationshipsBeyondBreakDistance({
+      scene,
+      relationships,
+      reanchorCoordinationDistance: request.reanchorCoordinationDistance === true
+    });
     return {
       completed: true,
       ...result,
@@ -1334,10 +1353,11 @@ export class RelationshipMovementService {
     };
   }
 
-  async #detachRelationshipsBeyondBreakDistance({ scene, relationships = [] } = {}) {
+  async #detachRelationshipsBeyondBreakDistance({ scene, relationships = [], reanchorCoordinationDistance = false } = {}) {
     this.#assertExecutingAsGM();
     const detachedRelationshipIds = [];
     const evaluations = [];
+    const reanchors = [];
 
     for (const relationship of relationships) {
       if (relationship?.breakDistance === null || relationship?.breakDistance === undefined) continue;
@@ -1366,13 +1386,23 @@ export class RelationshipMovementService {
       }
 
       const exceeded = distance > breakDistance + 1e-6;
+      const planarDistance = RelationshipDistance.measurePlanar({ scene, leader, follower });
       evaluations.push({
         relationshipId: current.id,
         distance,
+        planarDistance,
         breakDistance,
+        coordinationDistance: current.coordinationDistance ?? null,
         exceeded
       });
-      if (exceeded) detachedRelationshipIds.push(current.id);
+      if (exceeded) {
+        detachedRelationshipIds.push(current.id);
+      } else if (reanchorCoordinationDistance && Number.isFinite(planarDistance) && planarDistance > 1e-6) {
+        const configured = Number(current.coordinationDistance);
+        if (!Number.isFinite(configured) || Math.abs(configured - planarDistance) > 1e-6) {
+          reanchors.push({ relationshipId: current.id, coordinationDistance: planarDistance });
+        }
+      }
     }
 
     if (detachedRelationshipIds.length) {
@@ -1383,7 +1413,18 @@ export class RelationshipMovementService {
       });
     }
 
-    return { detachedRelationshipIds, evaluations };
+    const detachedSet = new Set(detachedRelationshipIds);
+    const updatedRelationshipIds = [];
+    for (const reanchor of reanchors) {
+      if (detachedSet.has(reanchor.relationshipId)) continue;
+      if (typeof this.#relationships.updateGeometryAsGM !== "function") continue;
+      const updated = await this.#relationships.updateGeometryAsGM(reanchor.relationshipId, {
+        coordinationDistance: reanchor.coordinationDistance
+      });
+      if (updated) updatedRelationshipIds.push(reanchor.relationshipId);
+    }
+
+    return { detachedRelationshipIds, updatedRelationshipIds, evaluations };
   }
 
   async #validateExternalSyncRequest(request) {

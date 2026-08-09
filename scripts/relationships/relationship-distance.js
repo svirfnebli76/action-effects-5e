@@ -12,11 +12,19 @@
  */
 export class RelationshipDistance {
   static measure({ scene, leader, follower } = {}) {
+    return this.#measure({ scene, leader, follower, planarOnly: false });
+  }
+
+  static measurePlanar({ scene, leader, follower } = {}) {
+    return this.#measure({ scene, leader, follower, planarOnly: true });
+  }
+
+  static #measure({ scene, leader, follower, planarOnly = false } = {}) {
     const grid = scene?.grid;
     if (!grid || !leader || !follower) return null;
 
-    const leaderPoints = this.#measurementPoints(leader, grid);
-    const followerPoints = this.#measurementPoints(follower, grid);
+    const leaderPoints = this.#measurementPoints(leader, grid, { planarOnly });
+    const followerPoints = this.#measurementPoints(follower, grid, { planarOnly });
     if (!leaderPoints.length || !followerPoints.length) return null;
 
     let shortest = Infinity;
@@ -35,8 +43,8 @@ export class RelationshipDistance {
     return Number.isFinite(shortest) ? shortest : null;
   }
 
-  static #measurementPoints(token, grid) {
-    const elevation = Number(token.elevation ?? 0);
+  static #measurementPoints(token, grid, { planarOnly = false } = {}) {
+    const elevation = planarOnly ? 0 : Number(token.elevation ?? 0);
     if (grid.isGridless === true || typeof grid.getOffsetRange !== "function" || typeof grid.getCenterPoint !== "function") {
       return [this.#tokenCenter(token, grid, elevation)];
     }

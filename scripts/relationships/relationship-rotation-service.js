@@ -8,15 +8,14 @@ import {
   PATH_TYPES,
   RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
   RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
-  RELATIONSHIP_ROTATION_POLICIES,
-  RELATIONSHIP_ORBIT_QUANTUM_DEGREES
+  RELATIONSHIP_ROTATION_POLICIES
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { RelationshipOrbitPlanner } from "./relationship-orbit-planner.js";
+import { RelationshipGeometryService } from "./relationship-geometry-service.js";
 
 const TOKEN_WHEEL_WRAPPER_TARGET = "foundry.canvas.layers.TokenLayer.prototype._onMouseWheel";
-const ORBIT_QUANTUM_DEGREES = RELATIONSHIP_ORBIT_QUANTUM_DEGREES;
 const ARM_WINDOW_MS = 1_000;
 const MAX_RECENT_REQUESTS = 100;
 const ROTATION_EPSILON = 1e-5;
@@ -42,6 +41,7 @@ export class RelationshipRotationService {
   #activeRelationshipIds = new Set();
   #rollbackLeaderUuids = new Set();
   #pendingAlliedOverlaps = new Map();
+  #lastDecision = null;
 
   constructor({ socket, relationships, movement }) {
     this.#socket = socket;
@@ -54,6 +54,7 @@ export class RelationshipRotationService {
     if (this.#initialized) return;
     this.#initialized = true;
 
+    this.#hookIds.push(Hooks.on("preUpdateToken", this.#onPreUpdateToken.bind(this)));
     this.#hookIds.push(Hooks.on("updateToken", this.#onUpdateToken.bind(this)));
     this.#hookIds.push(Hooks.on("controlToken", this.#onControlToken.bind(this)));
     this.#hookIds.push(Hooks.on("canvasReady", () => {
@@ -63,6 +64,10 @@ export class RelationshipRotationService {
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_CREATED, (relationship) => {
       this.#resetRelationship(relationship?.id, "relationship-created");
       this.#clearPendingAlliedOverlap(relationship?.id, "relationship-created");
+    }));
+    this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_UPDATED, (relationship) => {
+      this.#resetRelationship(relationship?.id, "relationship-updated");
+      this.#clearPendingAlliedOverlap(relationship?.id, "relationship-updated");
     }));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_REMOVED, (relationship) => {
       this.#resetRelationship(relationship?.id, "relationship-removed");
@@ -81,10 +86,12 @@ export class RelationshipRotationService {
   shutdown() {
     if (!this.#initialized) return;
     const hookNames = [
+      "preUpdateToken",
       "updateToken",
       "controlToken",
       "canvasReady",
       HOOKS.RELATIONSHIP_CREATED,
+      HOOKS.RELATIONSHIP_UPDATED,
       HOOKS.RELATIONSHIP_REMOVED,
       HOOKS.RELATIONSHIPS_REINDEXED,
       HOOKS.MOVEMENT_TRANSACTION
@@ -114,7 +121,25 @@ export class RelationshipRotationService {
       rotationRollbacks: this.#rollbackLeaderUuids.size,
       pendingAlliedOverlaps: this.#pendingAlliedOverlaps.size,
       recentRequests: this.#recentRequestIds.size,
-      orbitQuantumDegrees: ORBIT_QUANTUM_DEGREES
+      orbitInputMode: "one-shell-position",
+      fixedOrbitQuantum: false,
+      lastDecision: duplicateSafely(this.#lastDecision)
+    };
+  }
+
+  getDiagnostics(relationshipId = null) {
+    const state = relationshipId ? this.#states.get(relationshipId) : null;
+    return {
+      relationshipId: relationshipId ?? this.#lastDecision?.relationshipId ?? null,
+      state: state ? {
+        leaderUuid: state.leaderUuid,
+        followerUuid: state.followerUuid,
+        armedUntil: state.armedUntil,
+        pendingEvents: state.events.length,
+        predictedFollowerPosition: duplicateSafely(state.predictedFollowerPosition),
+        predictedLeaderRotation: state.predictedLeaderRotation
+      } : null,
+      lastDecision: duplicateSafely(this.#lastDecision)
     };
   }
 
@@ -129,10 +154,7 @@ export class RelationshipRotationService {
       if (drains.length) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
-        await Promise.race([
-          Promise.allSettled(drains),
-          sleep(Math.min(remaining, interval))
-        ]);
+        await Promise.race([Promise.allSettled(drains), sleep(Math.min(remaining, interval))]);
         continue;
       }
 
@@ -170,6 +192,52 @@ export class RelationshipRotationService {
     }
 
     throw new Error("Timed out while waiting for Action Effects 5E relationship rotation to settle.");
+  }
+
+  /** Development/test entry point which invokes the same shell planner and GM
+   * orbit resolver as mouse-wheel control. Intended for the ae5e.tests facade. */
+  async requestOrbitStep({ relationshipId, direction } = {}) {
+    if (!game.user?.isGM) throw new Error("Direct orbit test commands currently require a GM user.");
+    const relationship = this.#relationships.get(relationshipId);
+    if (!relationship) throw new Error("The requested token relationship does not exist.");
+    const leader = await fromUuid(relationship.leaderUuid);
+    const follower = await fromUuid(relationship.followerUuid);
+    if (!(leader instanceof foundry.documents.TokenDocument) || !(follower instanceof foundry.documents.TokenDocument)) {
+      throw new Error("The relationship tokens are unavailable.");
+    }
+    const scene = game.scenes.get(relationship.sceneId);
+    const plan = RelationshipOrbitPlanner.buildStep({ scene, leader, follower, relationship, direction });
+    const leaderRotationBefore = RelationshipOrbitPlanner.normalizeRotation(leader.rotation);
+    const leaderRotationAfter = RelationshipOrbitPlanner.normalizeRotation(leaderRotationBefore + plan.angularDelta);
+    const requestId = `${MODULE_ID}-orbit-test-${randomId(20)}`;
+
+    await leader.update({ rotation: leaderRotationAfter }, {
+      [OPERATION_METADATA_KEY]: {
+        generatedBy: MODULE_ID,
+        relationshipOrbitDirectUpdate: true,
+        relationshipId,
+        requestId,
+        internal: true
+      }
+    });
+
+    try {
+      return await this.#socket.executeAsGM("relationships.orbitFollower", this.#buildOrbitRequest({
+        relationship,
+        leader,
+        follower,
+        plan,
+        requestId,
+        requestingUserId: game.user.id,
+        leaderRotationBefore,
+        leaderRotationAfter,
+        nativeRequestedRotation: null,
+        inputModifier: "test-api"
+      }));
+    } catch (error) {
+      await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
+      throw error;
+    }
   }
 
   #registerWheelWrapper() {
@@ -225,8 +293,8 @@ export class RelationshipRotationService {
     const relationship = enabled[0];
     const state = this.#stateFor(relationship, leader.rotation);
     const now = Date.now();
-    if (state.armedUntil <= now) state.lastObservedRotation = RelationshipOrbitPlanner.normalizeRotation(leader.rotation);
     state.armedUntil = now + ARM_WINDOW_MS;
+    state.inputModifier = nativeEvent.shiftKey === true ? "shift" : "ctrl";
     state.gestureSerial += 1;
     const serial = state.gestureSerial;
 
@@ -237,21 +305,132 @@ export class RelationshipRotationService {
     }, ARM_WINDOW_MS + 25);
   }
 
-  #onUpdateToken(document, changes, options = {}, userId = null) {
+  #onPreUpdateToken(document, changes, options = {}, userId = null) {
     if (!(document instanceof foundry.documents.TokenDocument)) return;
     if (!Object.prototype.hasOwnProperty.call(changes ?? {}, "rotation")) return;
 
-    // Foundry v14.365 fires updateToken while TokenDocument.rotation still
-    // contains the pre-update value. The authoritative committed destination
-    // for this hook is changes.rotation. Reading document.rotation here makes
-    // orbit tracking lag one rotation update behind the visible token.
+    const metadata = options?.[OPERATION_METADATA_KEY];
+    if (this.#rollbackLeaderUuids.has(document.uuid)
+      || (metadata?.generatedBy === MODULE_ID
+        && (metadata.relationshipOrbitRollback === true || metadata.relationshipOrbitDirectUpdate === true))) return;
+
+    const enabled = this.#orbitRelationshipsForLeader(document.uuid);
+    if (enabled.length !== 1 || userId !== game.user?.id) return;
+    const relationship = enabled[0];
+    const state = this.#stateFor(relationship, document.rotation);
+    if (state.armedUntil < Date.now()) return;
+
+    const nativeBefore = RelationshipOrbitPlanner.normalizeRotation(document.rotation);
+    const nativeRequestedRotation = finiteNumber(changes.rotation);
+    if (nativeRequestedRotation === null) return;
+    const nativeDelta = RelationshipOrbitPlanner.signedRotationDelta(nativeBefore, nativeRequestedRotation);
+    const direction = Math.sign(nativeDelta);
+    if (!direction || Math.abs(nativeDelta) <= ROTATION_EPSILON) return;
+
+    const scene = document.parent;
+    const followerDocument = this.#sceneTokenFromUuid(scene, relationship.followerUuid);
+    if (!(followerDocument instanceof foundry.documents.TokenDocument)) return false;
+
+    const planningFollower = state.predictedFollowerPosition
+      ? {
+        x: state.predictedFollowerPosition.x,
+        y: state.predictedFollowerPosition.y,
+        elevation: state.predictedFollowerPosition.elevation,
+        width: followerDocument.width,
+        height: followerDocument.height
+      }
+      : followerDocument;
+    const leaderRotationBefore = state.predictedLeaderRotation !== null
+      && state.predictedLeaderRotation !== undefined
+      && Number.isFinite(Number(state.predictedLeaderRotation))
+      ? RelationshipOrbitPlanner.normalizeRotation(state.predictedLeaderRotation)
+      : nativeBefore;
+
+    let plan;
+    try {
+      plan = RelationshipOrbitPlanner.buildStep({
+        scene,
+        leader: document,
+        follower: planningFollower,
+        relationship,
+        direction
+      });
+    } catch (error) {
+      this.#resetRelationship(relationship.id, "orbit-preupdate-geometry-error");
+      ui?.notifications?.warn?.(`Action Effects 5E cannot rotate this relationship: ${error.message}`);
+      Logger.debug("Relationship orbit input was rejected during preUpdateToken geometry planning.", error);
+      return false;
+    }
+
+    const leaderRotationAfter = RelationshipOrbitPlanner.normalizeRotation(leaderRotationBefore + plan.angularDelta);
+    changes.rotation = leaderRotationAfter;
+    const requestId = `${MODULE_ID}-orbit-${randomId(20)}`;
+    const orbitMetadata = {
+      ...(metadata && typeof metadata === "object" ? duplicateSafely(metadata) : {}),
+      relationshipOrbitInput: true,
+      relationshipId: relationship.id,
+      requestId,
+      direction,
+      inputModifier: state.inputModifier ?? "wheel",
+      nativeRotationBefore: nativeBefore,
+      nativeRequestedRotation: RelationshipOrbitPlanner.normalizeRotation(nativeRequestedRotation),
+      nativeRotationDelta: nativeDelta,
+      leaderRotationBefore,
+      leaderRotationAfter,
+      angularDelta: plan.angularDelta,
+      coordinationDistance: plan.coordinationDistance,
+      shellSize: plan.shellSize,
+      currentOrbitIndex: plan.current.index,
+      targetOrbitIndex: plan.target.index,
+      followerPositionBefore: {
+        x: planningFollower.x,
+        y: planningFollower.y,
+        elevation: finiteNumber(planningFollower.elevation, 0)
+      },
+      followerPositionAfter: {
+        x: plan.target.x,
+        y: plan.target.y,
+        elevation: finiteNumber(followerDocument.elevation, 0)
+      }
+    };
+    options[OPERATION_METADATA_KEY] = orbitMetadata;
+
+    state.predictedFollowerPosition = duplicateSafely(orbitMetadata.followerPositionAfter);
+    state.predictedLeaderRotation = leaderRotationAfter;
+    this.#lastDecision = {
+      relationshipId: relationship.id,
+      source: "wheel-preUpdateToken",
+      inputModifier: orbitMetadata.inputModifier,
+      nativeRotationBefore: orbitMetadata.nativeRotationBefore,
+      nativeRequestedRotation: orbitMetadata.nativeRequestedRotation,
+      nativeRotationDelta: orbitMetadata.nativeRotationDelta,
+      direction,
+      currentOrbitIndex: plan.current.index,
+      targetOrbitIndex: plan.target.index,
+      shellSize: plan.shellSize,
+      currentFollowerBearing: plan.current.bearing,
+      targetFollowerBearing: plan.target.bearing,
+      calculatedLeaderDelta: plan.angularDelta,
+      committedLeaderRotation: leaderRotationAfter,
+      followerPositionBefore: duplicateSafely(orbitMetadata.followerPositionBefore),
+      followerPositionAfter: duplicateSafely(orbitMetadata.followerPositionAfter),
+      coordinationDistance: plan.coordinationDistance,
+      inputNormalized: true
+    };
+    return undefined;
+  }
+
+  #onUpdateToken(document, changes, options = {}, userId = null) {
+    if (!(document instanceof foundry.documents.TokenDocument)) return;
+    if (!Object.prototype.hasOwnProperty.call(changes ?? {}, "rotation")) return;
     const changedRotation = finiteNumber(changes.rotation);
     if (changedRotation === null) return;
     const currentRotation = RelationshipOrbitPlanner.normalizeRotation(changedRotation);
 
     const metadata = options?.[OPERATION_METADATA_KEY];
     if (this.#rollbackLeaderUuids.has(document.uuid)
-      || (metadata?.relationshipOrbitRollback === true && metadata?.generatedBy === MODULE_ID)) {
+      || (metadata?.generatedBy === MODULE_ID
+        && (metadata.relationshipOrbitRollback === true || metadata.relationshipOrbitDirectUpdate === true))) {
       this.#syncKnownRotation(document.uuid, currentRotation);
       return;
     }
@@ -259,14 +438,7 @@ export class RelationshipRotationService {
     const enabled = this.#orbitRelationshipsForLeader(document.uuid);
     if (!enabled.length) return;
 
-    // Only the client which initiated the native wheel rotation turns that
-    // rotation into an orbit request. Other clients observe the document update
-    // but never duplicate the Socketlib request.
     if (userId !== game.user?.id) {
-      // A rotation initiated by another client is not this client's armed wheel
-      // gesture. Reset any partial local accumulator so a stale 15°/22.5°
-      // fragment cannot combine with a later local wheel event. GM-authorized
-      // orbit rollbacks are handled above through namespaced operation metadata.
       for (const relationship of enabled) {
         this.#resetRelationship(relationship.id, "remote-rotation");
         const state = this.#stateFor(relationship, currentRotation);
@@ -282,35 +454,42 @@ export class RelationshipRotationService {
 
     const relationship = enabled[0];
     const state = this.#stateFor(relationship, currentRotation);
-    const now = Date.now();
-
-    if (state.armedUntil < now) {
-      // A non-wheel/API/configuration rotation invalidates any partial orbit
-      // accumulation so an old 15° or 22.5° fragment cannot fire later.
-      state.accumulator = 0;
-      state.lastObservedRotation = currentRotation;
-      state.generation += 1;
-      state.events.length = 0;
+    if (metadata?.relationshipOrbitInput !== true || metadata?.relationshipId !== relationship.id) {
+      // Non-wheel/API/config rotation remains normal Foundry behavior and clears
+      // queued orbit predictions so stale input can never combine with it.
+      this.#resetRelationship(relationship.id, "non-orbit-rotation");
+      const fresh = this.#stateFor(relationship, currentRotation);
+      fresh.lastObservedRotation = currentRotation;
       return;
     }
 
-    // Capture both ends of the native update before asynchronous GM
-    // authorization begins. Foundry v14 can still expose the pre-update
-    // TokenDocument.rotation while updateToken is running, so rollback must
-    // never reconstruct the previous facing from later document state.
-    const leaderRotationBefore = RelationshipOrbitPlanner.normalizeRotation(state.lastObservedRotation);
-    const leaderRotationAfter = currentRotation;
-    const delta = RelationshipOrbitPlanner.signedRotationDelta(leaderRotationBefore, leaderRotationAfter);
-    state.lastObservedRotation = leaderRotationAfter;
-    if (Math.abs(delta) <= ROTATION_EPSILON) return;
-
-    state.events.push({
-      delta,
-      leaderRotationBefore,
-      leaderRotationAfter,
+    const event = {
+      requestId: String(metadata.requestId ?? `${MODULE_ID}-orbit-${randomId(20)}`),
+      relationshipId: relationship.id,
+      direction: Math.sign(Number(metadata.direction)),
+      inputModifier: metadata.inputModifier ?? "wheel",
+      nativeRotationBefore: finiteNumber(metadata.nativeRotationBefore),
+      nativeRequestedRotation: finiteNumber(metadata.nativeRequestedRotation),
+      nativeRotationDelta: finiteNumber(metadata.nativeRotationDelta),
+      leaderRotationBefore: finiteNumber(metadata.leaderRotationBefore),
+      leaderRotationAfter: finiteNumber(metadata.leaderRotationAfter, currentRotation),
+      angularDelta: finiteNumber(metadata.angularDelta),
+      coordinationDistance: finiteNumber(metadata.coordinationDistance),
+      shellSize: Math.trunc(finiteNumber(metadata.shellSize, 0)),
+      currentOrbitIndex: Math.trunc(finiteNumber(metadata.currentOrbitIndex, -1)),
+      targetOrbitIndex: Math.trunc(finiteNumber(metadata.targetOrbitIndex, -1)),
+      followerPositionBefore: duplicateSafely(metadata.followerPositionBefore),
+      followerPositionAfter: duplicateSafely(metadata.followerPositionAfter),
       generation: state.generation,
-      observedAt: now
-    });
+      observedAt: Date.now()
+    };
+    if (!event.direction || event.leaderRotationBefore === null || event.angularDelta === null) {
+      this.#resetRelationship(relationship.id, "invalid-orbit-update-metadata");
+      return;
+    }
+
+    state.lastObservedRotation = currentRotation;
+    state.events.push(event);
     this.#ensureDrain(state);
   }
 
@@ -349,13 +528,15 @@ export class RelationshipRotationService {
         relationshipId: relationship.id,
         leaderUuid: relationship.leaderUuid,
         followerUuid: relationship.followerUuid,
-        accumulator: 0,
         lastObservedRotation: RelationshipOrbitPlanner.normalizeRotation(rotation),
         armedUntil: 0,
+        inputModifier: null,
         gestureSerial: 0,
         generation: 0,
         events: [],
-        drainPromise: null
+        drainPromise: null,
+        predictedFollowerPosition: null,
+        predictedLeaderRotation: null
       };
       this.#states.set(relationship.id, state);
     } else {
@@ -379,7 +560,12 @@ export class RelationshipRotationService {
           this.#states.delete(state.relationshipId);
           return;
         }
-        if (state.events.length && this.#states.get(state.relationshipId) === state) this.#ensureDrain(state);
+        if (state.events.length && this.#states.get(state.relationshipId) === state) {
+          this.#ensureDrain(state);
+        } else {
+          state.predictedFollowerPosition = null;
+          state.predictedLeaderRotation = null;
+        }
       });
   }
 
@@ -387,25 +573,11 @@ export class RelationshipRotationService {
     while (state.events.length) {
       const event = state.events.shift();
       if (event.generation !== state.generation) continue;
-
       const relationship = this.#relationships.get(state.relationshipId);
       if (!relationship || this.#rotationPolicy(relationship) !== RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER) {
         this.#resetRelationship(state.relationshipId, "relationship-unavailable");
         return;
       }
-
-      const accumulatorBefore = state.accumulator;
-      const total = accumulatorBefore + event.delta;
-      const signedSteps = Math.trunc(total / ORBIT_QUANTUM_DEGREES);
-      if (!signedSteps) {
-        state.accumulator = total;
-        continue;
-      }
-
-      const direction = Math.sign(signedSteps);
-      const steps = Math.min(8, Math.abs(signedSteps));
-      const consumed = direction * steps * ORBIT_QUANTUM_DEGREES;
-      const remainder = total - consumed;
 
       const leader = await fromUuid(relationship.leaderUuid);
       const follower = await fromUuid(relationship.followerUuid);
@@ -415,35 +587,37 @@ export class RelationshipRotationService {
       }
 
       const request = {
-        requestId: `${MODULE_ID}-orbit-${randomId(20)}`,
+        requestId: event.requestId,
         requestingUserId: game.user.id,
         relationshipId: relationship.id,
         sceneId: relationship.sceneId,
         leaderUuid: relationship.leaderUuid,
         followerUuid: relationship.followerUuid,
         leaderPosition: { x: leader.x, y: leader.y, elevation: leader.elevation },
-        followerPosition: { x: follower.x, y: follower.y, elevation: follower.elevation },
-        direction,
-        steps,
-        rotationDelta: event.delta,
+        followerPosition: duplicateSafely(event.followerPositionBefore),
+        targetFollowerPosition: duplicateSafely(event.followerPositionAfter),
+        direction: event.direction,
+        angularDelta: event.angularDelta,
         leaderRotationBefore: event.leaderRotationBefore,
-        leaderRotationAfter: event.leaderRotationAfter
+        leaderRotationAfter: event.leaderRotationAfter,
+        nativeRequestedRotation: event.nativeRequestedRotation,
+        inputModifier: event.inputModifier,
+        coordinationDistance: event.coordinationDistance,
+        shellSize: event.shellSize,
+        currentOrbitIndex: event.currentOrbitIndex,
+        targetOrbitIndex: event.targetOrbitIndex
       };
 
       let result;
       try {
         result = await this.#socket.executeAsGM("relationships.orbitFollower", request);
       } catch (error) {
-        // The GM did not authorize/complete the orbit. Do not silently consume
-        // the threshold; retain the pre-event accumulator and surface the error.
-        state.accumulator = accumulatorBefore;
+        this.#resetRelationship(state.relationshipId, "orbit-request-error");
         throw error;
       }
-
       if (event.generation !== state.generation) continue;
 
       if (result?.completed === true) {
-        state.accumulator = remainder;
         if (Number.isFinite(Number(result.leaderRotation))) {
           state.lastObservedRotation = RelationshipOrbitPlanner.normalizeRotation(result.leaderRotation);
         }
@@ -457,24 +631,20 @@ export class RelationshipRotationService {
         return;
       }
 
-      if (result?.rolledBackRotation === true) {
-        state.accumulator = accumulatorBefore;
-        if (Number.isFinite(Number(result.leaderRotation))) {
-          state.lastObservedRotation = RelationshipOrbitPlanner.normalizeRotation(result.leaderRotation);
-        }
-      } else {
-        state.accumulator = accumulatorBefore;
+      // Any failed shell step invalidates already-predicted later wheel events.
+      // Rollback uses exact snapshots; future input starts from the restored live
+      // follower/leader state rather than trying to salvage a speculative queue.
+      this.#resetRelationship(state.relationshipId, "orbit-step-failed");
+      if (Number.isFinite(Number(result?.leaderRotation))) {
+        const fresh = this.#stateFor(relationship, result.leaderRotation);
+        fresh.lastObservedRotation = RelationshipOrbitPlanner.normalizeRotation(result.leaderRotation);
       }
       if (result?.message) ui?.notifications?.warn?.(result.message);
+      return;
     }
   }
 
   async #awaitLocalFollowerAnimation(followerUuid) {
-    // Socketlib can deliver the GM result and the Token update on very close but
-    // independent network turns. Give the local canvas a short opportunity to
-    // expose its movementAnimationPromise before deciding there is nothing to
-    // serialize. This keeps rapid wheel input from launching overlapping follower
-    // animations without imposing a fixed delay after normal completed movement.
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const follower = await fromUuid(followerUuid);
       const animation = follower?.object?.movementAnimationPromise;
@@ -489,6 +659,41 @@ export class RelationshipRotationService {
       if (!follower?.object) return;
       await sleep(20);
     }
+  }
+
+  #buildOrbitRequest({
+    relationship,
+    leader,
+    follower,
+    plan,
+    requestId,
+    requestingUserId,
+    leaderRotationBefore,
+    leaderRotationAfter,
+    nativeRequestedRotation = null,
+    inputModifier = "wheel"
+  }) {
+    return {
+      requestId,
+      requestingUserId,
+      relationshipId: relationship.id,
+      sceneId: relationship.sceneId,
+      leaderUuid: relationship.leaderUuid,
+      followerUuid: relationship.followerUuid,
+      leaderPosition: { x: leader.x, y: leader.y, elevation: leader.elevation },
+      followerPosition: { x: follower.x, y: follower.y, elevation: follower.elevation },
+      targetFollowerPosition: { x: plan.target.x, y: plan.target.y, elevation: follower.elevation },
+      direction: plan.direction,
+      angularDelta: plan.angularDelta,
+      leaderRotationBefore,
+      leaderRotationAfter,
+      nativeRequestedRotation,
+      inputModifier,
+      coordinationDistance: plan.coordinationDistance,
+      shellSize: plan.shellSize,
+      currentOrbitIndex: plan.current.index,
+      targetOrbitIndex: plan.target.index
+    };
   }
 
   async #orbitFollowerAsGM(request = {}) {
@@ -514,7 +719,6 @@ export class RelationshipRotationService {
 
     const scene = game.scenes.get(request.sceneId);
     if (!scene || scene.id !== relationship.sceneId) throw new Error("The requested Scene does not match the active relationship.");
-
     const leader = await fromUuid(relationship.leaderUuid);
     const follower = await fromUuid(relationship.followerUuid);
     if (!(leader instanceof foundry.documents.TokenDocument) || !(follower instanceof foundry.documents.TokenDocument)) {
@@ -526,51 +730,63 @@ export class RelationshipRotationService {
 
     if (!requester.isGM) {
       const owner = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
-      if (!leader.testUserPermission(requester, owner)) {
-        throw new Error("The requesting user does not own the relationship leader.");
-      }
+      if (!leader.testUserPermission(requester, owner)) throw new Error("The requesting user does not own the relationship leader.");
     }
 
     const direction = Math.sign(Number(request.direction));
-    const steps = Math.trunc(Math.abs(Number(request.steps)));
-    const rotationDelta = finiteNumber(request.rotationDelta);
+    const angularDelta = finiteNumber(request.angularDelta);
     const leaderRotationBeforeValue = finiteNumber(request.leaderRotationBefore);
     const leaderRotationAfterValue = finiteNumber(request.leaderRotationAfter);
-    if (!direction || !(steps >= 1 && steps <= 8) || rotationDelta === null
-      || leaderRotationBeforeValue === null || leaderRotationAfterValue === null
-      || Math.abs(rotationDelta) > 360 + ROTATION_EPSILON) {
+    if (!direction || angularDelta === null || leaderRotationBeforeValue === null || leaderRotationAfterValue === null
+      || Math.abs(angularDelta) > 360 + ROTATION_EPSILON) {
       throw new Error("The orbital movement request contains invalid rotation data.");
     }
-
     const leaderRotationBefore = RelationshipOrbitPlanner.normalizeRotation(leaderRotationBeforeValue);
     const leaderRotationAfter = RelationshipOrbitPlanner.normalizeRotation(leaderRotationAfterValue);
     const snapshotDelta = RelationshipOrbitPlanner.signedRotationDelta(leaderRotationBefore, leaderRotationAfter);
-    if (Math.abs(snapshotDelta - rotationDelta) > ROTATION_EPSILON) {
-      throw new Error("The orbital movement request contains inconsistent rotation data.");
+    if (Math.abs(snapshotDelta - angularDelta) > 1e-4) {
+      throw new Error("The orbital movement request contains inconsistent leader rotation data.");
     }
-
-    const maximumStepsForDelta = Math.max(1, Math.ceil((Math.abs(rotationDelta) + ORBIT_QUANTUM_DEGREES - ROTATION_EPSILON) / ORBIT_QUANTUM_DEGREES));
-    if (steps > maximumStepsForDelta) throw new Error("The orbital movement request exceeds the observed rotation change.");
 
     if (!RelationshipOrbitPlanner.positionsEqual(request.leaderPosition, leader)
       || !RelationshipOrbitPlanner.positionsEqual(request.followerPosition, follower)) {
       return { completed: false, stale: true, message: "The relationship moved before orbital rotation could be resolved." };
     }
-
     if (this.#activeRelationshipIds.has(relationship.id)) {
       return { completed: false, busy: true, message: "This relationship is already resolving orbital movement." };
     }
 
     this.#activeRelationshipIds.add(relationship.id);
     try {
-      const waypoints = RelationshipOrbitPlanner.buildWaypoints({
-        leader,
-        follower,
-        grid: scene.grid,
-        direction,
-        steps
-      });
+      const plan = RelationshipOrbitPlanner.buildStep({ scene, leader, follower, relationship, direction });
+      if (!RelationshipOrbitPlanner.positionsEqual(plan.target, request.targetFollowerPosition)) {
+        const restored = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
+        return {
+          completed: false,
+          stale: true,
+          rolledBackRotation: true,
+          leaderRotation: restored,
+          message: "The relationship orbit geometry changed before this step could be resolved."
+        };
+      }
+      if (Math.abs(plan.angularDelta - angularDelta) > 1e-4) {
+        const restored = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
+        return {
+          completed: false,
+          stale: true,
+          rolledBackRotation: true,
+          leaderRotation: restored,
+          message: "The relationship orbit bearing changed before this step could be resolved."
+        };
+      }
 
+      const waypoints = [{
+        x: plan.target.x,
+        y: plan.target.y,
+        elevation: finiteNumber(follower.elevation, 0),
+        checkpoint: true,
+        explicit: true
+      }];
       const collision = this.#preflightFollowerPath({ follower, waypoints });
       if (collision) {
         if (relationship.collisionPolicy === COLLISION_POLICIES.DETACH) {
@@ -579,12 +795,13 @@ export class RelationshipRotationService {
             completed: false,
             detached: true,
             message: `${follower.name ?? "The follower token"} cannot orbit through that path, so the relationship was detached.`,
-            leaderRotation: leader.rotation
+            leaderRotation: leaderRotationAfter
           };
         }
 
         const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
         this.#refreshPendingAlliedOverlap(relationship.id);
+        this.#recordDecision({ request, plan, completed: false, collision: true, leaderRotation });
         return {
           completed: false,
           collision: true,
@@ -625,6 +842,8 @@ export class RelationshipRotationService {
           requestingUserId: requester.id,
           relationshipMovement: true,
           relationshipOrbit: true,
+          orbitDirection: direction,
+          orbitShellStep: true,
           generatedBy: MODULE_ID,
           internal: true,
           suppressAutomation: false
@@ -645,13 +864,14 @@ export class RelationshipRotationService {
             completed: false,
             detached: true,
             results,
-            leaderRotation: leader.rotation,
+            leaderRotation: leaderRotationAfter,
             message: "The follower could not complete orbital movement, so the relationship was detached."
           };
         }
 
         const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
         this.#refreshPendingAlliedOverlap(relationship.id);
+        this.#recordDecision({ request, plan, completed: false, incompleteMovement: true, leaderRotation });
         return {
           completed: false,
           rolledBackRotation: true,
@@ -661,13 +881,6 @@ export class RelationshipRotationService {
         };
       }
 
-      // The path itself may be legal while its terminal square is shared with
-      // an allied creature. D&D5e/Foundry permits traversal through allies, and
-      // Foundry's constrainMovementPath does not reject an occupied endpoint.
-      // Give the user a short continuation window: another orbit may carry the
-      // follower through the allied square. If the follower remains there when
-      // the grace window expires, restore the exact pre-overlap follower slot
-      // and corresponding leader facing.
       await this.#awaitLocalFollowerAnimation(follower.uuid);
       const alliedOccupants = this.#alliedEndpointOccupants({
         scene,
@@ -690,13 +903,16 @@ export class RelationshipRotationService {
         this.#clearPendingAlliedOverlap(relationship.id, "orbit-ended-clear");
       }
 
-      Logger.debug("Relationship orbital movement completed", {
+      this.#recordDecision({ request, plan, completed: true, results, leaderRotation: leaderRotationAfter });
+      Logger.debug("Relationship orbital shell step completed", {
         relationshipId: relationship.id,
         leaderUuid: leader.uuid,
         followerUuid: follower.uuid,
         direction,
-        steps,
-        rotationDelta,
+        angularDelta,
+        currentOrbitIndex: plan.current.index,
+        targetOrbitIndex: plan.target.index,
+        shellSize: plan.shellSize,
         destination: followerWaypoints.at(-1)
       });
 
@@ -705,10 +921,14 @@ export class RelationshipRotationService {
         results,
         relationshipId: relationship.id,
         waypoints: duplicateSafely(followerWaypoints),
-        leaderRotation: leader.rotation
+        leaderRotation: leaderRotationAfter,
+        angularDelta,
+        currentOrbitIndex: plan.current.index,
+        targetOrbitIndex: plan.target.index,
+        shellSize: plan.shellSize
       };
     } catch (error) {
-      if (/currently supports|must occupy|square Scene grid/i.test(error.message ?? "")) {
+      if (/requires a square|not on the relationship|No legal snapped|too large to enumerate|too many legal/i.test(error.message ?? "")) {
         const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
         this.#refreshPendingAlliedOverlap(relationship.id);
         return {
@@ -723,6 +943,37 @@ export class RelationshipRotationService {
     } finally {
       this.#activeRelationshipIds.delete(relationship.id);
     }
+  }
+
+  #recordDecision({ request, plan, completed, leaderRotation, ...extra }) {
+    this.#lastDecision = {
+      relationshipId: request.relationshipId,
+      source: request.inputModifier === "test-api" ? "test-api" : "wheel",
+      inputModifier: request.inputModifier ?? "wheel",
+      nativeRequestedRotation: request.nativeRequestedRotation ?? null,
+      direction: request.direction,
+      currentOrbitIndex: plan.current.index,
+      targetOrbitIndex: plan.target.index,
+      shellSize: plan.shellSize,
+      currentFollowerBearing: plan.current.bearing,
+      targetFollowerBearing: plan.target.bearing,
+      calculatedLeaderDelta: plan.angularDelta,
+      committedLeaderRotation: leaderRotation,
+      followerPositionBefore: duplicateSafely(request.followerPosition),
+      followerPositionAfter: duplicateSafely(request.targetFollowerPosition),
+      coordinationDistance: plan.coordinationDistance,
+      orbitStepsRequested: 1,
+      orbitStepsCompleted: completed ? 1 : 0,
+      inputNormalized: true,
+      completed,
+      ...duplicateSafely(extra)
+    };
+  }
+
+  #sceneTokenFromUuid(scene, uuid) {
+    if (!scene?.tokens || !uuid) return null;
+    const id = String(uuid).split(".").at(-1);
+    return scene.tokens.get?.(id) ?? null;
   }
 
   #preflightFollowerPath({ follower, waypoints }) {
@@ -1038,8 +1289,10 @@ export class RelationshipRotationService {
     if (!state) return;
     state.generation += 1;
     state.events.length = 0;
-    state.accumulator = 0;
     state.armedUntil = 0;
+    state.predictedFollowerPosition = null;
+    state.predictedLeaderRotation = null;
+    state.inputModifier = null;
     Logger.debug("Reset relationship rotation state", { relationshipId, reason });
     if (!state.drainPromise) this.#states.delete(relationshipId);
   }

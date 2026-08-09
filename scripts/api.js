@@ -68,6 +68,7 @@ export class ActionEffects5eApi {
     this.relationships = Object.freeze({
       create: (data) => relationships.create(data),
       remove: (id) => relationships.remove(id),
+      updateGeometry: (id, changes) => relationships.updateGeometry(id, changes),
       get: (id) => relationships.get(id),
       getForLeader: (uuid) => relationships.getForLeader(uuid),
       getForFollower: (uuid) => relationships.getForFollower(uuid),
@@ -85,9 +86,16 @@ export class ActionEffects5eApi {
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
       createTestRelationshipFromControlledTokens: () => tests.createTestRelationshipFromControlledTokens(),
-      createGrappleMovementTestRelationshipFromControlledTokens: () => tests.createGrappleMovementTestRelationshipFromControlledTokens(),
+      createGrappleMovementTestRelationshipFromControlledTokens: (options) => tests.createGrappleMovementTestRelationshipFromControlledTokens(options),
       removeTestRelationships: () => tests.removeTestRelationships(),
-      inspectControlledRelationship: () => tests.inspectControlledRelationship()
+      inspectControlledRelationship: () => tests.inspectControlledRelationship(),
+      inspectRelationshipGeometry: (options) => tests.inspectRelationshipGeometry(options),
+      inspectOrbitShell: (options) => tests.inspectOrbitShell(options),
+      validateRelationshipGeometry: (options) => tests.validateRelationshipGeometry(options),
+      showOrbitDebug: (options) => tests.showOrbitDebug(options),
+      clearOrbitDebug: () => tests.clearOrbitDebug(),
+      orbitClockwise: (options) => tests.orbitClockwise(options),
+      orbitCounterclockwise: (options) => tests.orbitCounterclockwise(options)
     });
 
     this.socket = Object.freeze({

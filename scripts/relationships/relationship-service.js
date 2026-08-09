@@ -30,6 +30,7 @@ export class RelationshipService {
     this.#socket = socket;
     this.#socket.register("relationships.create", this.#createAsGM.bind(this));
     this.#socket.register("relationships.remove", this.#removeAsGM.bind(this));
+    this.#socket.register("relationships.updateGeometry", this.#updateGeometryAsGM.bind(this));
     this.#socket.register("relationships.cleanupToken", this.#cleanupTokenAsGM.bind(this));
   }
 
@@ -99,6 +100,14 @@ export class RelationshipService {
     });
   }
 
+  async updateGeometry(id, changes = {}) {
+    return this.#socket.executeAsGM("relationships.updateGeometry", {
+      requestingUserId: game.user.id,
+      id,
+      changes: duplicateSafely(changes)
+    });
+  }
+
   async cleanupToken(tokenUuid) {
     return this.#socket.executeAsGM("relationships.cleanupToken", {
       requestingUserId: game.user.id,
@@ -113,6 +122,11 @@ export class RelationshipService {
   async removeManyAsGM(ids) {
     this.#assertExecutingAsGM();
     return this.#removeManyPersisted(new Set(ids));
+  }
+
+  async updateGeometryAsGM(id, changes = {}) {
+    this.#assertExecutingAsGM();
+    return this.#updateGeometryPersisted(id, changes);
   }
 
   getStats() {
@@ -142,7 +156,7 @@ export class RelationshipService {
       throw new Error(`Follower token is already controlled by relationship '${existingFollower[0].id}'.`);
     }
     if (this.getForFollower(normalized.leaderUuid).length || this.getForLeader(normalized.followerUuid).length) {
-      throw new Error("Relationship chains and cycles are not supported in Action Effects 5E v0.3.0.");
+      throw new Error("Relationship chains and cycles are not supported by the current Action Effects 5E relationship model.");
     }
 
     const scene = game.scenes.get(normalized.sceneId);
@@ -170,6 +184,46 @@ export class RelationshipService {
     Hooks.callAll(HOOKS.RELATIONSHIP_REMOVED, duplicateSafely(relationship));
     Logger.debug("Removed relationship", relationship);
     return true;
+  }
+
+
+  async #updateGeometryAsGM({ requestingUserId, id, changes = {} }) {
+    this.#assertExecutingAsGM();
+    const relationship = this.#relationships.get(id);
+    if (!relationship) return null;
+    await this.#validateRequestingUser(requestingUserId, relationship.leaderUuid);
+    return this.#updateGeometryPersisted(id, changes);
+  }
+
+  async #updateGeometryPersisted(id, changes = {}) {
+    const relationship = this.#relationships.get(id);
+    if (!relationship) return null;
+
+    const updated = { ...duplicateSafely(relationship) };
+    if (Object.prototype.hasOwnProperty.call(changes, "coordinationDistance")) {
+      const value = Number(changes.coordinationDistance);
+      updated.coordinationDistance = Number.isFinite(value) && value >= 0 ? value : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, "breakDistance")) {
+      const value = Number(changes.breakDistance);
+      updated.breakDistance = Number.isFinite(value) && value >= 0 ? value : null;
+    }
+    this.#assertGeometryDistanceInvariant(updated);
+
+    const frozen = Object.freeze(updated);
+    const scene = game.scenes.get(relationship.sceneId);
+    if (!scene) throw new Error("The relationship Scene no longer exists.");
+    const entries = this.#getSceneRelationships(scene);
+    const index = entries.findIndex((entry) => entry.id === id);
+    if (index < 0) return null;
+    entries[index] = duplicateSafely(frozen);
+    await scene.setFlag(MODULE_ID, SCENE_RELATIONSHIPS_FLAG, entries);
+
+    this.#unindex(relationship);
+    this.#index(frozen);
+    Hooks.callAll(HOOKS.RELATIONSHIP_UPDATED, duplicateSafely(frozen), duplicateSafely(relationship));
+    Logger.debug("Updated relationship geometry", { id, changes, relationship: frozen });
+    return duplicateSafely(frozen);
   }
 
   async #cleanupTokenAsGM({ requestingUserId, tokenUuid }) {
@@ -228,6 +282,19 @@ export class RelationshipService {
     const attachmentMode = Object.values(ATTACHMENT_MODES).includes(data.attachmentMode)
       ? data.attachmentMode
       : ATTACHMENT_MODES.ADJACENT_FOLLOWER;
+    const coordinationDistance = data.coordinationDistance !== null
+      && data.coordinationDistance !== undefined
+      && Number.isFinite(Number(data.coordinationDistance))
+      && Number(data.coordinationDistance) >= 0
+      ? Number(data.coordinationDistance)
+      : null;
+    const breakDistance = data.breakDistance !== null
+      && data.breakDistance !== undefined
+      && Number.isFinite(Number(data.breakDistance))
+      && Number(data.breakDistance) >= 0
+      ? Number(data.breakDistance)
+      : null;
+    this.#assertGeometryDistanceInvariant({ coordinationDistance, breakDistance });
 
     return Object.freeze({
       id: data.id ?? randomId(20),
@@ -260,20 +327,32 @@ export class RelationshipService {
       alliedEndpointGraceMs: Number.isFinite(Number(data.alliedEndpointGraceMs)) && Number(data.alliedEndpointGraceMs) > 0
         ? Number(data.alliedEndpointGraceMs)
         : RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
+      // coordinationDistance is the planar band which coordinated dragging
+      // and orbiting preserve. It is intentionally separate from breakDistance:
+      // a 10-foot-reach grapple may be coordinated at either 5 or 10 feet.
+      coordinationDistance,
       // breakDistance is expressed in the Scene grid's distance units (for
       // example 5 on a standard 5-foot D&D grid). Null disables automatic
       // separation detachment for the relationship.
-      breakDistance: data.breakDistance !== null
-        && data.breakDistance !== undefined
-        && Number.isFinite(Number(data.breakDistance))
-        && Number(data.breakDistance) >= 0
-        ? Number(data.breakDistance)
-        : null,
+      breakDistance,
       sourceUuid: data.sourceUuid ?? null,
       metadata: duplicateSafely(data.metadata ?? {}),
       createdBy: data.createdBy ?? game.user.id,
       createdAt: data.createdAt ?? nowIso()
     });
+  }
+
+
+  #assertGeometryDistanceInvariant({ coordinationDistance = null, breakDistance = null } = {}) {
+    const coordination = coordinationDistance === null || coordinationDistance === undefined
+      ? null
+      : Number(coordinationDistance);
+    const maximum = breakDistance === null || breakDistance === undefined
+      ? null
+      : Number(breakDistance);
+    if (Number.isFinite(coordination) && Number.isFinite(maximum) && coordination > maximum + 1e-6) {
+      throw new Error(`Relationship coordinationDistance (${coordination}) cannot exceed breakDistance (${maximum}).`);
+    }
   }
 
   async #validateRequestingUser(userId, leaderUuid) {

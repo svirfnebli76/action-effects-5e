@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.23 - Dynamic grapple geometry and one-step orbit control
+
+- Added `grappleFollower`, a relationship attachment mode whose coordinated translation is derived from the leader/follower token footprints and a planar `coordinationDistance` instead of assuming two 1x1 tokens.
+- Added `RelationshipGeometryService`, which generates clockwise square-grid orbit shells from the actual TokenDocument width/height, supports fractional and rectangular footprints, finds current shell positions, plans one-position clockwise/counterclockwise orbit steps, selects rear trailing positions, and validates shell invariants.
+- Separated `coordinationDistance` from `breakDistance`. `breakDistance` remains the maximum legal 3D participant separation; `coordinationDistance` is the planar distance band preserved by normal coordinated dragging and orbiting. This supports extended-reach relationships which can be coordinated at 5, 10, 15, or other Scene distance bands while retaining a larger maximum reach.
+- External forced movement which remains within `breakDistance` can re-anchor `coordinationDistance` to the participants' new non-zero planar separation. Forced overlap at zero distance is deliberately not persisted as an orbit band; movement beyond `breakDistance` still detaches without snapback.
+- Generalized grapple-follow translation for unequal footprints and extended reach. Each expanded leader grid step selects the legal shell position opposite the leader's movement vector, preserving the familiar 1x1 "follower enters the vacated leader square" behavior as a special case.
+- Replaced fixed 45-degree orbital quanta with one adjacent shell-position step per qualifying rotation input. The leader's pending rotation is rewritten in `preUpdateToken` to the exact bearing delta represented by that follower step, so larger shells can use variable angles such as 26.565° or 36.87° without visible 45° overshoot/snapback.
+- Normalized native Shift+mouse-wheel and Ctrl+mouse-wheel rotation while an active orbit-enabled relationship leader is controlled. Both modifiers request exactly one follower shell position in the native requested direction; Foundry's differing fast/slow rotation magnitudes are retained only as diagnostics and are not used as the number of orbit steps. Outside an active AE5E orbit relationship, Foundry controls remain untouched.
+- Added speculative predicted follower/leader state for rapid wheel input. Multiple native updates can be planned ahead but are resolved serially through the same GM-authorized orbit pipeline; any failed step discards later speculative events and restores from exact captured snapshots.
+- Preserved `stopGroup` collision rollback, follower artwork rotation suppression, Socketlib authority, allied endpoint grace, relationship-removal cleanup, and exact leader-rotation restoration under the new variable-angle shell geometry.
+- Added persisted relationship geometry updates through `relationships.updateGeometry` / `relationships.updateGeometryAsGM` and a `relationshipUpdated` hook. Action Effects 5E now registers nine Socketlib handlers in this build.
+- Enforced the geometry invariant that a finite `coordinationDistance` cannot exceed a finite `breakDistance`; invalid creation/update requests are rejected before persistence, and rejected updates leave prior state intact.
+- Added development geometry tooling: `inspectRelationshipGeometry`, `inspectOrbitShell`, `validateRelationshipGeometry`, `showOrbitDebug`, `clearOrbitDebug`, `orbitClockwise`, and `orbitCounterclockwise` under `ae5e.tests`.
+- The grapple-like test fixture now accepts `{ breakDistance, coordinationDistance }`, uses `grappleFollower`, derives actual token dimensions from the controlled tokens, and rejects obviously inconsistent test bands.
+- Added a temporary PIXI orbit-debug overlay which numbers generated shell anchors without creating persistent Scene Drawings, Tiles, Regions, or flags.
+- Expanded automated coverage to 61 tests. New regressions cover Tiny-through-Gargantuan-style footprint shells, 5/10/15-foot bands, exact ±360° shell circuits, Shift/Ctrl normalization, rapid predicted rotation input, non-45-degree rollback, unequal-size/extended-reach trailing, forced-movement re-anchoring, zero-distance overlap handling, and all previously validated forced-movement/break-distance behavior.
+
 ## 0.3.22 - Forced movement and break-distance relationships
 
 - Added persisted `forcedLeaderMovementPolicy` values `follow` and `independent`. Existing relationships default to `follow`; grapple-like relationships can use `independent` so an external forced displacement of the leader does not automatically drag the follower.

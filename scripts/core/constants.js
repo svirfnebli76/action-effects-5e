@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.22";
+export const MODULE_VERSION = "0.3.23";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -81,6 +81,7 @@ export const RELATIONSHIP_TYPES = Object.freeze({
 export const ATTACHMENT_MODES = Object.freeze({
   RIGID_OFFSET: "rigidOffset",
   ADJACENT_FOLLOWER: "adjacentFollower",
+  GRAPPLE_FOLLOWER: "grappleFollower",
   PASSENGER: "passenger",
   ANCHORED_FOLLOWER: "anchoredFollower"
 });
@@ -116,6 +117,8 @@ export const RELATIONSHIP_ALLIED_ENDPOINT_POLICIES = Object.freeze({
   GRACE: "grace"
 });
 
+// Retained for compatibility with integrations which imported the old v0.3.22
+// constant. v0.3.23 no longer uses a fixed angular quantum for orbit control.
 export const RELATIONSHIP_ORBIT_QUANTUM_DEGREES = 45;
 export const RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS = 3_500;
 
@@ -124,6 +127,7 @@ export const HOOKS = Object.freeze({
   PRE_MOVEMENT_TRANSACTION: `${MODULE_ID}.preMovementTransaction`,
   MOVEMENT_TRANSACTION: `${MODULE_ID}.movementTransaction`,
   RELATIONSHIP_CREATED: `${MODULE_ID}.relationshipCreated`,
+  RELATIONSHIP_UPDATED: `${MODULE_ID}.relationshipUpdated`,
   RELATIONSHIP_REMOVED: `${MODULE_ID}.relationshipRemoved`,
   RELATIONSHIPS_REINDEXED: `${MODULE_ID}.relationshipsReindexed`
 });

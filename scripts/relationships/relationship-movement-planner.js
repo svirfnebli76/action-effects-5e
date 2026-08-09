@@ -1,5 +1,6 @@
 import { ATTACHMENT_MODES, PATH_TYPES } from "../core/constants.js";
 import { duplicateSafely } from "../core/utils.js";
+import { RelationshipGeometryService } from "./relationship-geometry-service.js";
 
 const MAX_WAYPOINTS = 100;
 const POSITION_FIELDS = Object.freeze([
@@ -273,6 +274,7 @@ export class RelationshipMovementPlanner {
 
     switch (relationship.attachmentMode) {
       case ATTACHMENT_MODES.ADJACENT_FOLLOWER:
+      case ATTACHMENT_MODES.GRAPPLE_FOLLOWER:
         // A trailing/dragged follower occupies each space just vacated by the
         // leader. For L0 -> L1 -> L2, the follower path is L0 -> L1 and ends
         // one leader waypoint behind. Teleport-follow is intentionally exempt:
@@ -281,6 +283,8 @@ export class RelationshipMovementPlanner {
           return this.#buildTrailingWaypoints({
             leaderOrigin,
             followerOrigin,
+            leaderTemplate: leader,
+            followerTemplate: follower,
             relationship,
             leaderWaypoints: cleanWaypoints,
             grid
@@ -298,29 +302,29 @@ export class RelationshipMovementPlanner {
     }
   }
 
-  static #buildTrailingWaypoints({ leaderOrigin, followerOrigin, relationship, leaderWaypoints, grid }) {
+  static #buildTrailingWaypoints({
+    leaderOrigin,
+    followerOrigin,
+    leaderTemplate,
+    followerTemplate,
+    relationship,
+    leaderWaypoints,
+    grid
+  }) {
     const expandedLeaderPositions = this.#expandLeaderGridPath({
       leaderOrigin,
       leaderWaypoints,
       grid
     });
-    // Foundry can insert elevation interpolation waypoints at the same x/y
-    // coordinate (for example, moving one square while rising 10 ft can produce
-    // destination-space waypoints at +5 and +10). Those vertical interpolation
-    // points must not consume the follower's one-planar-space trailing offset.
-    // Collapse consecutive identical x/y positions, retaining the final elevation
-    // reached in each planar space and preserving any checkpoint/explicit marker.
     const planarLeaderPositions = this.#collapsePlanarPositions(expandedLeaderPositions);
 
-    // Purely vertical movement has no vacated planar space. Keep the follower's
-    // x/y offset and follow only the elevation delta when requested. This avoids
-    // trying to place both tokens into the same grid space merely because the
-    // leader changed elevation in place.
+    // Purely vertical movement has no rear-facing planar shell. Preserve the
+    // follower's x/y and follow only elevation when the relationship requests it.
     if (planarLeaderPositions.length === 1) {
       const finalLeader = expandedLeaderPositions.at(-1) ?? leaderOrigin;
       const vertical = {
-        x: Math.round(followerOrigin.x),
-        y: Math.round(followerOrigin.y),
+        x: followerOrigin.x,
+        y: followerOrigin.y,
         elevation: relationship.followElevation !== false
           ? followerOrigin.elevation + (finiteNumber(finalLeader.elevation, leaderOrigin.elevation) - leaderOrigin.elevation)
           : followerOrigin.elevation
@@ -329,6 +333,93 @@ export class RelationshipMovementPlanner {
       return this.ensureTerminalCheckpoint([vertical]);
     }
 
+    // v0.3.23 generalizes the old "follower enters the leader's vacated square"
+    // rule. For every leader grid step, place the follower on the legal
+    // coordination shell opposite the leader's movement vector. For 1x1 tokens
+    // at 5 feet this produces exactly the legacy L0 -> L1 trailing behavior,
+    // while also supporting arbitrary leader/follower footprints and longer
+    // coordination distances.
+    try {
+      const scene = leaderTemplate?.parent?.grid ? leaderTemplate.parent : { grid };
+      RelationshipGeometryService.assertSquareGrid(scene?.grid);
+
+      const leaderShape = {
+        width: finiteNumber(leaderTemplate?.width, 1),
+        height: finiteNumber(leaderTemplate?.height, 1)
+      };
+      const followerShape = {
+        width: finiteNumber(followerTemplate?.width, 1),
+        height: finiteNumber(followerTemplate?.height, 1)
+      };
+      const coordinationDistance = RelationshipGeometryService.coordinationDistance({
+        scene,
+        relationship,
+        leader: { ...leaderShape, ...leaderOrigin },
+        follower: { ...followerShape, ...followerOrigin }
+      });
+
+      let previousLeader = { ...leaderOrigin };
+      let previousFollower = { ...followerOrigin };
+      const trailingWaypoints = [];
+
+      for (let index = 1; index < planarLeaderPositions.length; index += 1) {
+        const leaderPosition = planarLeaderPositions[index];
+        const movementVector = {
+          dx: leaderPosition.x - previousLeader.x,
+          dy: leaderPosition.y - previousLeader.y
+        };
+        const planned = RelationshipGeometryService.selectTrailingPosition({
+          scene,
+          leader: { ...leaderShape, ...previousLeader },
+          follower: { ...followerShape, ...previousFollower },
+          relationship,
+          leaderPosition: { ...leaderShape, ...leaderPosition },
+          followerPosition: { ...followerShape, ...previousFollower },
+          movementVector,
+          coordinationDistance
+        });
+        if (!planned) throw new Error("No legal trailing shell position was found for the leader movement step.");
+
+        const trailing = {
+          x: planned.x,
+          y: planned.y,
+          elevation: relationship.followElevation !== false
+            ? followerOrigin.elevation + (finiteNumber(leaderPosition.elevation, leaderOrigin.elevation) - leaderOrigin.elevation)
+            : followerOrigin.elevation
+        };
+        copyWaypointFields(leaderPosition, trailing);
+        trailingWaypoints.push(trailing);
+        previousLeader = { ...leaderPosition };
+        previousFollower = { ...trailing };
+      }
+
+      if (!trailingWaypoints.length) throw new Error("No translated trailing waypoints were generated.");
+      if (trailingWaypoints.length > MAX_WAYPOINTS) {
+        throw new Error(`Relationship movement is limited to ${MAX_WAYPOINTS} translated grid steps.`);
+      }
+      trailingWaypoints[0].checkpoint = true;
+      return this.ensureTerminalCheckpoint(trailingWaypoints);
+    } catch {
+      // Preserve the proven v0.3.22 behavior on unsupported/non-square geometry
+      // rather than making relationship translation globally brittle. Orbiting
+      // itself remains square-grid-only and will report that limitation.
+      return this.#buildLegacyTrailingWaypoints({
+        leaderOrigin,
+        followerOrigin,
+        relationship,
+        expandedLeaderPositions,
+        planarLeaderPositions
+      });
+    }
+  }
+
+  static #buildLegacyTrailingWaypoints({
+    leaderOrigin,
+    followerOrigin,
+    relationship,
+    expandedLeaderPositions,
+    planarLeaderPositions
+  }) {
     const priorLeaderPositions = planarLeaderPositions.slice(0, -1);
     if (!priorLeaderPositions.length) priorLeaderPositions.push(leaderOrigin);
     if (priorLeaderPositions.length > MAX_WAYPOINTS) {
@@ -346,16 +437,7 @@ export class RelationshipMovementPlanner {
       copyWaypointFields(position, trailing);
       return trailing;
     });
-
-    // The follower's first trailing destination is the leader's vacated origin.
-    // Foundry treats non-checkpoint waypoints as intermediate hints inside the
-    // direct path to the next checkpoint. If this first anchor is not a checkpoint,
-    // a follower approaching from the side can cut diagonally toward the leader's
-    // later checkpoint instead of actually entering the leader's starting square.
-    // Force only this synthetic entry anchor (plus the existing terminal point)
-    // to be a checkpoint; user-authored leader checkpoints remain preserved.
     if (trailingWaypoints.length) trailingWaypoints[0].checkpoint = true;
-
     return this.ensureTerminalCheckpoint(trailingWaypoints);
   }
 

@@ -1,298 +1,251 @@
-# Testing Action Effects 5E 0.3.0
+# Action Effects 5E testing
 
-## Automated tests
+## Automated suite
 
-From the repository root:
+Run from the module repository root:
 
 ```bash
 npm test
 ```
 
-The suite checks syntax plus 45 movement/relationship regressions: indexed consumers, relationship persistence, Socketlib registration, rigid and trailing waypoint planning, elevation handling, passenger classification, follower blocking, coordinated group instruction construction, selective simultaneous external/API coordination, compatibility passthrough, post-operation fallback synchronization, symmetric follower-teleport detachment, non-GM GM authorization/receipts, collision preflight, settlement waiting, and partial-movement rollback.
+v0.3.23 currently performs syntax validation across all JavaScript files and **61 Node regressions**. Coverage includes the established movement/Socketlib/rollback pipeline plus dynamic footprint shells, 5/10/15-foot orbit bands, exact ±360° circuit closure, Shift/Ctrl normalization, rapid predicted orbit input, variable-angle rollback, allied endpoint grace, forced-movement break distance, unequal-size trailing, and forced re-anchoring.
 
-## Foundry smoke test
+Automated geometry tests deliberately use the same production `RelationshipGeometryService`, `RelationshipMovementPlanner`, and `RelationshipRotationService` code paths exposed to Foundry.
+The relationship-service regression also rejects invalid coordination/break-distance geometry before persistence and verifies that rejected updates leave the prior relationship state intact.
 
-After Foundry reaches `ready`:
+## Startup check
+
+After replacing module files and restarting Foundry, v0.3.23 should report:
+
+```text
+Action Effects 5E | Registered 9 Socketlib handlers.
+Action Effects 5E | v0.3.23 dependencies validated.
+Action Effects 5E | Relationship rotation service ready.
+Action Effects 5E | Foundation ready.
+```
+
+Run the non-destructive smoke test:
 
 ```js
 const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
-Expected result: `passed: true` with eight checks, including the relationship rotation service.
+## Creating a grapple geometry fixture
 
-## Live relationship movement test
-
-1. Open a Scene with two tokens separated by a visible offset.
-2. Control exactly those two tokens.
-3. Run:
-
-```js
-await ae5e.tests.createTestRelationshipFromControlledTokens();
-```
-
-4. Confirm the leader remains controlled and the follower is released.
-5. Move the leader one grid square. Confirm the follower moves into the square the leader just vacated.
-6. Move the leader through a simple multi-waypoint path. Confirm the follower trails the leader route one waypoint behind instead of mirroring the original offset.
-7. Move the leader with the keyboard and confirm the same trailing behavior.
-8. Try to drag the follower normally and confirm the movement is rejected.
-9. Move the leader toward a wall where the follower's trailing route is blocked. Confirm the group does not separate.
-10. Reload Foundry and confirm the relationship persists.
-11. Test a leader `blink` teleport with `teleportPolicy: detach`: the leader should teleport, the follower should remain, and the relationship should be removed.
-12. Recreate the relationship, then teleport the follower with `blink`: the follower should teleport, the leader should remain, and the relationship should be removed.
-13. Remove any remaining test relationship:
-
-```js
-await ae5e.tests.removeTestRelationships();
-```
-
-14. Confirm the follower can move independently again.
-
-## Diagnostics
-
-```js
-ae5e.relationships.getMovementStats();
-ae5e.movement.getStats();
-ae5e.relationships.list({ sceneId: canvas.scene.id });
-```
-
-Enable recent movement capture only while diagnosing:
-
-```js
-await game.settings.set("action-effects-5e", "captureMovementDiagnostics", true);
-```
-
-Move the relationship group and inspect:
-
-```js
-ae5e.movement.getRecentTransactions();
-```
-
-Disable capture after testing:
-
-```js
-await game.settings.set("action-effects-5e", "captureMovementDiagnostics", false);
-```
-
-## Coexistence matrix
-
-Repeat the live movement test in these configurations before release:
-
-1. Action Effects 5E without CPR or GPS.
-2. Action Effects 5E with CPR.
-3. Action Effects 5E with GPS.
-4. Action Effects 5E with CPR and GPS.
-
-Look specifically for duplicate movement, duplicate reactions, movement freezing, incorrect pause/resume behavior, or noticeable performance degradation.
-
-
-## v0.2.2 regression check
-
-Generated internal movement IDs must be 16-character alphanumeric Foundry UIDs. After startup and before moving a linked token, `ae5e.relationships.getMovementStats()` should be idle and `ae5e.movement.getStats().movementContexts` should be `0`. During internal movement the context is transient and is removed when the operation completes. A non-zero value after movement settles indicates a leaked internal movement context.
-
-
-## v0.2.3 regression check
-
-For a manual leader drag or keyboard move, Action Effects 5E should reject the original `preMoveToken` operation and start the replacement coordinated movement only after the cancelled Foundry update has fully unwound. After movement settles, `movementContexts`, `pendingTransactions`, `queuedRequests`, and `activeLeaders` should all return to `0`. If Foundry reports a partial or stopped group move, the console now logs the exact `results` and `failedIds` before rollback.
-
-
-## v0.2.4 regression check
-
-Generated relationship movement must explicitly mark the final leader and follower waypoint as `checkpoint: true`. Intermediate waypoints must retain their existing checkpoint state, and Action Effects 5E must not add `action` or `level` solely for this workaround. Rollback destinations must also be explicit checkpoints.
-
-For the live regression test on Foundry 14.365, create a two-token relationship and move the leader one grid square. Both the leader and follower should complete the coordinated movement without the `Linked movement reported incomplete token movement` rollback warning. After movement settles, `movementContexts`, `pendingTransactions`, `queuedRequests`, and `activeLeaders` should return to `0`.
-
-
-
-## v0.3.22 forced-movement and break-distance regression check
-
-Create a fresh grapple-like fixture rather than reusing a generic v0.3.21 test relationship:
+Control exactly two tokens, Leader first and Follower second, then run:
 
 ```js
 const ae5e = game.modules.get("action-effects-5e").api;
-await ae5e.tests.removeTestRelationships();
-// Control Leader first and Follower second, then:
-await ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens();
-console.log(ae5e.relationships.list({ sceneId: canvas.scene.id }));
-```
 
-On a standard 5-foot grid the relationship should report `forcedLeaderMovementPolicy: "independent"` and `breakDistance: 5`. With 1x1 tokens, use an open area without nearby walls for the first tests. External forced movement must be tagged through `ae5e.movement.createOperationOptions()` with `agency: ae5e.constants.MOVEMENT_AGENCIES.FORCED`; do not use an ordinary manual drag as a substitute.
-
-Validate these cases:
-
-1. Force the Follower from one adjacent square to a different adjacent square. The Follower moves, the Leader remains still, and the relationship remains.
-2. Force the Follower beyond the configured break distance. The Follower stays at the successful forced destination, the Leader remains still, and the relationship is removed. There must be no snapback.
-3. Recreate the fixture. Force the Leader to a different location which remains within break distance of the Follower. The Leader moves independently, the Follower does not follow, and the relationship remains.
-4. Force the Leader beyond break distance. The Leader stays at its forced destination, the Follower remains where it was, and the relationship is removed without rollback.
-5. Force both participants in the same direction while preserving their final separation. Once both movements settle, the relationship remains.
-6. Recreate the fixture and manually drag the Leader normally. `adjacentFollower` must still trail into the Leader's vacated space; v0.3.22 must not convert ordinary voluntary movement into independent movement.
-7. Manually drag the Follower one square and then several squares. Both attempts must still be rejected before movement with `This token is attached to another token and cannot move independently.`
-8. Repeat at least one out-of-range forced movement while animations are enabled. Detachment must occur from the settled destination, not from a stale pre-animation TokenDocument position.
-9. With a larger token fixture, confirm `breakDistance` is measured from the closest occupied grid spaces rather than token centers.
-
-After each settled case, inspect:
-
-```js
-ae5e.relationships.getMovementStats();
-ae5e.relationships.list({ sceneId: canvas.scene.id });
-```
-
-When idle, queued/active relationship work including `queuedSeparationChecks` should return to zero. A forced range break should remove the relationship only; it should not generate the atomic `Linked movement was stopped... restored the group` warning used for a blocked AE5E-owned drag.
-
-The rules adapter is deliberately not part of this test fixture yet. Prone alone does not end the relationship. The future Grapple Active Effect/Prone macro integration will enforce that a Grappled+Prone target with Speed 0 cannot stand.
-
-
-## v0.3.0 orbital-rotation regression check
-
-Create a fresh test relationship after installing v0.3.0 because pre-v0.3.0 persisted relationships intentionally default `rotationPolicy` to `none`:
-
-```js
-await ae5e.tests.removeTestRelationships();
-// Control leader first and follower second, then:
-await ae5e.tests.createTestRelationshipFromControlledTokens();
-```
-
-For the initial live geometry, use two 1x1 tokens on a square grid at the same elevation and arrange them as:
-
-```text
-1 2 3
-F L 6
-7 8 9
-```
-
-With only the leader controlled:
-
-1. Hold Shift and scroll in the direction which positively rotates the leader. AE5E must not count wheel clicks; observe the leader's actual facing. Until the cumulative committed change reaches 45 degrees the follower stays in square 4.
-2. When the cumulative change reaches +45 degrees, the follower must move exactly one grid space from square 4 to square 1 while the leader remains in square 5. The follower artwork facing must not rotate.
-3. Continue another +45 degrees: follower `1 -> 2`; continue around `2 -> 3 -> 6 -> 9 -> 8 -> 7 -> 4`. Reverse leader rotation and confirm the ring traverses backward.
-4. Mix Control and Shift wheel increments. Only the accumulated **actual rotation delta** matters; changing modifier must not reset the partial 45-degree accumulator.
-5. Reverse direction before reaching 45 degrees and confirm the partial angles cancel rather than producing a follower step.
-6. Place a wall across the follower's next ring step with `collisionPolicy: "stopGroup"`. The follower must not move. The exact leader rotation update which crossed the threshold must be restored, leaving any prior partial accumulator intact. Remove the wall and apply the missing rotation increment; the follower should then complete the pending threshold naturally.
-7. Confirm `collisionPolicy: "detach"` keeps the leader's native rotation but removes the relationship when the follower cannot take its orbit step.
-8. Rotate an unrelated token with Shift/Control + wheel and confirm AE5E does nothing. Change an orbit leader's rotation by a non-wheel/API/configuration path and confirm the follower does not orbit.
-9. Rapidly scroll enough to cross multiple 45-degree thresholds. Follower steps must serialize without overlapping and every intermediate ring space must be honored as a checkpoint.
-10. Repeat the basic threshold test from a non-GM player who owns the leader. The player should not need ownership of the follower; the orbit is authorized and executed by the active GM through Socketlib.
-11. For v0.3.21, set the follower and a third NPC to the same `HOSTILE` disposition (same side relative to PCs) and place that NPC in the follower's next terminal orbit square. The follower may land there temporarily. If no further relationship movement occurs, after 3.5 seconds the follower and leader must return to their exact pre-overlap position/facing.
-12. Repeat step 11 but rotate again before 3.5 seconds so the follower leaves the shared square. The pending overlap must clear and no delayed rollback may occur.
-13. Keep the follower `HOSTILE` and change the third NPC to `FRIENDLY`. That is an opposing-side NPC test, not an allied test; `pendingAlliedOverlaps` must remain zero.
-
-Useful diagnostics:
-
-```js
-ae5e.relationships.getRotationStats();
-await ae5e.relationships.waitForMovementSettled({
-  leaderUuid: ae5e.relationships.list({ sceneId: canvas.scene.id })[0].leaderUuid
+await ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens({
+  breakDistance: 5,
+  coordinationDistance: 5
 });
 ```
 
-When idle, `pendingEvents`, `processingRelationships`, `activeGmRequests`, `rotationRollbacks`, and `pendingAlliedOverlaps` should all return to zero. During the 3.5-second allied endpoint grace window, `pendingAlliedOverlaps` should be `1`.
-
-
-## v0.2.11 regression check
-
-Compatible external `Scene.moveTokens()` calls for exactly one active `coordinationPolicy: "coordinated"` leader should be converted into a single leader+follower Foundry movement operation **before animation begins**. This is a selective integration, not a global movement takeover: unrelated tokens, follower-only calls, multi-token external calls, teleports, resize/mixed update payloads, and relationships using `postSync` must continue through the original call unchanged. If safe pre-coordination is unavailable, v0.2.10 terminal post-sync remains the fallback.
-
-For the primary live regression:
-
-1. Create an `adjacentFollower` relationship and leave normal modules enabled.
-2. Call `Scene.moveTokens()` for only the leader with a route that moves horizontally to an explicit checkpoint, turns 90 degrees, and continues to a terminal checkpoint.
-3. **Visually verify that leader and follower begin/animate together.** The follower should trail the same route one planar space behind; it should not wait for the leader to finish and then catch up.
-4. Wait deterministically rather than using a guessed timeout:
+For extended reach, first place the tokens on the requested band and use, for example:
 
 ```js
-const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens({
+  breakDistance: 10,
+  coordinationDistance: 10
+});
+```
+
+The fixture uses `grappleFollower`, `followerCanSelfMove: false`, `forcedLeaderMovementPolicy: "independent"`, `collisionPolicy: "stopGroup"`, and `rotationPolicy: "orbitFollower"`.
+
+Remove test relationships with:
+
+```js
+await ae5e.tests.removeTestRelationships();
+```
+
+## Geometry inspection before movement
+
+With the Leader controlled (or pass `{ relationshipId }` explicitly):
+
+```js
+await ae5e.tests.inspectRelationshipGeometry();
+await ae5e.tests.inspectOrbitShell();
+await ae5e.tests.validateRelationshipGeometry();
+```
+
+`validateRelationshipGeometry()` should report all checks passed, including unique anchors, no Leader/Follower footprint overlap, clockwise/counterclockwise inverse traversal, and full circuit totals of +360/-360 degrees.
+
+Show the temporary numbered shell overlay:
+
+```js
+await ae5e.tests.showOrbitDebug();
+```
+
+Clear it with:
+
+```js
+ae5e.tests.clearOrbitDebug();
+```
+
+The overlay is canvas-only and must not create persistent Drawings, Tiles, Regions, or Scene flags.
+
+## v0.3.23 rotation-input matrix
+
+For every geometry below, test both clockwise and counterclockwise directions.
+
+1. Use Shift+mouse-wheel for one notch/update. Follower must advance exactly one adjacent shell position and Leader must rotate by the exact bearing delta for that step.
+2. Reset and use Ctrl+mouse-wheel in the same direction. It must produce the same one-shell-position result even if Foundry's native requested rotation magnitude differs.
+3. Inspect:
+
+```js
+ae5e.relationships.getRotationStats();
+await ae5e.tests.inspectRelationshipGeometry();
+```
+
+The diagnostics should retain the native requested rotation/modifier while showing `orbitStepsRequested: 1`, `orbitStepsCompleted: 1`, exact shell indices, calculated leader delta, and committed leader rotation.
+4. Rapidly scroll several notches. Follower movement must serialize through each adjacent shell position; no step may be skipped merely because native rotation updates arrived quickly.
+5. Reverse direction and confirm each reverse input walks exactly one shell position back.
+6. Complete a full circuit. Follower must return exactly to its starting anchor and cumulative Leader rotation must represent one full 360-degree revolution without drift.
+
+Direct service tests can isolate geometry from mouse input:
+
+```js
+await ae5e.tests.orbitClockwise();
+await ae5e.tests.orbitCounterclockwise();
+```
+
+These call the same planner and GM-authorized resolver used by wheel control.
+
+## Size/footprint live matrix
+
+Use actual Token width/height, not creature-size names. Recommended minimum matrix:
+
+```text
+Leader   Follower   coordinationDistance
+0.5x0.5  0.5x0.5    5
+0.5x0.5  1x1        5
+1x1      0.5x0.5    5
+1x1      1x1        5
+2x2      1x1        5
+1x1      2x2        5
+2x2      2x2        5
+2x2      3x3        5
+3x3      2x2        5
+4x4      3x3        5
+1x1      1x1       10
+2x2      1x1       10
+1x1      2x2       10
+2x2      3x3       10
+1x1      1x1       15
+```
+
+For each configuration:
+
+- inspect/validate the shell;
+- rotate at least one full circuit in both directions;
+- test a wall on one adjacent shell step and verify exact Leader/Follower rollback;
+- test normal Leader translation in multiple directions and around a corner;
+- confirm the Follower remains on the configured planar coordination band;
+- test follower-manual-movement lock.
+
+Fractional Tiny tokens deserve extra visual scrutiny because Foundry occupied-grid-space measurement can map more than one sub-grid token location to the same 5-foot grid cell.
+
+## Extended-reach/re-anchoring tests
+
+Create a 10-foot relationship at the outer band:
+
+```js
+await ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens({
+  breakDistance: 10,
+  coordinationDistance: 10
+});
+```
+
+Validate:
+
+1. normal coordinated translation/orbit preserves the 10-foot band;
+2. external forced movement which moves the Follower from 10 feet to a legal 5-foot separation keeps the relationship and updates `coordinationDistance` to 5;
+3. future normal translation/orbit now uses the 5-foot shell;
+4. force the participant back to a legal 10-foot separation; `coordinationDistance` should become 10;
+5. a forced zero-distance overlap may remain temporarily legal but must **not** persist `coordinationDistance: 0`;
+6. movement beyond `breakDistance: 10` removes the relationship without moving either participant back.
+
+Inspect persisted state with:
+
+```js
+console.log(JSON.stringify(
+  ae5e.relationships.list({ sceneId: canvas.scene.id }),
+  null,
+  2
+));
+```
+
+## Forced-movement regression matrix retained from v0.3.22
+
+The following 1x1 cases were live-validated before v0.3.23 and must remain unchanged:
+
+- Force Follower; final separation ≤ break distance → Follower moves independently, Leader stays, relationship remains.
+- Force Follower; final separation > break distance → Follower stays at forced destination, relationship ends.
+- Force Leader with `independent`; final separation ≤ break distance → Leader moves, Follower stays, relationship remains.
+- Force Leader; final separation > break distance → Leader stays at forced destination, relationship ends.
+- Force both participants in one `Scene.moveTokens()` operation while final separation remains legal → both movements succeed and relationship remains.
+
+No forced-movement break-distance case should use relationship rollback merely because the relationship becomes invalid after successful external movement.
+
+## Allied endpoint grace regression
+
+With same-side occupancy on the next orbit shell anchor:
+
+1. orbit into the occupied endpoint;
+2. verify the 3.5-second grace begins only after follower animation settles;
+3. allow expiry: Follower and Leader rotation must restore to the exact original legal anchor;
+4. repeat and continue to an open shell anchor before expiry: timer must clear with no later snapback;
+5. repeat across consecutive same-side occupied anchors: original legal anchor remains the rollback target while timer restarts;
+6. remove the relationship during grace: no orphaned timer may move either token later;
+7. Hostile+Friendly or Neutral/Secret cases must not be inferred as same-side grace solely from one token's disposition label.
+
+## Collision/rollback regression
+
+For `collisionPolicy: "stopGroup"`:
+
+- block one follower orbit shell step with a wall;
+- Follower must remain at the prior shell anchor;
+- Leader must restore to the exact pre-step rotation, including non-45-degree angles;
+- rapid speculative events queued after the blocked step must be discarded;
+- coordinated translation which Foundry partially constrains must restore every surviving linked participant from the pre-move origin snapshot, even when a token's `moveTokens()` result is `false`.
+
+## Translation regression
+
+For `grappleFollower`:
+
+- 1x1/1x1 at 5 feet must retain `F L . -> . F L` behavior on an eastward one-square move;
+- 2x2 Leader/1x1 Follower and the reverse must select a rear legal shell anchor without overlap;
+- 10-foot coordination must preserve the outer band rather than collapsing to ordinary adjacency;
+- multi-step and corner routes should be processed one Leader grid step at a time when Foundry exposes a square-grid direct path;
+- pure vertical movement preserves planar offset and follows elevation when enabled;
+- teleport-follow preserves fixed offset rather than using grapple trailing geometry.
+
+## Runtime settlement and diagnostics
+
+Never use guessed sleeps when the public settlement helper can observe the relationship pipeline:
+
+```js
 const rel = ae5e.relationships.list({ sceneId: canvas.scene.id })[0];
 await ae5e.relationships.waitForMovementSettled({ leaderUuid: rel.leaderUuid });
 ```
 
-5. Confirm the settled leader is at the terminal waypoint and the follower is at the leader's immediately preceding planar route position.
-6. Repeat with a route containing an elevation change. Leader and follower should still animate as one coordinated operation while `adjacentFollower` preserves the historical 3D trailing position.
-7. Move an unrelated token through a one-token API call and confirm AE5E does not alter the instruction or movement.
-8. Issue a multi-token external `Scene.moveTokens()` call and confirm AE5E leaves it untouched rather than trying to rewrite only one member.
-9. A relationship set to `coordinationPolicy: "postSync"` should intentionally retain sequential post-operation follower synchronization.
-10. Teleports must retain the relationship's `detach` / `follow` / `block` policy and must not be converted into ordinary coordinated traversal.
-11. With a blocking follower wall and `collisionPolicy: "stopGroup"`, neither token should begin the coordinated external move.
-12. After each settled movement, `ae5e.relationships.getMovementStats()` should return no queued/active movement work.
-
-The public group-movement entry point can also be exercised directly:
+Useful diagnostics:
 
 ```js
-await ae5e.relationships.moveGroup({
-  leaderUuid: rel.leaderUuid,
-  destination: {
-    x: leader.x + canvas.grid.size,
-    y: leader.y,
-    elevation: leader.elevation,
-    action: "walk",
-    checkpoint: true
-  }
-});
+ae5e.movement.getStats();
+ae5e.relationships.getStats();
+ae5e.relationships.getMovementStats();
+ae5e.relationships.getRotationStats();
+ae5e.movement.getRecentTransactions();
 ```
 
-The automated suite verifies GM augmentation happens in one wrapped call, player calls are handed to the active GM without running the original leader-only move, AE5E-generated calls bypass the wrapper recursively, and compatibility fallbacks stay untouched.
+After a settled operation, queued/active relationship movement and rotation counts should return to zero. During allied endpoint grace, `pendingAlliedOverlaps` should be 1.
 
-## v0.2.10 regression check
+## Coexistence testing
 
-External API/undo/paste movement with explicit checkpoints must synchronize followers only after the terminal Foundry operation for the stable `subpathId`. An earlier operation with non-empty `movement.pending.waypoints` must not move followers and must not create a primary-GM synchronization receipt. The terminal operation (`pending.waypoints` empty) reconstructs the full route from the current-subpath movement history plus terminal passed waypoints, waits for movement + animation settlement, validates the leader at the overall final destination, and synchronizes the follower along the complete historical route.
+After isolated geometry tests, repeat representative cases with the user's normal Foundry module set. CPR/GPS coexistence remains a first-class project requirement even though neither is required. Pay particular attention to other modules registering `preMoveToken`, `moveToken`, `preUpdateToken`, `updateToken`, or Scene movement wrappers.
 
-For the live API checkpoint regression:
-
-1. Create an `adjacentFollower` relationship.
-2. Call `Scene.moveTokens()` for the leader with a route that moves horizontally to an explicit checkpoint, turns 90 degrees, and continues to a terminal checkpoint.
-3. The leader must complete the entire route without an AE5E follower-sync warning at the first checkpoint.
-4. The follower must synchronize only after the leader reaches the final destination and must finish one planar grid space behind on the full route.
-5. No `leader changed position before follower synchronization could be validated` warning should occur.
-6. For a non-GM initiator, the active GM must create no receipt for the first leg and a single trusted full-subpath receipt for the terminal movement ID.
-
-The automated regressions model both one-checkpoint and multi-checkpoint histories and verify terminal-only synchronization plus GM-receipt path authority.
-
-## v0.2.9 regression check
-
-External API/undo/paste synchronization must not perform exact live TokenDocument position validation immediately after `movement.finished` if Foundry is still animating the token. When `movement.animation.ended` is present, AE5E must wait for it before validating the leader and moving followers. The same lifecycle applies to follower-teleport detachment.
-
-For the live elevation regression:
-
-1. Create an `adjacentFollower` relationship with `followElevation: true`.
-2. Place follower and leader horizontally adjacent at elevation 0.
-3. Move the leader one grid square horizontally while increasing elevation by 10 ft through `Scene.moveTokens()`.
-4. The leader should finish one square away at elevation 10.
-5. The follower should occupy the leader's vacated starting square at elevation 0.
-6. No `External leader movement follower synchronization failed` or `leader changed position before follower synchronization could be validated` warning should occur.
-7. Repeat a second horizontal +10 ft step. The follower should then occupy the leader's previous square at elevation 10.
-
-The automated timing regression deliberately resolves `movement.finished` while the fake leader remains at its origin, verifies that no synchronization occurs, then moves the leader to the destination and resolves `animation.ended`. A separate external checkpoint regression omits `animation.ended` entirely to ensure non-animated/synthetic movement still synchronizes after logical completion.
-
-## v0.2.8 regression check
-
-External API/undo/paste leader synchronization must wait for Foundry's completed movement lifecycle before validating the live TokenDocument. A `moveToken` hook may expose the final movement destination while the rendered/document position is still animated between origin and destination; AE5E must not reject that as a stale leader movement.
-
-For the live elevation regression:
-
-1. Create an `adjacentFollower` relationship with `followElevation: true`.
-2. Place follower and leader horizontally adjacent at elevation 0.
-3. Move the leader one grid square horizontally while increasing elevation by 10 ft through `Scene.moveTokens()`.
-4. The leader should finish one square away at elevation 10.
-5. The follower should occupy the leader's vacated starting square at elevation 0.
-6. No `External leader movement follower synchronization failed` or `leader changed position before follower synchronization could be validated` warning should occur.
-7. Repeat a second horizontal +10 ft step. The follower should then occupy the leader's previous square at elevation 10.
-
-Foundry can interpolate elevation with multiple processed waypoints at the same x/y coordinate. `adjacentFollower` must treat those as one planar destination rather than consuming the one-space trailing offset. Pure vertical movement should preserve the follower's x/y offset while applying the elevation delta when `followElevation` is enabled.
-
-External multi-checkpoint routes must synchronize once per stable `subpathId`, after the full movement finishes, and must use the final full-route waypoint as the validated leader destination.
-
-## v0.2.7 regression check
-
-Before broader relationship testing, verify an explicit-checkpoint route:
-
-1. Create an `adjacentFollower` test relationship.
-2. Drag the leader two grid spaces horizontally, place an explicit Foundry waypoint, turn 90 degrees, and continue two more spaces in the same movement.
-3. The leader must preserve the L-shaped route rather than shortcut diagonally.
-4. The follower must first enter the leader's vacated starting square, then traverse the same route and finish one grid space behind the leader. This must also work when the follower begins to the side or diagonally adjacent to the leader.
-5. No second AE5E relationship request or `leader changed position before the linked movement request could be validated` error should occur at any follower-entry or user-authored checkpoint.
-6. Repeat with more than one explicit checkpoint before continuing to wall, elevation, API-sync, and teleport tests.
-
-Movement classification must not access Foundry's deprecated `DatabaseUpdateOperation#teleport` prototype accessor. A `blink` movement action should classify as `pathType: "teleport"` and `movementMode: "blink"` without producing the deprecation warning.
-
-New test-harness relationships use `attachmentMode: "adjacentFollower"`. For a leader route `L0 -> L1 -> L2`, the generated follower route must be `L0 -> L1`; a one-square leader move must place the follower in the leader's starting square. On a gridded Scene, a single long straight drag must expand through grid spaces so a three-space leader move produces a follower route through the first three leader spaces and ends one space behind the leader. `rigidOffset` must continue to preserve the original offset, and teleport-follow must preserve offset rather than trail.
-
-A follower teleport must bypass the normal manual follower lock, complete normally, and then remove the relationship after GM validation. For non-GM users, the detachment request must be verified against a primary-GM movement receipt for that follower. After the operation settles, `queuedFollowerDetaches` should return to `0`.
+Test isolation should distinguish an AE5E defect from another module altering the same Foundry lifecycle; do not build product behavior around test-only bypasses.

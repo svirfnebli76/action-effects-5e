@@ -11,43 +11,50 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.3.22: forced movement and relationship break distance
+## Build 0.3.23: dynamic grapple geometry
 
-This build extends the live-validated relationship layer with the separation semantics needed by Grapple without hard-coding Grapple rules into generic movement infrastructure:
+v0.3.23 keeps the live-validated v0.3.22 forced-movement behavior and replaces the old 1x1/fixed-angle Grapple geometry assumptions with a footprint-aware coordination layer:
 
-- Relationships may set `breakDistance` in Scene distance units. A relationship survives external displacement while the participants remain within that range and is removed after settled movement exceeds it.
-- `forcedLeaderMovementPolicy: "independent"` lets an externally forced leader move without dragging its follower. The default remains `"follow"` so existing non-Grapple relationships do not change behavior.
-- A legitimate forced displacement is never undone merely because it breaks the relationship: the moved token stays at its successful destination and AE5E detaches the relationship afterward.
-- Forced follower movement is allowed through the generic relationship layer and receives the same post-movement break-distance evaluation. Manual follower self-movement remains blocked when `followerCanSelfMove` is false.
-- Gridded break distance is measured between the closest occupied grid spaces and uses Foundry's grid measurement for diagonal/elevation rules, so larger token footprints are not treated as center-to-center reach.
-- Distance checks wait for Foundry movement animation settlement before reading live token positions.
-- The grapple-like test harness helper `ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens()` creates an `adjacentFollower` fixture with independent forced-leader movement and a one-grid-distance break threshold.
-- v0.3.21 orbital rotation, allied endpoint grace, atomic collision rollback, coordinated translation, teleport policies, and external movement compatibility remain intact.
+- Grapple-like fixtures now use `attachmentMode: "grappleFollower"`. Actual TokenDocument `width` and `height` drive geometry; creature-size labels remain a future Grapple-rules concern.
+- `breakDistance` is the maximum legal relationship separation. `coordinationDistance` is the planar band normal dragging and orbiting preserve. A 10-foot-reach relationship can therefore be coordinated at either 5 or 10 feet.
+- Orbit shells are generated dynamically for square grids from leader footprint, follower footprint, and coordination distance. Integer, fractional, and rectangular token footprints are supported by the geometry service.
+- One qualifying Shift+wheel **or** Ctrl+wheel rotation update advances the follower exactly one adjacent orbit-shell position clockwise/counterclockwise. AE5E rewrites the pending leader rotation to the exact bearing delta represented by that physical shell step, so large/extended shells use variable angles rather than forcing 45 degrees.
+- Shift and Ctrl are equivalent while the controlled token is an active AE5E orbit leader; Foundry's native fast/slow requested magnitude is ignored except for direction and diagnostics. Outside an active AE5E orbit relationship, normal Foundry controls are untouched.
+- Rapid wheel input uses predicted leader/follower state for planning but resolves actual follower movement serially. A failed step discards later speculative input and restores exact captured state.
+- Grapple-follow translation is footprint-aware. Each leader grid step selects a legal trailing shell position opposite the leader's movement direction. For the ordinary 1x1/5-foot case, this still reduces to the follower entering the leader's vacated square.
+- Legal external forced movement can re-anchor `coordinationDistance` to a new non-zero planar band while still inside `breakDistance`. Movement beyond `breakDistance` detaches without snapback, exactly as validated in v0.3.22.
+- Existing wall/collision handling, atomic rollback, follower manual-movement lock, teleport policies, allied occupied-endpoint grace, and CPR/GPS-safe namespacing remain in place.
 
-### Agreed Grapple rules boundary for later item/effect work
+### Grapple rules boundary
 
-The generic relationship layer now supports the movement facts the later Grapple adapter will consume. Prone by itself never breaks a grapple. A Grappled target that is also Prone cannot stand while Grappled keeps its Speed at 0. External Shove/forced movement resolves normally; the grapple remains if the final participant distance is within the stored grapple range and ends if that range is exceeded. An external forced displacement that ends a grapple is not rolled back. The actual Grappled/Grappler Active Effects and Prone-status popup integration are intentionally deferred to the Grapple/item layer.
+The generic relationship layer intentionally does not decide creature-size eligibility, Grappled/Prone effects, escape checks, or action economy. The later Grapple adapter will provide those rules. The agreed rules state remains: Prone alone does not break a grapple; a Grappled+Prone target cannot stand while Grappled keeps its Speed at 0; external forced movement resolves normally and only breaks the relationship when final separation exceeds the grapple's maximum reach.
 
-## v0.3.21: relationship orbital rotation and allied endpoint grace
+### v0.3.23 development geometry tools
 
-This build adds rotation-driven spatial control to the relationship layer while retaining the live-validated v0.2.11 simultaneous translation system:
+The test facade now exposes the same production geometry/orbit pipeline used by live relationship movement:
 
-- A relationship can opt into `rotationPolicy: "orbitFollower"`; old relationships without the field remain `none` for compatibility.
-- Only a controlled orbit-enabled leader using native **Shift/Control + mouse wheel** arms the feature. Other token rotations and unrelated wheel events are untouched.
-- AE5E measures the leader TokenDocument's actual committed rotation change and accumulates it in 45-degree orbit quanta instead of counting physical wheel clicks.
-- For the initial 1x1/1x1 square-grid implementation, the follower moves around the eight-space perimeter surrounding the stationary leader: `W -> NW -> N -> NE -> E -> SE -> S -> SW`. Reverse leader rotation reverses the orbit.
-- The leader's facing rotates normally. The follower changes grid position only; its own artwork rotation remains unchanged.
-- Each follower orbit step is a real Foundry movement with `passenger` agency and no movement resource, so later spatial/rules consumers can observe the traversal without treating it as voluntary movement.
-- Orbit requests are GM-authorized through Socketlib and computed from the persisted relationship, not from a client-supplied arbitrary destination.
-- `stopGroup` collision handling is atomic: a blocked follower orbit does not move the follower and restores the exact captured pre-update leader facing which crossed the orbit threshold. Partial accumulated rotation is retained.
-- A successful orbit may temporarily finish in a same-side creature's occupied square. Hostile+Hostile and Friendly+Friendly are treated as allied; a 3.5-second grace window allows the user to continue rotating through that space. If no later movement clears the overlap, AE5E restores the follower and the corresponding leader facing to the last legal orbit state.
-- Orbit input is serialized per relationship so rapid wheel input cannot overlap follower movement animations.
-- Translation, elevation, checkpoint routing, teleport detach/follow/block, follower locking, selective external API coordination, and rollback behavior from v0.2.11 remain intact.
-- The public settlement helper now waits for both rotation queues and relationship movement and tolerates a retained already-resolved Foundry movement animation Promise.
+```js
+await ae5e.tests.inspectRelationshipGeometry();
+await ae5e.tests.inspectOrbitShell();
+await ae5e.tests.validateRelationshipGeometry();
+await ae5e.tests.showOrbitDebug();
+ae5e.tests.clearOrbitDebug();
+await ae5e.tests.orbitClockwise();
+await ae5e.tests.orbitCounterclockwise();
+```
 
-### v0.3.21 allied endpoint grace and v0.3.x orbital rotation
+`showOrbitDebug()` creates only temporary canvas graphics; it does not create Scene Drawings, Tiles, Regions, or persistent flags.
 
-The rotation service uses a deliberately narrow libWrapper boundary at Foundry v14's `TokenLayer._onMouseWheel` only to identify the user's Shift/Control wheel gesture. The actual orbit trigger comes from the subsequently committed TokenDocument rotation update. This keeps click-count assumptions out of AE5E and allows Foundry's native rotation increments to vary. The initial planner intentionally supports only Medium-style 1x1 leader/follower footprints on square grids; larger/smaller footprints are a later geometry milestone rather than hidden assumptions in the 1x1 implementation. v0.3.21 adds a policy-driven allied endpoint grace state: ordinary Foundry path constraints still govern walls and creature traversal, while AE5E only watches a successful terminal overlap with a same-side Friendly/Friendly or Hostile/Hostile token and rolls it back after 3.5 seconds if the user does not continue out of the shared square.
+A configurable grapple-like fixture can be created after controlling Leader first and Follower second:
+
+```js
+await ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens({
+  breakDistance: 10,
+  coordinationDistance: 10
+});
+```
+
+Place the tokens on the requested coordination band before creation. The harness rejects a requested coordination distance greater than the break distance or an obviously out-of-range fixture.
 
 ### v0.2.11 selective simultaneous external coordination
 
@@ -101,9 +108,9 @@ Foundry v14 accepts explicit IDs on `Scene.moveTokens()` instructions, but those
 
 ### Current attachment scope
 
-Version 0.3.0 distinguishes **trailing adjacency**, **fixed-offset following**, and optional **orbital repositioning**. `adjacentFollower` follows the leader's vacated spaces, `rigidOffset` preserves the original relative offset, and `rotationPolicy: "orbitFollower"` lets a controlled 1x1 leader rotate a 1x1 follower around the eight neighboring square-grid spaces in 45-degree facing increments.
+`adjacentFollower` remains the legacy trailing mode used by existing relationship tests/integrations. `grappleFollower` is the v0.3.23 footprint-aware mode for Grapple-style coordination. `rigidOffset`, `passenger`, and `anchoredFollower` retain their existing fixed-offset semantics.
 
-Core token occupancy is not globally treated as a collision. Foundry remains authoritative for wall/surface and creature-transit constraints. For orbital movement only, v0.3.21 adds a temporary grace state when a follower ends in a same-side creature's occupied endpoint; unresolved overlap is restored to the prior legal orbit state after 3.5 seconds.
+The dynamic orbit system currently targets square Scene grids. Core token occupancy is not globally treated as an endpoint collision; Foundry remains authoritative for movement constraints, while the existing allied endpoint grace rule handles successful same-side orbit overlap.
 
 ## Installation for development
 
