@@ -11,7 +11,24 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
-## Build 0.3.21: relationship orbital rotation and allied endpoint grace
+## Build 0.3.22: forced movement and relationship break distance
+
+This build extends the live-validated relationship layer with the separation semantics needed by Grapple without hard-coding Grapple rules into generic movement infrastructure:
+
+- Relationships may set `breakDistance` in Scene distance units. A relationship survives external displacement while the participants remain within that range and is removed after settled movement exceeds it.
+- `forcedLeaderMovementPolicy: "independent"` lets an externally forced leader move without dragging its follower. The default remains `"follow"` so existing non-Grapple relationships do not change behavior.
+- A legitimate forced displacement is never undone merely because it breaks the relationship: the moved token stays at its successful destination and AE5E detaches the relationship afterward.
+- Forced follower movement is allowed through the generic relationship layer and receives the same post-movement break-distance evaluation. Manual follower self-movement remains blocked when `followerCanSelfMove` is false.
+- Gridded break distance is measured between the closest occupied grid spaces and uses Foundry's grid measurement for diagonal/elevation rules, so larger token footprints are not treated as center-to-center reach.
+- Distance checks wait for Foundry movement animation settlement before reading live token positions.
+- The grapple-like test harness helper `ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens()` creates an `adjacentFollower` fixture with independent forced-leader movement and a one-grid-distance break threshold.
+- v0.3.21 orbital rotation, allied endpoint grace, atomic collision rollback, coordinated translation, teleport policies, and external movement compatibility remain intact.
+
+### Agreed Grapple rules boundary for later item/effect work
+
+The generic relationship layer now supports the movement facts the later Grapple adapter will consume. Prone by itself never breaks a grapple. A Grappled target that is also Prone cannot stand while Grappled keeps its Speed at 0. External Shove/forced movement resolves normally; the grapple remains if the final participant distance is within the stored grapple range and ends if that range is exceeded. An external forced displacement that ends a grapple is not rolled back. The actual Grappled/Grappler Active Effects and Prone-status popup integration are intentionally deferred to the Grapple/item layer.
+
+## v0.3.21: relationship orbital rotation and allied endpoint grace
 
 This build adds rotation-driven spatial control to the relationship layer while retaining the live-validated v0.2.11 simultaneous translation system:
 

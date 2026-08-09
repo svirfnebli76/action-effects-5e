@@ -4,6 +4,7 @@ import {
   MODULE_ID,
   MOVEMENT_PHASES,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
   TELEPORT_POLICIES
@@ -118,6 +119,38 @@ export class TestHarness {
     leader.object?.control?.({ releaseOthers: true });
 
     ui.notifications.info(`Created test relationship ${relationship.id}. The leader remains controlled; move it to test coordinated following.`);
+    return relationship;
+  }
+
+  async createGrappleMovementTestRelationshipFromControlledTokens() {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled.map((token) => token.document);
+    if (controlled.length !== 2) throw new Error("Control exactly two tokens: leader first, then follower.");
+
+    const [leader, follower] = controlled;
+    const gridDistance = Number(leader.parent?.grid?.distance);
+    const breakDistance = Number.isFinite(gridDistance) && gridDistance > 0 ? gridDistance : 5;
+    const relationship = await this.#relationships.create({
+      type: RELATIONSHIP_TYPES.TEST,
+      attachmentMode: ATTACHMENT_MODES.ADJACENT_FOLLOWER,
+      leaderUuid: leader.uuid,
+      followerUuid: follower.uuid,
+      followerCanSelfMove: false,
+      followElevation: true,
+      followRotation: false,
+      teleportPolicy: TELEPORT_POLICIES.DETACH,
+      collisionPolicy: COLLISION_POLICIES.STOP_GROUP,
+      coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+      forcedLeaderMovementPolicy: RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.INDEPENDENT,
+      rotationPolicy: RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER,
+      breakDistance,
+      metadata: { createdByTestHarness: true, grappleMovementFixture: true }
+    });
+
+    for (const token of canvas.tokens.controlled) token.release();
+    leader.object?.control?.({ releaseOthers: true });
+
+    ui.notifications.info(`Created grapple-like test relationship ${relationship.id} with break distance ${breakDistance}.`);
     return relationship;
   }
 

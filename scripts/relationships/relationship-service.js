@@ -6,6 +6,7 @@ import {
   RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
   RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
   SCENE_RELATIONSHIPS_FLAG,
@@ -247,6 +248,9 @@ export class RelationshipService {
       coordinationPolicy: Object.values(RELATIONSHIP_COORDINATION_POLICIES).includes(data.coordinationPolicy)
         ? data.coordinationPolicy
         : RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+      forcedLeaderMovementPolicy: Object.values(RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES).includes(data.forcedLeaderMovementPolicy)
+        ? data.forcedLeaderMovementPolicy
+        : RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.FOLLOW,
       rotationPolicy: Object.values(RELATIONSHIP_ROTATION_POLICIES).includes(data.rotationPolicy)
         ? data.rotationPolicy
         : RELATIONSHIP_ROTATION_POLICIES.NONE,
@@ -256,7 +260,15 @@ export class RelationshipService {
       alliedEndpointGraceMs: Number.isFinite(Number(data.alliedEndpointGraceMs)) && Number(data.alliedEndpointGraceMs) > 0
         ? Number(data.alliedEndpointGraceMs)
         : RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
-      breakDistance: Number.isFinite(Number(data.breakDistance)) ? Number(data.breakDistance) : null,
+      // breakDistance is expressed in the Scene grid's distance units (for
+      // example 5 on a standard 5-foot D&D grid). Null disables automatic
+      // separation detachment for the relationship.
+      breakDistance: data.breakDistance !== null
+        && data.breakDistance !== undefined
+        && Number.isFinite(Number(data.breakDistance))
+        && Number(data.breakDistance) >= 0
+        ? Number(data.breakDistance)
+        : null,
       sourceUuid: data.sourceUuid ?? null,
       metadata: duplicateSafely(data.metadata ?? {}),
       createdBy: data.createdBy ?? game.user.id,

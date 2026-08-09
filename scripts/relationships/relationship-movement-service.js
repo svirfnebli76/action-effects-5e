@@ -6,11 +6,13 @@ import {
   MOVEMENT_RESOURCES,
   OPERATION_METADATA_KEY,
   PATH_TYPES,
-  RELATIONSHIP_COORDINATION_POLICIES
+  RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { RelationshipMovementPlanner } from "./relationship-movement-planner.js";
+import { RelationshipDistance } from "./relationship-distance.js";
 
 const CONSUMER_PREFIX = `${MODULE_ID}.relationship-movement`;
 const MAX_RECENT_REQUESTS = 100;
@@ -31,6 +33,7 @@ export class RelationshipMovementService {
   #queuedMovementIds = new Set();
   #queuedSyncIds = new Set();
   #queuedFollowerDetachIds = new Set();
+  #queuedSeparationChecks = new Set();
   #activeLeaders = new Set();
   #recentRequestIds = new Set();
   #sceneMoveWrapperRegistered = false;
@@ -42,6 +45,7 @@ export class RelationshipMovementService {
     this.#socket.register("relationships.moveGroup", this.#moveGroupAsGM.bind(this));
     this.#socket.register("relationships.syncFollowers", this.#syncFollowersAsGM.bind(this));
     this.#socket.register("relationships.detachFollowerTeleport", this.#detachFollowerAfterTeleportAsGM.bind(this));
+    this.#socket.register("relationships.enforceBreakDistance", this.#enforceBreakDistanceAsGM.bind(this));
   }
 
   initialize() {
@@ -72,6 +76,7 @@ export class RelationshipMovementService {
     this.#queuedMovementIds.clear();
     this.#queuedSyncIds.clear();
     this.#queuedFollowerDetachIds.clear();
+    this.#queuedSeparationChecks.clear();
     this.#activeLeaders.clear();
     this.#recentRequestIds.clear();
     this.#unregisterSceneMoveTokensWrapper();
@@ -88,6 +93,7 @@ export class RelationshipMovementService {
       queuedRequests: this.#queuedMovementIds.size,
       queuedExternalSyncs: this.#queuedSyncIds.size,
       queuedFollowerDetaches: this.#queuedFollowerDetachIds.size,
+      queuedSeparationChecks: this.#queuedSeparationChecks.size,
       activeLeaders: this.#activeLeaders.size,
       recentRequests: this.#recentRequestIds.size,
       sceneMoveWrapperRegistered: this.#sceneMoveWrapperRegistered
@@ -99,6 +105,8 @@ export class RelationshipMovementService {
     waypoints = null,
     destination = null,
     pathType = PATH_TYPES.TRAVERSE,
+    agency = MOVEMENT_AGENCIES.VOLUNTARY,
+    resource = MOVEMENT_RESOURCES.MOVEMENT,
     movementMode = null,
     sourceUuid = null,
     autoRotate = false,
@@ -125,6 +133,8 @@ export class RelationshipMovementService {
       origin: { x: leader.x, y: leader.y, elevation: leader.elevation },
       waypoints: cleanWaypoints,
       pathType,
+      agency,
+      resource,
       movementMode,
       sourceUuid,
       autoRotate: autoRotate === true,
@@ -238,8 +248,8 @@ export class RelationshipMovementService {
 
     // The wrapper is intentionally narrow. It sees Scene.moveTokens calls because
     // that is the only public API boundary where AE5E can add followers before
-    // animation starts, but it changes nothing unless exactly one active coordinated
-    // relationship leader is being moved by a compatible external-style method.
+    // animation starts, but it changes nothing unless exactly one relationship
+    // leader is being moved by a compatible external-style method.
     if (!instructions || typeof instructions !== "object" || Array.isArray(instructions)) {
       return wrapped(instructions, options);
     }
@@ -253,9 +263,6 @@ export class RelationshipMovementService {
 
     const relationships = this.#relationships.getForLeader(leader.uuid);
     if (!relationships.length) return wrapped(instructions, options);
-    if (!relationships.every((relationship) => this.#coordinationPolicy(relationship) === RELATIONSHIP_COORDINATION_POLICIES.COORDINATED)) {
-      return wrapped(instructions, options);
-    }
 
     const method = leaderInstruction?.method ?? options?.method ?? "api";
     if (!PASSTHROUGH_LEADER_METHODS.has(method)) return wrapped(instructions, options);
@@ -267,6 +274,36 @@ export class RelationshipMovementService {
     // on the validated post-sync path instead of being converted into trailing
     // movement by this wrapper.
     if (pathType === PATH_TYPES.TELEPORT) return wrapped(instructions, options);
+
+    const externalMetadata = metadata && typeof metadata === "object" ? metadata : {};
+    const agency = Object.values(MOVEMENT_AGENCIES).includes(externalMetadata.agency)
+      ? externalMetadata.agency
+      : MOVEMENT_AGENCIES.VOLUNTARY;
+    const resource = Object.values(MOVEMENT_RESOURCES).includes(externalMetadata.resource)
+      ? externalMetadata.resource
+      : MOVEMENT_RESOURCES.MOVEMENT;
+    const followRelationships = relationships.filter((relationship) => this.#leaderMovementCarriesFollower(relationship, agency));
+    const independentRelationships = relationships.filter((relationship) => !followRelationships.some((entry) => entry.id === relationship.id));
+
+    // A grapple-like relationship can explicitly say that externally forced
+    // movement of the leader does not carry its follower. Let the external move
+    // resolve on the leader alone; break-distance enforcement then decides whether
+    // the relationship survives the new separation.
+    if (!followRelationships.length) {
+      const results = await wrapped(instructions, options);
+      if (game.user?.isGM && results?.[leaderId] === true && independentRelationships.length) {
+        // Foundry can resolve Scene.moveTokens() while the live TokenDocument is
+        // still exposing its animated/intermediate position. Break distance must
+        // be measured from settled participant coordinates, not that stale state.
+        await this.#awaitTokenAnimations([leader]);
+        await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships: independentRelationships });
+      }
+      return results;
+    }
+
+    if (!followRelationships.every((relationship) => this.#coordinationPolicy(relationship) === RELATIONSHIP_COORDINATION_POLICIES.COORDINATED)) {
+      return wrapped(instructions, options);
+    }
 
     if (this.#activeLeaders.has(leader.uuid)) {
       ui?.notifications?.warn?.("This token is already resolving linked movement.");
@@ -282,7 +319,6 @@ export class RelationshipMovementService {
     }
 
     if (!game.user?.isGM) {
-      const externalMetadata = metadata && typeof metadata === "object" ? metadata : {};
       const request = {
         requestId: `${MODULE_ID}-external-group-${randomId(20)}`,
         requestingUserId: game.user.id,
@@ -292,6 +328,8 @@ export class RelationshipMovementService {
         origin: { x: leader.x, y: leader.y, elevation: leader.elevation },
         waypoints: duplicateSafely(waypoints),
         pathType,
+        agency,
+        resource,
         movementMode: externalMetadata.movementMode ?? this.#instructionMovementMode(leaderInstruction),
         sourceUuid: externalMetadata.sourceUuid ?? null,
         autoRotate: (leaderInstruction?.autoRotate ?? options?.autoRotate) === true,
@@ -304,8 +342,10 @@ export class RelationshipMovementService {
       Logger.debug("Coordinating player external relationship movement through the active GM.", {
         source: "external-api",
         leaderUuid: leader.uuid,
-        relationships: relationships.map((relationship) => relationship.id),
+        relationships: followRelationships.map((relationship) => relationship.id),
+        independentRelationships: independentRelationships.map((relationship) => relationship.id),
         pathType,
+        agency,
         method
       });
 
@@ -316,14 +356,14 @@ export class RelationshipMovementService {
       } catch (error) {
         // If Socketlib/GM coordination is unavailable, preserve compatibility by
         // allowing the caller's original movement. The existing terminal post-sync
-        // path will still attempt to carry the follower afterward.
+        // path will still attempt to carry eligible followers afterward.
         Logger.debug("Could not coordinate player external movement through the GM; using post-sync fallback.", error);
         return wrapped(instructions, options);
       }
     }
 
     const followerEntries = [];
-    for (const relationship of relationships) {
+    for (const relationship of followRelationships) {
       const followerId = relationship.followerUuid.split(".").at(-1);
       const token = scene.tokens.get(followerId);
       if (!(token instanceof foundry.documents.TokenDocument)) {
@@ -384,8 +424,7 @@ export class RelationshipMovementService {
       return { [leaderId]: false };
     }
 
-    const externalMetadata = metadata && typeof metadata === "object" ? metadata : {};
-    const relationshipIds = relationships.map((relationship) => relationship.id);
+    const relationshipIds = followRelationships.map((relationship) => relationship.id);
     const finalWaypoint = RelationshipMovementPlanner.finalWaypoint(waypoints);
     const checkpointCount = waypoints.filter((point) => point.checkpoint === true).length;
     const elevationChange = Number(finalWaypoint?.elevation ?? leader.elevation) - Number(leader.elevation ?? 0);
@@ -394,8 +433,8 @@ export class RelationshipMovementService {
       ...duplicateSafely(externalMetadata),
       transactionId: groupTransactionId,
       pathType,
-      agency: externalMetadata.agency ?? MOVEMENT_AGENCIES.VOLUNTARY,
-      resource: externalMetadata.resource ?? MOVEMENT_RESOURCES.MOVEMENT,
+      agency,
+      resource,
       movementMode: externalMetadata.movementMode ?? this.#instructionMovementMode(leaderInstruction),
       sourceUuid: externalMetadata.sourceUuid ?? null,
       initiatorUuid: leader.uuid,
@@ -418,8 +457,10 @@ export class RelationshipMovementService {
       leaderUuid: leader.uuid,
       followers: Object.keys(augmentedInstructions).length - 1,
       relationshipIds,
-      mode: relationships.map((relationship) => relationship.attachmentMode),
+      independentRelationships: independentRelationships.map((relationship) => relationship.id),
+      mode: followRelationships.map((relationship) => relationship.attachmentMode),
       pathType,
+      agency,
       method,
       checkpoints: checkpointCount,
       elevationChange
@@ -451,6 +492,10 @@ export class RelationshipMovementService {
       }
 
       if (detachAfterSuccess.size) await this.#relationships.removeManyAsGM(detachAfterSuccess);
+      if (independentRelationships.length) {
+        await this.#awaitTokenAnimations([leader]);
+        await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships: independentRelationships });
+      }
       // Preserve the external caller's result shape. Followers were an AE5E
       // implementation detail and are not added to the object returned to the caller.
       return { [leaderId]: results?.[leaderId] === true };
@@ -465,6 +510,14 @@ export class RelationshipMovementService {
 
   #coordinationPolicy(relationship) {
     return relationship?.coordinationPolicy ?? RELATIONSHIP_COORDINATION_POLICIES.COORDINATED;
+  }
+
+  #leaderMovementCarriesFollower(relationship, agency) {
+    const policy = Object.values(RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES).includes(relationship?.forcedLeaderMovementPolicy)
+      ? relationship.forcedLeaderMovementPolicy
+      : RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.FOLLOW;
+    return !(agency === MOVEMENT_AGENCIES.FORCED
+      && policy === RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.INDEPENDENT);
   }
 
   #instructionIsPureMovement(instruction = {}) {
@@ -691,6 +744,8 @@ export class RelationshipMovementService {
       origin: duplicateSafely(transaction.origin),
       waypoints,
       pathType: transaction.pathType,
+      agency: transaction.agency === MOVEMENT_AGENCIES.UNKNOWN ? MOVEMENT_AGENCIES.VOLUNTARY : transaction.agency,
+      resource: transaction.resource === MOVEMENT_RESOURCES.UNKNOWN ? MOVEMENT_RESOURCES.MOVEMENT : transaction.resource,
       movementMode: transaction.movementMode,
       sourceUuid: transaction.sourceUuid,
       autoRotate: context.movement?.autoRotate === true,
@@ -761,6 +816,30 @@ export class RelationshipMovementService {
       return true;
     }
 
+    if (followerRelationships.length) {
+      if (!terminalSubpath) return true;
+      if (this.#queuedSeparationChecks.has(lifecycleKey)) return true;
+
+      this.#queuedSeparationChecks.add(lifecycleKey);
+      try {
+        if (!await this.#awaitMovementSettled(context)) return true;
+        const result = await this.#socket.executeAsGM("relationships.enforceBreakDistance", {
+          requestId: `${MODULE_ID}-separation-${randomId(20)}`,
+          requestingUserId: transaction.userId ?? game.user.id,
+          sceneId: transaction.sceneId,
+          movedTokenUuid: transaction.subjectUuid,
+          relationshipIds: followerRelationships.map((relationship) => relationship.id)
+        });
+        this.#notifyResult(result);
+      } catch (error) {
+        Logger.error("Follower break-distance validation failed.", error);
+        ui?.notifications?.warn?.(`Action Effects 5E could not validate the token relationship after external movement: ${error.message}`);
+      } finally {
+        this.#queuedSeparationChecks.delete(lifecycleKey);
+      }
+      return true;
+    }
+
     if (!this.#relationships.getForLeader(transaction.subjectUuid).length) return true;
 
     // Foundry splits an external route at explicit checkpoints. Non-terminal
@@ -794,6 +873,8 @@ export class RelationshipMovementService {
         destination: duplicateSafely(route.destination),
         waypoints: duplicateSafely(route.waypoints),
         pathType: transaction.pathType,
+        agency: transaction.agency,
+        resource: transaction.resource,
         movementMode: transaction.movementMode,
         sourceUuid: transaction.sourceUuid,
         externalGeneratedBy: transaction.generatedBy
@@ -809,6 +890,13 @@ export class RelationshipMovementService {
     }
 
     return true;
+  }
+
+  async #awaitTokenAnimations(tokens = []) {
+    const animations = tokens
+      .map((token) => token?.object?.movementAnimationPromise)
+      .filter((animation) => animation && typeof animation.then === "function");
+    if (animations.length) await Promise.allSettled(animations);
   }
 
   async #awaitMovementSettled(context = {}) {
@@ -856,6 +944,7 @@ export class RelationshipMovementService {
 
       const isTeleport = normalized.pathType === PATH_TYPES.TELEPORT;
       const detachAfterSuccess = [];
+      const independentRelationships = [];
       const followerEntries = [];
 
       for (const relationship of allRelationships) {
@@ -867,6 +956,11 @@ export class RelationshipMovementService {
             detachAfterSuccess.push(relationship.id);
             continue;
           }
+        }
+
+        if (!isTeleport && !this.#leaderMovementCarriesFollower(relationship, normalized.agency)) {
+          independentRelationships.push(relationship);
+          continue;
         }
 
         const token = await fromUuid(relationship.followerUuid);
@@ -913,7 +1007,7 @@ export class RelationshipMovementService {
       }
 
       const origins = this.#captureOrigins(scene, Object.keys(instructions));
-      const relationshipIds = allRelationships.map((relationship) => relationship.id);
+      const relationshipIds = followerEntries.map(({ relationship }) => relationship.id);
       const operationOptions = {
         method: "api",
         showRuler: false,
@@ -922,8 +1016,8 @@ export class RelationshipMovementService {
         ...this.#movement.createOperationOptions({
           transactionId: groupTransactionId,
           pathType: normalized.pathType,
-          agency: MOVEMENT_AGENCIES.VOLUNTARY,
-          resource: MOVEMENT_RESOURCES.MOVEMENT,
+          agency: normalized.agency,
+          resource: normalized.resource,
           movementMode: normalized.movementMode,
           sourceUuid: normalized.sourceUuid,
           initiatorUuid: leader.uuid,
@@ -964,12 +1058,23 @@ export class RelationshipMovementService {
       }
 
       if (detachAfterSuccess.length) await this.#relationships.removeManyAsGM(detachAfterSuccess);
+      if (independentRelationships.length) await this.#awaitTokenAnimations([leader]);
+      const separation = independentRelationships.length
+        ? await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships: independentRelationships })
+        : { detachedRelationshipIds: [] };
+      const detachedRelationshipIds = [...new Set([
+        ...detachAfterSuccess,
+        ...(separation.detachedRelationshipIds ?? [])
+      ])];
 
       return {
         completed: true,
         results,
         relationshipIds,
-        detachedRelationshipIds: [...new Set(detachAfterSuccess)]
+        detachedRelationshipIds,
+        message: detachedRelationshipIds.length && separation.detachedRelationshipIds?.length
+          ? "A token relationship ended because the participants moved beyond its break distance."
+          : null
       };
     } finally {
       this.#activeLeaders.delete(leader.uuid);
@@ -991,6 +1096,7 @@ export class RelationshipMovementService {
       const isTeleport = normalized.pathType === PATH_TYPES.TELEPORT;
       const detach = new Set();
       const expectedTeleportDetach = new Set();
+      const independentRelationships = [];
       const followerEntries = [];
       const instructions = {};
       const groupTransactionId = `${MODULE_ID}-sync-${randomId(16)}`;
@@ -1000,6 +1106,11 @@ export class RelationshipMovementService {
         if (isTeleport && relationship.teleportPolicy !== "follow") {
           detach.add(relationship.id);
           if (relationship.teleportPolicy === "detach") expectedTeleportDetach.add(relationship.id);
+          continue;
+        }
+
+        if (!isTeleport && !this.#leaderMovementCarriesFollower(relationship, normalized.agency)) {
+          independentRelationships.push(relationship);
           continue;
         }
 
@@ -1042,7 +1153,7 @@ export class RelationshipMovementService {
 
       let results = {};
       if (Object.keys(instructions).length) {
-        const relationshipIds = relationships.map((relationship) => relationship.id);
+        const relationshipIds = followerEntries.map(({ relationship }) => relationship.id);
         const operationOptions = {
           method: "api",
           showRuler: false,
@@ -1082,15 +1193,24 @@ export class RelationshipMovementService {
       }
 
       if (detach.size) await this.#relationships.removeManyAsGM(detach);
-      const detachedRelationshipIds = [...detach];
-      const unexpectedDetach = detachedRelationshipIds.some((id) => !expectedTeleportDetach.has(id));
+      const separation = independentRelationships.length
+        ? await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships: independentRelationships })
+        : { detachedRelationshipIds: [] };
+      const detachedRelationshipIds = [...new Set([
+        ...detach,
+        ...(separation.detachedRelationshipIds ?? [])
+      ])];
+      const unexpectedDetach = [...detach].some((id) => !expectedTeleportDetach.has(id));
+      const separated = separation.detachedRelationshipIds?.length > 0;
       return {
         completed: true,
         results,
         detachedRelationshipIds,
         message: unexpectedDetach
           ? "One or more relationships were detached because an external leader movement could not safely carry the follower."
-          : null
+          : separated
+            ? "A token relationship ended because the participants moved beyond its break distance."
+            : null
       };
     } finally {
       this.#activeLeaders.delete(leader.uuid);
@@ -1167,6 +1287,105 @@ export class RelationshipMovementService {
     };
   }
 
+  async #enforceBreakDistanceAsGM(request = {}) {
+    this.#assertExecutingAsGM();
+
+    const requestId = String(request.requestId ?? `${MODULE_ID}-separation-${randomId(20)}`);
+    if (this.#recentRequestIds.has(requestId)) {
+      return { completed: false, duplicate: true, detachedRelationshipIds: [], message: null };
+    }
+    this.#rememberRequest(requestId);
+
+    const requester = game.users.get(request.requestingUserId);
+    if (!requester) throw new Error("The requesting user no longer exists.");
+
+    const scene = game.scenes.get(request.sceneId);
+    if (!scene) throw new Error("The requested Scene no longer exists.");
+
+    const movedToken = await fromUuid(request.movedTokenUuid);
+    if (!(movedToken instanceof foundry.documents.TokenDocument) || movedToken.parent?.id !== scene.id) {
+      throw new Error("The moved relationship participant is not a valid token on the requested Scene.");
+    }
+
+    if (!requester.isGM) {
+      const owner = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
+      if (!movedToken.testUserPermission(requester, owner)) {
+        throw new Error("The requesting user does not own the moved relationship participant.");
+      }
+    }
+
+    const requestedIds = Array.isArray(request.relationshipIds) ? new Set(request.relationshipIds) : null;
+    const relationships = [
+      ...this.#relationships.getForLeader(movedToken.uuid),
+      ...this.#relationships.getForFollower(movedToken.uuid)
+    ].filter((relationship, index, entries) => (
+      relationship.sceneId === scene.id
+      && (!requestedIds || requestedIds.has(relationship.id))
+      && entries.findIndex((entry) => entry.id === relationship.id) === index
+    ));
+
+    const result = await this.#detachRelationshipsBeyondBreakDistance({ scene, relationships });
+    return {
+      completed: true,
+      ...result,
+      message: result.detachedRelationshipIds.length
+        ? "A token relationship ended because the participants moved beyond its break distance."
+        : null
+    };
+  }
+
+  async #detachRelationshipsBeyondBreakDistance({ scene, relationships = [] } = {}) {
+    this.#assertExecutingAsGM();
+    const detachedRelationshipIds = [];
+    const evaluations = [];
+
+    for (const relationship of relationships) {
+      if (relationship?.breakDistance === null || relationship?.breakDistance === undefined) continue;
+      const breakDistance = Number(relationship.breakDistance);
+      if (!Number.isFinite(breakDistance) || breakDistance < 0) continue;
+
+      const current = this.#relationships.get(relationship.id);
+      if (!current || current.sceneId !== scene?.id) continue;
+
+      const leader = await fromUuid(current.leaderUuid);
+      const follower = await fromUuid(current.followerUuid);
+      if (!(leader instanceof foundry.documents.TokenDocument)
+        || !(follower instanceof foundry.documents.TokenDocument)
+        || leader.parent?.id !== scene.id
+        || follower.parent?.id !== scene.id) continue;
+
+      const distance = RelationshipDistance.measure({ scene, leader, follower });
+      if (!Number.isFinite(distance)) {
+        Logger.debug("Could not measure relationship break distance; leaving the relationship unchanged.", {
+          relationshipId: current.id,
+          leaderUuid: current.leaderUuid,
+          followerUuid: current.followerUuid,
+          breakDistance
+        });
+        continue;
+      }
+
+      const exceeded = distance > breakDistance + 1e-6;
+      evaluations.push({
+        relationshipId: current.id,
+        distance,
+        breakDistance,
+        exceeded
+      });
+      if (exceeded) detachedRelationshipIds.push(current.id);
+    }
+
+    if (detachedRelationshipIds.length) {
+      await this.#relationships.removeManyAsGM(new Set(detachedRelationshipIds));
+      Logger.debug("Detached relationships after break-distance validation.", {
+        detachedRelationshipIds,
+        evaluations
+      });
+    }
+
+    return { detachedRelationshipIds, evaluations };
+  }
+
   async #validateExternalSyncRequest(request) {
     const requester = game.users.get(request.requestingUserId);
     if (!requester) throw new Error("The requesting user no longer exists.");
@@ -1197,6 +1416,8 @@ export class RelationshipMovementService {
         destination: request.destination,
         path: request.waypoints,
         pathType: request.pathType,
+        agency: request.agency,
+        resource: request.resource,
         movementMode: request.movementMode,
         sourceUuid: request.sourceUuid,
         generatedBy: request.externalGeneratedBy
@@ -1230,6 +1451,8 @@ export class RelationshipMovementService {
       waypoints,
       originalMovementId: trusted.movementId ?? request.originalMovementId ?? null,
       pathType: Object.values(PATH_TYPES).includes(trusted.pathType) ? trusted.pathType : PATH_TYPES.TRAVERSE,
+      agency: Object.values(MOVEMENT_AGENCIES).includes(trusted.agency) ? trusted.agency : MOVEMENT_AGENCIES.VOLUNTARY,
+      resource: Object.values(MOVEMENT_RESOURCES).includes(trusted.resource) ? trusted.resource : MOVEMENT_RESOURCES.MOVEMENT,
       movementMode: trusted.movementMode ?? null,
       sourceUuid: trusted.sourceUuid ?? null,
       externalGeneratedBy: trusted.generatedBy ?? null,
@@ -1289,6 +1512,8 @@ export class RelationshipMovementService {
       waypoints: RelationshipMovementPlanner.sanitizeWaypoints(request.waypoints),
       originalMovementId: request.originalMovementId ?? null,
       pathType: Object.values(PATH_TYPES).includes(request.pathType) ? request.pathType : PATH_TYPES.TRAVERSE,
+      agency: Object.values(MOVEMENT_AGENCIES).includes(request.agency) ? request.agency : MOVEMENT_AGENCIES.VOLUNTARY,
+      resource: Object.values(MOVEMENT_RESOURCES).includes(request.resource) ? request.resource : MOVEMENT_RESOURCES.MOVEMENT,
       movementMode: request.movementMode ?? null,
       sourceUuid: request.sourceUuid ?? null,
       externalGeneratedBy: request.externalGeneratedBy ?? null,

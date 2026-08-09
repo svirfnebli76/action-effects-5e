@@ -104,6 +104,44 @@ For the live regression test on Foundry 14.365, create a two-token relationship 
 
 
 
+## v0.3.22 forced-movement and break-distance regression check
+
+Create a fresh grapple-like fixture rather than reusing a generic v0.3.21 test relationship:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.removeTestRelationships();
+// Control Leader first and Follower second, then:
+await ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens();
+console.log(ae5e.relationships.list({ sceneId: canvas.scene.id }));
+```
+
+On a standard 5-foot grid the relationship should report `forcedLeaderMovementPolicy: "independent"` and `breakDistance: 5`. With 1x1 tokens, use an open area without nearby walls for the first tests. External forced movement must be tagged through `ae5e.movement.createOperationOptions()` with `agency: ae5e.constants.MOVEMENT_AGENCIES.FORCED`; do not use an ordinary manual drag as a substitute.
+
+Validate these cases:
+
+1. Force the Follower from one adjacent square to a different adjacent square. The Follower moves, the Leader remains still, and the relationship remains.
+2. Force the Follower beyond the configured break distance. The Follower stays at the successful forced destination, the Leader remains still, and the relationship is removed. There must be no snapback.
+3. Recreate the fixture. Force the Leader to a different location which remains within break distance of the Follower. The Leader moves independently, the Follower does not follow, and the relationship remains.
+4. Force the Leader beyond break distance. The Leader stays at its forced destination, the Follower remains where it was, and the relationship is removed without rollback.
+5. Force both participants in the same direction while preserving their final separation. Once both movements settle, the relationship remains.
+6. Recreate the fixture and manually drag the Leader normally. `adjacentFollower` must still trail into the Leader's vacated space; v0.3.22 must not convert ordinary voluntary movement into independent movement.
+7. Manually drag the Follower one square and then several squares. Both attempts must still be rejected before movement with `This token is attached to another token and cannot move independently.`
+8. Repeat at least one out-of-range forced movement while animations are enabled. Detachment must occur from the settled destination, not from a stale pre-animation TokenDocument position.
+9. With a larger token fixture, confirm `breakDistance` is measured from the closest occupied grid spaces rather than token centers.
+
+After each settled case, inspect:
+
+```js
+ae5e.relationships.getMovementStats();
+ae5e.relationships.list({ sceneId: canvas.scene.id });
+```
+
+When idle, queued/active relationship work including `queuedSeparationChecks` should return to zero. A forced range break should remove the relationship only; it should not generate the atomic `Linked movement was stopped... restored the group` warning used for a blocked AE5E-owned drag.
+
+The rules adapter is deliberately not part of this test fixture yet. Prone alone does not end the relationship. The future Grapple Active Effect/Prone macro integration will enforce that a Grappled+Prone target with Speed 0 cannot stand.
+
+
 ## v0.3.0 orbital-rotation regression check
 
 Create a fresh test relationship after installing v0.3.0 because pre-v0.3.0 persisted relationships intentionally default `rotationPolicy` to `none`:

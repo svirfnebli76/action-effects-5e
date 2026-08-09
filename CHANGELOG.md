@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.22 - Forced movement and break-distance relationships
+
+- Added persisted `forcedLeaderMovementPolicy` values `follow` and `independent`. Existing relationships default to `follow`; grapple-like relationships can use `independent` so an external forced displacement of the leader does not automatically drag the follower.
+- Activated the persisted `breakDistance` relationship field as an optional maximum participant separation expressed in the Scene grid's distance units. `null` disables automatic separation detachment.
+- Added `RelationshipDistance`, which measures gridded participants from the closest occupied grid spaces rather than token centers and delegates diagonal/elevation distance to Foundry v14 `BaseGrid#measurePath`. This keeps Large and larger token footprints compatible with normal reach-style distance checks.
+- External forced movement of either participant is allowed to finish at its legitimate destination. If the settled separation exceeds `breakDistance`, AE5E removes the relationship afterward without rolling either token back. If the participants remain in range, the relationship is preserved.
+- Forced leader movement using `forcedLeaderMovementPolicy: "independent"` leaves the follower stationary. Normal voluntary leader movement continues to use the existing coordinated trailing behavior.
+- Break-distance validation waits for Foundry token animation settlement before reading live TokenDocument positions, preventing stale animated coordinates from preserving a relationship that should have ended.
+- Added a GM-authorized `relationships.enforceBreakDistance` Socketlib handler and separation diagnostics in relationship movement stats.
+- Added `ae5e.tests.createGrappleMovementTestRelationshipFromControlledTokens()` for a grapple-like test fixture using `adjacentFollower`, independent forced-leader movement, orbiting, follower self-movement lock, and a one-grid-unit break distance.
+- Documented the agreed Grapple rules boundary for later item/effect work: Prone alone does not break a grapple; a Grappled+Prone target cannot stand while its Speed remains 0; forced movement breaks the grapple only if the resulting separation exceeds its stored grapple range.
+- Expanded automated coverage from 50 to 58 tests, including forced movement in/out of range, no forced-movement rollback, larger-token distance measurement, settled-animation distance validation, and simultaneous participant displacement that remains in range.
+
 ## 0.3.21 - Allied orbit endpoint grace
 
 - Added a 3.5-second grace window when an orbiting follower finishes a rotation step in a same-side creature's occupied space.

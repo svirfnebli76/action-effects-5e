@@ -9,6 +9,7 @@ import {
   MOVEMENT_RESOURCES,
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
@@ -37,6 +38,7 @@ export class ActionEffects5eApi {
       MOVEMENT_RESOURCES,
       RELATIONSHIP_TYPES,
       RELATIONSHIP_COORDINATION_POLICIES,
+      RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
       RELATIONSHIP_ROTATION_POLICIES,
       RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
       ATTACHMENT_MODES,
@@ -83,6 +85,7 @@ export class ActionEffects5eApi {
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
       createTestRelationshipFromControlledTokens: () => tests.createTestRelationshipFromControlledTokens(),
+      createGrappleMovementTestRelationshipFromControlledTokens: () => tests.createGrappleMovementTestRelationshipFromControlledTokens(),
       removeTestRelationships: () => tests.removeTestRelationships(),
       inspectControlledRelationship: () => tests.inspectControlledRelationship()
     });

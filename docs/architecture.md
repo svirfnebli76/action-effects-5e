@@ -40,7 +40,7 @@ Version 0.2.11 adds a deliberately narrow libWrapper integration at Foundry v14'
 
 - exactly one token instruction is present;
 - that token is an active AE5E relationship leader;
-- every active relationship for that leader uses `coordinationPolicy: "coordinated"`;
+- every relationship that is eligible to follow that movement uses `coordinationPolicy: "coordinated"`;
 - the method is a supported external style (`api`, `undo`, or `paste`);
 - the instruction is pure movement rather than a resize or mixed token update;
 - the movement is traversal rather than teleportation.
@@ -53,7 +53,7 @@ The integration is intentionally fail-open to compatibility. Unrelated tokens, f
 
 For `adjacentFollower`, both coordinated external traversal and fallback post-sync use the same historical-route planner, so the follower ends in the leader's most recently vacated space rather than mirroring the leader's delta.
 
-
+Version 0.3.22 additionally partitions external leader movement by movement agency. A relationship using `forcedLeaderMovementPolicy: "independent"` is excluded from follower generation when the leader movement is explicitly classified as `forced`; the leader's external displacement is allowed to complete alone and the relationship is evaluated against its optional `breakDistance` after movement settles. Other relationships continue to follow according to their normal coordination policy.
 
 ## Relationship orbital rotation
 
@@ -98,6 +98,20 @@ Relationships persist a `coordinationPolicy`:
 
 Teleport behavior is not selected by this policy. Teleports continue to use the relationship's explicit `teleportPolicy` because teleporting does not traverse the intervening path.
 
+## Forced movement and break-distance semantics
+
+Version 0.3.22 adds two generic relationship controls intended for rules adapters such as Grapple:
+
+- `forcedLeaderMovementPolicy: "follow"` (default) preserves prior behavior and permits eligible generated follower movement when a leader is externally forced.
+- `forcedLeaderMovementPolicy: "independent"` means an explicitly `forced` leader displacement affects the leader alone. The follower is not copied, trailed, or snapped to the leader.
+- `breakDistance` is either `null` (disabled) or a non-negative distance in the Scene grid's configured distance units. After eligible external movement settles, AE5E measures the shortest separation between the participants' occupied token spaces. If the measured distance is greater than the threshold, the relationship is removed.
+
+On a gridded Scene, AE5E enumerates the occupied grid spaces of each token and asks Foundry's public grid measurement API for the distance between the closest pair, including elevation. This prevents a Large token from being treated as though reach begins at its center. Gridless Scenes use center-to-center grid measurement because there are no discrete occupied cells.
+
+A break-distance failure is **not** a movement collision and never causes rollback. The external movement already succeeded; AE5E leaves the moved token at its settled destination and removes only the relationship. This differs intentionally from an AE5E-owned coordinated drag blocked by a wall, where `stopGroup` rollback restores the entire linked movement transaction.
+
+The later Grapple adapter is expected to store the Grappler's actual grapple range as `breakDistance` and use `forcedLeaderMovementPolicy: "independent"`. Under the agreed rules boundary, Prone alone is not a relationship-ending event. A Grappled+Prone target cannot stand while Grappled keeps Speed at 0, and Shove/other forced movement ends the grapple only when the resulting settled separation exceeds the stored range.
+
 ## Public relationship movement entry points
 
 `relationships.moveGroup()` provides a GM-authorized group-movement entry point for future consumers such as Grapple, mounts, passengers, and carried tokens. Callers provide a leader UUID plus destination/waypoints and movement semantics; the relationship service owns route normalization, follower planning, authorization, movement IDs, terminal checkpoints, collision preflight, rollback, and operation metadata.
@@ -125,13 +139,13 @@ Primary-GM receipts follow the same rule. Intermediate checkpoint operations do 
 
 ## Follower self-movement
 
-Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are rejected when `followerCanSelfMove` is false, except for movements classified as teleports. A follower teleport is allowed to complete and then breaks every relationship in which that token is the follower. API, undo, and paste movement are not automatically blocked so external forced-movement and administrative systems remain possible. Later rules adapters will decide whether other non-teleport movements break, preserve, or transform a relationship.
+Manual movement methods (`dragging`, `keyboard`, `hud`, and `config`) are rejected when `followerCanSelfMove` is false, except for movements classified as teleports. A follower teleport is allowed to complete and then breaks every relationship in which that token is the follower. API, undo, and paste movement are not automatically blocked so external forced-movement and administrative systems remain possible. In v0.3.22, any relationship with a configured `breakDistance` is evaluated after such settled external follower movement: in-range movement preserves the relationship; out-of-range movement removes it without moving the token back.
 
 ## Collision behavior
 
 - `stopGroup`: reject the leader's requested movement when a rendered follower path is constrained.
 - `detach`: omit that follower and remove the relationship after successful leader movement.
-- If Foundry reports a partial group failure despite preflight, tokens that completed are restored to their origins with automation suppressed for Action Effects 5E.
+- If Foundry reports a partial group failure despite preflight, every surviving participant is restored from the pre-move origin snapshot with automation suppressed for Action Effects 5E, including a token that Foundry constrained partway before reporting its movement incomplete.
 
 Version 0.3.0 does not implement occupied-token collision or nearest-valid-square searching. Orbital rotation additionally limits geometry to 1x1 leader/follower tokens on square grids.
 
@@ -151,8 +165,8 @@ Movement classification does not read Foundry's deprecated `DatabaseUpdateOperat
 
 The coordinated operation carries one transaction ID plus leader and relationship provenance. Movement transactions classify:
 
-- The leader as voluntary movement using its movement resource.
-- Each follower as passenger movement using no movement resource.
+- Normal self-directed leader movement as voluntary movement using its movement resource; explicit external movement preserves its supplied agency/resource classification.
+- Each AE5E-generated follower movement as passenger movement using no movement resource.
 
 This allows later Region, hazard, Opportunity Attack, and Grapple logic to distinguish traversal from agency.
 

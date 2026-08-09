@@ -100,11 +100,13 @@ const {
   RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
   RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES
 } = await import("../scripts/core/constants.js");
 const { MovementTransaction } = await import("../scripts/movement/movement-transaction.js");
 const { MovementRegistry } = await import("../scripts/movement/movement-registry.js");
 const { RelationshipOrbitPlanner } = await import("../scripts/relationships/relationship-orbit-planner.js");
+const { RelationshipDistance } = await import("../scripts/relationships/relationship-distance.js");
 
 test("movement transaction preserves Action Effects 5E semantic metadata", () => {
   const document = {
@@ -487,6 +489,8 @@ test("relationship service persists and reindexes leader/follower relationships"
   assert.equal(service.getForLeader(leader.uuid).length, 1);
   assert.equal(service.getForFollower(follower.uuid)[0].id, relationship.id);
   assert.equal(relationship.coordinationPolicy, RELATIONSHIP_COORDINATION_POLICIES.COORDINATED);
+  assert.equal(relationship.forcedLeaderMovementPolicy, RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.FOLLOW);
+  assert.equal(relationship.breakDistance, null);
   assert.equal(relationship.rotationPolicy, RELATIONSHIP_ROTATION_POLICIES.NONE, "Pre-v0.3.0/default relationships must not opt into orbital rotation implicitly.");
   assert.equal(relationship.alliedEndpointPolicy, RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE);
   assert.equal(relationship.alliedEndpointGraceMs, RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS);
@@ -4028,5 +4032,581 @@ test("movement settlement helper tolerates a retained already-resolved animation
   const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
 
   await service.waitForMovementSettled({ leaderUuid: leader.uuid, timeoutMs: 100, pollMs: 5 });
+  globalThis.fromUuid = previousFromUuid;
+});
+
+function makeFiveFootSquareGrid() {
+  const size = 100;
+  const distance = 5;
+  return {
+    isGridless: false,
+    isSquare: true,
+    isHexagonal: false,
+    size,
+    sizeX: size,
+    sizeY: size,
+    distance,
+    getOffsetRange(bounds) {
+      const i0 = Math.floor(bounds.y / size);
+      const j0 = Math.floor(bounds.x / size);
+      const i1 = Math.ceil((bounds.y + bounds.height) / size);
+      const j1 = Math.ceil((bounds.x + bounds.width) / size);
+      return [i0, j0, i1, j1];
+    },
+    getCenterPoint({ i, j }) {
+      return { x: (j * size) + (size / 2), y: (i * size) + (size / 2) };
+    },
+    measurePath([a, b]) {
+      const planarX = Math.abs(Number(b.x) - Number(a.x)) / size * distance;
+      const planarY = Math.abs(Number(b.y) - Number(a.y)) / size * distance;
+      const vertical = Math.abs(Number(b.elevation ?? 0) - Number(a.elevation ?? 0));
+      return { distance: Math.max(planarX, planarY, vertical) };
+    }
+  };
+}
+
+test("relationship break distance measures the closest occupied grid spaces instead of token centers", () => {
+  const grid = makeFiveFootSquareGrid();
+  const scene = { id: "scene-distance", grid };
+  const leader = { x: 0, y: 0, elevation: 0, width: 1, height: 1 };
+  const adjacent = { x: 100, y: 0, elevation: 0, width: 1, height: 1 };
+  const separated = { x: 200, y: 0, elevation: 0, width: 1, height: 1 };
+  const large = { x: 0, y: 0, elevation: 0, width: 2, height: 2 };
+  const besideLarge = { x: 200, y: 0, elevation: 0, width: 1, height: 1 };
+  const elevated = { x: 0, y: 0, elevation: 10, width: 1, height: 1 };
+
+  assert.equal(RelationshipDistance.measure({ scene, leader, follower: adjacent }), 5);
+  assert.equal(RelationshipDistance.measure({ scene, leader, follower: separated }), 10);
+  assert.equal(RelationshipDistance.measure({ scene, leader: large, follower: besideLarge }), 5,
+    "A larger token must measure from its closest occupied grid space.");
+  assert.equal(RelationshipDistance.measure({ scene, leader, follower: elevated }), 10,
+    "Foundry grid measurement remains authoritative for elevation separation.");
+});
+
+test("break-distance enforcement preserves an in-range relationship and detaches it after external separation", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const scene = { id: "scene-break-distance", grid: makeFiveFootSquareGrid(), tokens: new FakeCollection() };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, width: 1, height: 1 });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, { x: 100, y: 0, elevation: 0, width: 1, height: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-break-distance",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    breakDistance: 5
+  };
+  const stored = new Map([[relationship.id, relationship]]);
+  const fakeRelationships = {
+    list: () => [...stored.values()],
+    get: (id) => stored.get(id) ?? null,
+    getForLeader: (uuid) => uuid === leader.uuid && stored.has(relationship.id) ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid && stored.has(relationship.id) ? [relationship] : [],
+    async removeManyAsGM(ids) {
+      let count = 0;
+      for (const id of ids) if (stored.delete(id)) count += 1;
+      return count;
+    }
+  };
+  const handlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { handlers.set(name, handler); },
+    async executeAsGM(name, request) { return handlers.get(name)(request); }
+  };
+  const fakeMovement = { registerConsumer() { return () => {}; } };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+
+  const inRange = await fakeSocket.executeAsGM("relationships.enforceBreakDistance", {
+    requestId: "separation-in-range",
+    requestingUserId: game.user.id,
+    sceneId: scene.id,
+    movedTokenUuid: follower.uuid,
+    relationshipIds: [relationship.id]
+  });
+  assert.deepEqual(inRange.detachedRelationshipIds, []);
+  assert.equal(stored.has(relationship.id), true);
+
+  follower.x = 200;
+  const outOfRange = await fakeSocket.executeAsGM("relationships.enforceBreakDistance", {
+    requestId: "separation-out-of-range",
+    requestingUserId: game.user.id,
+    sceneId: scene.id,
+    movedTokenUuid: follower.uuid,
+    relationshipIds: [relationship.id]
+  });
+  assert.deepEqual(outOfRange.detachedRelationshipIds, [relationship.id]);
+  assert.equal(stored.has(relationship.id), false);
+  assert.equal(outOfRange.evaluations[0].distance, 10);
+  assert.equal(outOfRange.evaluations[0].breakDistance, 5);
+
+  game.scenes.delete(scene.id);
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("forced external leader movement can leave a grapple-like follower behind instead of being converted into group movement", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousFromUuid = globalThis.fromUuid;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+
+  const scene = { id: "scene-forced-leader-independent", grid: makeFiveFootSquareGrid(), tokens: new FakeCollection() };
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, width: 1, height: 1 });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, { x: 100, y: 0, elevation: 0, width: 1, height: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-forced-leader-independent",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+    forcedLeaderMovementPolicy: RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.INDEPENDENT,
+    breakDistance: null
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    get: (id) => id === relationship.id ? relationship : null,
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  let capturedKeys = null;
+  const wrapped = async (instructions) => {
+    capturedKeys = Object.keys(instructions).sort();
+    const destination = instructions.leader.destination;
+    leader.x = destination.x;
+    leader.y = destination.y;
+    leader.elevation = destination.elevation;
+    return { leader: true };
+  };
+
+  await registrations[0].call(scene, wrapped, {
+    leader: {
+      destination: { x: -100, y: 0, elevation: 0, checkpoint: true },
+      method: "api"
+    }
+  }, {
+    method: "api",
+    [OPERATION_METADATA_KEY]: {
+      agency: MOVEMENT_AGENCIES.FORCED,
+      resource: MOVEMENT_RESOURCES.NONE,
+      sourceUuid: "Item.shove"
+    }
+  });
+
+  assert.deepEqual(capturedKeys, ["leader"], "Forced leader displacement must not implicitly drag an independent grapple-like follower.");
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 0 });
+
+  service.shutdown();
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("forced leader separation beyond breakDistance leaves the follower in place and detaches the relationship", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousFromUuid = globalThis.fromUuid;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+
+  const scene = { id: "scene-forced-leader-break", grid: makeFiveFootSquareGrid(), tokens: new FakeCollection() };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, width: 1, height: 1 });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, { x: 100, y: 0, elevation: 0, width: 1, height: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-forced-leader-break",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+    forcedLeaderMovementPolicy: RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.INDEPENDENT,
+    breakDistance: 5
+  };
+  let removed = false;
+  const fakeRelationships = {
+    list: () => removed ? [] : [relationship],
+    get: (id) => !removed && id === relationship.id ? relationship : null,
+    getForLeader: (uuid) => !removed && uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => !removed && uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM(ids) {
+      if ([...ids].includes(relationship.id)) removed = true;
+      return removed ? 1 : 0;
+    }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  const wrapped = async (instructions) => {
+    leader.x = instructions.leader.destination.x;
+    leader.y = instructions.leader.destination.y;
+    return { leader: true };
+  };
+
+  await registrations[0].call(scene, wrapped, {
+    leader: { destination: { x: -100, y: 0, elevation: 0, checkpoint: true }, method: "api" }
+  }, {
+    method: "api",
+    [OPERATION_METADATA_KEY]: {
+      agency: MOVEMENT_AGENCIES.FORCED,
+      resource: MOVEMENT_RESOURCES.NONE
+    }
+  });
+
+  assert.equal(removed, true);
+  assert.deepEqual({ x: leader.x, y: leader.y }, { x: -100, y: 0 });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 0 }, "The successful forced movement must never be rolled back or copied to the follower.");
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("forced follower movement is allowed through the generic relationship layer and detaches only after exceeding breakDistance", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  globalThis.libWrapper = undefined;
+  globalThis.ui = { notifications: { warn() {}, error() {} } };
+
+  const scene = { id: "scene-forced-follower-after", grid: makeFiveFootSquareGrid(), tokens: new FakeCollection() };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, width: 1, height: 1 });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, { x: 100, y: 0, elevation: 0, width: 1, height: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-forced-follower-after",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    followerCanSelfMove: false,
+    forcedLeaderMovementPolicy: RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.INDEPENDENT,
+    breakDistance: 5
+  };
+  let removed = false;
+  const fakeRelationships = {
+    list: () => removed ? [] : [relationship],
+    get: (id) => !removed && id === relationship.id ? relationship : null,
+    getForLeader: (uuid) => !removed && uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => !removed && uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM(ids) {
+      if ([...ids].includes(relationship.id)) removed = true;
+      return removed ? 1 : 0;
+    }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const consumers = [];
+  const fakeMovement = {
+    registerConsumer(config) { consumers.push(config); return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+  const followerConsumer = consumers.find((config) => config.execution === "initiator" && config.tokenUuids?.includes(follower.uuid));
+  assert.ok(followerConsumer);
+
+  follower.x = 0;
+  follower.y = 100;
+  await followerConsumer.handler(MovementTransaction.synthetic({
+    subjectUuid: follower.uuid,
+    sceneId: scene.id,
+    tokenId: follower.id,
+    phase: MOVEMENT_PHASES.AFTER,
+    origin: { x: 100, y: 0, elevation: 0 },
+    destination: { x: 0, y: 100, elevation: 0 },
+    agency: MOVEMENT_AGENCIES.FORCED,
+    resource: MOVEMENT_RESOURCES.NONE
+  }), { movement: null });
+  assert.equal(removed, false, "Forced movement to another in-range adjacent space must preserve the relationship.");
+
+  follower.x = 200;
+  follower.y = 0;
+  await followerConsumer.handler(MovementTransaction.synthetic({
+    subjectUuid: follower.uuid,
+    sceneId: scene.id,
+    tokenId: follower.id,
+    phase: MOVEMENT_PHASES.AFTER,
+    origin: { x: 0, y: 100, elevation: 0 },
+    destination: { x: 200, y: 0, elevation: 0 },
+    agency: MOVEMENT_AGENCIES.FORCED,
+    resource: MOVEMENT_RESOURCES.NONE
+  }), { movement: null });
+  assert.equal(removed, true, "Forced movement beyond the configured range must detach after the successful movement.");
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 200, y: 0 }, "The successful external movement must remain in place after detachment.");
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.ui = previousUi;
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("forced leader movement within breakDistance preserves a grapple-like relationship while leaving the follower stationary", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousFromUuid = globalThis.fromUuid;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+
+  const scene = { id: "scene-forced-leader-in-range", grid: makeFiveFootSquareGrid(), tokens: new FakeCollection() };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, width: 1, height: 1 });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, { x: 100, y: 0, elevation: 0, width: 1, height: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-forced-leader-in-range",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+    forcedLeaderMovementPolicy: RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.INDEPENDENT,
+    breakDistance: 5
+  };
+  let removed = false;
+  const fakeRelationships = {
+    list: () => removed ? [] : [relationship],
+    get: (id) => !removed && id === relationship.id ? relationship : null,
+    getForLeader: (uuid) => !removed && uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => !removed && uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM(ids) {
+      if ([...ids].includes(relationship.id)) removed = true;
+      return removed ? 1 : 0;
+    }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  const wrapped = async (instructions) => {
+    leader.x = instructions.leader.destination.x;
+    leader.y = instructions.leader.destination.y;
+    return { leader: true };
+  };
+
+  await registrations[0].call(scene, wrapped, {
+    leader: { destination: { x: 100, y: 100, elevation: 0, checkpoint: true }, method: "api" }
+  }, {
+    method: "api",
+    [OPERATION_METADATA_KEY]: {
+      agency: MOVEMENT_AGENCIES.FORCED,
+      resource: MOVEMENT_RESOURCES.NONE
+    }
+  });
+
+  assert.equal(removed, false);
+  assert.deepEqual({ x: leader.x, y: leader.y }, { x: 100, y: 100 });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 0 });
+  assert.equal(RelationshipDistance.measure({ scene, leader, follower }), 5);
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("forced leader break-distance validation waits for the live movement animation before reading TokenDocument position", async () => {
+  const previousLibWrapper = globalThis.libWrapper;
+  const previousFromUuid = globalThis.fromUuid;
+  const registrations = [];
+  globalThis.libWrapper = {
+    register(_moduleId, _target, fn) { registrations.push(fn); },
+    unregister() {}
+  };
+
+  const scene = { id: "scene-forced-leader-animation", grid: makeFiveFootSquareGrid(), tokens: new FakeCollection() };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, width: 1, height: 1 });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, { x: 100, y: 0, elevation: 0, width: 1, height: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-forced-leader-animation",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "adjacentFollower",
+    coordinationPolicy: RELATIONSHIP_COORDINATION_POLICIES.COORDINATED,
+    forcedLeaderMovementPolicy: RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES.INDEPENDENT,
+    breakDistance: 5
+  };
+  let removed = false;
+  const fakeRelationships = {
+    list: () => removed ? [] : [relationship],
+    get: (id) => !removed && id === relationship.id ? relationship : null,
+    getForLeader: (uuid) => !removed && uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => !removed && uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM(ids) {
+      if ([...ids].includes(relationship.id)) removed = true;
+      return removed ? 1 : 0;
+    }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const fakeSocket = { register() {} };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+  service.initialize();
+
+  const wrapped = async () => {
+    leader.object = {
+      movementAnimationPromise: new Promise((resolve) => {
+        setTimeout(() => {
+          leader.x = -100;
+          leader.y = 0;
+          resolve();
+        }, 5);
+      })
+    };
+    return { leader: true };
+  };
+
+  await registrations[0].call(scene, wrapped, {
+    leader: { destination: { x: -100, y: 0, elevation: 0, checkpoint: true }, method: "api" }
+  }, {
+    method: "api",
+    [OPERATION_METADATA_KEY]: {
+      agency: MOVEMENT_AGENCIES.FORCED,
+      resource: MOVEMENT_RESOURCES.NONE
+    }
+  });
+
+  assert.equal(removed, true,
+    "Break-distance enforcement must observe the settled forced destination rather than the stale pre-animation TokenDocument position.");
+  assert.deepEqual({ x: leader.x, y: leader.y }, { x: -100, y: 0 });
+  assert.deepEqual({ x: follower.x, y: follower.y }, { x: 100, y: 0 });
+
+  service.shutdown();
+  game.scenes.delete(scene.id);
+  globalThis.libWrapper = previousLibWrapper;
+  globalThis.fromUuid = previousFromUuid;
+});
+
+test("simultaneous external displacement preserves a break-distance relationship when both final token spaces remain in range", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const scene = { id: "scene-simultaneous-forced", grid: makeFiveFootSquareGrid(), tokens: new FakeCollection() };
+  game.scenes.set(scene.id, scene);
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, { x: 300, y: 200, elevation: 0, width: 1, height: 1 });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, { x: 400, y: 200, elevation: 0, width: 1, height: 1 });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  globalThis.fromUuid = async (uuid) => uuid === leader.uuid ? leader : uuid === follower.uuid ? follower : null;
+
+  const relationship = {
+    id: "relationship-simultaneous-forced",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    breakDistance: 5
+  };
+  const stored = new Map([[relationship.id, relationship]]);
+  const fakeRelationships = {
+    list: () => [...stored.values()],
+    get: (id) => stored.get(id) ?? null,
+    getForLeader: (uuid) => uuid === leader.uuid && stored.has(relationship.id) ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid && stored.has(relationship.id) ? [relationship] : [],
+    async removeManyAsGM(ids) {
+      let count = 0;
+      for (const id of ids) if (stored.delete(id)) count += 1;
+      return count;
+    }
+  };
+  const handlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { handlers.set(name, handler); },
+    async executeAsGM(name, request) { return handlers.get(name)(request); }
+  };
+  const fakeMovement = { registerConsumer() { return () => {}; } };
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement });
+
+  const result = await fakeSocket.executeAsGM("relationships.enforceBreakDistance", {
+    requestId: "simultaneous-forced-final-state",
+    requestingUserId: game.user.id,
+    sceneId: scene.id,
+    movedTokenUuid: leader.uuid,
+    relationshipIds: [relationship.id]
+  });
+
+  assert.deepEqual(result.detachedRelationshipIds, []);
+  assert.equal(stored.has(relationship.id), true,
+    "Moving both participants together must preserve the relationship when their settled final separation remains legal.");
+  assert.equal(result.evaluations[0].distance, 5);
+
+  game.scenes.delete(scene.id);
   globalThis.fromUuid = previousFromUuid;
 });
