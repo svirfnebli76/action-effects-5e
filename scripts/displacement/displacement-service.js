@@ -25,6 +25,44 @@ function positionsEqual(a, b) {
     && Math.abs(finiteNumber(a?.elevation, 0) - finiteNumber(b?.elevation, 0)) <= 0.01;
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForDocumentPosition({
+  scene,
+  tokenId,
+  expected,
+  timeoutMs = 1_500,
+  pollMs = 25
+} = {}) {
+  const startedAt = performance.now();
+  let current = scene?.tokens?.get(tokenId) ?? null;
+  if (positionsEqual(current, expected)) {
+    return { reached: true, timedOut: false, elapsedMs: 0, current };
+  }
+
+  while ((performance.now() - startedAt) < timeoutMs) {
+    await wait(pollMs);
+    current = scene?.tokens?.get(tokenId) ?? null;
+    if (positionsEqual(current, expected)) {
+      return {
+        reached: true,
+        timedOut: false,
+        elapsedMs: performance.now() - startedAt,
+        current
+      };
+    }
+  }
+
+  return {
+    reached: false,
+    timedOut: true,
+    elapsedMs: performance.now() - startedAt,
+    current
+  };
+}
+
 export class DisplacementService {
   #socket;
   #movement;
@@ -312,12 +350,29 @@ export class DisplacementService {
     const releaseContext = this.#movement.registerMovementContext(movementId, options);
     let movementCompleted = false;
     let afterTransaction = null;
+    let documentSettlement = { reached: false, timedOut: false, elapsedMs: 0, current: scene.tokens.get(target.id) };
     try {
       movementCompleted = await target.move(waypoints, {
         ...options,
         id: movementId
       });
-      if (movementCompleted === true) afterTransaction = await settledTransaction;
+      if (movementCompleted === true) {
+        afterTransaction = await settledTransaction;
+
+        // Foundry/D&D5e can report the logical AFTER movement transaction while
+        // the TokenDocument is still advancing through a multi-waypoint animated
+        // path. Keep the AE5E movement context and exact nonhostile-token bypass
+        // alive until the Scene document reaches the planned endpoint (or a
+        // bounded timeout proves that it did not). The Scene document, not the
+        // transaction's intended destination, is authoritative for endpoint grace.
+        const settlementTimeoutMs = Math.min(8_000, Math.max(1_000, (candidate.path.length + 1) * 500));
+        documentSettlement = await waitForDocumentPosition({
+          scene,
+          tokenId: target.id,
+          expected: candidate.destination,
+          timeoutMs: settlementTimeoutMs
+        });
+      }
     } finally {
       if (settleTimer) clearTimeout(settleTimer);
       unregisterSettle?.();
@@ -326,8 +381,7 @@ export class DisplacementService {
     }
 
     const current = scene.tokens.get(target.id);
-    const reachedPlannedEndpoint = positionsEqual(current, candidate.destination)
-      || positionsEqual(afterTransaction?.destination, candidate.destination);
+    const reachedPlannedEndpoint = positionsEqual(current, candidate.destination);
     const endpointConflicts = reachedPlannedEndpoint
       ? candidate.endpointConflicts
       : [];
@@ -353,6 +407,16 @@ export class DisplacementService {
       movementCompleted: movementCompleted === true,
       movementTransactionObserved: Boolean(afterTransaction),
       reachedPlannedEndpoint,
+      documentSettlement: {
+        reached: documentSettlement.reached === true,
+        timedOut: documentSettlement.timedOut === true,
+        elapsedMs: Math.round(finiteNumber(documentSettlement.elapsedMs, 0)),
+        position: {
+          x: finiteNumber(current?.x, null),
+          y: finiteNumber(current?.y, null),
+          elevation: finiteNumber(current?.elevation, null)
+        }
+      },
       fullDistance: candidate.actualDistance >= candidate.requestedDistance - 1e-6,
       partial: candidate.actualDistance < candidate.requestedDistance - 1e-6,
       type: request.type,

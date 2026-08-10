@@ -12,6 +12,7 @@
 - Added Foundry-only `runDisplacementFoundationTest()` coverage and an interactive `previewDisplacementFromControlledTokens()` smoke test.
 - Hardened post-movement settlement after Foundry validation exposed a timing gap: endpoint/grace evaluation now waits for AE5E's `AFTER` movement transaction boundary before reading final displacement state, while retaining the semantic movement context and temporary D&D5e nonhostile-token bypass through that boundary.
 - Improved the displacement foundation harness so a failed forced-metadata/soft-entry case prints the exact failed predicates and captured movement transaction.
+- Hardened multi-waypoint settlement a second time after Foundry validation showed the logical `AFTER` transaction can precede the Scene TokenDocument reaching the final animated waypoint. Endpoint/grace decisions now wait for the actual Scene document to reach the planned endpoint while retaining the movement context and nonhostile-token bypass, and never infer endpoint arrival from the transaction destination alone.
 
 ## 0.3.24 - Relative creature semantics for follower-body obstruction
 
