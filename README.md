@@ -238,7 +238,7 @@ Push supports `AWAY` and `STRAIGHT_AWAY`. Pull is direct-line only: `displacemen
 
 ### Grapple-link obstruction (0.3.26)
 
-Grapple-like relationships can opt into `linkObstructionPolicy: "grapple"`. Orbital movement then evaluates Follower-body geometry independently from the physical Grapple link. The Follower body resolves third-party hostility relative to the Follower; the Grapple link resolves it relative to the Leader/Grappler. Hostile creatures and movement walls hard-block the link sweep. Nonhostile creatures may be swept through, but a nonhostile creature occupying the final link starts the same 3.5-second grace window used by relationship body overlap and rolls the entire last legal orbit state back if it remains unresolved.
+Grapple-like relationships can opt into `linkObstructionPolicy: "grapple"`. Orbital movement then evaluates Follower-body geometry independently from the physical Grapple link. The Follower body resolves third-party hostility relative to the Follower; the Grapple link resolves it relative to the Leader/Grappler. Hostile creatures and movement walls hard-block the link sweep. Nonhostile creatures may be swept through, but a nonhostile creature occupying the final link starts the same 3.5-second grace window used by relationship body overlap and rolls the entire last legal orbit state back if it remains unresolved. The Foundry regression also verifies sweep-only creature handling and the precedence rule that when one third-party creature is nonhostile to the Follower body but hostile to the Leader-relative Grapple link, the hard link conflict wins.
 
 Foundry validation command:
 

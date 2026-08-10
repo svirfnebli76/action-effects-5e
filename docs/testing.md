@@ -331,6 +331,9 @@ The harness requires exactly one token each named `Leader`, `Follower`, `Ally`, 
 
 1. a hostile creature intersecting only the Grapple link hard-blocks orbital movement using Leader-relative disposition semantics;
 2. a nonhostile creature occupying only the final Grapple link permits the orbit, starts the 3.5-second grace window, then restores the prior Follower shell plus Leader rotation if unresolved;
-3. a movement wall intersecting the Grapple-link sweep hard-blocks while the Follower body path remains clear.
+3. a movement wall intersecting the Grapple-link sweep hard-blocks while the Follower body path remains clear;
+4. a nonhostile creature intersecting only the swept Grapple link may be passed through and does not start endpoint grace when the final link is clear;
+5. the same sweep-only geometry hard-blocks when the creature is hostile to the Leader/Grappler;
+6. when one creature simultaneously produces a nonhostile Follower-body conflict and a hostile Leader-relative Grapple-link conflict, the hard Grapple-link conflict wins.
 
 A failed fixture is intentionally left in place. No Node/npm behavioral test is a release gate for this project.

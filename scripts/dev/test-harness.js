@@ -1744,6 +1744,211 @@ export class TestHarness {
       if (!results.at(-1).passed) throw new Error("Grapple-link wall checks failed.");
       banner("GRAPPLE-LINK WALL — HARD BLOCK PASS", "#5cff8d", 21);
 
+      // ------------------------------------------------------
+      // Case 4: nonhostile creature intersects the Grapple-link
+      // only during the swept transition. It must be allowed to
+      // pass with NO endpoint grace because the final link is
+      // clear. A 0.5x0.5 fixture lets us isolate the sweep fan
+      // from both the final link and the Follower body path.
+      // ------------------------------------------------------
+      fixture = await configureBase();
+      await canvas.scene.updateEmbeddedDocuments("Token", [{
+        _id: tokens.Enemy.id,
+        width: 0.5,
+        height: 0.5,
+        disposition: D.FRIENDLY
+      }], { animate: false, ae5eGrappleLinkSweepFixture: true });
+      await wait(90);
+
+      const sweepSearchPositions = [];
+      for (let y = 2750; y <= 3000; y += 25) {
+        sweepSearchPositions.push({ x: 2300, y, elevation: 0 });
+        sweepSearchPositions.push({ x: 2325, y, elevation: 0 });
+      }
+
+      let sweepOnlyFixture = null;
+      for (const position of sweepSearchPositions) {
+        await fixtureMove(canvas.scene.tokens.get(tokens.Enemy.id), position);
+        const sweepInspection = this.#relationshipLinkObstructions.inspectSweep({
+          scene: canvas.scene,
+          leader: canvas.scene.tokens.get(tokens.Leader.id),
+          follower: canvas.scene.tokens.get(tokens.Follower.id),
+          fromPosition: fixture.geometry.follower,
+          toPosition: fixture.target
+        });
+        const endpointInspection = this.#relationshipLinkObstructions.inspectAtPosition({
+          scene: canvas.scene,
+          leader: canvas.scene.tokens.get(tokens.Leader.id),
+          follower: canvas.scene.tokens.get(tokens.Follower.id),
+          followerPosition: fixture.target
+        });
+        const sweepConflict = sweepInspection.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+        const endpointConflict = endpointInspection.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+        if (sweepConflict && !endpointConflict && sweepConflict.firstSampleT > 0 && sweepConflict.firstSampleT < 1) {
+          sweepOnlyFixture = {
+            position: { ...position },
+            sweep: sweepInspection,
+            endpoint: endpointInspection,
+            conflict: sweepConflict
+          };
+          break;
+        }
+      }
+
+      if (!sweepOnlyFixture) throw new Error("Could not find a deterministic nonhostile sweep-only Grapple-link fixture.");
+      const nonhostileSweepResult = await this.orbitClockwise({ relationshipId: fixture.relationship.id });
+      await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
+      await wait(200);
+      const nonhostileSweepGeometry = await this.inspectRelationshipGeometry({ relationshipId: fixture.relationship.id });
+      const nonhostileSweepStats = this.#relationshipRotation.getStats();
+      const nonhostileSweepDecisionConflict = nonhostileSweepStats.lastDecision?.grappleLink?.preflight?.nonhostile
+        ?.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+      const nonhostileSweepEndpointConflict = nonhostileSweepStats.lastDecision?.grappleLink?.endpointConflicts
+        ?.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+      const nonhostileSweepChecks = {
+        sweepConflictFound: Boolean(sweepOnlyFixture.conflict),
+        sweepOccurredMidTransition: sweepOnlyFixture.conflict?.firstSampleT > 0 && sweepOnlyFixture.conflict?.firstSampleT < 1,
+        finalLinkClear: !sweepOnlyFixture.endpoint.nonhostile.some((entry) => entry.otherUuid === tokens.Enemy.uuid),
+        leaderReference: sweepOnlyFixture.conflict?.referenceUuid === tokens.Leader.uuid,
+        preflightRecorded: Boolean(nonhostileSweepDecisionConflict),
+        movementCompleted: nonhostileSweepResult?.completed === true,
+        followerReachedTarget: nonhostileSweepGeometry.follower.x === fixture.target.x && nonhostileSweepGeometry.follower.y === fixture.target.y,
+        noEndpointConflict: !nonhostileSweepEndpointConflict,
+        noGrace: pendingGrace() === 0,
+        queuesClear: queuesClear()
+      };
+      results.push({
+        name: "nonhostile Grapple-link sweep-only pass-through",
+        passed: Object.values(nonhostileSweepChecks).every(Boolean),
+        checks: nonhostileSweepChecks,
+        fixture: sweepOnlyFixture,
+        result: nonhostileSweepResult
+      });
+      if (!results.at(-1).passed) throw new Error("Nonhostile Grapple-link sweep-only checks failed.");
+      banner("NONHOSTILE LINK SWEEP-ONLY → PASS THROUGH / NO GRACE — PASS", "#5cff8d", 21);
+
+      // ------------------------------------------------------
+      // Case 5: the exact same sweep-only geometry becomes a hard
+      // block when occupied by a creature hostile to the Leader.
+      // This proves creature sweep collision is not merely a final
+      // endpoint test.
+      // ------------------------------------------------------
+      const hostileSweepPosition = { ...sweepOnlyFixture.position };
+      fixture = await configureBase();
+      await canvas.scene.updateEmbeddedDocuments("Token", [{
+        _id: tokens.Ally.id,
+        width: 0.5,
+        height: 0.5,
+        disposition: D.HOSTILE
+      }], { animate: false, ae5eGrappleLinkSweepFixture: true });
+      await wait(90);
+      await fixtureMove(canvas.scene.tokens.get(tokens.Ally.id), hostileSweepPosition);
+      const hostileSweepInspection = this.#relationshipLinkObstructions.inspectSweep({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        fromPosition: fixture.geometry.follower,
+        toPosition: fixture.target
+      });
+      const hostileSweepEndpoint = this.#relationshipLinkObstructions.inspectAtPosition({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        followerPosition: fixture.target
+      });
+      const hostileSweepConflict = hostileSweepInspection.hostile.find((entry) => entry.otherUuid === tokens.Ally.uuid);
+      const hostileFinalConflict = hostileSweepEndpoint.hostile.find((entry) => entry.otherUuid === tokens.Ally.uuid);
+      const hostileSweepResult = await this.orbitClockwise({ relationshipId: fixture.relationship.id });
+      await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
+      await wait(175);
+      const hostileSweepGeometry = await this.inspectRelationshipGeometry({ relationshipId: fixture.relationship.id });
+      const hostileSweepStats = this.#relationshipRotation.getStats();
+      const hostileSweepChecks = {
+        sweepConflictFound: Boolean(hostileSweepConflict),
+        sweepOccurredMidTransition: hostileSweepConflict?.firstSampleT > 0 && hostileSweepConflict?.firstSampleT < 1,
+        finalLinkClear: !hostileFinalConflict,
+        leaderReference: hostileSweepConflict?.referenceUuid === tokens.Leader.uuid,
+        movementRejected: hostileSweepResult?.completed === false,
+        obstructionIsLink: hostileSweepStats.lastDecision?.obstruction?.geometryChannel === RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+        hostileReason: hostileSweepStats.lastDecision?.obstruction?.reasonCode === "hostile-creature",
+        followerStayed: hostileSweepGeometry.follower.x === fixture.geometry.follower.x && hostileSweepGeometry.follower.y === fixture.geometry.follower.y,
+        leaderRestored: angleDiff(hostileSweepGeometry.leader.rotation, fixture.geometry.leader.rotation) < 0.001,
+        noGrace: pendingGrace() === 0,
+        queuesClear: queuesClear()
+      };
+      results.push({
+        name: "hostile Grapple-link sweep-only hard block",
+        passed: Object.values(hostileSweepChecks).every(Boolean),
+        checks: hostileSweepChecks,
+        sweep: hostileSweepInspection,
+        endpoint: hostileSweepEndpoint,
+        result: hostileSweepResult
+      });
+      if (!results.at(-1).passed) throw new Error("Hostile Grapple-link sweep-only checks failed.");
+      banner("HOSTILE LINK SWEEP-ONLY → HARD BLOCK — PASS", "#5cff8d", 21);
+
+      // ------------------------------------------------------
+      // Case 6: one creature occupies the Follower destination
+      // AND the final Grapple-link boundary. With Friendly Leader,
+      // Hostile Follower, Hostile Ally:
+      //   follower-body => NONHOSTILE (same Hostile disposition)
+      //   grapple-link  => HOSTILE    (relative to Friendly Leader)
+      // The hard Grapple-link conflict must win.
+      // ------------------------------------------------------
+      fixture = await configureBase();
+      await fixtureMove(canvas.scene.tokens.get(tokens.Ally.id), {
+        x: fixture.target.x,
+        y: fixture.target.y,
+        elevation: fixture.target.elevation ?? 0
+      });
+      const bodyResolution = this.#relativeRelationships.resolveForGeometry({
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY,
+        leaderToken: canvas.scene.tokens.get(tokens.Leader.id),
+        followerToken: canvas.scene.tokens.get(tokens.Follower.id),
+        otherToken: canvas.scene.tokens.get(tokens.Ally.id)
+      });
+      const linkResolution = this.#relativeRelationships.resolveForGeometry({
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+        leaderToken: canvas.scene.tokens.get(tokens.Leader.id),
+        followerToken: canvas.scene.tokens.get(tokens.Follower.id),
+        otherToken: canvas.scene.tokens.get(tokens.Ally.id)
+      });
+      const dualResult = await this.orbitClockwise({ relationshipId: fixture.relationship.id });
+      await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
+      await wait(175);
+      const dualGeometry = await this.inspectRelationshipGeometry({ relationshipId: fixture.relationship.id });
+      const dualStats = this.#relationshipRotation.getStats();
+      const bodyPreflightConflict = dualStats.lastDecision?.followerBody?.preflight?.conflicts
+        ?.find((entry) => entry.otherUuid === tokens.Ally.uuid);
+      const linkPreflightConflict = dualStats.lastDecision?.grappleLink?.preflight?.hostile
+        ?.find((entry) => entry.otherUuid === tokens.Ally.uuid);
+      const dualChecks = {
+        followerBodyClassifiesNonhostile: bodyResolution.relationship === RELATIVE_TOKEN_RELATIONSHIPS.NONHOSTILE,
+        followerBodyUsesFollower: bodyResolution.referenceUuid === tokens.Follower.uuid,
+        grappleLinkClassifiesHostile: linkResolution.relationship === RELATIVE_TOKEN_RELATIONSHIPS.HOSTILE,
+        grappleLinkUsesLeader: linkResolution.referenceUuid === tokens.Leader.uuid,
+        bodyConflictRecordedNonhostile: bodyPreflightConflict?.relationship === RELATIVE_TOKEN_RELATIONSHIPS.NONHOSTILE,
+        linkConflictRecordedHostile: linkPreflightConflict?.relationship === RELATIVE_TOKEN_RELATIONSHIPS.HOSTILE,
+        movementRejected: dualResult?.completed === false,
+        hardLinkWins: dualStats.lastDecision?.obstruction?.geometryChannel === RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK
+          && dualStats.lastDecision?.obstruction?.reasonCode === "hostile-creature",
+        followerStayed: dualGeometry.follower.x === fixture.geometry.follower.x && dualGeometry.follower.y === fixture.geometry.follower.y,
+        leaderRestored: angleDiff(dualGeometry.leader.rotation, fixture.geometry.leader.rotation) < 0.001,
+        noGrace: pendingGrace() === 0,
+        queuesClear: queuesClear()
+      };
+      results.push({
+        name: "dual body/link conflict hard precedence",
+        passed: Object.values(dualChecks).every(Boolean),
+        checks: dualChecks,
+        bodyResolution,
+        linkResolution,
+        result: dualResult,
+        decision: dualStats.lastDecision
+      });
+      if (!results.at(-1).passed) throw new Error("Dual body/link hard-precedence checks failed.");
+      banner("BODY NONHOSTILE + LINK HOSTILE → HARD LINK WINS — PASS", "#5cff8d", 21);
+
       await removeDiagnosticWalls();
       passed = results.every((entry) => entry.passed === true);
     } catch (error) {

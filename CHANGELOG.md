@@ -10,7 +10,7 @@
 - Added physical movement-wall collision checking for the Grapple link using Foundry v14's movement polygon collision backend.
 - Added `linkObstructionPolicy` with Grapple-aware defaults so physical link behavior is not applied to unrelated relationship types.
 - Added structured `grappleLink` diagnostics to rotation decisions and public link inspection helpers.
-- Added a Foundry-only automated Grapple-link obstruction regression covering hostile link blocking, nonhostile final-link grace/rollback, and wall blocking.
+- Added a Foundry-only automated Grapple-link obstruction regression covering hostile final-link blocking, nonhostile final-link grace/rollback, wall blocking, nonhostile sweep-only pass-through, hostile sweep-only blocking, and dual body/link hard-conflict precedence.
 
 ## 0.3.25 - Generic forced Push/Pull displacement foundation
 
