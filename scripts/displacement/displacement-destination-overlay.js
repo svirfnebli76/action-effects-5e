@@ -22,7 +22,6 @@ function drawRect(graphics, x, y, width, height, color, { fillAlpha = 0.22, stro
   graphics.endFill?.();
 }
 
-
 export class DisplacementDestinationOverlay {
   #container = null;
   #cancel = null;
@@ -62,8 +61,13 @@ export class DisplacementDestinationOverlay {
     if (!parent?.addChild) throw new Error("No suitable Foundry canvas group is available for displacement destination selection.");
 
     const gridSize = Number(canvas.scene?.grid?.size ?? canvas.grid?.size ?? 100);
-    const width = Math.max(Number(targetToken?.width ?? 1), 0.001) * gridSize;
-    const height = Math.max(Number(targetToken?.height ?? 1), 0.001) * gridSize;
+    const targetWidthSquares = Math.max(Number(targetToken?.width ?? 1), 0.001);
+    const targetHeightSquares = Math.max(Number(targetToken?.height ?? 1), 0.001);
+    const width = targetWidthSquares * gridSize;
+    const height = targetHeightSquares * gridSize;
+    const compactSelection = targetWidthSquares > 1 || targetHeightSquares > 1;
+    const handleSize = Math.max(28, Math.min(gridSize * 0.44, 64));
+
     const container = new PIXI.Container();
     container.name = "action-effects-5e-displacement-destinations";
     container.sortableChildren = true;
@@ -85,39 +89,107 @@ export class DisplacementDestinationOverlay {
           : candidate.requestedDestination;
         if (!displayPosition) continue;
 
-        const graphics = new PIXI.Graphics();
         const color = COLORS[candidate.state] ?? 0xFFFFFF;
+
+        // A 1x1 target can use the entire destination square as the click target.
+        // Larger target footprints overlap one another for adjacent direction choices,
+        // so render their full footprint only as a faint ghost and use a compact,
+        // non-overlapping handle at the future token center for selection.
+        if (!compactSelection) {
+          const graphics = new PIXI.Graphics();
+          drawRect(
+            graphics,
+            displayPosition.x,
+            displayPosition.y,
+            width,
+            height,
+            color,
+            {
+              fillAlpha: candidate.selectable ? 0.24 : 0.12,
+              strokeAlpha: candidate.selectable ? 1 : 0.7,
+              strokeWidth: candidate.selectable ? 4 : 3
+            }
+          );
+          graphics.zIndex = 10;
+
+          if (candidate.selectable) {
+            graphics.eventMode = "static";
+            graphics.interactive = true;
+            graphics.cursor = "pointer";
+            graphics.on?.("pointerover", () => { graphics.alpha = 0.7; });
+            graphics.on?.("pointerout", () => { graphics.alpha = 1; });
+            graphics.on?.("pointertap", (event) => {
+              event?.stopPropagation?.();
+              finish(candidate);
+            });
+          } else {
+            graphics.eventMode = "none";
+            graphics.interactive = false;
+          }
+
+          container.addChild(graphics);
+          continue;
+        }
+
+        const ghost = new PIXI.Graphics();
         drawRect(
-          graphics,
+          ghost,
           displayPosition.x,
           displayPosition.y,
           width,
           height,
           color,
           {
-            fillAlpha: candidate.selectable ? 0.24 : 0.12,
-            strokeAlpha: candidate.selectable ? 1 : 0.7,
+            fillAlpha: candidate.selectable ? 0.045 : 0.025,
+            strokeAlpha: candidate.selectable ? 0.62 : 0.42,
+            strokeWidth: candidate.selectable ? 3 : 2
+          }
+        );
+        ghost.zIndex = 10;
+        ghost.eventMode = "none";
+        ghost.interactive = false;
+        container.addChild(ghost);
+
+        const handle = new PIXI.Graphics();
+        const centerX = displayPosition.x + (width / 2);
+        const centerY = displayPosition.y + (height / 2);
+        drawRect(
+          handle,
+          centerX - (handleSize / 2),
+          centerY - (handleSize / 2),
+          handleSize,
+          handleSize,
+          color,
+          {
+            fillAlpha: candidate.selectable ? 0.5 : 0.2,
+            strokeAlpha: candidate.selectable ? 1 : 0.72,
             strokeWidth: candidate.selectable ? 4 : 3
           }
         );
-        graphics.zIndex = 10;
+        handle.zIndex = 20;
 
         if (candidate.selectable) {
-          graphics.eventMode = "static";
-          graphics.interactive = true;
-          graphics.cursor = "pointer";
-          graphics.on?.("pointerover", () => { graphics.alpha = 0.7; });
-          graphics.on?.("pointerout", () => { graphics.alpha = 1; });
-          graphics.on?.("pointertap", (event) => {
+          handle.eventMode = "static";
+          handle.interactive = true;
+          handle.cursor = "pointer";
+          handle.on?.("pointerover", () => {
+            handle.alpha = 0.72;
+            ghost.alpha = 1;
+          });
+          handle.on?.("pointerout", () => {
+            handle.alpha = 1;
+            ghost.alpha = 1;
+          });
+          handle.on?.("pointertap", (event) => {
             event?.stopPropagation?.();
             finish(candidate);
           });
         } else {
-          graphics.eventMode = "none";
-          graphics.interactive = false;
+          handle.eventMode = "none";
+          handle.interactive = false;
         }
-        container.addChild(graphics);
 
+        container.addChild(handle);
       }
 
       this.#keydown = (event) => {
@@ -131,7 +203,7 @@ export class DisplacementDestinationOverlay {
 
     parent.addChild(container);
     this.#container = container;
-    ui?.notifications?.info?.(`${title}: Select a destination square. Press Esc to cancel.`);
+    ui?.notifications?.info?.(`${title}: Select a destination. Press Esc to cancel.`);
     return promise;
   }
 }
