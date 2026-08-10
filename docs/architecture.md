@@ -5,7 +5,7 @@
 1. `SocketService` is initialized before Foundry `init` so Socketlib readiness cannot be missed.
 2. `init` registers settings and publishes the API object.
 3. `setup` refreshes compatibility state.
-4. `ready` validates required dependencies, loads persisted relationships, initializes relationship movement, relationship rotation, and the central movement service, then emits `action-effects-5e.ready`.
+4. `ready` validates required dependencies, loads persisted relationships, initializes movement/relationship/displacement services plus the selection-indicator service, then emits `action-effects-5e.ready`.
 
 ## Relationship state
 
@@ -132,6 +132,21 @@ A successful orbit may end in a nonhostile creature's occupied space. Same-side 
 With `nonhostileEndpointPolicy: grace`, the 3.5-second default timer begins after follower animation settlement. Continued movement into a legal/open position clears the timer. Consecutive nonhostile occupied endpoints retain the original legal anchor and restart the timer. Expiry restores both follower position and the exact matching leader rotation. Translation or relationship removal clears the pending state. Legacy `alliedEndpointPolicy` / `alliedEndpointGraceMs` values remain readable.
 
 For orbit follower-body preflight, AE5E separates wall/surface obstruction from creature obstruction. It preserves Foundry's environment constraint result, classifies intersecting token footprints relative to the Follower, hard-blocks hostile creatures, and only bypasses D&D5e token blocking when every identified creature conflict is nonhostile.
+
+
+## Selection/popup indicator (0.3.27)
+
+`SelectionIndicatorService` is a rules-agnostic UI service for any AE5E workflow that is waiting for a user's choice. It contains no Grapple, displacement, or Item rules; those systems consume it only when they need to expose an interactive wait.
+
+A caller acquires a lease for the acting token before presenting an interaction and releases it when the interaction finishes. The service indexes lease IDs by Token UUID. The first lease on a token starts one visual; later leases share it. The visual ends only when the final lease is released. `withIndicator()` implements the acquisition/release pair with `try/finally`; `waitForDialog()` applies the same lifecycle around Foundry v14 `foundry.applications.api.DialogV2.wait()`.
+
+Sequencer is an optional/recommended rendering integration rather than a foundation dependency. When active, AE5E creates a named persistent effect attached to the canvas Token. Sequencer's default non-local playback makes the marker visible to other connected users on the Scene. The attachment uses a grid-unit offset of half the TokenDocument width and negative half its height, placing the effect center on the upper-right footprint corner. `scaleToObject(0.28, { uniform: true, considerTokenScale: false })` sizes the marker from token footprint rather than artwork scale, while `bindRotation: false` prevents token rotation from orbiting the UI marker.
+
+The preferred database key is `eskie.ui.ability_check.d20.01.roll.default.green`. The service checks the Sequencer database at use time and falls back to core `icons/vtt-512.png` when that key is unavailable. Missing/broken Sequencer rendering is advisory only: it is logged and the underlying workflow continues.
+
+All AE5E selection effects share the namespaced effect name `action-effects-5e.selection-indicator`; per-token EffectManager filtering prevents one user's release from ending another token's indicator. Startup GM cleanup removes stale indicators because a DialogV2 cannot remain valid across a reload.
+
+The v0.3.25+ Push destination selector is the first production consumer. When Push needs a runtime destination choice, `DisplacementService` wraps the existing canvas selector in `selection.withIndicator()` using the Source/acting token. The visual therefore describes who is making the choice, not which Target will be displaced. Pull and Push calls that already provide `directionKey` do not open a selector and do not acquire an indicator lease.
 
 ## Generic forced displacement (v0.3.25)
 

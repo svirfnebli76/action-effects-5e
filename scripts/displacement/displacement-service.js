@@ -69,17 +69,19 @@ export class DisplacementService {
   #planner;
   #overlay;
   #grace;
+  #selectionIndicator;
   #initialized = false;
   #dndBlockingHook = null;
   #activeTokenBypasses = new Map();
   #recent = [];
 
-  constructor({ socket, movement, planner, overlay, grace }) {
+  constructor({ socket, movement, planner, overlay, grace, selectionIndicator }) {
     this.#socket = socket;
     this.#movement = movement;
     this.#planner = planner;
     this.#overlay = overlay;
     this.#grace = grace;
+    this.#selectionIndicator = selectionIndicator;
     this.#socket.register("displacement.execute", this.#executeAsGM.bind(this));
   }
 
@@ -201,11 +203,21 @@ export class DisplacementService {
       candidate = plan.candidates.find((entry) => entry.key === directionKey) ?? null;
       if (!candidate) throw new Error(`Direction '${directionKey}' is not legal for this displacement.`);
     } else {
-      candidate = await this.#overlay.select({
+      const selectDestination = () => this.#overlay.select({
         candidates: plan.candidates,
         targetToken: target,
         title: title ?? `Push ${target.name ?? "target"}`
       });
+
+      // The source token represents the user whose workflow is waiting for a
+      // destination choice. The shared indicator tells every client that this
+      // player is actively making a selection, rather than appearing stalled.
+      candidate = this.#selectionIndicator
+        ? await this.#selectionIndicator.withIndicator(
+          { token: source, reason: "displacement-destination" },
+          selectDestination
+        )
+        : await selectDestination();
     }
 
     if (!candidate) {

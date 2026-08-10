@@ -2,7 +2,7 @@
   "id": "action-effects-5e",
   "title": "Action Effects 5E",
   "description": "Reusable D&D5e automation infrastructure and premade effects for Foundry VTT, including low-overhead forced displacement, movement, and coordinated token relationship frameworks.",
-  "version": "0.3.26",
+  "version": "0.3.27",
   "authors": [
     {
       "name": "Matthew Larrivee"
@@ -34,6 +34,12 @@
       },
       {
         "id": "lib-wrapper",
+        "type": "module"
+      }
+    ],
+    "recommends": [
+      {
+        "id": "sequencer",
         "type": "module"
       }
     ]

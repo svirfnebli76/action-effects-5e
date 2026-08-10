@@ -17,6 +17,7 @@ import { DisplacementPlanner } from "./displacement/displacement-planner.js";
 import { DisplacementDestinationOverlay } from "./displacement/displacement-destination-overlay.js";
 import { NonhostileEndpointGraceService } from "./displacement/nonhostile-endpoint-grace-service.js";
 import { DisplacementService } from "./displacement/displacement-service.js";
+import { SelectionIndicatorService } from "./ui/selection-indicator-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -38,12 +39,14 @@ const displacementGrace = new NonhostileEndpointGraceService({
   movement,
   obstructions: movementObstructions
 });
+const selectionIndicator = new SelectionIndicatorService();
 const displacement = new DisplacementService({
   socket,
   movement,
   planner: displacementPlanner,
   overlay: displacementOverlay,
-  grace: displacementGrace
+  grace: displacementGrace,
+  selectionIndicator
 });
 const relationshipLinkObstructions = new RelationshipLinkObstructionService({ relativeRelationships });
 const relationshipMovement = new RelationshipMovementService({
@@ -68,6 +71,7 @@ const tests = new TestHarness({
   relativeRelationships,
   relationshipLinkObstructions,
   displacement,
+  selectionIndicator,
   socket
 });
 const api = new ActionEffects5eApi({
@@ -80,6 +84,7 @@ const api = new ActionEffects5eApi({
   relativeRelationships,
   relationshipLinkObstructions,
   displacement,
+  selectionIndicator,
   tests,
   socket
 });
@@ -111,6 +116,7 @@ Hooks.once("ready", async () => {
   relationshipRotation.initialize();
   movement.initialize();
   displacement.initialize();
+  await selectionIndicator.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.26";
+export const MODULE_VERSION = "0.3.27";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -31,6 +31,11 @@ export const OVERLAP_POLICIES = Object.freeze({
 export const OPERATION_METADATA_KEY = "actionEffects5e";
 export const SCENE_RELATIONSHIPS_FLAG = "relationships";
 export const MAX_RECENT_TRANSACTIONS = 50;
+
+export const SELECTION_INDICATOR_PREFERRED_ASSET = "eskie.ui.ability_check.d20.01.roll.default.green";
+export const SELECTION_INDICATOR_FALLBACK_ASSET = "icons/vtt-512.png";
+export const SELECTION_INDICATOR_SCALE = 0.28;
+export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator`;
 
 export const MOVEMENT_PHASES = Object.freeze({
   BEFORE: "before",

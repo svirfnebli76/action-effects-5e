@@ -9,7 +9,35 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 - Socketlib
 - libWrapper
 
+## Recommended modules
+
+- Sequencer — used by the v0.3.27 selection/popup activity indicator. AE5E continues to function without it; only the advisory visual is omitted.
+
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
+
+## Build 0.3.27: selection/popup activity indicator
+
+v0.3.27 adds reusable UI feedback for the periods when an AE5E workflow is waiting on one player's interaction. This is infrastructure for the upcoming Grapple activity and later spells/features rather than Grapple-specific rules logic.
+
+- `ae5e.selection.acquire()` / `release()` provide reference-counted visual leases. Multiple simultaneous waits on one token share a single indicator.
+- `ae5e.selection.withIndicator()` wraps any asynchronous selection flow in guaranteed `try/finally` cleanup.
+- `ae5e.selection.waitForDialog()` wraps Foundry v14 `DialogV2.wait()` so button submission, cancel/X dismissal, and thrown errors all end the indicator.
+- With Sequencer active, the effect is attached to the token and uses Sequencer's normal shared playback, so other connected users viewing the Scene can see that the player is making a choice.
+- The default indicator is 28% of the token footprint width and is centered on the upper-right token corner, producing the intended partial overlap. Token artwork scale is ignored.
+- Preferred asset: `eskie.ui.ability_check.d20.01.roll.default.green`. Missing database entry fallback: `icons/vtt-512.png`.
+- Sequencer is recommended rather than required; a missing Sequencer integration cannot interrupt the underlying rules workflow.
+- The existing interactive Push destination selector now consumes this service: the marker is shown on the acting/Source token only while the player is choosing a Push destination. Automatic Pull and preselected Push directions do not create a waiting marker.
+
+### v0.3.27 Foundry test command
+
+Control exactly one token and run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runSelectionIndicatorTest();
+```
+
+The command first verifies reference-counted lease behavior automatically, then opens a real DialogV2 on the executing client. While it is open, inspect the token's upper-right corner and, when possible, inspect the same Scene from another connected client. Close the dialog with a button or the X; the indicator must disappear and the returned report must show zero active leases/tokens.
 
 ## Build 0.3.24: relative creature semantics
 

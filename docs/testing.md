@@ -338,3 +338,42 @@ The harness requires exactly one token each named `Leader`, `Follower`, `Ally`, 
 6. when one creature simultaneously produces a nonhostile Follower-body conflict and a hostile Leader-relative Grapple-link conflict, the hard Grapple-link conflict wins.
 
 A failed fixture is intentionally left in place. No Node/npm behavioral test is a release gate for this project.
+
+## 0.3.27 selection/popup indicator regression
+
+Run inside Foundry VTT with Sequencer active. Control exactly one token, then run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runSelectionIndicatorTest();
+```
+
+The command performs an automated lease lifecycle first:
+
+1. first lease starts one token visual;
+2. second lease on the same token increments the lease count but does not create a second visual;
+3. releasing the first lease leaves the visual active;
+4. releasing the second/final lease removes the visual.
+
+It then opens an actual Foundry v14 DialogV2 through `selection.waitForDialog()`. While the dialog remains open, verify in Foundry:
+
+- the marker is centered at the controlled token's upper-right footprint corner and partially overlaps the token;
+- marker size is approximately 28% of token width; repeat with 1x1, 2x2, and 3x3 tokens;
+- the marker follows token translation while the dialog is open and does not rotate around the token when the token rotates;
+- when the Eskie database key exists, `eskie.ui.ability_check.d20.01.roll.default.green` is animated; if it is absent, `icons/vtt-512.png` is shown instead;
+- from a second connected client viewing the same Scene, the marker is visible even though the DialogV2 exists only on the selecting user's client;
+- closing with the default button, Cancel, or the window X removes the marker immediately;
+- after closure, `ae5e.selection.getStats()` reports `activeLeases: 0`, `activeTokens: 0`, and `renderedTokens: 0`.
+
+The visual service is advisory. For a separate compatibility check, disabling Sequencer must not prevent an interaction wrapped by `selection.withIndicator()` or `selection.waitForDialog()` from resolving; AE5E should warn and continue without a marker. Sequencer is recommended, not required.
+
+### Production Push-selector integration
+
+To verify the first real consumer of the service, control exactly two tokens in Source-first, Target-second order and run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.previewDisplacementFromControlledTokens({ type: "push" });
+```
+
+While the Push destination overlay is waiting for a click, the selection indicator must be on the Source/acting token, not the displaced Target. Clicking a legal destination or cancelling the selector must remove the indicator. A Pull preview should resolve its direct destination without opening the selector or displaying a waiting marker.

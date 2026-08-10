@@ -23,6 +23,10 @@ import {
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIVE_TOKEN_RELATIONSHIPS,
   RELATIONSHIP_TYPES,
+  SELECTION_INDICATOR_EFFECT_NAME,
+  SELECTION_INDICATOR_FALLBACK_ASSET,
+  SELECTION_INDICATOR_PREFERRED_ASSET,
+  SELECTION_INDICATOR_SCALE,
   TELEPORT_POLICIES
 } from "./core/constants.js";
 
@@ -37,6 +41,7 @@ export class ActionEffects5eApi {
     relativeRelationships,
     relationshipLinkObstructions,
     displacement,
+    selectionIndicator,
     tests,
     socket
   }) {
@@ -66,7 +71,11 @@ export class ActionEffects5eApi {
       RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
       ATTACHMENT_MODES,
       TELEPORT_POLICIES,
-      COLLISION_POLICIES
+      COLLISION_POLICIES,
+      SELECTION_INDICATOR_PREFERRED_ASSET,
+      SELECTION_INDICATOR_FALLBACK_ASSET,
+      SELECTION_INDICATOR_SCALE,
+      SELECTION_INDICATOR_EFFECT_NAME
     });
 
     this.dependencies = Object.freeze({
@@ -99,6 +108,15 @@ export class ActionEffects5eApi {
       getStats: () => displacement.getStats()
     });
 
+    this.selection = Object.freeze({
+      acquire: (options) => selectionIndicator.acquire(options),
+      release: (leaseOrId) => selectionIndicator.release(leaseOrId),
+      withIndicator: (options, interaction) => selectionIndicator.withIndicator(options, interaction),
+      waitForDialog: (options) => selectionIndicator.waitForDialog(options),
+      clearAll: () => selectionIndicator.clearAll(),
+      getStats: () => selectionIndicator.getStats()
+    });
+
     this.relationships = Object.freeze({
       create: (data) => relationships.create(data),
       remove: (id) => relationships.remove(id),
@@ -127,6 +145,7 @@ export class ActionEffects5eApi {
 
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
+      runSelectionIndicatorTest: () => tests.runSelectionIndicatorTest(),
       createTestRelationshipFromControlledTokens: () => tests.createTestRelationshipFromControlledTokens(),
       createGrappleMovementTestRelationshipFromControlledTokens: (options) => tests.createGrappleMovementTestRelationshipFromControlledTokens(options),
       removeTestRelationships: () => tests.removeTestRelationships(),

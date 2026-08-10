@@ -30,10 +30,11 @@ export class TestHarness {
   #relativeRelationships;
   #relationshipLinkObstructions;
   #displacement;
+  #selectionIndicator;
   #socket;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, socket }) {
+  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -43,6 +44,7 @@ export class TestHarness {
     this.#relativeRelationships = relativeRelationships;
     this.#relationshipLinkObstructions = relationshipLinkObstructions;
     this.#displacement = displacement;
+    this.#selectionIndicator = selectionIndicator;
     this.#socket = socket;
   }
 
@@ -81,6 +83,7 @@ export class TestHarness {
     record("Relationship movement service", this.#relationshipMovement.getStats().initialized, this.#relationshipMovement.getStats());
     record("Relationship rotation service", this.#relationshipRotation.getStats().initialized, this.#relationshipRotation.getStats());
     record("Displacement service", this.#displacement.getStats().initialized, this.#displacement.getStats());
+    record("Selection indicator service", this.#selectionIndicator.getStats().initialized, this.#selectionIndicator.getStats());
     record("Socketlib registration", this.#socket.ready, { ready: this.#socket.ready });
 
     const passed = checks.every((check) => check.passed);
@@ -92,6 +95,7 @@ export class TestHarness {
       relationshipMovement: this.#relationshipMovement.getStats(),
       relationshipRotation: this.#relationshipRotation.getStats(),
       displacement: this.#displacement.getStats(),
+      selection: this.#selectionIndicator.getStats(),
       compatibility: compatibilityStatus
     };
     Logger.info("Foundation smoke test", result);
@@ -103,6 +107,100 @@ export class TestHarness {
       );
     }
     return result;
+  }
+
+  async runSelectionIndicatorTest() {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 1) throw new Error("Control exactly one token for the selection-indicator test.");
+
+    const token = controlled[0];
+    const baseline = this.#selectionIndicator.getStats();
+    if (baseline.activeLeases !== 0) {
+      throw new Error("Selection-indicator testing requires no other active AE5E selection leases.");
+    }
+    if (!baseline.sequencer.active || !baseline.sequencer.apiAvailable) {
+      throw new Error("Sequencer must be active for the v0.3.27 visual regression.");
+    }
+
+    const lease1 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-a" });
+    const afterFirst = this.#selectionIndicator.getStats();
+    const lease2 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-b" });
+    const afterSecond = this.#selectionIndicator.getStats();
+    await lease1.release();
+    const afterFirstRelease = this.#selectionIndicator.getStats();
+    await lease2.release();
+    const afterSecondRelease = this.#selectionIndicator.getStats();
+
+    const leaseChecks = {
+      firstLeaseRendered: lease1.rendered === true,
+      firstLeaseStartedOneEffect: afterFirst.activeLeases === 1 && afterFirst.activeTokens === 1 && afterFirst.renderedTokens === 1,
+      secondLeaseSharedEffect: afterSecond.activeLeases === 2
+        && afterSecond.activeTokens === 1
+        && afterSecond.renderedTokens === 1
+        && afterSecond.effectsStarted === baseline.effectsStarted + 1,
+      firstReleaseKeptEffect: afterFirstRelease.activeLeases === 1
+        && afterFirstRelease.activeTokens === 1
+        && afterFirstRelease.renderedTokens === 1,
+      finalReleaseRemovedEffect: afterSecondRelease.activeLeases === 0
+        && afterSecondRelease.activeTokens === 0
+        && afterSecondRelease.renderedTokens === 0
+        && afterSecondRelease.effectsStopped === baseline.effectsStopped + 1
+    };
+
+    if (!Object.values(leaseChecks).every(Boolean)) {
+      const failed = { baseline, afterFirst, afterSecond, afterFirstRelease, afterSecondRelease, leaseChecks };
+      Logger.error("v0.3.27 selection-indicator lease regression failed.", failed);
+      throw new Error("Selection-indicator lease regression failed. See the console for details.");
+    }
+
+    ui?.notifications?.info?.("AE5E | Lease lifecycle passed. Keep the upcoming dialog open and inspect the controlled token from another connected client if available.");
+
+    const dialogResult = await this.#selectionIndicator.waitForDialog({
+      token,
+      reason: "v0.3.27-dialog",
+      config: {
+        window: { title: "AE5E 0.3.27 Selection Indicator Test" },
+        content: `
+          <div style="display:flex;flex-direction:column;gap:0.6rem;min-width:360px;">
+            <p><strong>Leave this dialog open while inspecting the controlled token.</strong></p>
+            <p>The indicator should be about 28% of the token width, centered on the token's upper-right corner so it partially overlaps the token.</p>
+            <p>If <code>eskie.ui.ability_check.d20.01.roll.default.green</code> exists, it should animate. Otherwise Foundry's <code>icons/vtt-512.png</code> should appear.</p>
+            <p>Other connected users viewing this Scene should see the indicator even though this dialog exists only on your client.</p>
+            <p>Close with either button or the window X. The indicator must disappear immediately when the dialog closes.</p>
+          </div>`,
+        buttons: [
+          { action: "complete", label: "Complete Selection", default: true },
+          { action: "cancel", label: "Cancel" }
+        ]
+      }
+    });
+
+    const finalStats = this.#selectionIndicator.getStats();
+    const cleanupPassed = finalStats.activeLeases === 0
+      && finalStats.activeTokens === 0
+      && finalStats.renderedTokens === 0;
+    const report = {
+      result: cleanupPassed ? "PASS" : "FAIL",
+      tokenUuid: token.document.uuid,
+      tokenName: token.name,
+      dialogResult,
+      leaseChecks,
+      baseline,
+      afterFirst,
+      afterSecond,
+      afterFirstRelease,
+      afterSecondRelease,
+      finalStats
+    };
+
+    Logger.info("AE5E 0.3.27 selection-indicator test", report);
+    ui?.notifications?.[cleanupPassed ? "info" : "error"]?.(
+      cleanupPassed
+        ? "AE5E | Selection indicator cleanup passed. Confirm visual size/position and multi-user visibility manually."
+        : "AE5E | Selection indicator cleanup failed. See the console."
+    );
+    return report;
   }
 
   async createTestRelationshipFromControlledTokens() {
