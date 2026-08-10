@@ -317,3 +317,20 @@ After a settled operation, queued/active relationship movement and rotation coun
 After isolated geometry tests, repeat representative cases with the user's normal Foundry module set. CPR/GPS coexistence remains a first-class project requirement even though neither is required. Pay particular attention to other modules registering `preMoveToken`, `moveToken`, `preUpdateToken`, `updateToken`, or Scene movement wrappers.
 
 Test isolation should distinguish an AE5E defect from another module altering the same Foundry lifecycle; do not build product behavior around test-only bypasses.
+
+## 0.3.26 Grapple-link obstruction regression
+
+Run only inside Foundry VTT as GM:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runGrappleLinkObstructionTest();
+```
+
+The harness requires exactly one token each named `Leader`, `Follower`, `Ally`, `Enemy`, `Neutral`, and `Secret`. It automatically snapshots/restores them on a complete pass, removes only AE5E test relationships and AE5E diagnostic walls, creates a 10-foot Grapple-like relationship, and verifies:
+
+1. a hostile creature intersecting only the Grapple link hard-blocks orbital movement using Leader-relative disposition semantics;
+2. a nonhostile creature occupying only the final Grapple link permits the orbit, starts the 3.5-second grace window, then restores the prior Follower shell plus Leader rotation if unresolved;
+3. a movement wall intersecting the Grapple-link sweep hard-blocks while the Follower body path remains clear.
+
+A failed fixture is intentionally left in place. No Node/npm behavioral test is a release gate for this project.

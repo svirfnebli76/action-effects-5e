@@ -235,3 +235,14 @@ Action Effects 5E is an independent implementation based on D&D5e rules and Foun
 ## Forced displacement semantics
 
 Push supports `AWAY` and `STRAIGHT_AWAY`. Pull is direct-line only: `displacement.pull()` always uses `STRAIGHT_TOWARD`, resolves the direction automatically, and never opens the destination selector.
+
+### Grapple-link obstruction (0.3.26)
+
+Grapple-like relationships can opt into `linkObstructionPolicy: "grapple"`. Orbital movement then evaluates Follower-body geometry independently from the physical Grapple link. The Follower body resolves third-party hostility relative to the Follower; the Grapple link resolves it relative to the Leader/Grappler. Hostile creatures and movement walls hard-block the link sweep. Nonhostile creatures may be swept through, but a nonhostile creature occupying the final link starts the same 3.5-second grace window used by relationship body overlap and rolls the entire last legal orbit state back if it remains unresolved.
+
+Foundry validation command:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runGrappleLinkObstructionTest();
+```

@@ -212,7 +212,19 @@ Player requests which mutate authoritative relationship state are GM-authorized 
 ## Current limits
 
 - Dynamic orbit geometry and v0.3.25 Push/Pull destination generation currently require a square Scene grid.
-- v0.3.25 provides displaced-body obstruction only. Physical `grapple-link` sweep/final-corridor obstruction is intentionally deferred to v0.3.26 and will use the Leader/Grappler as its relative-relationship reference.
+- v0.3.26 adds physical `grapple-link` sweep/final-corridor obstruction using the Leader/Grappler as its relative-relationship reference, while displaced-body obstruction continues to use the displaced/Follower token as reference.
 - Push/Pull item adapters (Unarmed Strike/Shove, grappling hooks, spells, etc.) are not bundled in v0.3.25; this build provides the reusable infrastructure they will call.
 - Creature-size eligibility, unarmed-strike reach derivation, Grappled/Grappler effects, escape/action economy, movement-resource charging for rotation, and the Prone popup integration belong to later Grapple rules/item work.
 - Fractional Tiny-token geometry is supported by the shell generator, but Foundry's occupied-grid-space distance API can collapse some sub-grid separations; live Tiny tests remain important before declaring final Grapple UX semantics.
+
+## Grapple-link geometry (0.3.26)
+
+Grapple-like relationships use three independent geometry channels during orbital movement:
+
+- `follower-body`: full Follower footprint; relative relationship reference is the Follower.
+- `grapple-link` sweep: the physical link swept from the prior legal state to the requested state; reference is the Leader/Grappler.
+- `grapple-link` final: the physical link at the requested endpoint; reference is the Leader/Grappler.
+
+The link is the exterior portion of the center-to-center ray after clipping it to both token footprints. Third-party creature intersection uses the complete third-party token footprint with a small non-zero link-width tolerance. The transition sweep is sampled at sub-grid intervals so the fan swept by a rotating link is evaluated rather than only its starting/final rays. Movement-wall obstruction uses Foundry v14's `CONFIG.Canvas.polygonBackends.move.testCollision` public collision backend.
+
+Hard conflicts always win. Hostile link sweep/final conflicts and wall intersections reject the orbit. Nonhostile sweep-only conflicts do not block. Nonhostile final-link conflicts share the relationship endpoint grace state and, if unresolved, restore both the prior Follower shell position and corresponding Leader rotation. Physical link handling is controlled by `linkObstructionPolicy`, defaulting to `grapple` only for Grapple / `grappleFollower` relationships and `none` otherwise.

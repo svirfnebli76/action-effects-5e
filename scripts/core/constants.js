@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.25";
+export const MODULE_VERSION = "0.3.26";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -134,6 +134,11 @@ export const RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES = Object.freeze({
 export const RELATIONSHIP_ROTATION_POLICIES = Object.freeze({
   NONE: "none",
   ORBIT_FOLLOWER: "orbitFollower"
+});
+
+export const RELATIONSHIP_LINK_OBSTRUCTION_POLICIES = Object.freeze({
+  NONE: "none",
+  GRAPPLE: "grapple"
 });
 
 export const RELATIONSHIP_GEOMETRY_CHANNELS = Object.freeze({

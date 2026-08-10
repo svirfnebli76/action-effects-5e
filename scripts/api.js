@@ -16,6 +16,7 @@ import {
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_GEOMETRY_CHANNELS,
+  RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
   RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS,
   RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
   RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
@@ -34,6 +35,7 @@ export class ActionEffects5eApi {
     relationshipMovement,
     relationshipRotation,
     relativeRelationships,
+    relationshipLinkObstructions,
     displacement,
     tests,
     socket
@@ -57,6 +59,7 @@ export class ActionEffects5eApi {
       RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
       RELATIONSHIP_ROTATION_POLICIES,
       RELATIONSHIP_GEOMETRY_CHANNELS,
+      RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
       RELATIVE_TOKEN_RELATIONSHIPS,
       RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
       RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS,
@@ -117,7 +120,9 @@ export class ActionEffects5eApi {
         otherToken,
         geometryChannel: options.geometryChannel ?? null
       }),
-      resolveRelativeRelationshipForGeometry: (options = {}) => relativeRelationships.resolveForGeometry(options)
+      resolveRelativeRelationshipForGeometry: (options = {}) => relativeRelationships.resolveForGeometry(options),
+      inspectGrappleLinkAtPosition: (options = {}) => relationshipLinkObstructions.inspectAtPosition(options),
+      inspectGrappleLinkSweep: (options = {}) => relationshipLinkObstructions.inspectSweep(options)
     });
 
     this.tests = Object.freeze({
@@ -135,7 +140,8 @@ export class ActionEffects5eApi {
       orbitCounterclockwise: (options) => tests.orbitCounterclockwise(options),
       runFollowerBodyDispositionMatrix: (options) => tests.runFollowerBodyDispositionMatrix(options),
       previewDisplacementFromControlledTokens: (options) => tests.previewDisplacementFromControlledTokens(options),
-      runDisplacementFoundationTest: (options) => tests.runDisplacementFoundationTest(options)
+      runDisplacementFoundationTest: (options) => tests.runDisplacementFoundationTest(options),
+      runGrappleLinkObstructionTest: (options) => tests.runGrappleLinkObstructionTest(options)
     });
 
     this.socket = Object.freeze({

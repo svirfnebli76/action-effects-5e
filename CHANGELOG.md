@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.26
+
+- Added relationship-specific physical Grapple-link obstruction geometry.
+- Grapple-like relationships now evaluate three independent spatial channels during orbit: Follower body, Grapple-link sweep, and Grapple-link final occupancy.
+- Grapple-link creature conflicts are classified relative to the Leader/Grappler while Follower-body conflicts remain relative to the Follower.
+- Hostile Grapple-link sweep/final conflicts hard-block the orbit; nonhostile sweep-only conflicts may pass.
+- Nonhostile final Grapple-link occupancy uses the existing 3.5-second relationship grace window and restores the previous Follower shell position plus matching Leader rotation if unresolved.
+- Added physical movement-wall collision checking for the Grapple link using Foundry v14's movement polygon collision backend.
+- Added `linkObstructionPolicy` with Grapple-aware defaults so physical link behavior is not applied to unrelated relationship types.
+- Added structured `grappleLink` diagnostics to rotation decisions and public link inspection helpers.
+- Added a Foundry-only automated Grapple-link obstruction regression covering hostile link blocking, nonhostile final-link grace/rollback, and wall blocking.
+
 ## 0.3.25 - Generic forced Push/Pull displacement foundation
 
 - Added relationship-independent forced displacement infrastructure for one-shot Push and Pull movement.

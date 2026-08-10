@@ -9,6 +9,7 @@ import {
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_GEOMETRY_CHANNELS,
+  RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIVE_TOKEN_RELATIONSHIPS,
   RELATIONSHIP_TYPES,
@@ -27,11 +28,12 @@ export class TestHarness {
   #relationshipMovement;
   #relationshipRotation;
   #relativeRelationships;
+  #relationshipLinkObstructions;
   #displacement;
   #socket;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, displacement, socket }) {
+  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -39,6 +41,7 @@ export class TestHarness {
     this.#relationshipMovement = relationshipMovement;
     this.#relationshipRotation = relationshipRotation;
     this.#relativeRelationships = relativeRelationships;
+    this.#relationshipLinkObstructions = relationshipLinkObstructions;
     this.#displacement = displacement;
     this.#socket = socket;
   }
@@ -1467,6 +1470,327 @@ export class TestHarness {
       passed
         ? "AE5E | Displacement foundation test PASSED."
         : "AE5E | Displacement foundation test FAILED."
+    );
+    return report;
+  }
+
+  async runGrappleLinkObstructionTest({ restoreOnPass = true, graceBufferMs = 800 } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    if (!game.user?.isGM) throw new Error("The Grapple-link obstruction test requires a GM user.");
+    if (!this.#relationshipLinkObstructions) throw new Error("The Grapple-link obstruction service is unavailable.");
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const banner = (text, color = "#7ddcff", size = 24) => {
+      console.log(`%c${text}`, `font-size:${size}px;font-weight:bold;color:${color};`);
+    };
+    const D = globalThis.CONST?.TOKEN_DISPOSITIONS;
+    if (!D) throw new Error("Foundry token disposition constants are unavailable.");
+
+    const names = ["Leader", "Follower", "Ally", "Enemy", "Neutral", "Secret"];
+    const tokens = {};
+    for (const name of names) {
+      const matches = canvas.tokens.placeables.filter((token) => token.document.name === name);
+      if (matches.length !== 1) throw new Error(`Expected exactly one '${name}' token on the active Scene; found ${matches.length}.`);
+      tokens[name] = matches[0].document;
+    }
+
+    const snapshots = Object.fromEntries(names.map((name) => {
+      const token = tokens[name];
+      return [name, {
+        _id: token.id,
+        x: token.x,
+        y: token.y,
+        width: token.width,
+        height: token.height,
+        rotation: token.rotation,
+        elevation: token.elevation,
+        disposition: token.disposition
+      }];
+    }));
+
+    const movementActions = globalThis.CONFIG?.Token?.movement?.actions;
+    const entries = movementActions?.entries ? [...movementActions.entries()] : Object.entries(movementActions ?? {});
+    const teleportAction = entries.find(([, config]) => config?.teleport === true)?.[0] ?? null;
+    if (!teleportAction) throw new Error("AE5E Grapple-link test requires a Foundry teleport movement action for deterministic fixture placement.");
+
+    const fixtureMove = async (token, { x, y, elevation = 0 }) => {
+      let current = canvas.scene.tokens.get(token.id);
+      if (current.x === x && current.y === y && Number(current.elevation ?? 0) === Number(elevation)) return current;
+      await current.move({ x, y, elevation, action: teleportAction, explicit: true, checkpoint: true }, {
+        method: "api",
+        animate: false,
+        showRuler: false,
+        pan: false,
+        autoRotate: false,
+        constrainOptions: { ignoreWalls: true, ignoreCost: true, ignoreTokens: true },
+        ...this.#movement.createOperationOptions({
+          pathType: "reposition",
+          agency: "administrative",
+          resource: "none",
+          movementMode: teleportAction,
+          administrative: true,
+          generatedBy: MODULE_ID,
+          internal: true,
+          suppressAutomation: true,
+          testFixture: true
+        })
+      });
+      await wait(90);
+      current = canvas.scene.tokens.get(token.id);
+      if (current.x !== x || current.y !== y || Number(current.elevation ?? 0) !== Number(elevation)) {
+        throw new Error(`FIXTURE FAIL | ${token.name} expected (${x},${y},${elevation}); actual (${current.x},${current.y},${current.elevation}).`);
+      }
+      return current;
+    };
+
+    const removeHarnessRelationships = async () => {
+      const relationships = this.#relationships.list({ sceneId: canvas.scene.id, type: RELATIONSHIP_TYPES.TEST })
+        .filter((relationship) => relationship.metadata?.createdByTestHarness === true);
+      for (const relationship of relationships) await this.#relationships.remove(relationship.id);
+    };
+
+    const removeDiagnosticWalls = async () => {
+      const ids = canvas.scene.walls
+        .filter((wall) => wall.getFlag(MODULE_ID, "grappleLinkDiagnosticWall") === true)
+        .map((wall) => wall.id);
+      if (ids.length) await canvas.scene.deleteEmbeddedDocuments("Wall", ids);
+    };
+
+    const ensureNoUnrelatedParticipantRelationships = () => {
+      const participants = new Set([tokens.Leader.uuid, tokens.Follower.uuid]);
+      const conflicts = this.#relationships.list({ sceneId: canvas.scene.id }).filter((relationship) => (
+        participants.has(relationship.leaderUuid) || participants.has(relationship.followerUuid)
+      ) && !(relationship.type === RELATIONSHIP_TYPES.TEST && relationship.metadata?.createdByTestHarness === true));
+      if (conflicts.length) throw new Error(`Leader/Follower participate in ${conflicts.length} non-test relationship(s). Remove them before the Grapple-link test.`);
+    };
+
+    const basePositions = {
+      Leader: { x: 2200, y: 2800, elevation: 0 },
+      Follower: { x: 2400, y: 2800, elevation: 0 },
+      Ally: { x: 3400, y: 2400, elevation: 0 },
+      Enemy: { x: 3600, y: 2400, elevation: 0 },
+      Neutral: { x: 3400, y: 2600, elevation: 0 },
+      Secret: { x: 3600, y: 2600, elevation: 0 }
+    };
+
+    const configureBase = async () => {
+      await removeHarnessRelationships();
+      await removeDiagnosticWalls();
+      await canvas.scene.updateEmbeddedDocuments("Token", [
+        { _id: tokens.Leader.id, width: 1, height: 1, rotation: 15, disposition: D.FRIENDLY },
+        { _id: tokens.Follower.id, width: 1, height: 1, rotation: 0, disposition: D.HOSTILE },
+        { _id: tokens.Ally.id, width: 1, height: 1, rotation: 0, disposition: D.HOSTILE },
+        { _id: tokens.Enemy.id, width: 1, height: 1, rotation: 0, disposition: D.FRIENDLY },
+        { _id: tokens.Neutral.id, width: 1, height: 1, rotation: 0, disposition: D.NEUTRAL },
+        { _id: tokens.Secret.id, width: 1, height: 1, rotation: 0, disposition: D.SECRET }
+      ], { animate: false, ae5eGrappleLinkTestSetup: true });
+      for (const [name, position] of Object.entries(basePositions)) {
+        await fixtureMove(canvas.scene.tokens.get(tokens[name].id), position);
+      }
+      canvas.tokens.releaseAll();
+      canvas.tokens.get(tokens.Leader.id)?.control({ releaseOthers: true, force: true, pan: false });
+      canvas.tokens.get(tokens.Follower.id)?.control({ releaseOthers: false, force: true, pan: false });
+      const relationship = await this.createGrappleMovementTestRelationshipFromControlledTokens({
+        breakDistance: 10,
+        coordinationDistance: 10
+      });
+      canvas.tokens.releaseAll();
+      canvas.tokens.get(tokens.Leader.id)?.control({ releaseOthers: true, force: true, pan: false });
+      await wait(125);
+      const geometry = await this.inspectRelationshipGeometry({ relationshipId: relationship.id });
+      if (!geometry?.clockwiseCandidate) throw new Error("Grapple-link fixture has no clockwise orbit candidate.");
+      return { relationship, geometry, target: geometry.clockwiseCandidate };
+    };
+
+    const angleDiff = (a, b) => Math.abs(((Number(a) - Number(b) + 540) % 360) - 180);
+    const pendingGrace = () => {
+      const stats = this.#relationshipRotation.getStats();
+      return stats?.pendingNonhostileOverlaps ?? stats?.pendingAlliedOverlaps ?? 0;
+    };
+    const queuesClear = () => {
+      const stats = this.#relationshipRotation.getStats();
+      return (stats.pendingEvents ?? 0) === 0 && (stats.processingRelationships ?? 0) === 0 && (stats.activeGmRequests ?? 0) === 0;
+    };
+
+    const results = [];
+    let failure = null;
+    let passed = false;
+
+    try {
+      banner("AE5E 0.3.26 — GRAPPLE-LINK OBSTRUCTION", "#7ddcff", 30);
+      banner("LEADER-RELATIVE CREATURES + LINK SWEEP + FINAL GRACE + WALLS", "#ffcc66", 18);
+      ensureNoUnrelatedParticipantRelationships();
+      await removeHarnessRelationships();
+      await removeDiagnosticWalls();
+
+      // ------------------------------------------------------
+      // Case 1: hostile creature intersects only the final link.
+      // Leader is Friendly, so Hostile Ally must hard-block.
+      // ------------------------------------------------------
+      let fixture = await configureBase();
+      await fixtureMove(canvas.scene.tokens.get(tokens.Ally.id), { x: 2300, y: 2900, elevation: 0 });
+      const targetLink1 = this.#relationshipLinkObstructions.inspectAtPosition({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        followerPosition: fixture.target
+      });
+      const allyLinkConflict = targetLink1.hostile.find((entry) => entry.otherUuid === tokens.Ally.uuid);
+      const hardResult = await this.orbitClockwise({ relationshipId: fixture.relationship.id });
+      await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
+      await wait(175);
+      const hardGeometry = await this.inspectRelationshipGeometry({ relationshipId: fixture.relationship.id });
+      const hardStats = this.#relationshipRotation.getStats();
+      const hardChecks = {
+        targetLinkHostile: Boolean(allyLinkConflict),
+        leaderReference: allyLinkConflict?.referenceUuid === tokens.Leader.uuid,
+        linkGeometry: allyLinkConflict?.geometryChannel === RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+        movementRejected: hardResult?.completed === false,
+        obstructionIsLink: hardStats.lastDecision?.obstruction?.geometryChannel === RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+        followerStayed: hardGeometry.follower.x === fixture.geometry.follower.x && hardGeometry.follower.y === fixture.geometry.follower.y,
+        leaderRestored: angleDiff(hardGeometry.leader.rotation, fixture.geometry.leader.rotation) < 0.001,
+        noGrace: pendingGrace() === 0,
+        queuesClear: queuesClear()
+      };
+      results.push({ name: "hostile final Grapple-link hard block", passed: Object.values(hardChecks).every(Boolean), checks: hardChecks, result: hardResult, targetLink: targetLink1 });
+      if (!results.at(-1).passed) throw new Error("Hostile Grapple-link hard-block checks failed.");
+      banner("HOSTILE FINAL LINK — HARD BLOCK PASS", "#5cff8d", 21);
+
+      // ------------------------------------------------------
+      // Case 2: nonhostile creature intersects only final link.
+      // Same-side Enemy (Friendly disposition) is nonhostile to
+      // Friendly Leader, so orbit completes, grace starts, then
+      // full orbit state rolls back after 3.5 seconds.
+      // ------------------------------------------------------
+      fixture = await configureBase();
+      await fixtureMove(canvas.scene.tokens.get(tokens.Enemy.id), { x: 2300, y: 2900, elevation: 0 });
+      const targetLink2 = this.#relationshipLinkObstructions.inspectAtPosition({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        followerPosition: fixture.target
+      });
+      const enemyLinkConflict = targetLink2.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+      const softResult = await this.orbitClockwise({ relationshipId: fixture.relationship.id });
+      await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
+      await wait(200);
+      const softImmediate = await this.inspectRelationshipGeometry({ relationshipId: fixture.relationship.id });
+      const softStats = this.#relationshipRotation.getStats();
+      const decisionLinkConflict = softStats.lastDecision?.grappleLink?.endpointConflicts?.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+      const softEntryChecks = {
+        targetLinkNonhostile: Boolean(enemyLinkConflict),
+        leaderReference: enemyLinkConflict?.referenceUuid === tokens.Leader.uuid,
+        movementCompleted: softResult?.completed === true,
+        followerReachedTarget: softImmediate.follower.x === fixture.target.x && softImmediate.follower.y === fixture.target.y,
+        linkConflictRecorded: decisionLinkConflict?.relationship === RELATIVE_TOKEN_RELATIONSHIPS.NONHOSTILE,
+        bodyConflictAbsent: (softStats.lastDecision?.followerBody?.endpointConflicts?.length ?? 0) === 0,
+        graceStarted: pendingGrace() >= 1,
+        queuesClear: queuesClear()
+      };
+      if (!Object.values(softEntryChecks).every(Boolean)) {
+        results.push({ name: "nonhostile final Grapple-link grace", passed: false, stage: "entry", checks: softEntryChecks, result: softResult, stats: softStats });
+        throw new Error("Nonhostile Grapple-link grace entry checks failed.");
+      }
+      banner("NONHOSTILE FINAL LINK — GRACE ACTIVE", "#ffcc66", 20);
+      await wait(3500 + graceBufferMs);
+      await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
+      await wait(125);
+      const softAfter = await this.inspectRelationshipGeometry({ relationshipId: fixture.relationship.id });
+      const softRollbackChecks = {
+        followerRestored: softAfter.follower.x === fixture.geometry.follower.x && softAfter.follower.y === fixture.geometry.follower.y,
+        shellRestored: softAfter.currentOrbitIndex === fixture.geometry.currentOrbitIndex,
+        leaderRestored: angleDiff(softAfter.leader.rotation, fixture.geometry.leader.rotation) < 0.001,
+        graceCleared: pendingGrace() === 0,
+        queuesClear: queuesClear()
+      };
+      results.push({ name: "nonhostile final Grapple-link grace", passed: Object.values(softRollbackChecks).every(Boolean), entryChecks: softEntryChecks, rollbackChecks: softRollbackChecks, result: softResult });
+      if (!results.at(-1).passed) throw new Error("Nonhostile Grapple-link rollback checks failed.");
+      banner("NONHOSTILE LINK → 3.5s GRACE → FULL STATE ROLLBACK — PASS", "#5cff8d", 21);
+
+      // ------------------------------------------------------
+      // Case 3: a movement wall intersects the link sweep/final
+      // geometry while the Follower body path remains clear.
+      // ------------------------------------------------------
+      fixture = await configureBase();
+      const createdWalls = await canvas.scene.createEmbeddedDocuments("Wall", [{
+        c: [2350, 2880, 2350, 2940],
+        flags: { [MODULE_ID]: { grappleLinkDiagnosticWall: true } }
+      }]);
+      await wait(150);
+      const wallSweep = this.#relationshipLinkObstructions.inspectSweep({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        fromPosition: fixture.geometry.follower,
+        toPosition: fixture.target
+      });
+      const wallResult = await this.orbitClockwise({ relationshipId: fixture.relationship.id });
+      await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
+      await wait(175);
+      const wallGeometry = await this.inspectRelationshipGeometry({ relationshipId: fixture.relationship.id });
+      const wallStats = this.#relationshipRotation.getStats();
+      const wallChecks = {
+        diagnosticWallCreated: createdWalls.length === 1,
+        linkWallDetected: wallSweep.wallBlocked === true,
+        movementRejected: wallResult?.completed === false,
+        obstructionIsLink: wallStats.lastDecision?.obstruction?.geometryChannel === RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+        wallReason: ["grapple-link-wall", "grapple-link-wall-preflight-unavailable"].includes(wallStats.lastDecision?.obstruction?.reasonCode),
+        followerStayed: wallGeometry.follower.x === fixture.geometry.follower.x && wallGeometry.follower.y === fixture.geometry.follower.y,
+        leaderRestored: angleDiff(wallGeometry.leader.rotation, fixture.geometry.leader.rotation) < 0.001,
+        noGrace: pendingGrace() === 0,
+        queuesClear: queuesClear()
+      };
+      results.push({ name: "Grapple-link wall hard block", passed: Object.values(wallChecks).every(Boolean), checks: wallChecks, result: wallResult, sweep: wallSweep });
+      if (!results.at(-1).passed) throw new Error("Grapple-link wall checks failed.");
+      banner("GRAPPLE-LINK WALL — HARD BLOCK PASS", "#5cff8d", 21);
+
+      await removeDiagnosticWalls();
+      passed = results.every((entry) => entry.passed === true);
+    } catch (error) {
+      failure = { message: error?.message ?? String(error), stack: error?.stack ?? null };
+      passed = false;
+    }
+
+    const summary = results.map((entry, index) => ({ case: index + 1, test: entry.name, result: entry.passed ? "PASS" : "FAIL" }));
+    if (passed) {
+      banner("AE5E 0.3.26 GRAPPLE-LINK OBSTRUCTION — PASS", "#5cff8d", 30);
+      console.table(summary);
+      if (restoreOnPass) {
+        await removeHarnessRelationships();
+        await removeDiagnosticWalls();
+        await canvas.scene.updateEmbeddedDocuments("Token", Object.values(snapshots).map((snapshot) => ({
+          _id: snapshot._id,
+          width: snapshot.width,
+          height: snapshot.height,
+          rotation: snapshot.rotation,
+          disposition: snapshot.disposition
+        })), { animate: false, ae5eGrappleLinkTestRestore: true });
+        for (const snapshot of Object.values(snapshots)) {
+          await fixtureMove(canvas.scene.tokens.get(snapshot._id), { x: snapshot.x, y: snapshot.y, elevation: snapshot.elevation });
+        }
+        canvas.tokens.releaseAll();
+        banner("PASS CLEANUP COMPLETE — ORIGINAL TOKEN STATES RESTORED", "#5cff8d", 18);
+      }
+    } else {
+      banner("AE5E 0.3.26 GRAPPLE-LINK OBSTRUCTION — FAIL", "#ff5c5c", 30);
+      if (failure) console.error("FAILURE", failure);
+      console.table(summary);
+      console.log("The failing Grapple-link fixture was intentionally left in place for inspection.");
+    }
+
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      failure,
+      teleportFixtureAction: teleportAction,
+      casesCompleted: results.length,
+      summary,
+      results,
+      rotationStats: this.#relationshipRotation.getStats()
+    };
+    console.log("%cAE5E 0.3.26 GRAPPLE-LINK OBSTRUCTION — FULL RESULT", "font-size:20px;font-weight:bold;color:#7ddcff;");
+    console.log(JSON.stringify(report, null, 2));
+    ui?.notifications?.[passed ? "info" : "error"]?.(
+      passed ? "AE5E | Grapple-link obstruction test PASSED." : "AE5E | Grapple-link obstruction test FAILED."
     );
     return report;
   }

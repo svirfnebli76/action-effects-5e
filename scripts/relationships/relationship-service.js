@@ -7,6 +7,7 @@ import {
   RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
+  RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
   SCENE_RELATIONSHIPS_FLAG,
@@ -321,6 +322,11 @@ export class RelationshipService {
       rotationPolicy: Object.values(RELATIONSHIP_ROTATION_POLICIES).includes(data.rotationPolicy)
         ? data.rotationPolicy
         : RELATIONSHIP_ROTATION_POLICIES.NONE,
+      linkObstructionPolicy: Object.values(RELATIONSHIP_LINK_OBSTRUCTION_POLICIES).includes(data.linkObstructionPolicy)
+        ? data.linkObstructionPolicy
+        : ((type === RELATIONSHIP_TYPES.GRAPPLE || attachmentMode === ATTACHMENT_MODES.GRAPPLE_FOLLOWER)
+          ? RELATIONSHIP_LINK_OBSTRUCTION_POLICIES.GRAPPLE
+          : RELATIONSHIP_LINK_OBSTRUCTION_POLICIES.NONE),
       ...this.#normalizeNonhostileEndpointPolicy(data),
       // coordinationDistance is the planar band which coordinated dragging
       // and orbiting preserve. It is intentionally separate from breakDistance:

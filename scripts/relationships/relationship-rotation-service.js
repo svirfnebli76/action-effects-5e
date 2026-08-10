@@ -1,4 +1,5 @@
 import {
+  ATTACHMENT_MODES,
   COLLISION_POLICIES,
   HOOKS,
   MODULE_ID,
@@ -7,9 +8,11 @@ import {
   OPERATION_METADATA_KEY,
   PATH_TYPES,
   RELATIONSHIP_GEOMETRY_CHANNELS,
+  RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
   RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS,
   RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
+  RELATIONSHIP_TYPES,
   RELATIVE_TOKEN_RELATIONSHIPS
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
@@ -37,6 +40,7 @@ export class RelationshipRotationService {
   #relationships;
   #movement;
   #relativeRelationships;
+  #linkObstructions;
   #initialized = false;
   #wheelWrapperRegistered = false;
   #hookIds = [];
@@ -47,11 +51,12 @@ export class RelationshipRotationService {
   #pendingNonhostileOverlaps = new Map();
   #lastDecision = null;
 
-  constructor({ socket, relationships, movement, relativeRelationships = new RelativeTokenRelationshipService() }) {
+  constructor({ socket, relationships, movement, relativeRelationships = new RelativeTokenRelationshipService(), linkObstructions = null }) {
     this.#socket = socket;
     this.#relationships = relationships;
     this.#movement = movement;
     this.#relativeRelationships = relativeRelationships;
+    this.#linkObstructions = linkObstructions;
     this.#socket.register("relationships.orbitFollower", this.#orbitFollowerAsGM.bind(this));
   }
 
@@ -795,13 +800,24 @@ export class RelationshipRotationService {
         explicit: true
       }];
       const preflight = this.#preflightFollowerPath({ scene, follower, leader, waypoints });
-      if (preflight.blocked) {
+      const grappleLinkPreflight = this.#preflightGrappleLink({
+        scene,
+        relationship,
+        leader,
+        follower,
+        fromPosition: request.followerPosition,
+        toPosition: waypoints.at(-1)
+      });
+      const blockingPreflight = preflight.blocked ? preflight : (grappleLinkPreflight.blocked ? grappleLinkPreflight : null);
+      if (blockingPreflight) {
         if (relationship.collisionPolicy === COLLISION_POLICIES.DETACH) {
           await this.#relationships.removeManyAsGM([relationship.id]);
           return {
             completed: false,
             detached: true,
-            obstruction: duplicateSafely(preflight),
+            obstruction: duplicateSafely(blockingPreflight),
+            followerBody: duplicateSafely(preflight),
+            grappleLink: duplicateSafely(grappleLinkPreflight),
             message: `${follower.name ?? "The follower token"} cannot orbit through that path, so the relationship was detached.`,
             leaderRotation: leaderRotationAfter
           };
@@ -815,15 +831,21 @@ export class RelationshipRotationService {
           completed: false,
           collision: true,
           leaderRotation,
-          obstruction: preflight
+          obstruction: blockingPreflight,
+          followerBody: { geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY, preflight: duplicateSafely(preflight), endpointConflicts: [] },
+          grappleLink: { geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK, preflight: duplicateSafely(grappleLinkPreflight), endpointConflicts: [] }
         });
         return {
           completed: false,
           collision: true,
           rolledBackRotation: true,
           leaderRotation,
-          obstruction: duplicateSafely(preflight),
-          message: `${follower.name ?? "The follower token"} cannot orbit through that path because it is blocked.`
+          obstruction: duplicateSafely(blockingPreflight),
+          followerBody: duplicateSafely(preflight),
+          grappleLink: duplicateSafely(grappleLinkPreflight),
+          message: blockingPreflight.geometryChannel === RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK
+            ? "The grapple link cannot pass through that obstruction."
+            : `${follower.name ?? "The follower token"} cannot orbit through that path because it is blocked.`
         };
       }
 
@@ -916,7 +938,16 @@ export class RelationshipRotationService {
         followerToken: follower,
         otherToken: candidate
       }));
-      if (nonhostileOccupants.length && this.#nonhostileEndpointPolicy(relationship) === RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES.GRACE) {
+      const grappleLinkEndpoint = this.#inspectGrappleLinkEndpoint({
+        scene,
+        relationship,
+        leader,
+        follower,
+        destination: followerWaypoints.at(-1)
+      });
+      const grappleLinkEndpointConflicts = grappleLinkEndpoint.nonhostile ?? [];
+      const allEndpointConflicts = [...endpointConflicts, ...grappleLinkEndpointConflicts];
+      if (allEndpointConflicts.length && this.#nonhostileEndpointPolicy(relationship) === RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES.GRACE) {
         this.#schedulePendingNonhostileOverlap({
           relationship,
           requester,
@@ -925,7 +956,8 @@ export class RelationshipRotationService {
           anchorFollowerPosition: request.followerPosition,
           anchorLeaderRotation: leaderRotationBefore,
           overlapPosition: followerWaypoints.at(-1),
-          occupantUuids: nonhostileOccupants.map((token) => token.uuid)
+          occupantUuids: allEndpointConflicts.map((entry) => entry.otherUuid ?? entry.blockerUuid).filter(Boolean),
+          geometryChannels: [...new Set(allEndpointConflicts.map((entry) => entry.geometryChannel).filter(Boolean))]
         });
       } else {
         this.#clearPendingNonhostileOverlap(relationship.id, "orbit-ended-clear");
@@ -941,6 +973,12 @@ export class RelationshipRotationService {
           geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY,
           preflight: duplicateSafely(preflight),
           endpointConflicts: duplicateSafely(endpointConflicts)
+        },
+        grappleLink: {
+          geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+          preflight: duplicateSafely(grappleLinkPreflight),
+          endpoint: duplicateSafely(grappleLinkEndpoint),
+          endpointConflicts: duplicateSafely(grappleLinkEndpointConflicts)
         }
       });
       Logger.debug("Relationship orbital shell step completed", {
@@ -1118,6 +1156,37 @@ export class RelationshipRotationService {
       }));
   }
 
+  #linkObstructionPolicy(relationship) {
+    const configured = relationship?.linkObstructionPolicy;
+    if (Object.values(RELATIONSHIP_LINK_OBSTRUCTION_POLICIES).includes(configured)) return configured;
+    if (relationship?.type === RELATIONSHIP_TYPES.GRAPPLE || relationship?.attachmentMode === ATTACHMENT_MODES.GRAPPLE_FOLLOWER) {
+      return RELATIONSHIP_LINK_OBSTRUCTION_POLICIES.GRAPPLE;
+    }
+    return RELATIONSHIP_LINK_OBSTRUCTION_POLICIES.NONE;
+  }
+
+  #preflightGrappleLink({ scene, relationship, leader, follower, fromPosition, toPosition }) {
+    const geometryChannel = RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK;
+    if (this.#linkObstructionPolicy(relationship) !== RELATIONSHIP_LINK_OBSTRUCTION_POLICIES.GRAPPLE) {
+      return { blocked: false, geometryChannel, reasonCode: "policy-disabled", wallBlocked: false, conflicts: [], hostile: [], nonhostile: [], samples: [] };
+    }
+    if (!this.#linkObstructions?.inspectSweep) {
+      return { blocked: true, geometryChannel, reasonCode: "link-preflight-unavailable", wallBlocked: false, conflicts: [], hostile: [], nonhostile: [], samples: [] };
+    }
+    return this.#linkObstructions.inspectSweep({ scene, leader, follower, fromPosition, toPosition });
+  }
+
+  #inspectGrappleLinkEndpoint({ scene, relationship, leader, follower, destination }) {
+    const geometryChannel = RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK;
+    if (this.#linkObstructionPolicy(relationship) !== RELATIONSHIP_LINK_OBSTRUCTION_POLICIES.GRAPPLE) {
+      return { geometryChannel, segment: null, wallBlocked: false, wallCheckAvailable: true, conflicts: [], hostile: [], nonhostile: [] };
+    }
+    if (!this.#linkObstructions?.inspectAtPosition) {
+      return { geometryChannel, segment: null, wallBlocked: true, wallCheckAvailable: false, wallReasonCode: "link-preflight-unavailable", conflicts: [], hostile: [], nonhostile: [] };
+    }
+    return this.#linkObstructions.inspectAtPosition({ scene, leader, follower, followerPosition: destination });
+  }
+
   #nonhostileEndpointPolicy(relationship) {
     const configured = relationship?.nonhostileEndpointPolicy ?? relationship?.alliedEndpointPolicy;
     return Object.values(RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES).includes(configured)
@@ -1210,7 +1279,8 @@ export class RelationshipRotationService {
     anchorFollowerPosition,
     anchorLeaderRotation,
     overlapPosition,
-    occupantUuids = []
+    occupantUuids = [],
+    geometryChannels = []
   }) {
     const existing = this.#pendingNonhostileOverlaps.get(relationship.id);
     const serial = (existing?.serial ?? 0) + 1;
@@ -1226,6 +1296,7 @@ export class RelationshipRotationService {
       anchorLeaderRotation: existing?.anchorLeaderRotation ?? RelationshipOrbitPlanner.normalizeRotation(anchorLeaderRotation),
       overlapPosition: duplicateSafely(overlapPosition),
       occupantUuids: [...new Set(occupantUuids)],
+      geometryChannels: [...new Set(geometryChannels)],
       graceMs: this.#nonhostileEndpointGraceMs(relationship),
       serial,
       timeoutId: null
@@ -1241,7 +1312,8 @@ export class RelationshipRotationService {
       leaderUuid: leader.uuid,
       followerUuid: follower.uuid,
       graceMs: entry.graceMs,
-      occupantUuids: entry.occupantUuids
+      occupantUuids: entry.occupantUuids,
+      geometryChannels: entry.geometryChannels
     });
   }
 
@@ -1302,7 +1374,14 @@ export class RelationshipRotationService {
       leader,
       destination: { x: follower.x, y: follower.y, elevation: follower.elevation }
     });
-    if (!occupants.length) {
+    const linkEndpoint = this.#inspectGrappleLinkEndpoint({
+      scene,
+      relationship,
+      leader,
+      follower,
+      destination: { x: follower.x, y: follower.y, elevation: follower.elevation }
+    });
+    if (!occupants.length && !(linkEndpoint.nonhostile?.length)) {
       this.#clearPendingNonhostileOverlap(relationshipId, "overlap-cleared");
       return;
     }
@@ -1318,6 +1397,7 @@ export class RelationshipRotationService {
       requestId
     });
     await this.#rollbackLeaderRotation(leader, entry.anchorLeaderRotation, requestId);
+    ui?.notifications?.warn?.("Grapple movement reversed. The grapple cannot remain positioned through a nonhostile creature's space.");
 
     Logger.debug("Relationship orbit nonhostile endpoint grace expired; restored the last legal orbit state", {
       relationshipId,

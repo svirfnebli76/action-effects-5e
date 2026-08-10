@@ -9,6 +9,7 @@ import { MovementService } from "./movement/movement-service.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
+import { RelationshipLinkObstructionService } from "./relationships/relationship-link-obstruction-service.js";
 import { RelativeTokenRelationshipService } from "./relationships/relative-token-relationship-service.js";
 import { DisplacementDirectionService } from "./displacement/displacement-direction-service.js";
 import { MovementObstructionService } from "./displacement/movement-obstruction-service.js";
@@ -44,6 +45,7 @@ const displacement = new DisplacementService({
   overlay: displacementOverlay,
   grace: displacementGrace
 });
+const relationshipLinkObstructions = new RelationshipLinkObstructionService({ relativeRelationships });
 const relationshipMovement = new RelationshipMovementService({
   socket,
   relationships,
@@ -53,7 +55,8 @@ const relationshipRotation = new RelationshipRotationService({
   socket,
   relationships,
   movement,
-  relativeRelationships
+  relativeRelationships,
+  linkObstructions: relationshipLinkObstructions
 });
 const tests = new TestHarness({
   dependencies,
@@ -63,6 +66,7 @@ const tests = new TestHarness({
   relationshipMovement,
   relationshipRotation,
   relativeRelationships,
+  relationshipLinkObstructions,
   displacement,
   socket
 });
@@ -74,6 +78,7 @@ const api = new ActionEffects5eApi({
   relationshipMovement,
   relationshipRotation,
   relativeRelationships,
+  relationshipLinkObstructions,
   displacement,
   tests,
   socket
