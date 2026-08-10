@@ -11,6 +11,7 @@
 - Added `linkObstructionPolicy` with Grapple-aware defaults so physical link behavior is not applied to unrelated relationship types.
 - Added structured `grappleLink` diagnostics to rotation decisions and public link inspection helpers.
 - Added a Foundry-only automated Grapple-link obstruction regression covering hostile final-link blocking, nonhostile final-link grace/rollback, wall blocking, nonhostile sweep-only pass-through, hostile sweep-only blocking, and dual body/link hard-conflict precedence.
+- Corrected the Foundry-only sweep-only regression fixture after validation showed the original 0.5x0.5 search footprint could not fit inside the narrow swept-link fan without also touching an endpoint link. The harness now uses a deterministic 0.25x0.25 diagnostic footprint and explicitly verifies initial-link clear, mid-sweep intersection, and final-link clear before exercising production movement.
 
 ## 0.3.25 - Generic forced Push/Pull displacement foundation
 

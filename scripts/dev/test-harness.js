@@ -1748,54 +1748,71 @@ export class TestHarness {
       // Case 4: nonhostile creature intersects the Grapple-link
       // only during the swept transition. It must be allowed to
       // pass with NO endpoint grace because the final link is
-      // clear. A 0.5x0.5 fixture lets us isolate the sweep fan
-      // from both the final link and the Follower body path.
+      // clear.
+      //
+      // The 10-foot orbit fixture sweeps a deliberately narrow
+      // fan. A 0.5x0.5 token is physically too tall (once the
+      // link-width padding is included) to occupy that fan while
+      // remaining clear of both the initial and final link. Use a
+      // deterministic 0.25x0.25 diagnostic footprint centered in
+      // the interior of the swept fan instead of searching a
+      // coarse set of positions. This is test-fixture geometry
+      // only; production Grapple-link collision remains unchanged.
       // ------------------------------------------------------
       fixture = await configureBase();
       await canvas.scene.updateEmbeddedDocuments("Token", [{
         _id: tokens.Enemy.id,
-        width: 0.5,
-        height: 0.5,
+        width: 0.25,
+        height: 0.25,
         disposition: D.FRIENDLY
       }], { animate: false, ae5eGrappleLinkSweepFixture: true });
       await wait(90);
 
-      const sweepSearchPositions = [];
-      for (let y = 2750; y <= 3000; y += 25) {
-        sweepSearchPositions.push({ x: 2300, y, elevation: 0 });
-        sweepSearchPositions.push({ x: 2325, y, elevation: 0 });
-      }
+      const sweepOnlyPosition = { x: 2345, y: 2860, elevation: 0 };
+      await fixtureMove(canvas.scene.tokens.get(tokens.Enemy.id), sweepOnlyPosition);
 
-      let sweepOnlyFixture = null;
-      for (const position of sweepSearchPositions) {
-        await fixtureMove(canvas.scene.tokens.get(tokens.Enemy.id), position);
-        const sweepInspection = this.#relationshipLinkObstructions.inspectSweep({
-          scene: canvas.scene,
-          leader: canvas.scene.tokens.get(tokens.Leader.id),
-          follower: canvas.scene.tokens.get(tokens.Follower.id),
-          fromPosition: fixture.geometry.follower,
-          toPosition: fixture.target
-        });
-        const endpointInspection = this.#relationshipLinkObstructions.inspectAtPosition({
-          scene: canvas.scene,
-          leader: canvas.scene.tokens.get(tokens.Leader.id),
-          follower: canvas.scene.tokens.get(tokens.Follower.id),
-          followerPosition: fixture.target
-        });
-        const sweepConflict = sweepInspection.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
-        const endpointConflict = endpointInspection.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
-        if (sweepConflict && !endpointConflict && sweepConflict.firstSampleT > 0 && sweepConflict.firstSampleT < 1) {
-          sweepOnlyFixture = {
-            position: { ...position },
-            sweep: sweepInspection,
-            endpoint: endpointInspection,
-            conflict: sweepConflict
-          };
-          break;
-        }
-      }
+      const sweepInspection = this.#relationshipLinkObstructions.inspectSweep({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        fromPosition: fixture.geometry.follower,
+        toPosition: fixture.target
+      });
+      const endpointInspection = this.#relationshipLinkObstructions.inspectAtPosition({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        followerPosition: fixture.target
+      });
+      const initialInspection = this.#relationshipLinkObstructions.inspectAtPosition({
+        scene: canvas.scene,
+        leader: canvas.scene.tokens.get(tokens.Leader.id),
+        follower: canvas.scene.tokens.get(tokens.Follower.id),
+        followerPosition: fixture.geometry.follower
+      });
+      const sweepConflict = sweepInspection.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+      const endpointConflict = endpointInspection.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+      const initialConflict = initialInspection.nonhostile.find((entry) => entry.otherUuid === tokens.Enemy.uuid);
+      const sweepOnlyFixture = {
+        position: { ...sweepOnlyPosition },
+        sweep: sweepInspection,
+        endpoint: endpointInspection,
+        initial: initialInspection,
+        conflict: sweepConflict
+      };
 
-      if (!sweepOnlyFixture) throw new Error("Could not find a deterministic nonhostile sweep-only Grapple-link fixture.");
+      const deterministicSweepFixtureChecks = {
+        sweepConflictFound: Boolean(sweepConflict),
+        sweepOccurredMidTransition: sweepConflict?.firstSampleT > 0 && sweepConflict?.firstSampleT < 1,
+        initialLinkClear: !initialConflict,
+        finalLinkClear: !endpointConflict,
+        leaderReference: sweepConflict?.referenceUuid === tokens.Leader.uuid
+      };
+      if (!Object.values(deterministicSweepFixtureChecks).every(Boolean)) {
+        console.error("AE5E deterministic sweep-only fixture checks:", deterministicSweepFixtureChecks);
+        console.log("AE5E deterministic sweep-only fixture:", sweepOnlyFixture);
+        throw new Error("Deterministic nonhostile sweep-only Grapple-link fixture did not isolate the swept link.");
+      }
       const nonhostileSweepResult = await this.orbitClockwise({ relationshipId: fixture.relationship.id });
       await this.#relationshipRotation.waitForSettled({ leaderUuid: tokens.Leader.uuid });
       await wait(200);
@@ -1837,8 +1854,8 @@ export class TestHarness {
       fixture = await configureBase();
       await canvas.scene.updateEmbeddedDocuments("Token", [{
         _id: tokens.Ally.id,
-        width: 0.5,
-        height: 0.5,
+        width: 0.25,
+        height: 0.25,
         disposition: D.HOSTILE
       }], { animate: false, ae5eGrappleLinkSweepFixture: true });
       await wait(90);

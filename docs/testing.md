@@ -333,6 +333,7 @@ The harness requires exactly one token each named `Leader`, `Follower`, `Ally`, 
 2. a nonhostile creature occupying only the final Grapple link permits the orbit, starts the 3.5-second grace window, then restores the prior Follower shell plus Leader rotation if unresolved;
 3. a movement wall intersecting the Grapple-link sweep hard-blocks while the Follower body path remains clear;
 4. a nonhostile creature intersecting only the swept Grapple link may be passed through and does not start endpoint grace when the final link is clear;
+   The harness uses a deterministic 0.25x0.25 diagnostic footprint for this narrow sweep-fan fixture and first asserts that the creature is clear of both the initial and final link while intersecting an intermediate sampled link.
 5. the same sweep-only geometry hard-blocks when the creature is hostile to the Leader/Grappler;
 6. when one creature simultaneously produces a nonhostile Follower-body conflict and a hostile Leader-relative Grapple-link conflict, the hard Grapple-link conflict wins.
 
