@@ -9,6 +9,7 @@ import { MovementService } from "./movement/movement-service.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
+import { RelativeTokenRelationshipService } from "./relationships/relative-token-relationship-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -17,6 +18,7 @@ const compatibility = new CompatibilityService();
 const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const relationships = new RelationshipService({ socket });
+const relativeRelationships = new RelativeTokenRelationshipService();
 const movement = new MovementService({ registry: movementRegistry, relationships });
 const relationshipMovement = new RelationshipMovementService({
   socket,
@@ -26,7 +28,8 @@ const relationshipMovement = new RelationshipMovementService({
 const relationshipRotation = new RelationshipRotationService({
   socket,
   relationships,
-  movement
+  movement,
+  relativeRelationships
 });
 const tests = new TestHarness({
   dependencies,
@@ -35,6 +38,7 @@ const tests = new TestHarness({
   relationships,
   relationshipMovement,
   relationshipRotation,
+  relativeRelationships,
   socket
 });
 const api = new ActionEffects5eApi({
@@ -44,6 +48,7 @@ const api = new ActionEffects5eApi({
   relationships,
   relationshipMovement,
   relationshipRotation,
+  relativeRelationships,
   tests,
   socket
 });

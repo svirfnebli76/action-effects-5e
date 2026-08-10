@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.23";
+export const MODULE_VERSION = "0.3.24";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -112,15 +112,30 @@ export const RELATIONSHIP_ROTATION_POLICIES = Object.freeze({
   ORBIT_FOLLOWER: "orbitFollower"
 });
 
-export const RELATIONSHIP_ALLIED_ENDPOINT_POLICIES = Object.freeze({
+export const RELATIONSHIP_GEOMETRY_CHANNELS = Object.freeze({
+  FOLLOWER_BODY: "follower-body",
+  GRAPPLE_LINK: "grapple-link"
+});
+
+export const RELATIVE_TOKEN_RELATIONSHIPS = Object.freeze({
+  HOSTILE: "hostile",
+  NONHOSTILE: "nonhostile"
+});
+
+export const RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES = Object.freeze({
   ALLOW: "allow",
   GRACE: "grace"
 });
+export const RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS = 3_500;
+
+// Backward-compatible aliases retained for persisted v0.3.21-v0.3.23
+// relationships and integrations which still use the former allied naming.
+export const RELATIONSHIP_ALLIED_ENDPOINT_POLICIES = RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES;
+export const RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS = RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS;
 
 // Retained for compatibility with integrations which imported the old v0.3.22
-// constant. v0.3.23 no longer uses a fixed angular quantum for orbit control.
+// constant. v0.3.23+ no longer uses a fixed angular quantum for orbit control.
 export const RELATIONSHIP_ORBIT_QUANTUM_DEGREES = 45;
-export const RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS = 3_500;
 
 export const HOOKS = Object.freeze({
   READY: `${MODULE_ID}.ready`,

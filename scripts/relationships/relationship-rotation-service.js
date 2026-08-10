@@ -6,14 +6,17 @@ import {
   MOVEMENT_RESOURCES,
   OPERATION_METADATA_KEY,
   PATH_TYPES,
-  RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
-  RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
-  RELATIONSHIP_ROTATION_POLICIES
+  RELATIONSHIP_GEOMETRY_CHANNELS,
+  RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS,
+  RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
+  RELATIONSHIP_ROTATION_POLICIES,
+  RELATIVE_TOKEN_RELATIONSHIPS
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { RelationshipOrbitPlanner } from "./relationship-orbit-planner.js";
 import { RelationshipGeometryService } from "./relationship-geometry-service.js";
+import { RelativeTokenRelationshipService } from "./relative-token-relationship-service.js";
 
 const TOKEN_WHEEL_WRAPPER_TARGET = "foundry.canvas.layers.TokenLayer.prototype._onMouseWheel";
 const ARM_WINDOW_MS = 1_000;
@@ -33,6 +36,7 @@ export class RelationshipRotationService {
   #socket;
   #relationships;
   #movement;
+  #relativeRelationships;
   #initialized = false;
   #wheelWrapperRegistered = false;
   #hookIds = [];
@@ -40,13 +44,14 @@ export class RelationshipRotationService {
   #recentRequestIds = new Set();
   #activeRelationshipIds = new Set();
   #rollbackLeaderUuids = new Set();
-  #pendingAlliedOverlaps = new Map();
+  #pendingNonhostileOverlaps = new Map();
   #lastDecision = null;
 
-  constructor({ socket, relationships, movement }) {
+  constructor({ socket, relationships, movement, relativeRelationships = new RelativeTokenRelationshipService() }) {
     this.#socket = socket;
     this.#relationships = relationships;
     this.#movement = movement;
+    this.#relativeRelationships = relativeRelationships;
     this.#socket.register("relationships.orbitFollower", this.#orbitFollowerAsGM.bind(this));
   }
 
@@ -59,23 +64,23 @@ export class RelationshipRotationService {
     this.#hookIds.push(Hooks.on("controlToken", this.#onControlToken.bind(this)));
     this.#hookIds.push(Hooks.on("canvasReady", () => {
       this.#resetAll("canvas-ready");
-      this.#clearAllPendingAlliedOverlaps("canvas-ready");
+      this.#clearAllPendingNonhostileOverlaps("canvas-ready");
     }));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_CREATED, (relationship) => {
       this.#resetRelationship(relationship?.id, "relationship-created");
-      this.#clearPendingAlliedOverlap(relationship?.id, "relationship-created");
+      this.#clearPendingNonhostileOverlap(relationship?.id, "relationship-created");
     }));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_UPDATED, (relationship) => {
       this.#resetRelationship(relationship?.id, "relationship-updated");
-      this.#clearPendingAlliedOverlap(relationship?.id, "relationship-updated");
+      this.#clearPendingNonhostileOverlap(relationship?.id, "relationship-updated");
     }));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIP_REMOVED, (relationship) => {
       this.#resetRelationship(relationship?.id, "relationship-removed");
-      this.#clearPendingAlliedOverlap(relationship?.id, "relationship-removed");
+      this.#clearPendingNonhostileOverlap(relationship?.id, "relationship-removed");
     }));
     this.#hookIds.push(Hooks.on(HOOKS.RELATIONSHIPS_REINDEXED, () => {
       this.#pruneStates();
-      this.#prunePendingAlliedOverlaps();
+      this.#prunePendingNonhostileOverlaps();
     }));
     this.#hookIds.push(Hooks.on(HOOKS.MOVEMENT_TRANSACTION, this.#onMovementTransaction.bind(this)));
 
@@ -104,7 +109,7 @@ export class RelationshipRotationService {
     this.#recentRequestIds.clear();
     this.#activeRelationshipIds.clear();
     this.#rollbackLeaderUuids.clear();
-    this.#clearAllPendingAlliedOverlaps("shutdown");
+    this.#clearAllPendingNonhostileOverlaps("shutdown");
     this.#unregisterWheelWrapper();
     this.#initialized = false;
   }
@@ -119,7 +124,9 @@ export class RelationshipRotationService {
       processingRelationships: [...this.#states.values()].filter((state) => Boolean(state.drainPromise)).length,
       activeGmRequests: this.#activeRelationshipIds.size,
       rotationRollbacks: this.#rollbackLeaderUuids.size,
-      pendingAlliedOverlaps: this.#pendingAlliedOverlaps.size,
+      pendingNonhostileOverlaps: this.#pendingNonhostileOverlaps.size,
+      // Legacy diagnostics alias retained during the v0.3.x migration.
+      pendingAlliedOverlaps: this.#pendingNonhostileOverlaps.size,
       recentRequests: this.#recentRequestIds.size,
       orbitInputMode: "one-shell-position",
       fixedOrbitQuantum: false,
@@ -509,13 +516,13 @@ export class RelationshipRotationService {
 
     for (const relationship of this.#relationships.getForLeader(transaction.subjectUuid)) {
       if (this.#rotationPolicy(relationship) === RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER) {
-        this.#clearPendingAlliedOverlap(relationship.id, "leader-translated");
+        this.#clearPendingNonhostileOverlap(relationship.id, "leader-translated");
         this.#resetRelationship(relationship.id, "leader-translated");
       }
     }
     for (const relationship of this.#relationships.getForFollower(transaction.subjectUuid)) {
       if (this.#rotationPolicy(relationship) === RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER) {
-        this.#clearPendingAlliedOverlap(relationship.id, "follower-translated");
+        this.#clearPendingNonhostileOverlap(relationship.id, "follower-translated");
         this.#resetRelationship(relationship.id, "follower-translated");
       }
     }
@@ -787,26 +794,35 @@ export class RelationshipRotationService {
         checkpoint: true,
         explicit: true
       }];
-      const collision = this.#preflightFollowerPath({ follower, waypoints });
-      if (collision) {
+      const preflight = this.#preflightFollowerPath({ scene, follower, leader, waypoints });
+      if (preflight.blocked) {
         if (relationship.collisionPolicy === COLLISION_POLICIES.DETACH) {
           await this.#relationships.removeManyAsGM([relationship.id]);
           return {
             completed: false,
             detached: true,
+            obstruction: duplicateSafely(preflight),
             message: `${follower.name ?? "The follower token"} cannot orbit through that path, so the relationship was detached.`,
             leaderRotation: leaderRotationAfter
           };
         }
 
         const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
-        this.#refreshPendingAlliedOverlap(relationship.id);
-        this.#recordDecision({ request, plan, completed: false, collision: true, leaderRotation });
+        this.#refreshPendingNonhostileOverlap(relationship.id);
+        this.#recordDecision({
+          request,
+          plan,
+          completed: false,
+          collision: true,
+          leaderRotation,
+          obstruction: preflight
+        });
         return {
           completed: false,
           collision: true,
           rolledBackRotation: true,
           leaderRotation,
+          obstruction: duplicateSafely(preflight),
           message: `${follower.name ?? "The follower token"} cannot orbit through that path because it is blocked.`
         };
       }
@@ -828,7 +844,13 @@ export class RelationshipRotationService {
         showRuler: false,
         pan: false,
         autoRotate: false,
-        constrainOptions: { ignoreWalls: false, ignoreCost: true },
+        constrainOptions: {
+          ignoreWalls: false,
+          ignoreCost: true,
+          // Only bypass D&D5e token blocking after AE5E independently verified
+          // that every body-path token conflict is nonhostile to the Follower.
+          ignoreTokens: preflight.tokenConstraintBypassed === true
+        },
         ...this.#movement.createOperationOptions({
           transactionId: `${MODULE_ID}-orbit-${randomId(16)}`,
           pathType: PATH_TYPES.TRAVERSE,
@@ -870,7 +892,7 @@ export class RelationshipRotationService {
         }
 
         const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
-        this.#refreshPendingAlliedOverlap(relationship.id);
+        this.#refreshPendingNonhostileOverlap(relationship.id);
         this.#recordDecision({ request, plan, completed: false, incompleteMovement: true, leaderRotation });
         return {
           completed: false,
@@ -882,14 +904,20 @@ export class RelationshipRotationService {
       }
 
       await this.#awaitLocalFollowerAnimation(follower.uuid);
-      const alliedOccupants = this.#alliedEndpointOccupants({
+      const nonhostileOccupants = this.#nonhostileEndpointOccupants({
         scene,
         follower,
         leader,
         destination: followerWaypoints.at(-1)
       });
-      if (alliedOccupants.length && this.#alliedEndpointPolicy(relationship) === RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE) {
-        this.#schedulePendingAlliedOverlap({
+      const endpointConflicts = nonhostileOccupants.map((candidate) => this.#relativeRelationships.resolveForGeometry({
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY,
+        leaderToken: leader,
+        followerToken: follower,
+        otherToken: candidate
+      }));
+      if (nonhostileOccupants.length && this.#nonhostileEndpointPolicy(relationship) === RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES.GRACE) {
+        this.#schedulePendingNonhostileOverlap({
           relationship,
           requester,
           leader,
@@ -897,13 +925,24 @@ export class RelationshipRotationService {
           anchorFollowerPosition: request.followerPosition,
           anchorLeaderRotation: leaderRotationBefore,
           overlapPosition: followerWaypoints.at(-1),
-          occupantUuids: alliedOccupants.map((token) => token.uuid)
+          occupantUuids: nonhostileOccupants.map((token) => token.uuid)
         });
       } else {
-        this.#clearPendingAlliedOverlap(relationship.id, "orbit-ended-clear");
+        this.#clearPendingNonhostileOverlap(relationship.id, "orbit-ended-clear");
       }
 
-      this.#recordDecision({ request, plan, completed: true, results, leaderRotation: leaderRotationAfter });
+      this.#recordDecision({
+        request,
+        plan,
+        completed: true,
+        results,
+        leaderRotation: leaderRotationAfter,
+        followerBody: {
+          geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY,
+          preflight: duplicateSafely(preflight),
+          endpointConflicts: duplicateSafely(endpointConflicts)
+        }
+      });
       Logger.debug("Relationship orbital shell step completed", {
         relationshipId: relationship.id,
         leaderUuid: leader.uuid,
@@ -930,7 +969,7 @@ export class RelationshipRotationService {
     } catch (error) {
       if (/requires a square|not on the relationship|No legal snapped|too large to enumerate|too many legal/i.test(error.message ?? "")) {
         const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
-        this.#refreshPendingAlliedOverlap(relationship.id);
+        this.#refreshPendingNonhostileOverlap(relationship.id);
         return {
           completed: false,
           unsupported: true,
@@ -976,46 +1015,127 @@ export class RelationshipRotationService {
     return scene.tokens.get?.(id) ?? null;
   }
 
-  #preflightFollowerPath({ follower, waypoints }) {
+  #preflightFollowerPath({ scene, follower, leader, waypoints }) {
+    const geometryChannel = RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY;
     const placeable = follower.object;
     if (!placeable?.constrainMovementPath) {
-      Logger.debug(`Skipped orbital collision preflight for ${follower.uuid}; its Scene is not rendered on the active GM canvas.`);
-      return false;
+      Logger.debug(`Skipped orbital wall/surface preflight for ${follower.uuid}; its Scene is not rendered on the active GM canvas.`);
+      const conflicts = this.#classifyFollowerBodyPath({ scene, follower, leader, path: [
+        { x: follower.x, y: follower.y, elevation: follower.elevation },
+        ...waypoints
+      ] });
+      const hostile = conflicts.filter((entry) => entry.relationship === RELATIVE_TOKEN_RELATIONSHIPS.HOSTILE);
+      return {
+        blocked: hostile.length > 0,
+        geometryChannel,
+        reasonCode: hostile.length ? "hostile-creature" : "preflight-unavailable",
+        tokenConstraintBypassed: false,
+        conflicts
+      };
     }
 
     const path = [{ x: follower.x, y: follower.y, elevation: follower.elevation }, ...waypoints];
-    const [, wasConstrained] = placeable.constrainMovementPath(path, {
+    const options = {
       preview: false,
       ignoreWalls: false,
       ignoreCost: true,
       maxCost: Infinity,
       maxDistance: Infinity
+    };
+
+    // D&D5e v5.3 adds token blocking inside constrainMovementPath. Re-running
+    // with ignoreTokens delegates wall/surface handling to the same public
+    // constraint pipeline while allowing AE5E to own Grapple body semantics.
+    const [, environmentConstrained] = placeable.constrainMovementPath(path, {
+      ...options,
+      ignoreTokens: true
     });
-    return wasConstrained === true;
+    if (environmentConstrained === true) {
+      return {
+        blocked: true,
+        geometryChannel,
+        reasonCode: "environment-obstruction",
+        tokenConstraintBypassed: false,
+        conflicts: []
+      };
+    }
+
+    // Creature obstruction is classified independently of the D&D5e movement
+    // automation setting. For follower-body geometry, the Follower is always
+    // the reference creature.
+    const conflicts = this.#classifyFollowerBodyPath({ scene, follower, leader, path });
+    const hostile = conflicts.filter((entry) => entry.relationship === RELATIVE_TOKEN_RELATIONSHIPS.HOSTILE);
+    if (hostile.length) {
+      return {
+        blocked: true,
+        geometryChannel,
+        reasonCode: "hostile-creature",
+        tokenConstraintBypassed: false,
+        conflicts
+      };
+    }
+
+    const [, wasConstrained] = placeable.constrainMovementPath(path, options);
+    if (wasConstrained !== true) {
+      return {
+        blocked: false,
+        geometryChannel,
+        reasonCode: conflicts.length ? "nonhostile-creature" : "clear",
+        tokenConstraintBypassed: false,
+        conflicts
+      };
+    }
+
+    if (!conflicts.length) {
+      // The environment-only pass was clear but the normal system pass still
+      // constrained movement, and AE5E could not identify an intersecting
+      // creature. Fail closed instead of suppressing an unknown constraint.
+      return {
+        blocked: true,
+        geometryChannel,
+        reasonCode: "unresolved-token-obstruction",
+        tokenConstraintBypassed: false,
+        conflicts: []
+      };
+    }
+
+    return {
+      blocked: false,
+      geometryChannel,
+      reasonCode: "nonhostile-creature",
+      tokenConstraintBypassed: true,
+      conflicts
+    };
   }
 
-  #alliedEndpointPolicy(relationship) {
-    return Object.values(RELATIONSHIP_ALLIED_ENDPOINT_POLICIES).includes(relationship?.alliedEndpointPolicy)
-      ? relationship.alliedEndpointPolicy
-      : RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE;
+  #classifyFollowerBodyPath({ scene, follower, leader, path }) {
+    return this.#followerBodyPathOccupants({ scene, follower, leader, path })
+      .map((candidate) => this.#relativeRelationships.resolveForGeometry({
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY,
+        leaderToken: leader,
+        followerToken: follower,
+        otherToken: candidate
+      }));
   }
 
-  #alliedEndpointGraceMs(relationship) {
-    const configured = finiteNumber(relationship?.alliedEndpointGraceMs);
+  #nonhostileEndpointPolicy(relationship) {
+    const configured = relationship?.nonhostileEndpointPolicy ?? relationship?.alliedEndpointPolicy;
+    return Object.values(RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES).includes(configured)
+      ? configured
+      : RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES.GRACE;
+  }
+
+  #nonhostileEndpointGraceMs(relationship) {
+    const configured = finiteNumber(relationship?.nonhostileEndpointGraceMs ?? relationship?.alliedEndpointGraceMs);
     return configured !== null && configured > 0
       ? configured
-      : RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS;
+      : RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS;
   }
 
-  #alliedEndpointOccupants({ scene, follower, leader, destination }) {
+  #nonhostileEndpointOccupants({ scene, follower, leader, destination }) {
     if (!scene?.tokens || !follower || !destination) return [];
     const gridSize = finiteNumber(scene.grid?.size);
     if (!(gridSize > 0)) return [];
-
-    const followerDisposition = finiteNumber(follower.disposition);
-    const friendly = finiteNumber(globalThis.CONST?.TOKEN_DISPOSITIONS?.FRIENDLY, 1);
-    const hostile = finiteNumber(globalThis.CONST?.TOKEN_DISPOSITIONS?.HOSTILE, -1);
-    if (followerDisposition !== friendly && followerDisposition !== hostile) return [];
 
     const followerBounds = this.#tokenBoundsAt(follower, destination, gridSize);
     const followerElevation = finiteNumber(destination.elevation, finiteNumber(follower.elevation, 0));
@@ -1023,12 +1143,48 @@ export class RelationshipRotationService {
     return [...scene.tokens].filter((candidate) => {
       if (!(candidate instanceof foundry.documents.TokenDocument)) return false;
       if (candidate.uuid === follower.uuid || candidate.uuid === leader?.uuid) return false;
-      const candidateDisposition = finiteNumber(candidate.disposition);
-      if (candidateDisposition !== followerDisposition) return false;
-      if (candidateDisposition !== friendly && candidateDisposition !== hostile) return false;
       if (Math.abs(finiteNumber(candidate.elevation, 0) - followerElevation) > 0.01) return false;
-      return this.#boundsOverlap(followerBounds, this.#tokenBoundsAt(candidate, candidate, gridSize));
+      if (!this.#boundsOverlap(followerBounds, this.#tokenBoundsAt(candidate, candidate, gridSize))) return false;
+      return this.#relativeRelationships.resolveForGeometry({
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY,
+        leaderToken: leader,
+        followerToken: follower,
+        otherToken: candidate
+      }).relationship === RELATIVE_TOKEN_RELATIONSHIPS.NONHOSTILE;
     });
+  }
+
+  #followerBodyPathOccupants({ scene, follower, leader, path }) {
+    if (!scene?.tokens || !follower || !Array.isArray(path) || path.length < 2) return [];
+    const gridSize = finiteNumber(scene.grid?.size);
+    if (!(gridSize > 0)) return [];
+
+    let completePath = path;
+    if (typeof follower.getCompleteMovementPath === "function") {
+      try {
+        const expanded = follower.getCompleteMovementPath(path);
+        if (Array.isArray(expanded) && expanded.length) completePath = expanded;
+      } catch (error) {
+        Logger.debug("Could not expand follower path while classifying token obstruction; using supplied waypoints.", {
+          followerUuid: follower.uuid,
+          error: String(error)
+        });
+      }
+    }
+
+    const occupants = new Map();
+    for (const position of completePath.slice(1)) {
+      const followerBounds = this.#tokenBoundsAt(follower, position, gridSize);
+      const followerElevation = finiteNumber(position?.elevation, finiteNumber(follower.elevation, 0));
+      for (const candidate of scene.tokens) {
+        if (!(candidate instanceof foundry.documents.TokenDocument)) continue;
+        if (candidate.uuid === follower.uuid || candidate.uuid === leader?.uuid) continue;
+        if (Math.abs(finiteNumber(candidate.elevation, 0) - followerElevation) > 0.01) continue;
+        if (!this.#boundsOverlap(followerBounds, this.#tokenBoundsAt(candidate, candidate, gridSize))) continue;
+        occupants.set(candidate.uuid, candidate);
+      }
+    }
+    return [...occupants.values()];
   }
 
   #tokenBoundsAt(token, position, gridSize) {
@@ -1046,7 +1202,7 @@ export class RelationshipRotationService {
       && a.bottom > b.top + 0.01;
   }
 
-  #schedulePendingAlliedOverlap({
+  #schedulePendingNonhostileOverlap({
     relationship,
     requester,
     leader,
@@ -1056,7 +1212,7 @@ export class RelationshipRotationService {
     overlapPosition,
     occupantUuids = []
   }) {
-    const existing = this.#pendingAlliedOverlaps.get(relationship.id);
+    const existing = this.#pendingNonhostileOverlaps.get(relationship.id);
     const serial = (existing?.serial ?? 0) + 1;
     if (existing?.timeoutId) clearTimeout(existing.timeoutId);
 
@@ -1070,17 +1226,17 @@ export class RelationshipRotationService {
       anchorLeaderRotation: existing?.anchorLeaderRotation ?? RelationshipOrbitPlanner.normalizeRotation(anchorLeaderRotation),
       overlapPosition: duplicateSafely(overlapPosition),
       occupantUuids: [...new Set(occupantUuids)],
-      graceMs: this.#alliedEndpointGraceMs(relationship),
+      graceMs: this.#nonhostileEndpointGraceMs(relationship),
       serial,
       timeoutId: null
     };
 
     entry.timeoutId = setTimeout(() => {
-      void this.#expirePendingAlliedOverlap(relationship.id, serial);
+      void this.#expirePendingNonhostileOverlap(relationship.id, serial);
     }, entry.graceMs);
-    this.#pendingAlliedOverlaps.set(relationship.id, entry);
+    this.#pendingNonhostileOverlaps.set(relationship.id, entry);
 
-    Logger.debug("Relationship orbit entered an allied occupied endpoint grace window", {
+    Logger.debug("Relationship orbit entered a nonhostile occupied endpoint grace window", {
       relationshipId: relationship.id,
       leaderUuid: leader.uuid,
       followerUuid: follower.uuid,
@@ -1089,26 +1245,26 @@ export class RelationshipRotationService {
     });
   }
 
-  #refreshPendingAlliedOverlap(relationshipId) {
-    const entry = this.#pendingAlliedOverlaps.get(relationshipId);
+  #refreshPendingNonhostileOverlap(relationshipId) {
+    const entry = this.#pendingNonhostileOverlaps.get(relationshipId);
     if (!entry) return;
     const relationship = this.#relationships.get(relationshipId);
     if (!relationship) {
-      this.#clearPendingAlliedOverlap(relationshipId, "relationship-unavailable");
+      this.#clearPendingNonhostileOverlap(relationshipId, "relationship-unavailable");
       return;
     }
 
     if (entry.timeoutId) clearTimeout(entry.timeoutId);
     entry.serial += 1;
-    entry.graceMs = this.#alliedEndpointGraceMs(relationship);
+    entry.graceMs = this.#nonhostileEndpointGraceMs(relationship);
     const serial = entry.serial;
     entry.timeoutId = setTimeout(() => {
-      void this.#expirePendingAlliedOverlap(relationshipId, serial);
+      void this.#expirePendingNonhostileOverlap(relationshipId, serial);
     }, entry.graceMs);
   }
 
-  async #expirePendingAlliedOverlap(relationshipId, serial) {
-    const entry = this.#pendingAlliedOverlaps.get(relationshipId);
+  async #expirePendingNonhostileOverlap(relationshipId, serial) {
+    const entry = this.#pendingNonhostileOverlaps.get(relationshipId);
     if (!entry || entry.serial !== serial) return;
 
     // Never roll a token back while a newer GM-authorized orbital operation is
@@ -1116,14 +1272,14 @@ export class RelationshipRotationService {
     // clear or refresh the pending overlap itself.
     if (this.#activeRelationshipIds.has(relationshipId)) {
       entry.timeoutId = setTimeout(() => {
-        void this.#expirePendingAlliedOverlap(relationshipId, serial);
+        void this.#expirePendingNonhostileOverlap(relationshipId, serial);
       }, 50);
       return;
     }
 
     const relationship = this.#relationships.get(relationshipId);
     if (!relationship) {
-      this.#clearPendingAlliedOverlap(relationshipId, "relationship-unavailable");
+      this.#clearPendingNonhostileOverlap(relationshipId, "relationship-unavailable");
       return;
     }
 
@@ -1131,27 +1287,27 @@ export class RelationshipRotationService {
     const leader = await fromUuid(entry.leaderUuid);
     const follower = await fromUuid(entry.followerUuid);
     if (!scene || !(leader instanceof foundry.documents.TokenDocument) || !(follower instanceof foundry.documents.TokenDocument)) {
-      this.#clearPendingAlliedOverlap(relationshipId, "tokens-unavailable");
+      this.#clearPendingNonhostileOverlap(relationshipId, "tokens-unavailable");
       return;
     }
 
     if (!RelationshipOrbitPlanner.positionsEqual(entry.overlapPosition, follower)) {
-      this.#clearPendingAlliedOverlap(relationshipId, "follower-left-overlap");
+      this.#clearPendingNonhostileOverlap(relationshipId, "follower-left-overlap");
       return;
     }
 
-    const occupants = this.#alliedEndpointOccupants({
+    const occupants = this.#nonhostileEndpointOccupants({
       scene,
       follower,
       leader,
       destination: { x: follower.x, y: follower.y, elevation: follower.elevation }
     });
     if (!occupants.length) {
-      this.#clearPendingAlliedOverlap(relationshipId, "overlap-cleared");
+      this.#clearPendingNonhostileOverlap(relationshipId, "overlap-cleared");
       return;
     }
 
-    this.#clearPendingAlliedOverlap(relationshipId, "grace-expired");
+    this.#clearPendingNonhostileOverlap(relationshipId, "grace-expired");
     const requestId = `${MODULE_ID}-orbit-overlap-rollback-${randomId(20)}`;
     await this.#rollbackFollowerPosition({
       scene,
@@ -1163,7 +1319,7 @@ export class RelationshipRotationService {
     });
     await this.#rollbackLeaderRotation(leader, entry.anchorLeaderRotation, requestId);
 
-    Logger.debug("Relationship orbit allied endpoint grace expired; restored the last legal orbit state", {
+    Logger.debug("Relationship orbit nonhostile endpoint grace expired; restored the last legal orbit state", {
       relationshipId,
       leaderUuid: leader.uuid,
       followerUuid: follower.uuid,
@@ -1223,26 +1379,26 @@ export class RelationshipRotationService {
     }
   }
 
-  #clearPendingAlliedOverlap(relationshipId, reason = "clear") {
+  #clearPendingNonhostileOverlap(relationshipId, reason = "clear") {
     if (!relationshipId) return;
-    const entry = this.#pendingAlliedOverlaps.get(relationshipId);
+    const entry = this.#pendingNonhostileOverlaps.get(relationshipId);
     if (!entry) return;
     if (entry.timeoutId) clearTimeout(entry.timeoutId);
-    this.#pendingAlliedOverlaps.delete(relationshipId);
-    Logger.debug("Cleared relationship allied endpoint grace state", { relationshipId, reason });
+    this.#pendingNonhostileOverlaps.delete(relationshipId);
+    Logger.debug("Cleared relationship nonhostile endpoint grace state", { relationshipId, reason });
   }
 
-  #clearAllPendingAlliedOverlaps(reason = "clear-all") {
-    for (const relationshipId of [...this.#pendingAlliedOverlaps.keys()]) {
-      this.#clearPendingAlliedOverlap(relationshipId, reason);
+  #clearAllPendingNonhostileOverlaps(reason = "clear-all") {
+    for (const relationshipId of [...this.#pendingNonhostileOverlaps.keys()]) {
+      this.#clearPendingNonhostileOverlap(relationshipId, reason);
     }
   }
 
-  #prunePendingAlliedOverlaps() {
-    for (const relationshipId of [...this.#pendingAlliedOverlaps.keys()]) {
+  #prunePendingNonhostileOverlaps() {
+    for (const relationshipId of [...this.#pendingNonhostileOverlaps.keys()]) {
       const relationship = this.#relationships.get(relationshipId);
       if (!relationship || this.#rotationPolicy(relationship) !== RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER) {
-        this.#clearPendingAlliedOverlap(relationshipId, "relationship-pruned");
+        this.#clearPendingNonhostileOverlap(relationshipId, "relationship-pruned");
       }
     }
   }

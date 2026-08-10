@@ -1,25 +1,25 @@
 # Action Effects 5E testing
 
-## Automated suite
+## Project test policy
 
-Run from the module repository root:
+Action Effects 5E behavioral and regression testing is performed **inside Foundry VTT**. Do not use an external `npm test` run as a release gate for this project. The repository may retain older Node-oriented development files for history/reference, but current validation is based on the live Foundry APIs, hooks, movement pipeline, Socketlib authority, token documents, canvas geometry, and installed-module coexistence that the production module actually uses.
 
-```bash
-npm test
+v0.3.24 adds a built-in Foundry regression harness for relative creature semantics:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runFollowerBodyDispositionMatrix();
 ```
 
-v0.3.23 currently performs syntax validation across all JavaScript files and **61 Node regressions**. Coverage includes the established movement/Socketlib/rollback pipeline plus dynamic footprint shells, 5/10/15-foot orbit bands, exact ±360° circuit closure, Shift/Ctrl normalization, rapid predicted orbit input, variable-angle rollback, allied endpoint grace, forced-movement break distance, unequal-size trailing, and forced re-anchoring.
-
-Automated geometry tests deliberately use the same production `RelationshipGeometryService`, `RelationshipMovementPlanner`, and `RelationshipRotationService` code paths exposed to Foundry.
-The relationship-service regression also rejects invalid coordination/break-distance geometry before persistence and verifies that rejected updates leave the prior relationship state intact.
+The harness configures the exact `Leader`, `Follower`, `Ally`, `Enemy`, `Neutral`, and `Secret` fixture, runs eight Follower-body occupancy cases, waits through the 3.5-second nonhostile endpoint grace where required, verifies rollback and queue settlement, restores all six tokens on a complete pass, and leaves a failed fixture visible for inspection.
 
 ## Startup check
 
-After replacing module files and restarting Foundry, v0.3.23 should report:
+After replacing module files and restarting Foundry, v0.3.24 should report:
 
 ```text
 Action Effects 5E | Registered 9 Socketlib handlers.
-Action Effects 5E | v0.3.23 dependencies validated.
+Action Effects 5E | v0.3.24 dependencies validated.
 Action Effects 5E | Relationship rotation service ready.
 Action Effects 5E | Foundation ready.
 ```
@@ -86,6 +86,37 @@ ae5e.tests.clearOrbitDebug();
 ```
 
 The overlay is canvas-only and must not create persistent Drawings, Tiles, Regions, or Scene flags.
+
+## v0.3.24 follower-body disposition matrix
+
+Run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runFollowerBodyDispositionMatrix();
+```
+
+Expected Follower-relative body outcomes:
+
+```text
+Leader HOSTILE / Follower FRIENDLY
+  Ally    Hostile  -> HARD
+  Enemy   Friendly -> SOFT -> grace -> rollback if overlap persists
+  Neutral Neutral  -> SOFT -> grace -> rollback if overlap persists
+  Secret  Secret   -> SOFT -> grace -> rollback if overlap persists
+
+Leader FRIENDLY / Follower HOSTILE
+  Ally    Hostile  -> SOFT -> grace -> rollback if overlap persists
+  Enemy   Friendly -> HARD
+  Neutral Neutral  -> SOFT -> grace -> rollback if overlap persists
+  Secret  Secret   -> SOFT -> grace -> rollback if overlap persists
+```
+
+Before modifying the Scene, the same command runs a 4x4 resolver matrix over Friendly, Hostile, Neutral, and Secret in both reference directions. It also verifies geometry ownership directly: `follower-body` resolves relative to the Follower and the reserved `grapple-link` channel resolves relative to the Leader/Grappler.
+
+Leader disposition is deliberately varied as a control. Because this matrix validates **Follower-body** geometry, the third creature is classified relative to the Follower. Neutral and Secret must remain nonhostile regardless of either participant's Friendly/Hostile side. The later physical `grapple-link` collision matrix will use the Leader/Grappler as its reference.
+
+Hard cases must expose `lastDecision.obstruction.geometryChannel === "follower-body"` and `reasonCode === "hostile-creature"`. Soft cases must expose a nonhostile endpoint conflict, `pendingNonhostileOverlaps >= 1`, then restore the complete prior legal Follower position and matching Leader rotation after grace expiry.
 
 ## v0.3.23 rotation-input matrix
 
@@ -190,17 +221,17 @@ The following 1x1 cases were live-validated before v0.3.23 and must remain uncha
 
 No forced-movement break-distance case should use relationship rollback merely because the relationship becomes invalid after successful external movement.
 
-## Allied endpoint grace regression
+## Nonhostile endpoint grace regression
 
-With same-side occupancy on the next orbit shell anchor:
+With a nonhostile creature occupying the next orbit shell anchor:
 
 1. orbit into the occupied endpoint;
 2. verify the 3.5-second grace begins only after follower animation settles;
 3. allow expiry: Follower and Leader rotation must restore to the exact original legal anchor;
 4. repeat and continue to an open shell anchor before expiry: timer must clear with no later snapback;
-5. repeat across consecutive same-side occupied anchors: original legal anchor remains the rollback target while timer restarts;
+5. repeat across consecutive nonhostile occupied anchors: original legal anchor remains the rollback target while timer restarts;
 6. remove the relationship during grace: no orphaned timer may move either token later;
-7. Hostile+Friendly or Neutral/Secret cases must not be inferred as same-side grace solely from one token's disposition label.
+7. verify Friendly/Friendly and Hostile/Hostile are nonhostile, Friendly/Hostile is hostile, and Neutral/Secret are nonhostile regardless of the other participant's side.
 
 ## Collision/rollback regression
 
@@ -242,7 +273,7 @@ ae5e.relationships.getRotationStats();
 ae5e.movement.getRecentTransactions();
 ```
 
-After a settled operation, queued/active relationship movement and rotation counts should return to zero. During allied endpoint grace, `pendingAlliedOverlaps` should be 1.
+After a settled operation, queued/active relationship movement and rotation counts should return to zero. During nonhostile endpoint grace, `pendingNonhostileOverlaps` should be 1. `pendingAlliedOverlaps` remains a legacy diagnostics alias during the v0.3.x migration.
 
 ## Coexistence testing
 

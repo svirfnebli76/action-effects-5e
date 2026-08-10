@@ -10,8 +10,12 @@ import {
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
+  RELATIONSHIP_GEOMETRY_CHANNELS,
+  RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS,
+  RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
   RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
   RELATIONSHIP_ROTATION_POLICIES,
+  RELATIVE_TOKEN_RELATIONSHIPS,
   RELATIONSHIP_TYPES,
   TELEPORT_POLICIES
 } from "./core/constants.js";
@@ -24,6 +28,7 @@ export class ActionEffects5eApi {
     relationships,
     relationshipMovement,
     relationshipRotation,
+    relativeRelationships,
     tests,
     socket
   }) {
@@ -40,6 +45,10 @@ export class ActionEffects5eApi {
       RELATIONSHIP_COORDINATION_POLICIES,
       RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
       RELATIONSHIP_ROTATION_POLICIES,
+      RELATIONSHIP_GEOMETRY_CHANNELS,
+      RELATIVE_TOKEN_RELATIONSHIPS,
+      RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
+      RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS,
       RELATIONSHIP_ORBIT_QUANTUM_DEGREES,
       ATTACHMENT_MODES,
       TELEPORT_POLICIES,
@@ -80,7 +89,13 @@ export class ActionEffects5eApi {
       },
       getRotationStats: () => relationshipRotation.getStats(),
       getStats: () => relationships.getStats(),
-      getMovementStats: () => relationshipMovement.getStats()
+      getMovementStats: () => relationshipMovement.getStats(),
+      resolveRelativeRelationship: (referenceToken, otherToken, options = {}) => relativeRelationships.resolve({
+        referenceToken,
+        otherToken,
+        geometryChannel: options.geometryChannel ?? null
+      }),
+      resolveRelativeRelationshipForGeometry: (options = {}) => relativeRelationships.resolveForGeometry(options)
     });
 
     this.tests = Object.freeze({
@@ -95,7 +110,8 @@ export class ActionEffects5eApi {
       showOrbitDebug: (options) => tests.showOrbitDebug(options),
       clearOrbitDebug: () => tests.clearOrbitDebug(),
       orbitClockwise: (options) => tests.orbitClockwise(options),
-      orbitCounterclockwise: (options) => tests.orbitCounterclockwise(options)
+      orbitCounterclockwise: (options) => tests.orbitCounterclockwise(options),
+      runFollowerBodyDispositionMatrix: (options) => tests.runFollowerBodyDispositionMatrix(options)
     });
 
     this.socket = Object.freeze({

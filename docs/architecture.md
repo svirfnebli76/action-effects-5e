@@ -19,7 +19,7 @@ Important geometry fields are:
 - `forcedLeaderMovementPolicy`: `follow` or `independent`.
 - `rotationPolicy`: `none` or `orbitFollower`.
 - `collisionPolicy`: `stopGroup` or `detach`.
-- `alliedEndpointPolicy` / `alliedEndpointGraceMs`: terminal same-side orbit-overlap behavior.
+- `nonhostileEndpointPolicy` / `nonhostileEndpointGraceMs`: terminal nonhostile orbit-overlap behavior. The former `alliedEndpointPolicy` / `alliedEndpointGraceMs` names remain persisted compatibility aliases during the v0.3.x migration.
 
 `breakDistance` and `coordinationDistance` intentionally differ. Example: a 10-foot reach grapple started adjacent may use `breakDistance: 10` and `coordinationDistance: 5`; one started at the outer reach band may use 10/10.
 
@@ -108,11 +108,30 @@ For `collisionPolicy: stopGroup`, wall/path failure or incomplete movement resto
 
 Follower artwork rotation is disabled for orbit moves. Only its position changes.
 
-## Allied occupied endpoint grace
+## Relative creature relationships and geometry ownership
 
-A successful orbit may end in a same-side creature's occupied space. Friendly+Friendly and Hostile+Hostile are same-side for this relationship mechanic; Neutral/Secret are not inferred as allies.
+`RelativeTokenRelationshipService` resolves a third creature relative to an explicitly supplied reference token. Foundry disposition is treated as a player-relative side indicator rather than a direct NPC-to-NPC relationship graph:
 
-With `alliedEndpointPolicy: grace`, the 3.5-second default timer begins after follower animation settlement. Continued movement into a legal/open position clears the timer. Consecutive same-side occupied endpoints retain the original legal anchor and restart the timer. Expiry restores both follower position and the exact matching leader rotation. Translation or relationship removal clears the pending state.
+- Friendly relative to Friendly -> nonhostile;
+- Hostile relative to Hostile -> nonhostile;
+- Friendly relative to Hostile (or the reverse) -> hostile;
+- if either participant is Neutral -> nonhostile;
+- if either participant is Secret -> nonhostile.
+
+The caller, not the resolver, chooses the reference creature. Geometry channels make that ownership explicit:
+
+- `follower-body`: the Follower is the reference creature because its physical body is traversing/occupying the space;
+- `grapple-link`: the Leader/Grappler is the reference creature because the Leader's appendage/link is traversing/occupying the space. This channel is defined in v0.3.24 for the upcoming physical-link validator but is not yet used to block movement.
+
+Transition-level policy will eventually combine these channels with hard-conflict precedence: any hostile body/link conflict rejects the transition; otherwise persistent nonhostile final conflicts may use grace.
+
+## Nonhostile occupied endpoint grace
+
+A successful orbit may end in a nonhostile creature's occupied space. Same-side Friendly/Friendly and Hostile/Hostile pairs are nonhostile, and Neutral/Secret are universal nonhostile overrides.
+
+With `nonhostileEndpointPolicy: grace`, the 3.5-second default timer begins after follower animation settlement. Continued movement into a legal/open position clears the timer. Consecutive nonhostile occupied endpoints retain the original legal anchor and restart the timer. Expiry restores both follower position and the exact matching leader rotation. Translation or relationship removal clears the pending state. Legacy `alliedEndpointPolicy` / `alliedEndpointGraceMs` values remain readable.
+
+For orbit follower-body preflight, AE5E separates wall/surface obstruction from creature obstruction. It preserves Foundry's environment constraint result, classifies intersecting token footprints relative to the Follower, hard-blocks hostile creatures, and only bypasses D&D5e token blocking when every identified creature conflict is nonhostile.
 
 ## Forced movement and re-anchoring
 
@@ -148,6 +167,7 @@ Production-facing helpers include:
 - `relationships.create/remove/updateGeometry`
 - `relationships.moveGroup`
 - `relationships.waitForMovementSettled`
+- `relationships.resolveRelativeRelationship` / `resolveRelativeRelationshipForGeometry`
 - movement consumer registration and operation metadata helpers.
 
 Development geometry helpers under `ae5e.tests` invoke the same real production services:
@@ -156,7 +176,8 @@ Development geometry helpers under `ae5e.tests` invoke the same real production 
 - geometry and shell inspection;
 - shell validation;
 - temporary orbit overlay;
-- direct one-step clockwise/counterclockwise orbit commands.
+- direct one-step clockwise/counterclockwise orbit commands;
+- the Foundry-only eight-case `runFollowerBodyDispositionMatrix` regression harness.
 
 No test-only alternative movement or orbit math exists.
 
@@ -167,5 +188,6 @@ Player requests which mutate authoritative relationship state are GM-authorized 
 ## Current limits
 
 - Dynamic orbit geometry currently requires a square Scene grid.
+- Physical `grapple-link` sweep/final-corridor obstruction is not implemented in v0.3.24; only the geometry-channel ownership and relative-creature semantics are established.
 - Creature-size eligibility, unarmed-strike reach derivation, Grappled/Grappler effects, escape/action economy, movement-resource charging for rotation, and the Prone popup integration belong to later Grapple rules/item work.
 - Fractional Tiny-token geometry is supported by the shell generator, but Foundry's occupied-grid-space distance API can collapse some sub-grid separations; live Tiny tests remain important before declaring final Grapple UX semantics.

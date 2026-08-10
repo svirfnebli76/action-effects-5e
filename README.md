@@ -11,6 +11,31 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
 
+## Build 0.3.24: relative creature semantics
+
+v0.3.24 keeps the validated v0.3.23 orbit-shell geometry intact and establishes the creature-relationship semantics needed before physical Grapple-link obstruction is added:
+
+- `RelativeTokenRelationshipService` resolves a third creature relative to an explicitly selected reference creature. Friendly/Hostile tokens on the same side are nonhostile; opposing Friendly/Hostile sides are hostile; Neutral and Secret are universally nonhostile.
+- Geometry channels now distinguish `follower-body` from the reserved future `grapple-link` channel. Follower-body collision uses the Follower as the reference creature. Grapple-link/appendage collision will use the Leader/Grappler as the reference when that validator is added.
+- Orbit preflight separates environment obstruction from creature obstruction. Walls/surfaces remain authoritative, while hostile Follower-body intersections hard-block and nonhostile creature intersections may proceed.
+- The former same-side endpoint grace is generalized to nonhostile endpoint grace. Neutral and Secret occupied orbit endpoints can therefore enter the existing 3.5-second grace window and roll back to the complete last legal relationship state if the overlap persists.
+- New `nonhostileEndpointPolicy` / `nonhostileEndpointGraceMs` names are persisted alongside the legacy `alliedEndpointPolicy` / `alliedEndpointGraceMs` aliases during the v0.3.x migration.
+- Rotation diagnostics now expose structured follower-body obstruction information and `pendingNonhostileOverlaps` while retaining `pendingAlliedOverlaps` as a legacy diagnostics alias.
+- Foundry-only regression tooling adds `await ae5e.tests.runFollowerBodyDispositionMatrix()`. The command first validates the full Friendly/Hostile/Neutral/Secret resolver matrix and geometry-channel reference ownership without touching the Scene, then configures and validates the six-token Leader/Follower/Ally/Enemy/Neutral/Secret follower-body fixture automatically.
+
+Physical Grapple-link sweep/final-corridor collision is intentionally deferred to the next development step so it can consume these semantics without modifying the validated orbit geometry.
+
+### v0.3.24 Foundry test command
+
+After loading the module in the dedicated test Scene, run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runFollowerBodyDispositionMatrix();
+```
+
+A full pass restores the six fixture tokens. A failure leaves the failing fixture and test relationship in place for inspection. Project regression testing is performed in Foundry rather than through an external Node test command.
+
 ## Build 0.3.23: dynamic grapple geometry
 
 v0.3.23 keeps the live-validated v0.3.22 forced-movement behavior and replaces the old 1x1/fixed-angle Grapple geometry assumptions with a footprint-aware coordination layer:

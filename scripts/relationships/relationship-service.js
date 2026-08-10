@@ -3,8 +3,8 @@ import {
   COLLISION_POLICIES,
   HOOKS,
   MODULE_ID,
-  RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
-  RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
+  RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS,
+  RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
@@ -321,12 +321,7 @@ export class RelationshipService {
       rotationPolicy: Object.values(RELATIONSHIP_ROTATION_POLICIES).includes(data.rotationPolicy)
         ? data.rotationPolicy
         : RELATIONSHIP_ROTATION_POLICIES.NONE,
-      alliedEndpointPolicy: Object.values(RELATIONSHIP_ALLIED_ENDPOINT_POLICIES).includes(data.alliedEndpointPolicy)
-        ? data.alliedEndpointPolicy
-        : RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE,
-      alliedEndpointGraceMs: Number.isFinite(Number(data.alliedEndpointGraceMs)) && Number(data.alliedEndpointGraceMs) > 0
-        ? Number(data.alliedEndpointGraceMs)
-        : RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS,
+      ...this.#normalizeNonhostileEndpointPolicy(data),
       // coordinationDistance is the planar band which coordinated dragging
       // and orbiting preserve. It is intentionally separate from breakDistance:
       // a 10-foot-reach grapple may be coordinated at either 5 or 10 feet.
@@ -340,6 +335,27 @@ export class RelationshipService {
       createdBy: data.createdBy ?? game.user.id,
       createdAt: data.createdAt ?? nowIso()
     });
+  }
+
+
+  #normalizeNonhostileEndpointPolicy(data = {}) {
+    const requestedPolicy = data.nonhostileEndpointPolicy ?? data.alliedEndpointPolicy;
+    const requestedGraceMs = data.nonhostileEndpointGraceMs ?? data.alliedEndpointGraceMs;
+    const policy = Object.values(RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES).includes(requestedPolicy)
+      ? requestedPolicy
+      : RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES.GRACE;
+    const graceMs = Number.isFinite(Number(requestedGraceMs)) && Number(requestedGraceMs) > 0
+      ? Number(requestedGraceMs)
+      : RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS;
+
+    return {
+      nonhostileEndpointPolicy: policy,
+      nonhostileEndpointGraceMs: graceMs,
+      // Persist the legacy aliases during the development migration window so
+      // v0.3.21-v0.3.23 integrations and saved test fixtures remain readable.
+      alliedEndpointPolicy: policy,
+      alliedEndpointGraceMs: graceMs
+    };
   }
 
 

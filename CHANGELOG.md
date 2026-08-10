@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.24 - Relative creature semantics for follower-body obstruction
+
+- Added `RelativeTokenRelationshipService`, a centralized pairwise resolver for creature obstruction. Callers explicitly select the reference creature instead of treating Foundry token disposition as a direct NPC-to-NPC relationship.
+- Added geometry-channel identities for `follower-body` and the reserved future `grapple-link` channel. Follower-body obstruction is resolved relative to the Follower; future grapple-link/appendage obstruction is defined to resolve relative to the Leader/Grappler.
+- Friendly/Hostile remain pairwise sides: matching Friendly/Friendly or Hostile/Hostile is nonhostile, while Friendly/Hostile is hostile. Neutral and Secret are universal nonhostile overrides regardless of the other participant's disposition.
+- Split orbit preflight into environment and creature decisions. AE5E first preserves Foundry wall/surface constraints, then classifies intersecting creature footprints using the follower-body resolver. Hostile body intersections hard-block; nonhostile intersections may proceed.
+- When D&D5e token blocking alone would reject a Neutral/Secret or other AE5E-nonhostile body path, AE5E reuses the public movement constraint path with token blocking disabled only after independently confirming that all identified creature conflicts are nonhostile. Walls remain constrained.
+- Generalized the existing 3.5-second same-side endpoint grace to **nonhostile endpoint grace**, so Neutral and Secret occupied orbit endpoints now receive the same temporary-overlap/rollback behavior as same-side Friendly/Hostile endpoints.
+- Added `nonhostileEndpointPolicy` / `nonhostileEndpointGraceMs` relationship fields while preserving `alliedEndpointPolicy` / `alliedEndpointGraceMs` as persisted compatibility aliases. Runtime diagnostics now expose `pendingNonhostileOverlaps` while retaining `pendingAlliedOverlaps` as a legacy alias.
+- Added structured obstruction diagnostics recording geometry channel, reference UUID, blocker UUID, relative relationship, reason code, and whether D&D5e token constraint bypass was required.
+- Added public relative-relationship resolver helpers and a Foundry-only `ae5e.tests.runFollowerBodyDispositionMatrix()` regression harness. Before changing the Scene, the harness validates the full 4x4 Friendly/Hostile/Neutral/Secret resolver matrix and confirms `follower-body` uses the Follower while `grapple-link` uses the Leader. It then automates the Leader/Follower/Ally/Enemy/Neutral/Secret fixture, verifies Follower-relative body semantics in eight cases, waits through nonhostile grace, checks rollback/queues, restores the scene on full pass, and leaves a failed fixture visible for inspection.
+- Deliberately left physical grapple-link sweep/final-corridor collision for the next development step. v0.3.24 establishes the relationship semantics and diagnostics that validator will consume without changing the validated orbit-shell geometry.
+
 ## 0.3.23 - Dynamic grapple geometry and one-step orbit control
 
 - Added `grappleFollower`, a relationship attachment mode whose coordinated translation is derived from the leader/follower token footprints and a planar `coordinationDistance` instead of assuming two 1x1 tokens.
