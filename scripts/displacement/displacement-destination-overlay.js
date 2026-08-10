@@ -153,10 +153,33 @@ export class DisplacementDestinationOverlay {
         const handle = new PIXI.Graphics();
         const centerX = displayPosition.x + (width / 2);
         const centerY = displayPosition.y + (height / 2);
+
+        // Put the compact selector on the destination footprint's leading
+        // edge/corner instead of its center. A one-grid-step displacement of
+        // a Large+ token necessarily overlaps much of its starting footprint;
+        // a centered handle can therefore sit on top of the token being moved.
+        // The leading destination cell is both visually unambiguous and remains
+        // associated with the full ghost footprint that will be occupied.
+        const targetX = Number(targetToken?.x ?? 0);
+        const targetY = Number(targetToken?.y ?? 0);
+        const deltaX = Number(displayPosition.x) - targetX;
+        const deltaY = Number(displayPosition.y) - targetY;
+        const edgeInsetX = Math.min(gridSize / 2, width / 2);
+        const edgeInsetY = Math.min(gridSize / 2, height / 2);
+
+        let handleCenterX = centerX;
+        let handleCenterY = centerY;
+
+        if (deltaX > 0.001) handleCenterX = displayPosition.x + width - edgeInsetX;
+        else if (deltaX < -0.001) handleCenterX = displayPosition.x + edgeInsetX;
+
+        if (deltaY > 0.001) handleCenterY = displayPosition.y + height - edgeInsetY;
+        else if (deltaY < -0.001) handleCenterY = displayPosition.y + edgeInsetY;
+
         drawRect(
           handle,
-          centerX - (handleSize / 2),
-          centerY - (handleSize / 2),
+          handleCenterX - (handleSize / 2),
+          handleCenterY - (handleSize / 2),
           handleSize,
           handleSize,
           color,
