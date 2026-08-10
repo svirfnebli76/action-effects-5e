@@ -230,3 +230,8 @@ ae5e.compatibility.getStatus();
 ## Original implementation policy
 
 Action Effects 5E is an independent implementation based on D&D5e rules and Foundry's public APIs. CPR and GPS may be studied for compatibility and high-level architectural lessons, but their code is not copied or required.
+
+
+## Forced displacement semantics
+
+Push supports `AWAY` and `STRAIGHT_AWAY`. Pull is direct-line only: `displacement.pull()` always uses `STRAIGHT_TOWARD`, resolves the direction automatically, and never opens the destination selector.

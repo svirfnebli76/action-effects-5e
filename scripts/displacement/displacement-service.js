@@ -153,10 +153,18 @@ export class DisplacementService {
   }
 
   async pull(options = {}) {
+    if (options.directionConstraint
+      && options.directionConstraint !== DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD) {
+      throw new Error("Pull only supports STRAIGHT_TOWARD movement.");
+    }
+    if (options.directionKey) {
+      throw new Error("Pull direction is resolved automatically and does not accept directionKey.");
+    }
     return this.request({
       ...options,
       type: DISPLACEMENT_TYPES.PULL,
-      directionConstraint: options.directionConstraint ?? DISPLACEMENT_DIRECTION_CONSTRAINTS.TOWARD
+      directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD,
+      directionKey: null
     });
   }
 
@@ -184,14 +192,19 @@ export class DisplacementService {
     });
 
     let candidate = null;
-    if (directionKey) {
+    if (type === DISPLACEMENT_TYPES.PULL) {
+      if (directionKey) {
+        throw new Error("Pull direction is resolved automatically and does not accept directionKey.");
+      }
+      candidate = plan.candidates[0] ?? null;
+    } else if (directionKey) {
       candidate = plan.candidates.find((entry) => entry.key === directionKey) ?? null;
       if (!candidate) throw new Error(`Direction '${directionKey}' is not legal for this displacement.`);
     } else {
       candidate = await this.#overlay.select({
         candidates: plan.candidates,
         targetToken: target,
-        title: title ?? `${type === DISPLACEMENT_TYPES.PUSH ? "Push" : "Pull"} ${target.name ?? "target"}`
+        title: title ?? `Push ${target.name ?? "target"}`
       });
     }
 
@@ -481,7 +494,7 @@ export class DisplacementService {
     }
     const validConstraints = type === DISPLACEMENT_TYPES.PUSH
       ? [DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY, DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY]
-      : [DISPLACEMENT_DIRECTION_CONSTRAINTS.TOWARD, DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD];
+      : [DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD];
     if (!validConstraints.includes(directionConstraint)) {
       throw new Error(`Displacement type '${type}' cannot use direction constraint '${directionConstraint}'.`);
     }

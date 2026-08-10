@@ -3,7 +3,7 @@
 ## 0.3.25 - Generic forced Push/Pull displacement foundation
 
 - Added relationship-independent forced displacement infrastructure for one-shot Push and Pull movement.
-- Added `AWAY`, `STRAIGHT_AWAY`, `TOWARD`, and `STRAIGHT_TOWARD` direction constraints with center-to-center Source/Target semantics and full Target-footprint collision checks.
+- Added `AWAY`, `STRAIGHT_AWAY`, and `STRAIGHT_TOWARD` direction constraints with center-to-center Source/Target semantics and full Target-footprint collision checks. Pull is direct-line only and resolves automatically without a destination selector.
 - Added displaced-body wall/environment and relative-creature obstruction. Hostile creature space hard-blocks; nonhostile creature space is traversable; Neutral and Secret remain universally nonhostile through the centralized resolver.
 - Added partial-distance resolution so a longer displacement can stop at its last legal step instead of cancelling the entire movement.
 - Added generic 3.5-second nonhostile endpoint grace with rollback to the latest clear displacement step, plus immediate cancellation when the conflicting occupant leaves.
@@ -14,6 +14,7 @@
 - Improved the displacement foundation harness so a failed forced-metadata/soft-entry case prints the exact failed predicates and captured movement transaction.
 - Hardened multi-waypoint settlement a second time after Foundry validation showed the logical `AFTER` transaction can precede the Scene TokenDocument reaching the final animated waypoint. Endpoint/grace decisions now wait for the actual Scene document to reach the planned endpoint while retaining the movement context and nonhostile-token bypass, and never infer endpoint arrival from the transaction destination alone.
 - Refined the canvas destination selector for Large+ displaced targets: full future footprints remain faintly outlined, while compact click handles are placed on each destination's leading edge/corner rather than its center so one-step choices do not sit on top of the token being moved.
+- Finalized Pull semantics as `STRAIGHT_TOWARD` only. Removed free-choice `TOWARD` from the public direction vocabulary; `displacement.pull()` now resolves its direct toward direction automatically and never opens the destination selector.
 
 ## 0.3.24 - Relative creature semantics for follower-body obstruction
 

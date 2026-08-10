@@ -44,7 +44,7 @@ The harness resolves the exact `Leader`, `Follower`, `Ally`, `Enemy`, `Neutral`,
 
 A normal pass validates nine groups:
 
-1. 1x1 direction semantics: Push `AWAY` = NE/E/SE, Push `STRAIGHT_AWAY` = E, Pull `TOWARD` = NW/W/SW, Pull `STRAIGHT_TOWARD` = W.
+1. 1x1 direction semantics: Push `AWAY` = NE/E/SE, Push `STRAIGHT_AWAY` = E, and Pull `STRAIGHT_TOWARD` = W. The Pull execution test calls `displacement.pull()` without a direction key to verify automatic direct-line resolution.
 2. Center-relative Large/Huge-style Source geometry: the selected 2x2 and 3x3 fixtures expose N/NE/E/SE for Push `AWAY`.
 3. Actual Pull execution and Target-relative hostile collision.
 4. Push hard-block when the destination creature is hostile relative to the displaced Target, regardless of Source disposition.

@@ -76,7 +76,6 @@ export const DISPLACEMENT_TYPES = Object.freeze({
 export const DISPLACEMENT_DIRECTION_CONSTRAINTS = Object.freeze({
   AWAY: "away",
   STRAIGHT_AWAY: "straight-away",
-  TOWARD: "toward",
   STRAIGHT_TOWARD: "straight-toward"
 });
 

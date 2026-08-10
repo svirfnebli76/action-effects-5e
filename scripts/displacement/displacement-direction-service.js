@@ -64,7 +64,7 @@ function validateType(value) {
 function validateTypeConstraintPair(type, directionConstraint) {
   const valid = type === DISPLACEMENT_TYPES.PUSH
     ? [DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY, DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY]
-    : [DISPLACEMENT_DIRECTION_CONSTRAINTS.TOWARD, DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD];
+    : [DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD];
   if (!valid.includes(directionConstraint)) {
     throw new Error(`Displacement type '${type}' cannot use direction constraint '${directionConstraint}'.`);
   }
@@ -96,8 +96,7 @@ export class DisplacementDirectionService {
       throw new Error("Push/Pull direction is undefined because Source and Target footprint centers coincide.");
     }
 
-    const toward = directionConstraint === DISPLACEMENT_DIRECTION_CONSTRAINTS.TOWARD
-      || directionConstraint === DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD;
+    const toward = directionConstraint === DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD;
     const semantic = toward
       ? { x: -away.x, y: -away.y, magnitude: away.magnitude }
       : away;
@@ -113,11 +112,12 @@ export class DisplacementDirectionService {
   }
 
   /**
-   * Return the selectable square-grid directions for AWAY/TOWARD and the
-   * best-aligned direction(s) for STRAIGHT_AWAY/STRAIGHT_TOWARD.
+   * Return the selectable square-grid directions for AWAY and the best-aligned
+   * direction(s) for STRAIGHT_AWAY / STRAIGHT_TOWARD. Pull is intentionally
+   * STRAIGHT_TOWARD-only and never exposes a free-choice TOWARD fan.
    *
-   * A direction qualifies as away/toward when its normalized movement vector
-   * has a positive dot product with the semantic center-to-center vector.
+   * A direction qualifies as away when its normalized movement vector has a
+   * positive dot product with the semantic center-to-center vector.
    */
   getAllowedSquareDirections({ scene, sourceToken, targetToken, type, directionConstraint }) {
     validateType(type);
@@ -141,6 +141,14 @@ export class DisplacementDirectionService {
     if (straight && positive.length) {
       const best = Math.max(...positive.map((direction) => direction.alignment));
       directions = positive.filter((direction) => Math.abs(direction.alignment - best) <= EPSILON);
+
+      // Pull is a direct-line operation, not a destination-choice operation.
+      // Exact square-grid alignment ties are resolved deterministically so the
+      // puller is never shown a selector. The ordering comes from the stable
+      // SQUARE_DIRECTIONS list above.
+      if (type === DISPLACEMENT_TYPES.PULL && directions.length > 1) {
+        directions = [directions[0]];
+      }
     }
 
     return {

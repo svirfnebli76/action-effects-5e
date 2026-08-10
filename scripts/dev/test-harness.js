@@ -885,16 +885,19 @@ export class TestHarness {
 
   async previewDisplacementFromControlledTokens({
     type = DISPLACEMENT_TYPES.PUSH,
-    directionConstraint = DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY,
+    directionConstraint = null,
     distance = null
   } = {}) {
     const [source, target] = this.#controlledPair();
     const gridDistance = Number(canvas.scene?.grid?.distance ?? 5);
+    const resolvedConstraint = directionConstraint ?? (type === DISPLACEMENT_TYPES.PULL
+      ? DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD
+      : DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY);
     return this.#displacement.request({
       sourceUuid: source.uuid,
       targetUuid: target.uuid,
       type,
-      directionConstraint,
+      directionConstraint: resolvedConstraint,
       distance: Number.isFinite(Number(distance)) && Number(distance) > 0 ? Number(distance) : gridDistance
     });
   }
@@ -1074,10 +1077,6 @@ export class TestHarness {
         type: DISPLACEMENT_TYPES.PUSH,
         directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY
       });
-      const pullToward = await candidateKeys({
-        type: DISPLACEMENT_TYPES.PULL,
-        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.TOWARD
-      });
       const pullStraight = await candidateKeys({
         type: DISPLACEMENT_TYPES.PULL,
         directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD
@@ -1086,12 +1085,11 @@ export class TestHarness {
       const directionChecks = {
         pushAwayThree: sameKeys(pushAway.keys, ["NE", "E", "SE"]),
         pushStraightEast: sameKeys(pushStraight.keys, ["E"]),
-        pullTowardThree: sameKeys(pullToward.keys, ["NW", "W", "SW"]),
         pullStraightWest: sameKeys(pullStraight.keys, ["W"])
       };
       results.push({ name: "1x1 direction semantics", passed: Object.values(directionChecks).every(Boolean), checks: directionChecks });
       if (!results.at(-1).passed) throw new Error("1x1 direction semantic checks failed.");
-      banner("1x1 AWAY / STRAIGHT_AWAY / TOWARD / STRAIGHT_TOWARD — PASS", "#5cff8d", 20);
+      banner("1x1 AWAY / STRAIGHT_AWAY / STRAIGHT_TOWARD — PASS", "#5cff8d", 20);
 
       // --------------------------------------------------------
       // Large-source center-relative geometry.
@@ -1125,9 +1123,7 @@ export class TestHarness {
       const clearPull = await this.#displacement.pull({
         sourceUuid: tokens.Leader.uuid,
         targetUuid: tokens.Follower.uuid,
-        distance: 5,
-        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD,
-        directionKey: "W"
+        distance: 5
       });
       await wait(175);
       const clearPullFollower = canvas.scene.tokens.get(tokens.Follower.id);
@@ -1139,9 +1135,7 @@ export class TestHarness {
       const blockedPull = await this.#displacement.pull({
         sourceUuid: tokens.Leader.uuid,
         targetUuid: tokens.Follower.uuid,
-        distance: 5,
-        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD,
-        directionKey: "W"
+        distance: 5
       });
       const blockedPullFollower = canvas.scene.tokens.get(tokens.Follower.id);
       const pullExecutionChecks = {
