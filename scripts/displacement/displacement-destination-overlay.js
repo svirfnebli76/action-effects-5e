@@ -22,29 +22,6 @@ function drawRect(graphics, x, y, width, height, color, { fillAlpha = 0.22, stro
   graphics.endFill?.();
 }
 
-function createText(PIXI, text, size) {
-  try {
-    return new PIXI.Text({
-      text,
-      style: {
-        fontSize: size,
-        fontWeight: "bold",
-        fill: 0xFFFFFF,
-        align: "center",
-        stroke: { color: 0x000000, width: 4 }
-      }
-    });
-  } catch {
-    return new PIXI.Text(text, {
-      fontSize: size,
-      fontWeight: "bold",
-      fill: 0xFFFFFF,
-      align: "center",
-      stroke: 0x000000,
-      strokeThickness: 4
-    });
-  }
-}
 
 export class DisplacementDestinationOverlay {
   #container = null;
@@ -78,7 +55,7 @@ export class DisplacementDestinationOverlay {
     if (selectable.length === 1) return selectable[0];
 
     const PIXI = globalThis.PIXI;
-    if (!PIXI?.Container || !PIXI?.Graphics || !PIXI?.Text) {
+    if (!PIXI?.Container || !PIXI?.Graphics) {
       throw new Error("PIXI canvas primitives are unavailable for displacement destination selection.");
     }
     const parent = canvas.interface ?? canvas.controls ?? canvas.stage;
@@ -141,21 +118,6 @@ export class DisplacementDestinationOverlay {
         }
         container.addChild(graphics);
 
-        const moved = Number(candidate.actualDistance ?? 0);
-        const requested = Number(candidate.requestedDistance ?? moved);
-        let suffix = "";
-        if (candidate.state === DISPLACEMENT_DESTINATION_STATES.BLOCKED) suffix = " X";
-        else {
-          if (candidate.softConflict) suffix += " ~";
-          if (candidate.partial) suffix += ` ${moved}/${requested}`;
-        }
-        const label = createText(PIXI, `${candidate.key}${suffix}`, Math.max(14, Math.round(gridSize * 0.18)));
-        label.anchor?.set?.(0.5, 0.5);
-        label.x = displayPosition.x + (width / 2);
-        label.y = displayPosition.y + (height / 2);
-        label.eventMode = "none";
-        label.zIndex = 20;
-        container.addChild(label);
       }
 
       this.#keydown = (event) => {
@@ -169,7 +131,7 @@ export class DisplacementDestinationOverlay {
 
     parent.addChild(container);
     this.#container = container;
-    ui?.notifications?.info?.(`${title}. Click a highlighted destination; press Esc to cancel.`);
+    ui?.notifications?.info?.(`${title}: Select a destination square. Press Esc to cancel.`);
     return promise;
   }
 }
