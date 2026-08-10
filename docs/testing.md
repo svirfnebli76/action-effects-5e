@@ -31,6 +31,43 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
+## v0.3.25 forced-displacement foundation
+
+Run the complete Foundry-only displacement regression:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runDisplacementFoundationTest();
+```
+
+The harness resolves the exact `Leader`, `Follower`, `Ally`, `Enemy`, `Neutral`, and `Secret` tokens, rejects unrelated Leader/Follower relationships, removes only AE5E test-harness relationships, snapshots the fixture, and uses a Foundry v14 movement action configured with `teleport: true` for deterministic test positioning. It does **not** use the deprecated database `teleport` update option. Every fixture move verifies the resulting TokenDocument coordinates before behavioral assertions begin.
+
+A normal pass validates nine groups:
+
+1. 1x1 direction semantics: Push `AWAY` = NE/E/SE, Push `STRAIGHT_AWAY` = E, Pull `TOWARD` = NW/W/SW, Pull `STRAIGHT_TOWARD` = W.
+2. Center-relative Large/Huge-style Source geometry: the selected 2x2 and 3x3 fixtures expose N/NE/E/SE for Push `AWAY`.
+3. Actual Pull execution and Target-relative hostile collision.
+4. Push hard-block when the destination creature is hostile relative to the displaced Target, regardless of Source disposition.
+5. Forced movement transaction metadata plus a 10-foot Push ending in nonhostile occupancy; after 3.5 seconds the Target must return only to the last clear 5-foot step.
+6. If the nonhostile creature causing an occupied endpoint moves away during grace, the pending rollback clears immediately and the displaced Target remains in place.
+7. Neutral and Secret endpoint candidates are soft/selectable.
+8. A 10-foot Push may pass through a nonhostile creature at the first step and end clear, exercising the narrow D&D5e occupied-space bypass.
+9. A 10-foot Push partially stops at 5 feet when the next step is blocked by the harness's diagnostic wall.
+
+A complete pass removes the diagnostic wall, clears displacement grace, restores the six token states, and prints a large PASS banner/table/full JSON. A failure leaves the fixture visible for inspection.
+
+Interactive selector smoke test: control exactly two tokens in order, Source first and Target second, then run:
+
+```js
+await ae5e.tests.previewDisplacementFromControlledTokens({
+  type: ae5e.constants.DISPLACEMENT_TYPES.PUSH,
+  directionConstraint: ae5e.constants.DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY,
+  distance: 5
+});
+```
+
+Expected overlay: green = clear; yellow `~` = nonhostile occupied endpoint; orange = partial distance (`actual/requested`); red `X` = hard blocked and not selectable. Press Esc to cancel.
+
 ## Creating a grapple geometry fixture
 
 Control exactly two tokens, Leader first and Follower second, then run:
@@ -112,7 +149,7 @@ Leader FRIENDLY / Follower HOSTILE
   Secret  Secret   -> SOFT -> grace -> rollback if overlap persists
 ```
 
-Before modifying the Scene, the same command runs a 4x4 resolver matrix over Friendly, Hostile, Neutral, and Secret in both reference directions. It also verifies geometry ownership directly: `follower-body` resolves relative to the Follower and the reserved `grapple-link` channel resolves relative to the Leader/Grappler.
+Before modifying the Scene, the same command runs a 4x4 resolver matrix over Friendly, Hostile, Neutral, and Secret in both reference directions. It also verifies geometry ownership directly: `follower-body` resolves relative to the Follower and the reserved `grapple-link` channel resolves relative to the Leader/Grappler. In v0.3.25 the physical fixture setup uses an exact Foundry movement-action teleport and asserts every resulting coordinate, preventing ordinary token blocking from corrupting the matrix setup.
 
 Leader disposition is deliberately varied as a control. Because this matrix validates **Follower-body** geometry, the third creature is classified relative to the Follower. Neutral and Secret must remain nonhostile regardless of either participant's Friendly/Hostile side. The later physical `grapple-link` collision matrix will use the Leader/Grappler as its reference.
 

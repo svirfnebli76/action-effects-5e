@@ -1,12 +1,17 @@
 import {
   ATTACHMENT_MODES,
   COLLISION_POLICIES,
+  DISPLACEMENT_DESTINATION_STATES,
+  DISPLACEMENT_DIRECTION_CONSTRAINTS,
+  DISPLACEMENT_TYPES,
   HOOKS,
   MODULE_ID,
   MODULE_VERSION,
   MOVEMENT_AGENCIES,
+  MOVEMENT_GEOMETRY_CHANNELS,
   MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
+  NONHOSTILE_ENDPOINT_GRACE_MS,
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
@@ -29,6 +34,7 @@ export class ActionEffects5eApi {
     relationshipMovement,
     relationshipRotation,
     relativeRelationships,
+    displacement,
     tests,
     socket
   }) {
@@ -41,6 +47,11 @@ export class ActionEffects5eApi {
       PATH_TYPES,
       MOVEMENT_AGENCIES,
       MOVEMENT_RESOURCES,
+      MOVEMENT_GEOMETRY_CHANNELS,
+      DISPLACEMENT_TYPES,
+      DISPLACEMENT_DIRECTION_CONSTRAINTS,
+      DISPLACEMENT_DESTINATION_STATES,
+      NONHOSTILE_ENDPOINT_GRACE_MS,
       RELATIONSHIP_TYPES,
       RELATIONSHIP_COORDINATION_POLICIES,
       RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
@@ -72,6 +83,17 @@ export class ActionEffects5eApi {
       createOperationOptions: (metadata) => movement.createOperationOptions(metadata),
       getRecentTransactions: () => movement.getRecentTransactions(),
       getStats: () => movement.getStats()
+    });
+
+    this.displacement = Object.freeze({
+      request: (options) => displacement.request(options),
+      push: (options) => displacement.push(options),
+      pull: (options) => displacement.pull(options),
+      getCandidates: (options) => displacement.getCandidates(options),
+      clearSelection: () => displacement.clearSelection(),
+      clearEndpointGrace: (subjectUuid) => displacement.clearEndpointGrace(subjectUuid),
+      getRecentResults: () => displacement.getRecentResults(),
+      getStats: () => displacement.getStats()
     });
 
     this.relationships = Object.freeze({
@@ -111,7 +133,9 @@ export class ActionEffects5eApi {
       clearOrbitDebug: () => tests.clearOrbitDebug(),
       orbitClockwise: (options) => tests.orbitClockwise(options),
       orbitCounterclockwise: (options) => tests.orbitCounterclockwise(options),
-      runFollowerBodyDispositionMatrix: (options) => tests.runFollowerBodyDispositionMatrix(options)
+      runFollowerBodyDispositionMatrix: (options) => tests.runFollowerBodyDispositionMatrix(options),
+      previewDisplacementFromControlledTokens: (options) => tests.previewDisplacementFromControlledTokens(options),
+      runDisplacementFoundationTest: (options) => tests.runDisplacementFoundationTest(options)
     });
 
     this.socket = Object.freeze({

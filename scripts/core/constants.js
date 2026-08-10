@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.24";
+export const MODULE_VERSION = "0.3.25";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -68,6 +68,31 @@ export const MOVEMENT_RESOURCES = Object.freeze({
   UNKNOWN: "unknown"
 });
 
+export const DISPLACEMENT_TYPES = Object.freeze({
+  PUSH: "push",
+  PULL: "pull"
+});
+
+export const DISPLACEMENT_DIRECTION_CONSTRAINTS = Object.freeze({
+  AWAY: "away",
+  STRAIGHT_AWAY: "straight-away",
+  TOWARD: "toward",
+  STRAIGHT_TOWARD: "straight-toward"
+});
+
+export const DISPLACEMENT_DESTINATION_STATES = Object.freeze({
+  CLEAR: "clear",
+  SOFT_CONFLICT: "soft-conflict",
+  PARTIAL: "partial",
+  BLOCKED: "blocked"
+});
+
+export const MOVEMENT_GEOMETRY_CHANNELS = Object.freeze({
+  DISPLACED_BODY: "displaced-body"
+});
+
+export const NONHOSTILE_ENDPOINT_GRACE_MS = 3_500;
+
 export const RELATIONSHIP_TYPES = Object.freeze({
   GRAPPLE: "grapple",
   MOUNT: "mount",
@@ -126,7 +151,7 @@ export const RELATIONSHIP_NONHOSTILE_ENDPOINT_POLICIES = Object.freeze({
   ALLOW: "allow",
   GRACE: "grace"
 });
-export const RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS = 3_500;
+export const RELATIONSHIP_NONHOSTILE_ENDPOINT_GRACE_MS = NONHOSTILE_ENDPOINT_GRACE_MS;
 
 // Backward-compatible aliases retained for persisted v0.3.21-v0.3.23
 // relationships and integrations which still use the former allied naming.
@@ -141,6 +166,7 @@ export const HOOKS = Object.freeze({
   READY: `${MODULE_ID}.ready`,
   PRE_MOVEMENT_TRANSACTION: `${MODULE_ID}.preMovementTransaction`,
   MOVEMENT_TRANSACTION: `${MODULE_ID}.movementTransaction`,
+  DISPLACEMENT_RESOLVED: `${MODULE_ID}.displacementResolved`,
   RELATIONSHIP_CREATED: `${MODULE_ID}.relationshipCreated`,
   RELATIONSHIP_UPDATED: `${MODULE_ID}.relationshipUpdated`,
   RELATIONSHIP_REMOVED: `${MODULE_ID}.relationshipRemoved`,

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.25 - Generic forced Push/Pull displacement foundation
+
+- Added a relationship-independent `DisplacementService` for one-shot forced movement. Push and Pull requests carry Source, Target, distance, and a semantic direction constraint; persistent relationships are not created merely because one creature forced another to move.
+- Added first-class `AWAY`, `STRAIGHT_AWAY`, `TOWARD`, and `STRAIGHT_TOWARD` direction constraints. Direction semantics are calculated from the center of the Source's complete token footprint to the center of the Target's complete footprint; collision always uses the Target's full footprint rather than center points.
+- Added square-grid candidate generation for all legal 8-direction destinations. `AWAY`/`TOWARD` expose every direction with a positive projection on the semantic vector, while the `STRAIGHT_*` forms expose only the best-aligned direction(s). This naturally permits additional Shove directions beside Large/Huge sources when center-relative geometry warrants them.
+- Added an ephemeral PIXI destination selector. Clear destinations are green, persistent nonhostile endpoint conflicts are yellow, partial-distance destinations are orange, and hard-blocked requested destinations are red and disabled. Blocked choices remain visible so the user can see why a direction is unavailable; Esc cancels selection.
+- Added `MovementObstructionService` for displaced-body footprint checks. Walls/environment constraints hard-stop movement; a creature hostile relative to the **displaced Target** hard-stops movement; nonhostile creatures may be traversed. Neutral and Secret retain the universal nonhostile semantics validated in v0.3.24.
+- Displacement is resolved one grid step at a time. A hard obstruction after one or more legal steps produces a partial displacement to the last legal step instead of cancelling the entire Push/Pull.
+- Generalized the 3.5-second occupied-endpoint concept for forced displacement. If a displacement ends overlapping a nonhostile creature, grace begins; if that occupant moves away, the pending rollback clears immediately; if the overlap remains at expiry, the Target returns to the most recent **clear** position reached by that displacement, not necessarily its original starting position.
+- Added a narrow D&D5e occupied-space integration for active AE5E displacement only. AE5E removes from D&D5e's blocking set only the exact token UUIDs that its own body preflight already classified nonhostile; it does not globally disable token collision.
+- AE5E-generated Push/Pull movement now produces normal movement transactions with `agency: "forced"`, `resource: "none"`, and displacement metadata (`displacementId`, type, direction constraint/direction, requested distance, actual distance, Source, and Target) so other AE5E features can reliably distinguish forced movement without prompts or guessed heuristics.
+- Added public `ae5e.displacement` APIs for `request`, `push`, `pull`, `getCandidates`, selection/grace cleanup, recent results, and stats, plus `action-effects-5e.displacementResolved`.
+- Added Foundry-only `ae5e.tests.runDisplacementFoundationTest()` coverage for 1x1/2x2/3x3 direction geometry, actual Pull execution, Target-relative hostile blocking, forced transaction metadata, nonhostile grace/rollback, immediate grace clearing when the occupant leaves, Neutral/Secret endpoints, nonhostile transit, and wall partial-stop behavior. Test fixtures use a Foundry v14 movement action configured as teleportation rather than the deprecated database `teleport` update option.
+- Repaired the built-in follower-body disposition matrix fixture placement so it also uses exact modern movement-action fixture positioning and validates the resulting token coordinates before testing behavior.
+- Physical Grapple-link sweep/final occupancy remains intentionally deferred to v0.3.26, where it can reuse the new generic obstruction foundation while resolving link relationships relative to the Leader/Grappler.
+
 ## 0.3.24 - Relative creature semantics for follower-body obstruction
 
 - Added `RelativeTokenRelationshipService`, a centralized pairwise resolver for creature obstruction. Callers explicitly select the reference creature instead of treating Foundry token disposition as a direct NPC-to-NPC relationship.

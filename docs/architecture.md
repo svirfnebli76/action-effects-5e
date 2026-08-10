@@ -133,6 +133,28 @@ With `nonhostileEndpointPolicy: grace`, the 3.5-second default timer begins afte
 
 For orbit follower-body preflight, AE5E separates wall/surface obstruction from creature obstruction. It preserves Foundry's environment constraint result, classifies intersecting token footprints relative to the Follower, hard-blocks hostile creatures, and only bypasses D&D5e token blocking when every identified creature conflict is nonhostile.
 
+## Generic forced displacement (v0.3.25)
+
+Push/Pull are one-shot displacement operations and do **not** create relationships merely because one token caused another token to move. Persistent state such as Grapple, Tether, Mount, Carry, or Passenger remains a relationship concern. A later item such as a grappling hook can therefore perform a Pull first and create a Tether relationship only if its own rules require persistent linkage afterward.
+
+Responsibility is intentionally split:
+
+- the Item/integration declares `type`, distance, and semantic direction constraint;
+- AC5E may pass those semantics when an Automated Conditions feature owns the initiating rule;
+- AE5E calculates spatial candidates, evaluates obstruction/occupancy, presents the runtime destination selector, authorizes the movement through the GM, and emits the forced `MovementTransaction`.
+
+The public direction vocabulary is `AWAY`, `STRAIGHT_AWAY`, `TOWARD`, and `STRAIGHT_TOWARD`. Push accepts the away forms; Pull accepts the toward forms. On square grids, AE5E builds a semantic unit vector from the center of the Source's complete footprint to the center of the Target's complete footprint. `AWAY`/`TOWARD` accept each of the eight grid directions whose normalized vector has positive projection on the semantic vector. `STRAIGHT_*` retains only the best-aligned direction(s), including exact ties. This avoids encoding 1x1 assumptions into Shove: larger Source footprints naturally change the center-relative candidate set.
+
+Direction centers are **not** collision geometry. `MovementObstructionService` translates the Target's complete footprint through each candidate grid step. Environment/walls are checked through Foundry's public constraint pipeline with token blocking excluded for that preflight. Creature occupancy is then classified relative to the displaced Target through `RelativeTokenRelationshipService` using the `displaced-body` geometry channel. Hostile occupancy stops before the offending step; nonhostile occupancy is traversable.
+
+A requested displacement is therefore a maximum distance rather than all-or-nothing movement. If a 10-foot Push has one legal 5-foot step and then encounters a wall or hostile creature, the actual result is 5 feet and is reported as `partial`. An endpoint which remains occupied by a nonhostile creature is temporarily legal and enters generic endpoint grace. If the endpoint occupant moves away during grace, the pending rollback clears immediately. Expiry while the overlap remains returns the Target to the latest clear position reached by that same displacement, skipping earlier traversed positions that were themselves nonhostile-occupied.
+
+D&D5e Full Movement Automation performs token blocking during `findMovementPath` before ordinary constraint options can disable it. While an AE5E displacement is active, AE5E uses the D&D5e occupied-grid-space hook to remove only the exact blocker UUIDs that the independent displaced-body preflight already classified nonhostile. The bypass map exists only for that Target and only for the duration of that movement; hard/environment checks remain authoritative.
+
+Every executed Push/Pull movement is tagged `agency: forced`, `resource: none`, `pathType: traverse`, plus Source/Target and displacement identity/type/direction/requested-vs-actual distance. This allows Grapple, Booming Blade, Regions, opportunity logic, and later effects to distinguish forced movement without prompting users or inferring agency from coordinates.
+
+The on-canvas selector is ephemeral PIXI state: clear candidates are green, soft endpoint conflicts yellow, partial stops orange, and blocked requested endpoints red. Blocked endpoints remain visible but disabled. No Drawings, Tiles, Regions, Scene flags, or temporary Item/Active Effect documents are created for selection.
+
 ## Forced movement and re-anchoring
 
 External forced movement is not treated as coordinated dragging.
@@ -164,6 +186,7 @@ Relationships retain explicit `detach`, `follow`, and `block` teleport policies.
 
 Production-facing helpers include:
 
+- `displacement.request/push/pull/getCandidates`
 - `relationships.create/remove/updateGeometry`
 - `relationships.moveGroup`
 - `relationships.waitForMovementSettled`
@@ -177,7 +200,8 @@ Development geometry helpers under `ae5e.tests` invoke the same real production 
 - shell validation;
 - temporary orbit overlay;
 - direct one-step clockwise/counterclockwise orbit commands;
-- the Foundry-only eight-case `runFollowerBodyDispositionMatrix` regression harness.
+- the Foundry-only eight-case `runFollowerBodyDispositionMatrix` regression harness;
+- `runDisplacementFoundationTest` and the interactive `previewDisplacementFromControlledTokens` selector smoke test.
 
 No test-only alternative movement or orbit math exists.
 
@@ -187,7 +211,8 @@ Player requests which mutate authoritative relationship state are GM-authorized 
 
 ## Current limits
 
-- Dynamic orbit geometry currently requires a square Scene grid.
-- Physical `grapple-link` sweep/final-corridor obstruction is not implemented in v0.3.24; only the geometry-channel ownership and relative-creature semantics are established.
+- Dynamic orbit geometry and v0.3.25 Push/Pull destination generation currently require a square Scene grid.
+- v0.3.25 provides displaced-body obstruction only. Physical `grapple-link` sweep/final-corridor obstruction is intentionally deferred to v0.3.26 and will use the Leader/Grappler as its relative-relationship reference.
+- Push/Pull item adapters (Unarmed Strike/Shove, grappling hooks, spells, etc.) are not bundled in v0.3.25; this build provides the reusable infrastructure they will call.
 - Creature-size eligibility, unarmed-strike reach derivation, Grappled/Grappler effects, escape/action economy, movement-resource charging for rotation, and the Prone popup integration belong to later Grapple rules/item work.
 - Fractional Tiny-token geometry is supported by the shell generator, but Foundry's occupied-grid-space distance API can collapse some sub-grid separations; live Tiny tests remain important before declaring final Grapple UX semantics.

@@ -10,6 +10,12 @@ import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
 import { RelativeTokenRelationshipService } from "./relationships/relative-token-relationship-service.js";
+import { DisplacementDirectionService } from "./displacement/displacement-direction-service.js";
+import { MovementObstructionService } from "./displacement/movement-obstruction-service.js";
+import { DisplacementPlanner } from "./displacement/displacement-planner.js";
+import { DisplacementDestinationOverlay } from "./displacement/displacement-destination-overlay.js";
+import { NonhostileEndpointGraceService } from "./displacement/nonhostile-endpoint-grace-service.js";
+import { DisplacementService } from "./displacement/displacement-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -20,6 +26,24 @@ const movementRegistry = new MovementRegistry();
 const relationships = new RelationshipService({ socket });
 const relativeRelationships = new RelativeTokenRelationshipService();
 const movement = new MovementService({ registry: movementRegistry, relationships });
+const displacementDirections = new DisplacementDirectionService();
+const movementObstructions = new MovementObstructionService({ relativeRelationships });
+const displacementPlanner = new DisplacementPlanner({
+  directions: displacementDirections,
+  obstructions: movementObstructions
+});
+const displacementOverlay = new DisplacementDestinationOverlay();
+const displacementGrace = new NonhostileEndpointGraceService({
+  movement,
+  obstructions: movementObstructions
+});
+const displacement = new DisplacementService({
+  socket,
+  movement,
+  planner: displacementPlanner,
+  overlay: displacementOverlay,
+  grace: displacementGrace
+});
 const relationshipMovement = new RelationshipMovementService({
   socket,
   relationships,
@@ -39,6 +63,7 @@ const tests = new TestHarness({
   relationshipMovement,
   relationshipRotation,
   relativeRelationships,
+  displacement,
   socket
 });
 const api = new ActionEffects5eApi({
@@ -49,6 +74,7 @@ const api = new ActionEffects5eApi({
   relationshipMovement,
   relationshipRotation,
   relativeRelationships,
+  displacement,
   tests,
   socket
 });
@@ -79,6 +105,7 @@ Hooks.once("ready", async () => {
   relationshipMovement.initialize();
   relationshipRotation.initialize();
   movement.initialize();
+  displacement.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

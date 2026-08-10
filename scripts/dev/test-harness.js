@@ -1,7 +1,10 @@
 import {
   ATTACHMENT_MODES,
   COLLISION_POLICIES,
+  DISPLACEMENT_DIRECTION_CONSTRAINTS,
+  DISPLACEMENT_TYPES,
   MODULE_ID,
+  MOVEMENT_AGENCIES,
   MOVEMENT_PHASES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
@@ -24,10 +27,11 @@ export class TestHarness {
   #relationshipMovement;
   #relationshipRotation;
   #relativeRelationships;
+  #displacement;
   #socket;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, socket }) {
+  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, displacement, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -35,6 +39,7 @@ export class TestHarness {
     this.#relationshipMovement = relationshipMovement;
     this.#relationshipRotation = relationshipRotation;
     this.#relativeRelationships = relativeRelationships;
+    this.#displacement = displacement;
     this.#socket = socket;
   }
 
@@ -72,6 +77,7 @@ export class TestHarness {
     record("Relationship indexes", this.#relationships.getStats().relationships >= 0, this.#relationships.getStats());
     record("Relationship movement service", this.#relationshipMovement.getStats().initialized, this.#relationshipMovement.getStats());
     record("Relationship rotation service", this.#relationshipRotation.getStats().initialized, this.#relationshipRotation.getStats());
+    record("Displacement service", this.#displacement.getStats().initialized, this.#displacement.getStats());
     record("Socketlib registration", this.#socket.ready, { ready: this.#socket.ready });
 
     const passed = checks.every((check) => check.passed);
@@ -82,6 +88,7 @@ export class TestHarness {
       relationships: this.#relationships.getStats(),
       relationshipMovement: this.#relationshipMovement.getStats(),
       relationshipRotation: this.#relationshipRotation.getStats(),
+      displacement: this.#displacement.getStats(),
       compatibility: compatibilityStatus
     };
     Logger.info("Foundation smoke test", result);
@@ -386,6 +393,52 @@ export class TestHarness {
       }];
     }));
 
+    const movementActions = globalThis.CONFIG?.Token?.movement?.actions;
+    const movementActionEntries = movementActions?.entries
+      ? [...movementActions.entries()]
+      : Object.entries(movementActions ?? {});
+    const fixtureTeleportAction = movementActionEntries.find(([, config]) => config?.teleport === true)?.[0] ?? null;
+    if (!fixtureTeleportAction) {
+      throw new Error("Follower-body matrix requires a Foundry movement action whose CONFIG.Token.movement action has teleport=true for deterministic fixture placement.");
+    }
+
+    const fixtureMove = async (token, { x, y, elevation = 0 }) => {
+      const current = canvas.scene.tokens.get(token.id);
+      if (current.x === x && current.y === y && Number(current.elevation ?? 0) === Number(elevation)) return current;
+      const completed = await current.move({
+        x,
+        y,
+        elevation,
+        action: fixtureTeleportAction,
+        explicit: true,
+        checkpoint: true
+      }, {
+        method: "api",
+        animate: false,
+        showRuler: false,
+        pan: false,
+        autoRotate: false,
+        constrainOptions: { ignoreWalls: true, ignoreCost: true, ignoreTokens: true },
+        ...this.#movement.createOperationOptions({
+          pathType: "reposition",
+          agency: "administrative",
+          resource: "none",
+          movementMode: fixtureTeleportAction,
+          administrative: true,
+          generatedBy: MODULE_ID,
+          internal: true,
+          suppressAutomation: true,
+          testFixture: true
+        })
+      });
+      await wait(75);
+      const after = canvas.scene.tokens.get(token.id);
+      if (after.x !== x || after.y !== y || Number(after.elevation ?? 0) !== Number(elevation)) {
+        throw new Error(`FIXTURE FAIL | ${token.name} expected (${x},${y},${elevation}); actual (${after.x},${after.y},${after.elevation}); moveCompleted=${completed}.`);
+      }
+      return after;
+    };
+
     const base = { x: 2200, y: 2800 };
     const followerStart = { x: 2300, y: 2800 };
     const parking = {
@@ -485,63 +538,58 @@ export class TestHarness {
       await canvas.scene.updateEmbeddedDocuments("Token", [
         {
           _id: tokens.Leader.id,
-          ...base,
           width: 1,
           height: 1,
           rotation: 15,
-          elevation: 0,
           disposition: testCase.leaderDisposition
         },
         {
           _id: tokens.Follower.id,
-          ...followerStart,
           width: 1,
           height: 1,
           rotation: 0,
-          elevation: 0,
           disposition: testCase.followerDisposition
         },
         {
           _id: tokens.Ally.id,
-          ...parking.Ally,
           width: 1,
           height: 1,
           rotation: 0,
-          elevation: 0,
           disposition: D.HOSTILE
         },
         {
           _id: tokens.Enemy.id,
-          ...parking.Enemy,
           width: 1,
           height: 1,
           rotation: 0,
-          elevation: 0,
           disposition: D.FRIENDLY
         },
         {
           _id: tokens.Neutral.id,
-          ...parking.Neutral,
           width: 1,
           height: 1,
           rotation: 0,
-          elevation: 0,
           disposition: D.NEUTRAL
         },
         {
           _id: tokens.Secret.id,
-          ...parking.Secret,
           width: 1,
           height: 1,
           rotation: 0,
-          elevation: 0,
           disposition: D.SECRET
         }
       ], {
         animate: false,
         ae5eDiagnosticSetup: true
       });
-      await wait(125);
+      await wait(75);
+
+      await fixtureMove(canvas.scene.tokens.get(tokens.Leader.id), { ...base, elevation: 0 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Follower.id), { ...followerStart, elevation: 0 });
+      for (const [name, position] of Object.entries(parking)) {
+        await fixtureMove(canvas.scene.tokens.get(tokens[name].id), { ...position, elevation: 0 });
+      }
+      await wait(75);
 
       const leader = canvas.scene.tokens.get(tokens.Leader.id);
       const follower = canvas.scene.tokens.get(tokens.Follower.id);
@@ -576,18 +624,31 @@ export class TestHarness {
         relationship,
         direction: 1
       });
-      const obstacle = canvas.scene.tokens.get(tokens[testCase.obstacle].id);
-      await obstacle.update({
+      let obstacle = canvas.scene.tokens.get(tokens[testCase.obstacle].id);
+      obstacle = await fixtureMove(obstacle, {
         x: plan.target.x,
         y: plan.target.y,
-        width: 1,
-        height: 1,
         elevation: 0
-      }, {
-        animate: false,
-        ae5eDiagnosticSetup: true
       });
-      await wait(125);
+      await wait(100);
+
+      const fixtureChecks = {
+        obstacleX: obstacle.x === plan.target.x,
+        obstacleY: obstacle.y === plan.target.y,
+        obstacleElevation: Number(obstacle.elevation ?? 0) === 0,
+        leaderX: leader.x === base.x,
+        leaderY: leader.y === base.y,
+        followerX: follower.x === followerStart.x,
+        followerY: follower.y === followerStart.y
+      };
+      for (const otherName of ["Ally", "Enemy", "Neutral", "Secret"]) {
+        if (otherName === testCase.obstacle) continue;
+        const other = canvas.scene.tokens.get(tokens[otherName].id);
+        fixtureChecks[`${otherName}NotAtEndpoint`] = !(other.x === plan.target.x && other.y === plan.target.y);
+      }
+      if (!Object.values(fixtureChecks).every(Boolean)) {
+        throw new Error(`CASE ${testCase.id} | FIXTURE FAIL: ${JSON.stringify(fixtureChecks)}`);
+      }
 
       const resolver = this.#relativeRelationships.resolveForGeometry({
         geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY,
@@ -596,11 +657,11 @@ export class TestHarness {
         otherToken: obstacle
       });
 
-      return { relationship, leader, follower, obstacle, plan, resolver };
+      return { relationship, leader, follower, obstacle, plan, resolver, fixtureChecks };
     };
 
     ensureNoUnrelatedParticipantRelationships();
-    banner("AE5E 0.3.24 FOLLOWER-BODY DISPOSITION MATRIX", "#7ddcff", 30);
+    banner("AE5E 0.3.25 FOLLOWER-BODY DISPOSITION MATRIX", "#7ddcff", 30);
     banner("8 AUTOMATIC FOUNDRY CASES", "#ffcc66", 19);
 
     const results = [];
@@ -657,6 +718,7 @@ export class TestHarness {
           expected: "hard",
           passed,
           resolver: fixture.resolver,
+          fixtureChecks: fixture.fixtureChecks,
           checks,
           directResult,
           lastDecision: decision
@@ -696,6 +758,7 @@ export class TestHarness {
           stage: "entry",
           passed: false,
           resolver: fixture.resolver,
+          fixtureChecks: fixture.fixtureChecks,
           immediateChecks,
           directResult,
           lastDecision: decision
@@ -733,6 +796,7 @@ export class TestHarness {
         expected: "soft",
         passed,
         resolver: fixture.resolver,
+        fixtureChecks: fixture.fixtureChecks,
         immediateChecks,
         rollbackChecks,
         directResult,
@@ -760,10 +824,23 @@ export class TestHarness {
       await removeHarnessRelationships();
       await wait(100);
       if (restoreOnPass) {
-        await canvas.scene.updateEmbeddedDocuments("Token", Object.values(snapshots), {
+        await canvas.scene.updateEmbeddedDocuments("Token", Object.values(snapshots).map((snapshot) => ({
+          _id: snapshot._id,
+          width: snapshot.width,
+          height: snapshot.height,
+          rotation: snapshot.rotation,
+          disposition: snapshot.disposition
+        })), {
           animate: false,
           ae5eDiagnosticRestore: true
         });
+        for (const snapshot of Object.values(snapshots)) {
+          await fixtureMove(canvas.scene.tokens.get(snapshot._id), {
+            x: snapshot.x,
+            y: snapshot.y,
+            elevation: snapshot.elevation
+          });
+        }
       }
       canvas.tokens.releaseAll();
       banner("AE5E FOLLOWER-BODY DISPOSITION MATRIX — PASS", "#5cff8d", 30);
@@ -802,6 +879,593 @@ export class TestHarness {
       passed
         ? "AE5E | Follower-body disposition matrix PASSED."
         : "AE5E | Follower-body disposition matrix FAILED."
+    );
+    return report;
+  }
+
+  async previewDisplacementFromControlledTokens({
+    type = DISPLACEMENT_TYPES.PUSH,
+    directionConstraint = DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY,
+    distance = null
+  } = {}) {
+    const [source, target] = this.#controlledPair();
+    const gridDistance = Number(canvas.scene?.grid?.distance ?? 5);
+    return this.#displacement.request({
+      sourceUuid: source.uuid,
+      targetUuid: target.uuid,
+      type,
+      directionConstraint,
+      distance: Number.isFinite(Number(distance)) && Number(distance) > 0 ? Number(distance) : gridDistance
+    });
+  }
+
+  async runDisplacementFoundationTest({ restoreOnPass = true, graceBufferMs = 700 } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    if (!game.user?.isGM) throw new Error("The displacement foundation test requires a GM user.");
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const banner = (text, color = "#7ddcff", size = 24) => {
+      console.log(`%c${text}`, `font-size:${size}px;font-weight:bold;color:${color};`);
+    };
+    const D = globalThis.CONST?.TOKEN_DISPOSITIONS;
+    if (!D) throw new Error("Foundry token disposition constants are unavailable.");
+
+    const names = ["Leader", "Follower", "Ally", "Enemy", "Neutral", "Secret"];
+    const tokens = {};
+    for (const name of names) {
+      const matches = canvas.tokens.placeables.filter((token) => token.document.name === name);
+      if (matches.length !== 1) {
+        throw new Error(`Expected exactly one '${name}' token on the active Scene; found ${matches.length}.`);
+      }
+      tokens[name] = matches[0].document;
+    }
+
+    const snapshots = Object.fromEntries(names.map((name) => {
+      const token = tokens[name];
+      return [name, {
+        _id: token.id,
+        x: token.x,
+        y: token.y,
+        width: token.width,
+        height: token.height,
+        rotation: token.rotation,
+        elevation: token.elevation,
+        disposition: token.disposition
+      }];
+    }));
+
+    const removeHarnessRelationships = async () => {
+      const relationships = this.#relationships.list({ sceneId: canvas.scene.id, type: RELATIONSHIP_TYPES.TEST })
+        .filter((relationship) => relationship.metadata?.createdByTestHarness === true);
+      for (const relationship of relationships) await this.#relationships.remove(relationship.id);
+    };
+
+    const ensureNoUnrelatedParticipantRelationships = () => {
+      const participantUuids = new Set([tokens.Leader.uuid, tokens.Follower.uuid]);
+      const conflicts = this.#relationships.list({ sceneId: canvas.scene.id }).filter((relationship) => (
+        participantUuids.has(relationship.leaderUuid) || participantUuids.has(relationship.followerUuid)
+      ) && !(relationship.type === RELATIONSHIP_TYPES.TEST && relationship.metadata?.createdByTestHarness === true));
+      if (conflicts.length) {
+        throw new Error(`Leader/Follower participate in ${conflicts.length} non-test relationship(s). Remove those relationships before running the displacement foundation test.`);
+      }
+    };
+
+    const movementActions = globalThis.CONFIG?.Token?.movement?.actions;
+    const entries = movementActions?.entries
+      ? [...movementActions.entries()]
+      : Object.entries(movementActions ?? {});
+    const teleportAction = entries.find(([, config]) => config?.teleport === true)?.[0] ?? null;
+    if (!teleportAction) {
+      throw new Error("AE5E displacement test requires a Foundry movement action whose CONFIG.Token.movement action has teleport=true for deterministic fixture placement.");
+    }
+
+    const removeDiagnosticWalls = async () => {
+      const ids = canvas.scene.walls
+        .filter((wall) => wall.getFlag(MODULE_ID, "displacementDiagnosticWall") === true)
+        .map((wall) => wall.id);
+      if (ids.length) await canvas.scene.deleteEmbeddedDocuments("Wall", ids);
+    };
+
+    const fixtureMove = async (token, { x, y, elevation = 0 }) => {
+      const current = canvas.scene.tokens.get(token.id);
+      if (current.x === x && current.y === y && Number(current.elevation ?? 0) === Number(elevation)) return current;
+      const completed = await current.move({
+        x,
+        y,
+        elevation,
+        action: teleportAction,
+        explicit: true,
+        checkpoint: true
+      }, {
+        method: "api",
+        animate: false,
+        showRuler: false,
+        pan: false,
+        autoRotate: false,
+        constrainOptions: { ignoreWalls: true, ignoreCost: true, ignoreTokens: true },
+        ...this.#movement.createOperationOptions({
+          pathType: "reposition",
+          agency: "administrative",
+          resource: "none",
+          movementMode: teleportAction,
+          administrative: true,
+          generatedBy: MODULE_ID,
+          internal: true,
+          suppressAutomation: true,
+          testFixture: true
+        })
+      });
+      await wait(75);
+      const after = canvas.scene.tokens.get(token.id);
+      if (after.x !== x || after.y !== y || Number(after.elevation ?? 0) !== Number(elevation)) {
+        throw new Error(`FIXTURE FAIL | ${token.name} expected (${x},${y},${elevation}); actual (${after.x},${after.y},${after.elevation}); moveCompleted=${completed}.`);
+      }
+      return after;
+    };
+
+    const basePositions = {
+      Leader: { x: 2200, y: 2800, elevation: 0 },
+      Follower: { x: 2300, y: 2800, elevation: 0 },
+      Ally: { x: 3400, y: 2400, elevation: 0 },
+      Enemy: { x: 3600, y: 2400, elevation: 0 },
+      Neutral: { x: 3400, y: 2600, elevation: 0 },
+      Secret: { x: 3600, y: 2600, elevation: 0 }
+    };
+
+    const parkAll = async () => {
+      for (const [name, position] of Object.entries(basePositions)) {
+        await fixtureMove(canvas.scene.tokens.get(tokens[name].id), position);
+      }
+    };
+
+    const configure = async ({ leaderDisposition = D.HOSTILE, followerDisposition = D.FRIENDLY, leaderSize = 1 } = {}) => {
+      this.#displacement.clearEndpointGrace(tokens.Follower.uuid);
+      await removeDiagnosticWalls();
+      await canvas.scene.updateEmbeddedDocuments("Token", [
+        { _id: tokens.Leader.id, width: leaderSize, height: leaderSize, rotation: 0, disposition: leaderDisposition },
+        { _id: tokens.Follower.id, width: 1, height: 1, rotation: 0, disposition: followerDisposition },
+        { _id: tokens.Ally.id, width: 1, height: 1, rotation: 0, disposition: D.HOSTILE },
+        { _id: tokens.Enemy.id, width: 1, height: 1, rotation: 0, disposition: D.FRIENDLY },
+        { _id: tokens.Neutral.id, width: 1, height: 1, rotation: 0, disposition: D.NEUTRAL },
+        { _id: tokens.Secret.id, width: 1, height: 1, rotation: 0, disposition: D.SECRET }
+      ], {
+        animate: false,
+        ae5eDisplacementTestSetup: true
+      });
+      await parkAll();
+      if (leaderSize === 2) await fixtureMove(canvas.scene.tokens.get(tokens.Leader.id), { x: 2100, y: 2800, elevation: 0 });
+      if (leaderSize === 3) await fixtureMove(canvas.scene.tokens.get(tokens.Leader.id), { x: 2000, y: 2800, elevation: 0 });
+      await wait(75);
+    };
+
+    const candidateKeys = async (options) => {
+      const plan = await this.#displacement.getCandidates({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: 5,
+        ...options
+      });
+      return { plan, keys: plan.candidates.map((candidate) => candidate.key) };
+    };
+
+    const sameKeys = (actual, expected) => actual.length === expected.length
+      && actual.every((key) => expected.includes(key));
+
+    const results = [];
+    let failure = null;
+    let passed = false;
+
+    try {
+      banner("AE5E 0.3.25 — DISPLACEMENT FOUNDATION", "#7ddcff", 30);
+      banner("DIRECTION GEOMETRY + FORCED METADATA + COLLISION + GRACE", "#ffcc66", 18);
+      ensureNoUnrelatedParticipantRelationships();
+      await removeHarnessRelationships();
+      await removeDiagnosticWalls();
+
+      // --------------------------------------------------------
+      // Direction semantics: 1x1 source directly west of target.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      const pushAway = await candidateKeys({
+        type: DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY
+      });
+      const pushStraight = await candidateKeys({
+        type: DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY
+      });
+      const pullToward = await candidateKeys({
+        type: DISPLACEMENT_TYPES.PULL,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.TOWARD
+      });
+      const pullStraight = await candidateKeys({
+        type: DISPLACEMENT_TYPES.PULL,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD
+      });
+
+      const directionChecks = {
+        pushAwayThree: sameKeys(pushAway.keys, ["NE", "E", "SE"]),
+        pushStraightEast: sameKeys(pushStraight.keys, ["E"]),
+        pullTowardThree: sameKeys(pullToward.keys, ["NW", "W", "SW"]),
+        pullStraightWest: sameKeys(pullStraight.keys, ["W"])
+      };
+      results.push({ name: "1x1 direction semantics", passed: Object.values(directionChecks).every(Boolean), checks: directionChecks });
+      if (!results.at(-1).passed) throw new Error("1x1 direction semantic checks failed.");
+      banner("1x1 AWAY / STRAIGHT_AWAY / TOWARD / STRAIGHT_TOWARD — PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // Large-source center-relative geometry.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 2 });
+      const large2 = await candidateKeys({
+        type: DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY
+      });
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 3 });
+      const large3 = await candidateKeys({
+        type: DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY
+      });
+      const largeChecks = {
+        source2x2FourDirections: sameKeys(large2.keys, ["N", "NE", "E", "SE"]),
+        source3x3FourDirections: sameKeys(large3.keys, ["N", "NE", "E", "SE"])
+      };
+      results.push({ name: "large-source center-relative geometry", passed: Object.values(largeChecks).every(Boolean), checks: largeChecks });
+      if (!results.at(-1).passed) throw new Error("Large-source center-relative direction checks failed.");
+      banner("2x2 / 3x3 SOURCE CENTER-RELATIVE DIRECTION GEOMETRY — PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // Pull execution uses the same forced-displacement body pipeline.
+      // Keep one clear grid space between Source and Target so a 5-ft
+      // STRAIGHT_TOWARD pull can end adjacent to the Source. Then prove
+      // a hostile body in that destination blocks the pull.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Leader.id), { x: 2100, y: 2800, elevation: 0 });
+      const clearPull = await this.#displacement.pull({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: 5,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD,
+        directionKey: "W"
+      });
+      await wait(175);
+      const clearPullFollower = canvas.scene.tokens.get(tokens.Follower.id);
+      const clearPullPosition = { x: clearPullFollower.x, y: clearPullFollower.y };
+
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Leader.id), { x: 2100, y: 2800, elevation: 0 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Ally.id), { x: 2200, y: 2800, elevation: 0 });
+      const blockedPull = await this.#displacement.pull({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: 5,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD,
+        directionKey: "W"
+      });
+      const blockedPullFollower = canvas.scene.tokens.get(tokens.Follower.id);
+      const pullExecutionChecks = {
+        clearCompleted: clearPull?.completed === true,
+        clearTypePull: clearPull?.type === DISPLACEMENT_TYPES.PULL,
+        clearDirectionWest: clearPull?.directionKey === "W",
+        clearFullDistance: clearPull?.fullDistance === true && clearPull?.actualDistance === 5,
+        clearEndedAdjacent: clearPullPosition.x === 2200 && clearPullPosition.y === 2800,
+        hostileBlocked: blockedPull?.blocked === true,
+        hostileStayed: blockedPullFollower.x === 2300 && blockedPullFollower.y === 2800,
+        noGrace: this.#displacement.getStats().endpointGrace.pending === 0
+      };
+      results.push({
+        name: "pull execution and hostile collision",
+        passed: Object.values(pullExecutionChecks).every(Boolean),
+        checks: pullExecutionChecks,
+        clearResult: clearPull,
+        blockedResult: blockedPull
+      });
+      if (!results.at(-1).passed) throw new Error("Pull execution/collision checks failed.");
+      banner("PULL EXECUTION + HOSTILE COLLISION — PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // Hostile relative to TARGET must hard-block. Leader is
+      // Hostile too, proving Source disposition is not the body reference.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Ally.id), { x: 2400, y: 2800, elevation: 0 });
+      const hard = await this.#displacement.push({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: 5,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        directionKey: "E"
+      });
+      const hardFollower = canvas.scene.tokens.get(tokens.Follower.id);
+      const hardChecks = {
+        blocked: hard?.blocked === true,
+        followerStayed: hardFollower.x === 2300 && hardFollower.y === 2800,
+        noGrace: this.#displacement.getStats().endpointGrace.pending === 0
+      };
+      results.push({ name: "target-relative hostile hard block", passed: Object.values(hardChecks).every(Boolean), checks: hardChecks, result: hard });
+      if (!results.at(-1).passed) throw new Error("Target-relative hostile hard-block checks failed.");
+      banner("HOSTILE RELATIVE TO DISPLACED TARGET — HARD BLOCK PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // Friendly relative to TARGET: move into space, classify as
+      // FORCED, start default 3.5s grace, then roll back one step.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Enemy.id), { x: 2500, y: 2800, elevation: 0 });
+      let captured = null;
+      const unregisterCapture = this.#movement.registerConsumer({
+        id: `${MODULE_ID}.tests.displacement-capture.${Date.now()}`,
+        phases: [MOVEMENT_PHASES.AFTER],
+        tokenUuids: [tokens.Follower.uuid],
+        execution: "primaryGM",
+        priority: 20_000,
+        once: true,
+        handler: (transaction) => { captured = transaction; }
+      });
+      let soft;
+      try {
+        soft = await this.#displacement.push({
+          sourceUuid: tokens.Leader.uuid,
+          targetUuid: tokens.Follower.uuid,
+          distance: 10,
+          directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+          directionKey: "E"
+        });
+        await wait(175);
+      } finally {
+        unregisterCapture();
+      }
+      const softImmediate = canvas.scene.tokens.get(tokens.Follower.id);
+      const softImmediateChecks = {
+        completed: soft?.completed === true,
+        requestedTenFeet: soft?.requestedDistance === 10,
+        actualTenFeet: soft?.actualDistance === 10 && soft?.fullDistance === true && soft?.partial === false,
+        reachedEndpoint: softImmediate.x === 2500 && softImmediate.y === 2800,
+        graceStarted: soft?.graceStarted === true && this.#displacement.getStats().endpointGrace.pending === 1,
+        transactionCaptured: Boolean(captured),
+        agencyForced: captured?.agency === MOVEMENT_AGENCIES.FORCED,
+        displacementType: captured?.displacementType === DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: captured?.directionConstraint === DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        directionEast: captured?.displacementDirection === "E",
+        transactionRequestedTenFeet: captured?.requestedDistance === 10,
+        transactionActualTenFeet: captured?.actualDistance === 10,
+        sourceRecorded: captured?.sourceUuid === tokens.Leader.uuid,
+        targetRecorded: captured?.subjectUuid === tokens.Follower.uuid
+      };
+      if (!Object.values(softImmediateChecks).every(Boolean)) {
+        results.push({ name: "forced metadata and soft entry", passed: false, checks: softImmediateChecks, result: soft, transaction: captured?.toJSON?.() ?? captured });
+        throw new Error("Forced displacement metadata/soft-entry checks failed.");
+      }
+      banner("FORCED TRANSACTION + NONHOSTILE ENDPOINT GRACE — PASS", "#5cff8d", 20);
+      await wait(3500 + Math.max(250, Number(graceBufferMs) || 700));
+      const softFinal = canvas.scene.tokens.get(tokens.Follower.id);
+      const softRollbackChecks = {
+        rolledBackToLastClearStep: softFinal.x === 2400 && softFinal.y === 2800,
+        graceCleared: this.#displacement.getStats().endpointGrace.pending === 0
+      };
+      results.push({ name: "forced metadata and soft grace rollback", passed: Object.values(softRollbackChecks).every(Boolean), checks: { ...softImmediateChecks, ...softRollbackChecks }, result: soft, transaction: captured?.toJSON?.() ?? captured });
+      if (!results.at(-1).passed) throw new Error("Displacement endpoint grace rollback failed.");
+      banner("3.5s NONHOSTILE GRACE → LAST CLEAR DISPLACEMENT STEP — PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // If the creature causing the soft endpoint conflict moves away
+      // during grace, the pending rollback must clear immediately.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Enemy.id), { x: 2400, y: 2800, elevation: 0 });
+      const graceClearPush = await this.#displacement.push({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: 5,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        directionKey: "E"
+      });
+      await wait(175);
+      const graceBeforeOccupantMove = this.#displacement.getStats().endpointGrace.pending;
+      const normalAction = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+      const enemyDocument = canvas.scene.tokens.get(tokens.Enemy.id);
+      await enemyDocument.move({
+        x: 2500,
+        y: 2800,
+        elevation: 0,
+        action: normalAction,
+        explicit: true,
+        checkpoint: true
+      }, {
+        method: "api",
+        animate: false,
+        showRuler: false,
+        pan: false,
+        autoRotate: false,
+        constrainOptions: { ignoreWalls: false, ignoreCost: true, ignoreTokens: false }
+      });
+      await wait(225);
+      const enemyAfterLeaving = canvas.scene.tokens.get(tokens.Enemy.id);
+      const followerAfterOccupantLeaves = canvas.scene.tokens.get(tokens.Follower.id);
+      const occupantLeavesChecks = {
+        pushReachedSoftEndpoint: graceClearPush?.completed === true
+          && followerAfterOccupantLeaves.x === 2400
+          && followerAfterOccupantLeaves.y === 2800,
+        graceWasActive: graceBeforeOccupantMove === 1,
+        occupantMovedAway: enemyAfterLeaving.x === 2500 && enemyAfterLeaving.y === 2800,
+        graceClearedImmediately: this.#displacement.getStats().endpointGrace.pending === 0,
+        displacedTargetStayedPut: followerAfterOccupantLeaves.x === 2400 && followerAfterOccupantLeaves.y === 2800
+      };
+      results.push({
+        name: "endpoint grace clears when occupant leaves",
+        passed: Object.values(occupantLeavesChecks).every(Boolean),
+        checks: occupantLeavesChecks,
+        result: graceClearPush
+      });
+      if (!results.at(-1).passed) throw new Error("Displacement endpoint grace did not clear when the occupant moved away.");
+      banner("NONHOSTILE OCCUPANT LEAVES → GRACE CLEARS — PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // Neutral/Secret candidate endpoints must be soft conflicts.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Neutral.id), { x: 2400, y: 2800, elevation: 0 });
+      const neutralPlan = await this.#displacement.getCandidates({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        type: DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        distance: 5
+      });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Neutral.id), basePositions.Neutral);
+      await fixtureMove(canvas.scene.tokens.get(tokens.Secret.id), { x: 2400, y: 2800, elevation: 0 });
+      const secretPlan = await this.#displacement.getCandidates({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        type: DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        distance: 5
+      });
+      const neutralCandidate = neutralPlan.candidates.find((candidate) => candidate.key === "E");
+      const secretCandidate = secretPlan.candidates.find((candidate) => candidate.key === "E");
+      const neutralSecretChecks = {
+        neutralSoft: neutralCandidate?.softConflict === true && neutralCandidate?.selectable === true,
+        secretSoft: secretCandidate?.softConflict === true && secretCandidate?.selectable === true
+      };
+      results.push({ name: "Neutral and Secret soft occupancy", passed: Object.values(neutralSecretChecks).every(Boolean), checks: neutralSecretChecks });
+      if (!results.at(-1).passed) throw new Error("Neutral/Secret displacement occupancy checks failed.");
+      banner("NEUTRAL / SECRET DISPLACED-BODY OCCUPANCY — PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // Nonhostile transit: pass through one friendly occupied grid
+      // space and end clear. This exercises the D&D5e blocking hook.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      await fixtureMove(canvas.scene.tokens.get(tokens.Enemy.id), { x: 2400, y: 2800, elevation: 0 });
+      const through = await this.#displacement.push({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: 10,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        directionKey: "E"
+      });
+      await wait(175);
+      const throughFollower = canvas.scene.tokens.get(tokens.Follower.id);
+      const throughChecks = {
+        completed: through?.completed === true,
+        fullDistance: through?.fullDistance === true,
+        reachedSecondStep: throughFollower.x === 2500 && throughFollower.y === 2800,
+        noEndpointGrace: this.#displacement.getStats().endpointGrace.pending === 0
+      };
+      results.push({ name: "nonhostile transit pass-through", passed: Object.values(throughChecks).every(Boolean), checks: throughChecks, result: through });
+      if (!results.at(-1).passed) throw new Error("Nonhostile transit pass-through failed.");
+      banner("NONHOSTILE TRANSIT PASS-THROUGH — PASS", "#5cff8d", 20);
+
+      // --------------------------------------------------------
+      // Wall partial stop: requested 10 ft, first 5 ft clear, second
+      // step hard-blocked by a diagnostic movement wall.
+      // --------------------------------------------------------
+      await configure({ leaderDisposition: D.HOSTILE, followerDisposition: D.FRIENDLY, leaderSize: 1 });
+      const createdWalls = await canvas.scene.createEmbeddedDocuments("Wall", [{
+        c: [2550, 2600, 2550, 3100],
+        flags: { [MODULE_ID]: { displacementDiagnosticWall: true } }
+      }]);
+      await wait(125);
+      const wallPlan = await this.#displacement.getCandidates({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        type: DISPLACEMENT_TYPES.PUSH,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        distance: 10
+      });
+      const wallCandidate = wallPlan.candidates.find((candidate) => candidate.key === "E");
+      const wallPreChecks = {
+        candidateExists: Boolean(wallCandidate),
+        selectable: wallCandidate?.selectable === true,
+        partial: wallCandidate?.partial === true,
+        movedFive: wallCandidate?.actualDistance === 5,
+        wallReason: wallCandidate?.obstruction?.reasonCode === "environment-obstruction"
+      };
+      if (!Object.values(wallPreChecks).every(Boolean)) {
+        results.push({ name: "wall partial-stop planning", passed: false, checks: wallPreChecks, candidate: wallCandidate });
+        throw new Error("Wall partial-stop planning failed.");
+      }
+      const wallResult = await this.#displacement.push({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: 10,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        directionKey: "E"
+      });
+      await wait(175);
+      const wallFollower = canvas.scene.tokens.get(tokens.Follower.id);
+      const wallChecks = {
+        ...wallPreChecks,
+        movementCompleted: wallResult?.completed === true,
+        resultPartial: wallResult?.partial === true && wallResult?.fullDistance === false,
+        stoppedAtFive: wallFollower.x === 2400 && wallFollower.y === 2800
+      };
+      results.push({ name: "wall partial stop", passed: Object.values(wallChecks).every(Boolean), checks: wallChecks, result: wallResult, wallIds: createdWalls.map((wall) => wall.id) });
+      if (!results.at(-1).passed) throw new Error("Wall partial-stop execution failed.");
+      banner("WALL PARTIAL STOP — PASS", "#5cff8d", 20);
+
+      await removeDiagnosticWalls();
+      this.#displacement.clearEndpointGrace(tokens.Follower.uuid);
+      passed = results.every((entry) => entry.passed === true);
+    } catch (error) {
+      failure = { message: error?.message ?? String(error), stack: error?.stack ?? null };
+      passed = false;
+    }
+
+    const summary = results.map((entry, index) => ({
+      case: index + 1,
+      test: entry.name,
+      result: entry.passed ? "PASS" : "FAIL"
+    }));
+
+    if (passed) {
+      banner("AE5E 0.3.25 DISPLACEMENT FOUNDATION — PASS", "#5cff8d", 30);
+      console.table(summary);
+      if (restoreOnPass) {
+        await removeHarnessRelationships();
+        await removeDiagnosticWalls();
+        this.#displacement.clearEndpointGrace(tokens.Follower.uuid);
+        await canvas.scene.updateEmbeddedDocuments("Token", Object.values(snapshots).map((snapshot) => ({
+          _id: snapshot._id,
+          width: snapshot.width,
+          height: snapshot.height,
+          rotation: snapshot.rotation,
+          disposition: snapshot.disposition
+        })), { animate: false, ae5eDisplacementTestRestore: true });
+        for (const snapshot of Object.values(snapshots)) {
+          await fixtureMove(canvas.scene.tokens.get(snapshot._id), {
+            x: snapshot.x,
+            y: snapshot.y,
+            elevation: snapshot.elevation
+          });
+        }
+        canvas.tokens.releaseAll();
+        banner("PASS CLEANUP COMPLETE — ORIGINAL TOKEN STATES RESTORED", "#5cff8d", 18);
+      }
+    } else {
+      banner("AE5E 0.3.25 DISPLACEMENT FOUNDATION — FAIL", "#ff5c5c", 30);
+      if (failure) console.error("FAILURE", failure);
+      console.table(summary);
+      console.log("The failing Foundry fixture was intentionally left in place for inspection.");
+    }
+
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      failure,
+      teleportFixtureAction: teleportAction,
+      casesCompleted: results.length,
+      summary,
+      results,
+      displacementStats: this.#displacement.getStats(),
+      movementStats: this.#movement.getStats()
+    };
+    console.log("%cAE5E 0.3.25 DISPLACEMENT FOUNDATION — FULL RESULT", "font-size:20px;font-weight:bold;color:#7ddcff;");
+    console.log(JSON.stringify(report, null, 2));
+    ui?.notifications?.[passed ? "info" : "error"]?.(
+      passed
+        ? "AE5E | Displacement foundation test PASSED."
+        : "AE5E | Displacement foundation test FAILED."
     );
     return report;
   }

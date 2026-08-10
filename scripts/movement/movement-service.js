@@ -160,7 +160,12 @@ export class MovementService {
   }
 
   #hasPotentialInterest(document, phase, operation, userId = game.user.id) {
-    if (operation?.[OPERATION_METADATA_KEY]?.suppressAutomation === true) return false;
+    const metadata = operation?.[OPERATION_METADATA_KEY];
+    if (metadata?.suppressAutomation === true) return false;
+    // AE5E-generated movement is itself semantically meaningful. Always emit a
+    // MovementTransaction for it so forced displacement can be distinguished by
+    // consumers even when diagnostic capture is disabled.
+    if (metadata?.generatedBy === MODULE_ID) return true;
     if (this.#captureDiagnostics()) return true;
     if (this.#relationships.involves(document.uuid) && game.user.id === userId) return true;
     return this.#registry.hasPotentialInterest(document, phase, { userId });
