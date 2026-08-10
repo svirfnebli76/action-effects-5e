@@ -4,6 +4,7 @@ import {
   HOOKS,
   MODULE_ID,
   MOVEMENT_AGENCIES,
+  MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
   NONHOSTILE_ENDPOINT_GRACE_MS,
   PATH_TYPES
@@ -277,21 +278,56 @@ export class DisplacementService {
       })
     };
 
+    // Foundry's moveToken hook is the authoritative post-update boundary for a
+    // movement operation. The TokenDocument#move promise can resolve before
+    // AE5E's queued AFTER-transaction consumers have run, so keep both the
+    // semantic movement context and D&D5e nonhostile-token bypass alive until
+    // that AFTER transaction has been observed. This also prevents endpoint
+    // grace from being decided against a transient/stale Scene collection state.
+    let settleResolve = null;
+    let settleTimer = null;
+    let unregisterSettle = null;
+    const settledTransaction = new Promise((resolve) => {
+      settleResolve = resolve;
+      settleTimer = setTimeout(() => resolve(null), 1_500);
+    });
+
+    unregisterSettle = this.#movement.registerConsumer({
+      id: `${MODULE_ID}.displacement-settle.${displacementId}`,
+      phases: [MOVEMENT_PHASES.AFTER],
+      tokenUuids: [target.uuid],
+      execution: "primaryGM",
+      priority: 30_000,
+      predicate: (transaction) => transaction?.displacementId === displacementId
+        || transaction?.id === displacementId,
+      once: true,
+      handler: (transaction) => {
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = null;
+        settleResolve?.(transaction);
+      }
+    });
+
     this.#activeTokenBypasses.set(target.uuid, new Set(candidate.allowedNonhostileUuids));
     const releaseContext = this.#movement.registerMovementContext(movementId, options);
     let movementCompleted = false;
+    let afterTransaction = null;
     try {
       movementCompleted = await target.move(waypoints, {
         ...options,
         id: movementId
       });
+      if (movementCompleted === true) afterTransaction = await settledTransaction;
     } finally {
+      if (settleTimer) clearTimeout(settleTimer);
+      unregisterSettle?.();
       releaseContext();
       this.#activeTokenBypasses.delete(target.uuid);
     }
 
     const current = scene.tokens.get(target.id);
-    const reachedPlannedEndpoint = positionsEqual(current, candidate.destination);
+    const reachedPlannedEndpoint = positionsEqual(current, candidate.destination)
+      || positionsEqual(afterTransaction?.destination, candidate.destination);
     const endpointConflicts = reachedPlannedEndpoint
       ? candidate.endpointConflicts
       : [];
@@ -315,6 +351,7 @@ export class DisplacementService {
     const result = {
       completed: movementCompleted === true,
       movementCompleted: movementCompleted === true,
+      movementTransactionObserved: Boolean(afterTransaction),
       reachedPlannedEndpoint,
       fullDistance: candidate.actualDistance >= candidate.requestedDistance - 1e-6,
       partial: candidate.actualDistance < candidate.requestedDistance - 1e-6,

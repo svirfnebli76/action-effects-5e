@@ -1,6 +1,6 @@
 # Action Effects 5E
 
-Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its first subsystem is a low-overhead movement, forced-displacement, spatial-event, and rules-aware token relationship framework.
+Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its first subsystem is a low-overhead movement, spatial-event, and rules-aware token relationship framework.
 
 ## Required modules
 
@@ -10,60 +10,6 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 - libWrapper
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
-
-## Build 0.3.25: generic forced Push/Pull displacement
-
-v0.3.25 adds the relationship-independent forced-movement layer needed by Shove/Unarmed Strike Push, grappling hooks, spell pulls, and later Grapple interactions. An Item or integration declares **what the rule says** (Push/Pull, distance, and `AWAY`/`STRAIGHT_AWAY`/`TOWARD`/`STRAIGHT_TOWARD`); AE5E owns destination geometry, collision/occupancy, the runtime destination choice, and the resulting `agency: "forced"` movement transaction. AC5E may request these semantics, but it does not need to own the canvas direction selector.
-
-Direction qualification is based on the center of the Source's full footprint relative to the center of the Target's full footprint. Destination and collision checks use the Target's full translated footprint. A 1x1 Source directly west of a 1x1 Target therefore gives `AWAY` choices NE/E/SE, while a Large or Huge Source can naturally expose additional choices when the center-to-center vector is tilted.
-
-Body occupancy uses the displaced Target as the relative-relationship reference: hostile creature space hard-blocks, nonhostile creature space may be traversed, Neutral/Secret are nonhostile, and a final nonhostile overlap receives the generic 3.5-second grace. A later hard obstruction truncates the displacement at the last legal step rather than cancelling already-legal forced movement. If the endpoint occupant moves away during grace, the pending rollback clears immediately. If endpoint grace expires while the overlap remains, rollback returns only to the most recent **clear** displacement position.
-
-Public examples:
-
-```js
-const ae5e = game.modules.get("action-effects-5e").api;
-
-// Normal Shove-style request: when several destinations qualify, AE5E shows
-// the on-canvas destination selector to the Source's controlling user.
-await ae5e.displacement.push({
-  sourceUuid: source.uuid,
-  targetUuid: target.uuid,
-  distance: 5,
-  directionConstraint: ae5e.constants.DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY
-});
-
-// A straight-line pull, such as a tightly constrained hook/feature.
-await ae5e.displacement.pull({
-  sourceUuid: source.uuid,
-  targetUuid: target.uuid,
-  distance: 10,
-  directionConstraint: ae5e.constants.DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD
-});
-```
-
-The selector highlights complete Target landing footprints: green = clear, yellow = nonhostile endpoint grace, orange = partial distance before a hard obstruction, red `X` = blocked. Red choices are visible but cannot be selected.
-
-### v0.3.25 Foundry test command
-
-After loading the module in the dedicated test Scene, run:
-
-```js
-const ae5e = game.modules.get("action-effects-5e").api;
-await ae5e.tests.runDisplacementFoundationTest();
-```
-
-A complete pass restores the fixture tokens and removes the diagnostic wall. A failure leaves the fixture visible. No external Node/npm behavior test is used as the project release gate.
-
-To smoke-test the interactive destination selector, control exactly two tokens in order (Source first, Target second) and run:
-
-```js
-await ae5e.tests.previewDisplacementFromControlledTokens({
-  type: ae5e.constants.DISPLACEMENT_TYPES.PUSH,
-  directionConstraint: ae5e.constants.DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY,
-  distance: 5
-});
-```
 
 ## Build 0.3.24: relative creature semantics
 
@@ -212,8 +158,6 @@ Run the non-destructive foundation test:
 ```js
 await ae5e.tests.runFoundationSmokeTest();
 ```
-
-Forced displacement is available under `ae5e.displacement`; relationship movement remains under `ae5e.relationships`. Push/Pull do not create persistent relationships by default.
 
 Future consumers can request GM-authorized relationship movement without constructing Foundry movement instructions themselves:
 

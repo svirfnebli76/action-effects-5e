@@ -1234,8 +1234,15 @@ export class TestHarness {
         targetRecorded: captured?.subjectUuid === tokens.Follower.uuid
       };
       if (!Object.values(softImmediateChecks).every(Boolean)) {
-        results.push({ name: "forced metadata and soft entry", passed: false, checks: softImmediateChecks, result: soft, transaction: captured?.toJSON?.() ?? captured });
-        throw new Error("Forced displacement metadata/soft-entry checks failed.");
+        const failedChecks = Object.entries(softImmediateChecks)
+          .filter(([, passed]) => !passed)
+          .map(([name]) => name);
+        console.error("AE5E displacement soft-entry failed checks:", failedChecks);
+        console.table(Object.entries(softImmediateChecks).map(([check, passed]) => ({ check, passed })));
+        console.log("AE5E displacement soft-entry result:", soft);
+        console.log("AE5E captured forced movement transaction:", captured?.toJSON?.() ?? captured);
+        results.push({ name: "forced metadata and soft entry", passed: false, failedChecks, checks: softImmediateChecks, result: soft, transaction: captured?.toJSON?.() ?? captured });
+        throw new Error(`Forced displacement metadata/soft-entry checks failed: ${failedChecks.join(", ") || "unknown"}.`);
       }
       banner("FORCED TRANSACTION + NONHOSTILE ENDPOINT GRACE — PASS", "#5cff8d", 20);
       await wait(3500 + Math.max(250, Number(graceBufferMs) || 700));
