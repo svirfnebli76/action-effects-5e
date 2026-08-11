@@ -7,7 +7,8 @@ import {
   MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
   NONHOSTILE_ENDPOINT_GRACE_MS,
-  PATH_TYPES
+  PATH_TYPES,
+  SELECTION_INDICATOR_ROLES
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
@@ -214,7 +215,7 @@ export class DisplacementService {
       // player is actively making a selection, rather than appearing stalled.
       candidate = this.#selectionIndicator
         ? await this.#selectionIndicator.withIndicator(
-          { token: source, reason: "displacement-destination" },
+          { token: source, reason: "displacement-destination", role: SELECTION_INDICATOR_ROLES.ORIGINATOR },
           selectDestination
         )
         : await selectDestination();

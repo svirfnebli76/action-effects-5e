@@ -29,6 +29,11 @@ import {
   SELECTION_INDICATOR_PREFERRED_ASSET,
   SELECTION_INDICATOR_PREFERRED_SCALE,
   SELECTION_INDICATOR_PREFERRED_TINT,
+  SELECTION_INDICATOR_PRESENTATIONS,
+  SELECTION_INDICATOR_ROLES,
+  SELECTION_INDICATOR_ROLE_PRIORITY,
+  SELECTION_INDICATOR_SOUND_ASSET,
+  SELECTION_INDICATOR_SOUND_VOLUME,
   SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
   SELECTION_INDICATOR_SCALE,
   TELEPORT_POLICIES
@@ -46,6 +51,7 @@ export class ActionEffects5eApi {
     relationshipLinkObstructions,
     displacement,
     selectionIndicator,
+    externalPromptBridge,
     tests,
     socket
   }) {
@@ -79,11 +85,16 @@ export class ActionEffects5eApi {
       SELECTION_INDICATOR_PREFERRED_ASSET,
       SELECTION_INDICATOR_PREFERRED_TINT,
       SELECTION_INDICATOR_FALLBACK_ASSET,
+      SELECTION_INDICATOR_SOUND_ASSET,
+      SELECTION_INDICATOR_SOUND_VOLUME,
       SELECTION_INDICATOR_PREFERRED_SCALE,
       SELECTION_INDICATOR_FALLBACK_SCALE,
       SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
       SELECTION_INDICATOR_SCALE,
-      SELECTION_INDICATOR_EFFECT_NAME
+      SELECTION_INDICATOR_EFFECT_NAME,
+      SELECTION_INDICATOR_ROLES,
+      SELECTION_INDICATOR_ROLE_PRIORITY,
+      SELECTION_INDICATOR_PRESENTATIONS
     });
 
     this.dependencies = Object.freeze({
@@ -125,6 +136,14 @@ export class ActionEffects5eApi {
       getStats: () => selectionIndicator.getStats()
     });
 
+    this.externalPrompts = Object.freeze({
+      registerAdapter: (config) => externalPromptBridge.registerAdapter(config),
+      unregisterAdapter: (id) => externalPromptBridge.unregisterAdapter(id),
+      trackApplication: (options) => externalPromptBridge.trackApplication(options),
+      clearAll: () => externalPromptBridge.clearAll(),
+      getStats: () => externalPromptBridge.getStats()
+    });
+
     this.relationships = Object.freeze({
       create: (data) => relationships.create(data),
       remove: (id) => relationships.remove(id),
@@ -154,6 +173,8 @@ export class ActionEffects5eApi {
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
       runSelectionIndicatorTest: () => tests.runSelectionIndicatorTest(),
+      runSelectionIndicatorRolePairTest: () => tests.runSelectionIndicatorRolePairTest(),
+      runExternalPromptBridgeTest: () => tests.runExternalPromptBridgeTest(),
       createTestRelationshipFromControlledTokens: () => tests.createTestRelationshipFromControlledTokens(),
       createGrappleMovementTestRelationshipFromControlledTokens: (options) => tests.createGrappleMovementTestRelationshipFromControlledTokens(options),
       removeTestRelationships: () => tests.removeTestRelationships(),

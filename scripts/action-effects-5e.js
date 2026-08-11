@@ -18,6 +18,7 @@ import { DisplacementDestinationOverlay } from "./displacement/displacement-dest
 import { NonhostileEndpointGraceService } from "./displacement/nonhostile-endpoint-grace-service.js";
 import { DisplacementService } from "./displacement/displacement-service.js";
 import { SelectionIndicatorService } from "./ui/selection-indicator-service.js";
+import { ExternalPromptBridgeService } from "./ui/external-prompt-bridge-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -40,6 +41,7 @@ const displacementGrace = new NonhostileEndpointGraceService({
   obstructions: movementObstructions
 });
 const selectionIndicator = new SelectionIndicatorService();
+const externalPromptBridge = new ExternalPromptBridgeService({ selectionIndicator });
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -72,6 +74,7 @@ const tests = new TestHarness({
   relationshipLinkObstructions,
   displacement,
   selectionIndicator,
+  externalPromptBridge,
   socket
 });
 const api = new ActionEffects5eApi({
@@ -85,6 +88,7 @@ const api = new ActionEffects5eApi({
   relationshipLinkObstructions,
   displacement,
   selectionIndicator,
+  externalPromptBridge,
   tests,
   socket
 });
@@ -117,6 +121,7 @@ Hooks.once("ready", async () => {
   movement.initialize();
   displacement.initialize();
   await selectionIndicator.initialize();
+  externalPromptBridge.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

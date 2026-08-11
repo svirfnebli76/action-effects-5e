@@ -1,12 +1,14 @@
 import {
   MODULE_ID,
+  SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
   SELECTION_INDICATOR_EFFECT_NAME,
   SELECTION_INDICATOR_FALLBACK_ASSET,
   SELECTION_INDICATOR_FALLBACK_SCALE,
   SELECTION_INDICATOR_PREFERRED_ASSET,
   SELECTION_INDICATOR_PREFERRED_SCALE,
-  SELECTION_INDICATOR_PREFERRED_TINT,
-  SELECTION_INDICATOR_CORNER_OFFSET_FACTOR
+  SELECTION_INDICATOR_PRESENTATIONS,
+  SELECTION_INDICATOR_ROLE_PRIORITY,
+  SELECTION_INDICATOR_ROLES
 } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
 
@@ -21,12 +23,14 @@ export class SelectionIndicatorService {
   #initialized = false;
   #leases = new Map();
   #leasesByToken = new Map();
-  #renderedTokens = new Set();
+  #renderedTokens = new Map();
   #warnedUnavailable = false;
   #stats = {
     effectsStarted: 0,
     effectsStopped: 0,
+    roleSwitches: 0,
     fallbackUses: 0,
+    soundsPlayed: 0,
     startFailures: 0,
     stopFailures: 0,
     lastEvent: null
@@ -50,18 +54,55 @@ export class SelectionIndicatorService {
   /**
    * Acquire one logical "waiting for user" lease for a token.
    * Multiple leases on the same token share one visual effect.
+   *
+   * role communicates the semantic reason for the wait:
+   * - originator: AE5E actor initiating/choosing (green by default)
+   * - responder: AE5E target/other participant responding (amber by default)
+   * - external: recognized third-party prompt (blue by default)
    */
-  async acquire({ token = null, tokenUuid = null, reason = "selection" } = {}) {
+  async acquire({
+    token = null,
+    tokenUuid = null,
+    reason = "selection",
+    role = SELECTION_INDICATOR_ROLES.ORIGINATOR,
+    playSound = true,
+    notifyUserId = game?.user?.id ?? null
+  } = {}) {
+    const normalizedRole = this.#normalizeRole(role);
     const resolved = await this.#resolveToken({ token, tokenUuid });
     if (!resolved) {
-      const lease = this.#createLease({ tokenUuid: tokenUuid ?? null, reason, rendered: false });
-      this.#record("acquire-no-token", { leaseId: lease.id, tokenUuid: lease.tokenUuid, reason });
-      Logger.warn("Selection indicator could not resolve a canvas token; continuing without a visual.", { token, tokenUuid, reason });
+      const lease = this.#createLease({
+        tokenUuid: tokenUuid ?? null,
+        reason,
+        role: normalizedRole,
+        playSound,
+        notifyUserId,
+        rendered: false
+      });
+      this.#record("acquire-no-token", {
+        leaseId: lease.id,
+        tokenUuid: lease.tokenUuid,
+        reason,
+        role: normalizedRole
+      });
+      Logger.warn("Selection indicator could not resolve a canvas token; continuing without a visual.", {
+        token,
+        tokenUuid,
+        reason,
+        role: normalizedRole
+      });
       return this.#leaseFacade(lease);
     }
 
     const uuid = resolved.document.uuid;
-    const lease = this.#createLease({ tokenUuid: uuid, reason, rendered: false });
+    const lease = this.#createLease({
+      tokenUuid: uuid,
+      reason,
+      role: normalizedRole,
+      playSound,
+      notifyUserId,
+      rendered: false
+    });
     let tokenLeases = this.#leasesByToken.get(uuid);
     const firstLease = !tokenLeases?.size;
     if (!tokenLeases) {
@@ -70,8 +111,24 @@ export class SelectionIndicatorService {
     }
     tokenLeases.add(lease.id);
 
+    const previousRole = this.#renderedTokens.get(uuid)?.role ?? null;
+    const desiredRole = this.#dominantRoleForToken(uuid);
+
     if (firstLease) {
-      lease.rendered = await this.#startVisual(resolved);
+      lease.rendered = await this.#startVisual(resolved, {
+        role: desiredRole,
+        playSound: lease.playSound,
+        notifyUserId: lease.notifyUserId
+      });
+    } else if (desiredRole !== previousRole) {
+      lease.rendered = await this.#switchVisualRole(resolved, {
+        fromRole: previousRole,
+        toRole: desiredRole,
+        // A newly-acquired lease may announce itself when it becomes dominant.
+        // Downgrades caused by release never replay audio (handled in release()).
+        playSound: lease.role === desiredRole && lease.playSound,
+        notifyUserId: lease.notifyUserId
+      });
     } else {
       lease.rendered = this.#renderedTokens.has(uuid);
     }
@@ -80,7 +137,11 @@ export class SelectionIndicatorService {
       leaseId: lease.id,
       tokenUuid: uuid,
       reason,
+      role: normalizedRole,
+      dominantRole: desiredRole,
       firstLease,
+      playSound: Boolean(playSound),
+      notifyUserId,
       rendered: lease.rendered,
       leaseCount: tokenLeases.size
     });
@@ -98,6 +159,7 @@ export class SelectionIndicatorService {
 
     const uuid = lease.tokenUuid;
     const tokenLeases = uuid ? this.#leasesByToken.get(uuid) : null;
+    const previousRole = uuid ? (this.#renderedTokens.get(uuid)?.role ?? null) : null;
     tokenLeases?.delete(leaseId);
     this.#leases.delete(leaseId);
 
@@ -105,12 +167,29 @@ export class SelectionIndicatorService {
       this.#leasesByToken.delete(uuid);
       const token = await this.#resolveToken({ tokenUuid: uuid });
       await this.#stopVisual(uuid, token);
+    } else if (uuid && tokenLeases?.size) {
+      const desiredRole = this.#dominantRoleForToken(uuid);
+      if (desiredRole && desiredRole !== previousRole) {
+        const token = await this.#resolveToken({ tokenUuid: uuid });
+        if (token) {
+          // Returning to an older still-active lease is a visual state change,
+          // not a new prompt, so never replay that lease's notification sound.
+          await this.#switchVisualRole(token, {
+            fromRole: previousRole,
+            toRole: desiredRole,
+            playSound: false,
+            notifyUserId: null
+          });
+        }
+      }
     }
 
     this.#record("release", {
       leaseId,
       tokenUuid: uuid,
-      remainingForToken: uuid ? (this.#leasesByToken.get(uuid)?.size ?? 0) : 0
+      role: lease.role,
+      remainingForToken: uuid ? (this.#leasesByToken.get(uuid)?.size ?? 0) : 0,
+      dominantRole: uuid ? (this.#renderedTokens.get(uuid)?.role ?? null) : null
     });
     return true;
   }
@@ -133,16 +212,34 @@ export class SelectionIndicatorService {
    * Convenience wrapper for Foundry v14 DialogV2.wait(). Closing with the X,
    * submitting a button, or an exception all release the visual lease.
    */
-  async waitForDialog({ token = null, tokenUuid = null, reason = "dialog", config = {} } = {}) {
+  async waitForDialog({
+    token = null,
+    tokenUuid = null,
+    reason = "dialog",
+    role = SELECTION_INDICATOR_ROLES.ORIGINATOR,
+    playSound = true,
+    notifyUserId = game?.user?.id ?? null,
+    config = {}
+  } = {}) {
     const DialogV2 = foundry?.applications?.api?.DialogV2;
     if (!DialogV2?.wait) throw new Error("Foundry DialogV2.wait() is unavailable.");
 
+    // Mark AE5E-owned DialogV2 windows so the external-prompt bridge can always
+    // exclude them even after third-party adapters are added later.
+    const classes = new Set([
+      ...(Array.isArray(config.classes) ? config.classes : []),
+      `${MODULE_ID}-owned-dialog`
+    ]);
     const dialogConfig = {
       ...config,
+      classes: [...classes],
       rejectClose: config.rejectClose ?? false
     };
 
-    return this.withIndicator({ token, tokenUuid, reason }, () => DialogV2.wait(dialogConfig));
+    return this.withIndicator(
+      { token, tokenUuid, reason, role, playSound, notifyUserId },
+      () => DialogV2.wait(dialogConfig)
+    );
   }
 
   /** Release every local lease and end the corresponding visuals. */
@@ -160,6 +257,15 @@ export class SelectionIndicatorService {
 
   getStats() {
     const sequencer = game?.modules?.get?.("sequencer");
+    const activeRoles = {};
+    for (const lease of this.#leases.values()) {
+      activeRoles[lease.role] = (activeRoles[lease.role] ?? 0) + 1;
+    }
+    const renderedRoles = {};
+    for (const state of this.#renderedTokens.values()) {
+      renderedRoles[state.role] = (renderedRoles[state.role] ?? 0) + 1;
+    }
+
     return {
       initialized: this.#initialized,
       sequencer: {
@@ -168,8 +274,9 @@ export class SelectionIndicatorService {
         version: sequencer?.version ?? null,
         apiAvailable: this.#sequencerAvailable()
       },
+      roles: SELECTION_INDICATOR_ROLES,
+      presentations: SELECTION_INDICATOR_PRESENTATIONS,
       preferredAsset: SELECTION_INDICATOR_PREFERRED_ASSET,
-      preferredTint: SELECTION_INDICATOR_PREFERRED_TINT,
       fallbackAsset: SELECTION_INDICATOR_FALLBACK_ASSET,
       preferredScale: SELECTION_INDICATOR_PREFERRED_SCALE,
       fallbackScale: SELECTION_INDICATOR_FALLBACK_SCALE,
@@ -177,12 +284,40 @@ export class SelectionIndicatorService {
       activeTokens: this.#leasesByToken.size,
       activeLeases: this.#leases.size,
       renderedTokens: this.#renderedTokens.size,
+      activeRoles,
+      renderedRoles,
       ...this.#stats
     };
   }
 
-  async #startVisual(token) {
+  async #switchVisualRole(token, { fromRole = null, toRole, playSound = false, notifyUserId = null } = {}) {
+    if (!toRole) return false;
     const uuid = token.document.uuid;
+    const hadVisual = this.#renderedTokens.has(uuid);
+    if (hadVisual && this.#sequencerAvailable()) {
+      try {
+        await this.#endSequencerEffects({ name: SELECTION_INDICATOR_EFFECT_NAME, object: token });
+      } catch (error) {
+        Logger.warn("Could not clear the prior selection-indicator role before switching presentation.", error);
+      }
+      this.#renderedTokens.delete(uuid);
+    }
+    const rendered = await this.#startVisual(token, { role: toRole, playSound, notifyUserId });
+    if (rendered) {
+      this.#stats.roleSwitches += 1;
+      this.#record("visual-role-switch", { tokenUuid: uuid, fromRole, toRole });
+    }
+    return rendered;
+  }
+
+  async #startVisual(token, {
+    role = SELECTION_INDICATOR_ROLES.ORIGINATOR,
+    playSound = true,
+    notifyUserId = game?.user?.id ?? null
+  } = {}) {
+    const uuid = token.document.uuid;
+    const normalizedRole = this.#normalizeRole(role);
+    const presentation = this.#presentationForRole(normalizedRole);
     if (!this.#sequencerAvailable()) {
       if (!this.#warnedUnavailable) {
         this.#warnedUnavailable = true;
@@ -213,12 +348,21 @@ export class SelectionIndicatorService {
       const effect = sequence
         .effect()
         .name(SELECTION_INDICATOR_EFFECT_NAME)
-        .file(asset);
+        .file(asset)
+        // Tint both the raw WebM and the Foundry fallback so role semantics are
+        // still visible when Eskie Effects is not installed.
+        .tint(presentation.tint);
 
-      // The preferred Eskie source is the neutral white raw WebM so AE5E owns
-      // the indicator color and bypasses Sequencer database loop-marker metadata.
-      if (asset === SELECTION_INDICATOR_PREFERRED_ASSET) {
-        effect.tint(SELECTION_INDICATOR_PREFERRED_TINT);
+      // The audible cue belongs to the user whose client owns this particular
+      // wait, not to every user who can see the broadcast indicator. Role
+      // profiles may omit audio entirely until a distinct cue is supplied.
+      if (playSound && notifyUserId && presentation.soundAsset) {
+        sequence
+          .sound()
+          .file(presentation.soundAsset)
+          .volume(presentation.soundVolume)
+          .forUsers(notifyUserId);
+        this.#stats.soundsPlayed += 1;
       }
 
       effect
@@ -240,26 +384,35 @@ export class SelectionIndicatorService {
         .persist();
 
       await sequence.play();
-      this.#renderedTokens.add(uuid);
+      this.#renderedTokens.set(uuid, { role: normalizedRole, startedAt: Date.now() });
       this.#stats.effectsStarted += 1;
       this.#record("visual-start", {
         tokenUuid: uuid,
+        role: normalizedRole,
         asset,
-        tint: asset === SELECTION_INDICATOR_PREFERRED_ASSET ? SELECTION_INDICATOR_PREFERRED_TINT : null,
+        tint: presentation.tint,
         scale,
-        offset
+        offset,
+        sound: playSound && notifyUserId && presentation.soundAsset
+          ? { asset: presentation.soundAsset, volume: presentation.soundVolume, userId: notifyUserId }
+          : null
       });
       return true;
     } catch (error) {
       this.#stats.startFailures += 1;
       this.#renderedTokens.delete(uuid);
-      this.#record("visual-start-failed", { tokenUuid: uuid, error: error?.message ?? String(error) });
+      this.#record("visual-start-failed", {
+        tokenUuid: uuid,
+        role: normalizedRole,
+        error: error?.message ?? String(error)
+      });
       Logger.warn("Selection indicator could not be started; continuing without a visual.", error);
       return false;
     }
   }
 
   async #stopVisual(uuid, token) {
+    const state = this.#renderedTokens.get(uuid) ?? null;
     const wasRendered = this.#renderedTokens.delete(uuid);
     if (!wasRendered || !this.#sequencerAvailable()) return false;
 
@@ -279,7 +432,7 @@ export class SelectionIndicatorService {
         );
       }
       this.#stats.effectsStopped += 1;
-      this.#record("visual-stop", { tokenUuid: uuid });
+      this.#record("visual-stop", { tokenUuid: uuid, role: state?.role ?? null });
       return true;
     } catch (error) {
       this.#stats.stopFailures += 1;
@@ -377,7 +530,37 @@ export class SelectionIndicatorService {
     return null;
   }
 
-  #createLease({ tokenUuid, reason, rendered }) {
+  #normalizeRole(role) {
+    const values = Object.values(SELECTION_INDICATOR_ROLES);
+    return values.includes(role) ? role : SELECTION_INDICATOR_ROLES.ORIGINATOR;
+  }
+
+  #presentationForRole(role) {
+    return SELECTION_INDICATOR_PRESENTATIONS[this.#normalizeRole(role)]
+      ?? SELECTION_INDICATOR_PRESENTATIONS[SELECTION_INDICATOR_ROLES.ORIGINATOR];
+  }
+
+  #dominantRoleForToken(tokenUuid) {
+    const ids = this.#leasesByToken.get(tokenUuid);
+    if (!ids?.size) return null;
+
+    let bestRole = SELECTION_INDICATOR_ROLES.EXTERNAL;
+    let bestPriority = -Infinity;
+    let bestCreatedAt = -Infinity;
+    for (const id of ids) {
+      const lease = this.#leases.get(id);
+      if (!lease || lease.released) continue;
+      const priority = Number(SELECTION_INDICATOR_ROLE_PRIORITY[lease.role]) || 0;
+      if (priority > bestPriority || (priority === bestPriority && lease.createdAt > bestCreatedAt)) {
+        bestRole = lease.role;
+        bestPriority = priority;
+        bestCreatedAt = lease.createdAt;
+      }
+    }
+    return bestRole;
+  }
+
+  #createLease({ tokenUuid, reason, role, playSound, notifyUserId, rendered }) {
     const id = globalThis.foundry?.utils?.randomID?.()
       ?? globalThis.crypto?.randomUUID?.()
       ?? `${Date.now()}-${Math.random()}`;
@@ -385,6 +568,9 @@ export class SelectionIndicatorService {
       id,
       tokenUuid,
       reason,
+      role: this.#normalizeRole(role),
+      playSound: Boolean(playSound),
+      notifyUserId: notifyUserId ?? null,
       rendered: Boolean(rendered),
       released: false,
       createdAt: Date.now()
@@ -398,6 +584,7 @@ export class SelectionIndicatorService {
       id: lease.id,
       tokenUuid: lease.tokenUuid,
       reason: lease.reason,
+      role: lease.role,
       get rendered() { return lease.rendered; },
       release: () => this.release(lease.id)
     });

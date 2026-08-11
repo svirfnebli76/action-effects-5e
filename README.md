@@ -22,6 +22,9 @@ v0.3.27 adds reusable UI feedback for the periods when an AE5E workflow is waiti
 - `ae5e.selection.acquire()` / `release()` provide reference-counted visual leases. Multiple simultaneous waits on one token share a single indicator.
 - `ae5e.selection.withIndicator()` wraps any asynchronous selection flow in guaranteed `try/finally` cleanup.
 - `ae5e.selection.waitForDialog()` wraps Foundry v14 `DialogV2.wait()` so button submission, cancel/X dismissal, and thrown errors all end the indicator.
+- Selection leases have semantic roles. `originator` is the existing green `#18cc46`; `responder` currently uses temporary amber `#ff9f1c`; `external` uses blue `#2f9bff`. Role presentation is centralized so responder/external colors and sounds can be changed without rewriting activity logic.
+- Only the originator profile currently has an assigned audio cue (`notification01.ogg` at volume 1). Responder and external profiles are deliberately silent until distinct sound assets are supplied.
+- `ae5e.externalPrompts` provides a conservative bridge for third-party ApplicationV2 prompts. The global render hook does not guess token ownership; a module-specific adapter must positively identify the actionable window and associated token before AE5E creates a blue external indicator. AE5E-owned dialogs are explicitly excluded.
 - With Sequencer active, the effect is attached to the token and uses Sequencer's normal shared playback, so other connected users viewing the Scene can see that the player is making a choice.
 - The visible indicator targets roughly 25-30% of the token footprint width and is positioned slightly inward from the upper-right token corner, producing the intended partial overlap. Token artwork scale is ignored. The preferred Eskie asset uses a larger `scaleToObject(0.68)` because the visible d20 occupies only part of that animation's transparent source canvas; the Foundry fallback remains at `0.28`.
 - Preferred asset: raw `modules/eskie-effects/assets/UI/Ability_Check/D20/01/UI_Ability_Check_D20_01_Roll_Default_White.webm`, tinted `#18cc46`. AE5E intentionally bypasses Eskie's Sequencer database metadata so the persisted WebM loops seamlessly. If that physical asset is unavailable, the fallback is `icons/vtt-512.png`.
@@ -39,6 +42,20 @@ await ae5e.tests.runSelectionIndicatorTest();
 ```
 
 The command first verifies reference-counted lease behavior automatically, then opens a real DialogV2 on the executing client. While it is open, inspect the token's upper-right corner and, when possible, inspect the same Scene from another connected client. Close the dialog with a button or the X; the indicator must disappear and the returned report must show zero active leases/tokens.
+
+To inspect the new role language, control exactly two tokens in originator-first, responder-second order and run:
+
+```js
+await ae5e.tests.runSelectionIndicatorRolePairTest();
+```
+
+To verify the conservative third-party ApplicationV2 bridge, control exactly one token and run:
+
+```js
+await ae5e.tests.runExternalPromptBridgeTest();
+```
+
+The external test temporarily registers one exact-match adapter for its own simulated foreign dialog. The production bridge ships with no broad heuristic adapters; future Midi-QOL/CPR/GPS adapters will be added only after their prompt-to-token association can be identified reliably in Foundry.
 
 ## Build 0.3.24: relative creature semantics
 

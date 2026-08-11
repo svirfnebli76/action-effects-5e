@@ -32,12 +32,54 @@ export const OPERATION_METADATA_KEY = "actionEffects5e";
 export const SCENE_RELATIONSHIPS_FLAG = "relationships";
 export const MAX_RECENT_TRANSACTIONS = 50;
 
+// Selection indicators are semantic: the color communicates why a user is
+// currently being asked to make a choice. AE5E-owned waits explicitly choose
+// ORIGINATOR or RESPONDER. Recognized third-party prompts use EXTERNAL.
+export const SELECTION_INDICATOR_ROLES = Object.freeze({
+  ORIGINATOR: "originator",
+  RESPONDER: "responder",
+  EXTERNAL: "external"
+});
+
+export const SELECTION_INDICATOR_ROLE_PRIORITY = Object.freeze({
+  [SELECTION_INDICATOR_ROLES.ORIGINATOR]: 300,
+  [SELECTION_INDICATOR_ROLES.RESPONDER]: 200,
+  [SELECTION_INDICATOR_ROLES.EXTERNAL]: 100
+});
+
 // Use Eskie's physical WebM directly rather than its Sequencer database key.
 // The database entry carries loop-marker metadata which intentionally holds on
 // the final frame; the raw WebM itself loops seamlessly when persisted.
 export const SELECTION_INDICATOR_PREFERRED_ASSET = "modules/eskie-effects/assets/UI/Ability_Check/D20/01/UI_Ability_Check_D20_01_Roll_Default_White.webm";
-export const SELECTION_INDICATOR_PREFERRED_TINT = "#18cc46";
 export const SELECTION_INDICATOR_FALLBACK_ASSET = "icons/vtt-512.png";
+
+// Originator preserves the live-tested green presentation. Responder and
+// External colors are intentionally centralized so they can be tuned without
+// changing workflow code. Only originator audio is assigned until additional
+// one-shot notification assets are supplied.
+export const SELECTION_INDICATOR_PRESENTATIONS = Object.freeze({
+  [SELECTION_INDICATOR_ROLES.ORIGINATOR]: Object.freeze({
+    tint: "#18cc46",
+    soundAsset: "modules/action-effects-5e/assets/audio/ui/notification01.ogg",
+    soundVolume: 1
+  }),
+  [SELECTION_INDICATOR_ROLES.RESPONDER]: Object.freeze({
+    tint: "#ff9f1c",
+    soundAsset: null,
+    soundVolume: 1
+  }),
+  [SELECTION_INDICATOR_ROLES.EXTERNAL]: Object.freeze({
+    tint: "#2f9bff",
+    soundAsset: null,
+    soundVolume: 1
+  })
+});
+
+// Backward-compatible aliases for the original v0.3.27 originator profile.
+export const SELECTION_INDICATOR_PREFERRED_TINT = SELECTION_INDICATOR_PRESENTATIONS[SELECTION_INDICATOR_ROLES.ORIGINATOR].tint;
+export const SELECTION_INDICATOR_SOUND_ASSET = SELECTION_INDICATOR_PRESENTATIONS[SELECTION_INDICATOR_ROLES.ORIGINATOR].soundAsset;
+export const SELECTION_INDICATOR_SOUND_VOLUME = SELECTION_INDICATOR_PRESENTATIONS[SELECTION_INDICATOR_ROLES.ORIGINATOR].soundVolume;
+
 // Asset-specific scaleToObject values. The Eskie d20 has substantial transparent
 // padding in its source canvas, so its effect canvas must be larger than the
 // desired visible die. The Foundry fallback icon has little/no equivalent

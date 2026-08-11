@@ -368,6 +368,28 @@ It then opens an actual Foundry v14 DialogV2 through `selection.waitForDialog()`
 
 The visual service is advisory. For a separate compatibility check, disabling Sequencer must not prevent an interaction wrapped by `selection.withIndicator()` or `selection.waitForDialog()` from resolving; AE5E should warn and continue without a marker. Sequencer is recommended, not required.
 
+### Role-pair presentation
+
+Control exactly two tokens in originator-first, responder-second order and run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runSelectionIndicatorRolePairTest();
+```
+
+Verify the first token has the green `originator` indicator and plays `notification01.ogg` once for the executing user. Verify the second token simultaneously has the temporary amber `responder` indicator and is silent because no responder audio asset is assigned yet. Closing the test dialog must remove both indicators.
+
+### External ApplicationV2 bridge
+
+Control exactly one token and run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runExternalPromptBridgeTest();
+```
+
+The harness registers one temporary exact-match external adapter and opens a DialogV2 that deliberately does **not** use `selection.waitForDialog()`. The global `renderApplicationV2` bridge should recognize only that tagged test application, display the blue `external` indicator on the controlled token, and remove it from the ApplicationV2 `close` event. The production bridge does not ship with a catch-all token heuristic; unknown external windows remain unmarked until a reliable module-specific adapter exists.
+
 ### Production Push-selector integration
 
 To verify the first real consumer of the service, control exactly two tokens in Source-first, Target-second order and run:

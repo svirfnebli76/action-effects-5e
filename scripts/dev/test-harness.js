@@ -13,6 +13,7 @@ import {
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIVE_TOKEN_RELATIONSHIPS,
   RELATIONSHIP_TYPES,
+  SELECTION_INDICATOR_ROLES,
   TELEPORT_POLICIES
 } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
@@ -31,10 +32,11 @@ export class TestHarness {
   #relationshipLinkObstructions;
   #displacement;
   #selectionIndicator;
+  #externalPromptBridge;
   #socket;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, socket }) {
+  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -45,6 +47,7 @@ export class TestHarness {
     this.#relationshipLinkObstructions = relationshipLinkObstructions;
     this.#displacement = displacement;
     this.#selectionIndicator = selectionIndicator;
+    this.#externalPromptBridge = externalPromptBridge;
     this.#socket = socket;
   }
 
@@ -84,6 +87,7 @@ export class TestHarness {
     record("Relationship rotation service", this.#relationshipRotation.getStats().initialized, this.#relationshipRotation.getStats());
     record("Displacement service", this.#displacement.getStats().initialized, this.#displacement.getStats());
     record("Selection indicator service", this.#selectionIndicator.getStats().initialized, this.#selectionIndicator.getStats());
+    record("External prompt bridge", this.#externalPromptBridge.getStats().initialized, this.#externalPromptBridge.getStats());
     record("Socketlib registration", this.#socket.ready, { ready: this.#socket.ready });
 
     const passed = checks.every((check) => check.passed);
@@ -96,6 +100,7 @@ export class TestHarness {
       relationshipRotation: this.#relationshipRotation.getStats(),
       displacement: this.#displacement.getStats(),
       selection: this.#selectionIndicator.getStats(),
+      externalPrompts: this.#externalPromptBridge.getStats(),
       compatibility: compatibilityStatus
     };
     Logger.info("Foundation smoke test", result);
@@ -123,7 +128,7 @@ export class TestHarness {
       throw new Error("Sequencer must be active for the v0.3.27 visual regression.");
     }
 
-    const lease1 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-a" });
+    const lease1 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-a", playSound: false });
     const afterFirst = this.#selectionIndicator.getStats();
 
     // Sequencer 4.x initializes persistent canvas effects asynchronously after
@@ -133,7 +138,7 @@ export class TestHarness {
     // test effect a brief settle window before exercising shared-lease cleanup.
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    const lease2 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-b" });
+    const lease2 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-b", playSound: false });
     const afterSecond = this.#selectionIndicator.getStats();
     await lease1.release();
     const afterFirstRelease = this.#selectionIndicator.getStats();
@@ -175,7 +180,8 @@ export class TestHarness {
             <p>The visible d20 should be about 10% larger than the previous live test and sit slightly inward from the token's upper-right corner, overlapping the token more clearly.</p>
             <p>If Eskie Effects is installed, AE5E should use the raw white d20 WebM directly, loop seamlessly, and tint it <code>#18cc46</code>. Otherwise Foundry's <code>icons/vtt-512.png</code> should appear.</p>
             <p>The animation should render above the token's orange control/selection outline where they overlap.</p>
-            <p>Other connected users viewing this Scene should see the indicator even though this dialog exists only on your client.</p>
+            <p><code>notification01.ogg</code> should play once at volume 1 when this dialog opens, and only on the client whose user is making this selection. It must not loop while the indicator remains active.</p>
+            <p>Other connected users viewing this Scene should see the indicator even though this dialog exists only on your client; they should not hear this notification sound.</p>
             <p>Close with either button or the window X. The indicator must disappear immediately when the dialog closes.</p>
           </div>`,
         buttons: [
@@ -209,6 +215,141 @@ export class TestHarness {
         ? "AE5E | Selection indicator cleanup passed. Confirm visual size/position and multi-user visibility manually."
         : "AE5E | Selection indicator cleanup failed. See the console."
     );
+    return report;
+  }
+
+  async runSelectionIndicatorRolePairTest() {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 2) throw new Error("Control exactly two tokens for the selection-indicator role-pair test.");
+
+    const [originator, responder] = controlled;
+    const baseline = this.#selectionIndicator.getStats();
+    if (baseline.activeLeases !== 0) {
+      throw new Error("Role-pair testing requires no other active AE5E selection leases.");
+    }
+
+    const originatorLease = await this.#selectionIndicator.acquire({
+      token: originator,
+      reason: "v0.3.27-role-originator",
+      role: SELECTION_INDICATOR_ROLES.ORIGINATOR,
+      playSound: true
+    });
+    const responderLease = await this.#selectionIndicator.acquire({
+      token: responder,
+      reason: "v0.3.27-role-responder",
+      role: SELECTION_INDICATOR_ROLES.RESPONDER,
+      playSound: true
+    });
+
+    try {
+      const DialogV2 = foundry?.applications?.api?.DialogV2;
+      if (!DialogV2?.wait) throw new Error("Foundry DialogV2.wait() is unavailable.");
+      await DialogV2.wait({
+        classes: [`${MODULE_ID}-owned-dialog`],
+        window: { title: "AE5E 0.3.27 Indicator Role Pair Test" },
+        content: `
+          <div style="display:flex;flex-direction:column;gap:0.6rem;min-width:390px;">
+            <p><strong>Inspect both controlled tokens before closing this dialog.</strong></p>
+            <p>The first-controlled token <strong>${originator.name}</strong> should show the existing green <code>originator</code> indicator and play <code>notification01.ogg</code> once for this user.</p>
+            <p>The second-controlled token <strong>${responder.name}</strong> should show the temporary amber <code>responder</code> indicator. No responder sound asset is assigned yet, so it should be silent.</p>
+            <p>Both indicators should remain above token selection outlines and disappear when this test dialog closes.</p>
+          </div>`,
+        buttons: [
+          { action: "complete", label: "Complete Test", default: true },
+          { action: "cancel", label: "Cancel" }
+        ],
+        rejectClose: false
+      });
+    } finally {
+      await responderLease.release();
+      await originatorLease.release();
+    }
+
+    const finalStats = this.#selectionIndicator.getStats();
+    const passed = finalStats.activeLeases === 0
+      && finalStats.activeTokens === 0
+      && finalStats.renderedTokens === 0;
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      originator: { tokenUuid: originator.document.uuid, tokenName: originator.name, role: originatorLease.role },
+      responder: { tokenUuid: responder.document.uuid, tokenName: responder.name, role: responderLease.role },
+      finalStats
+    };
+    Logger.info("AE5E 0.3.27 selection-indicator role-pair test", report);
+    return report;
+  }
+
+  async runExternalPromptBridgeTest() {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 1) throw new Error("Control exactly one token for the external-prompt bridge test.");
+
+    const token = controlled[0];
+    const testClass = `${MODULE_ID}-external-prompt-test`;
+    const adapterId = `${MODULE_ID}.tests.external-prompt`;
+    const unregister = this.#externalPromptBridge.registerAdapter({
+      id: adapterId,
+      priority: 100000,
+      match: ({ application, element }) => {
+        const raw = application?.options?.classes;
+        const classes = raw instanceof Set ? [...raw] : Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/\s+/) : [];
+        const matched = classes.includes(testClass) || element?.classList?.contains?.(testClass);
+        if (!matched) return null;
+        return {
+          token,
+          reason: "v0.3.27-external-prompt-test",
+          playSound: true
+        };
+      }
+    });
+
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2?.wait) {
+      unregister();
+      throw new Error("Foundry DialogV2.wait() is unavailable.");
+    }
+
+    let dialogResult = null;
+    try {
+      dialogResult = await DialogV2.wait({
+        classes: [testClass],
+        window: { title: "Simulated External Module Prompt" },
+        content: `
+          <div style="display:flex;flex-direction:column;gap:0.6rem;min-width:390px;">
+            <p><strong>This dialog deliberately does not use an AE5E selection lease.</strong></p>
+            <p>The temporary test adapter should recognize it through the global <code>renderApplicationV2</code> bridge and place a <strong>blue external indicator</strong> on ${token.name}.</p>
+            <p>No external notification sound asset is assigned yet, so the blue indicator should be silent.</p>
+            <p>Closing this dialog should release the bridge-owned lease and remove the blue indicator.</p>
+          </div>`,
+        buttons: [
+          { action: "complete", label: "Complete Test", default: true },
+          { action: "cancel", label: "Cancel" }
+        ],
+        rejectClose: false
+      });
+      // ApplicationV2's close event is post-close and the bridge releases its
+      // lease asynchronously. Allow that close listener one task to settle.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } finally {
+      unregister();
+    }
+
+    const bridgeStats = this.#externalPromptBridge.getStats();
+    const selectionStats = this.#selectionIndicator.getStats();
+    const passed = bridgeStats.trackedApplications === 0
+      && selectionStats.activeLeases === 0
+      && selectionStats.activeTokens === 0
+      && selectionStats.renderedTokens === 0;
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      tokenUuid: token.document.uuid,
+      tokenName: token.name,
+      dialogResult,
+      bridgeStats,
+      selectionStats
+    };
+    Logger.info("AE5E 0.3.27 external-prompt bridge test", report);
     return report;
   }
 
