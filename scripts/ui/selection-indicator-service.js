@@ -195,7 +195,7 @@ export class SelectionIndicatorService {
       // Clear a stale effect on this exact token before starting a new one.
       await this.#endSequencerEffects({ name: SELECTION_INDICATOR_EFFECT_NAME, object: token });
 
-      const asset = this.#preferredAssetAvailable()
+      const asset = await this.#preferredAssetAvailable()
         ? SELECTION_INDICATOR_PREFERRED_ASSET
         : SELECTION_INDICATOR_FALLBACK_ASSET;
       const scale = asset === SELECTION_INDICATOR_PREFERRED_ASSET
@@ -215,13 +215,18 @@ export class SelectionIndicatorService {
         .name(SELECTION_INDICATOR_EFFECT_NAME)
         .file(asset);
 
-      // The preferred Eskie source is the neutral white variant so AE5E owns
-      // the indicator color rather than depending on a pre-colored database key.
+      // The preferred Eskie source is the neutral white raw WebM so AE5E owns
+      // the indicator color and bypasses Sequencer database loop-marker metadata.
       if (asset === SELECTION_INDICATOR_PREFERRED_ASSET) {
         effect.tint(SELECTION_INDICATOR_PREFERRED_TINT);
       }
 
       effect
+        // This is an interaction-status marker, not an in-world VFX. Route it
+        // through Sequencer's above-interface path so it renders in Foundry's
+        // ControlsLayer and can sit above token control/selection outlines.
+        .aboveInterface()
+        .zIndex(1000)
         .attachTo(token, {
           offset,
           gridUnits: true,
@@ -302,23 +307,40 @@ export class SelectionIndicatorService {
     return Boolean(
       game?.modules?.get?.("sequencer")?.active
       && globalThis.Sequencer?.EffectManager
-      && globalThis.Sequencer?.Database
       && typeof globalThis.Sequence === "function"
     );
   }
 
-  #preferredAssetAvailable() {
-    const database = globalThis.Sequencer?.Database;
-    if (!database) return false;
+  async #preferredAssetAvailable() {
+    // The raw animation lives inside Eskie's package. It is intentionally not
+    // resolved through Sequencer.Database because that entry's metadata changes
+    // the loop behavior we want for this persistent waiting indicator.
+    if (!game?.modules?.get?.("eskie-effects")) return false;
+
+    // Verify the exact physical asset rather than assuming an installed package
+    // still contains this particular file. getRoute() preserves Foundry path
+    // prefixes used by hosted/reverse-proxy installations.
     try {
-      if (typeof database.entryExists === "function") {
-        return Boolean(database.entryExists(SELECTION_INDICATOR_PREFERRED_ASSET));
-      }
-      if (typeof database.getEntry === "function") {
-        return Boolean(database.getEntry(SELECTION_INDICATOR_PREFERRED_ASSET));
+      const route = globalThis.foundry?.utils?.getRoute
+        ? foundry.utils.getRoute(SELECTION_INDICATOR_PREFERRED_ASSET)
+        : SELECTION_INDICATOR_PREFERRED_ASSET;
+      let response = await fetch(route, { method: "HEAD", cache: "no-store" });
+      if (response.ok) return true;
+
+      // Some static hosts reject HEAD. Probe one byte as a compatibility fallback
+      // and immediately cancel the response body so we do not download the WebM.
+      if (response.status === 405 || response.status === 501) {
+        response = await fetch(route, {
+          method: "GET",
+          cache: "no-store",
+          headers: { Range: "bytes=0-0" }
+        });
+        const available = response.ok;
+        try { await response.body?.cancel?.(); } catch (_error) {}
+        return available;
       }
     } catch (error) {
-      Logger.warn("Could not query the Sequencer database for the preferred selection indicator asset.", error);
+      Logger.warn("Could not verify the preferred raw selection-indicator asset; using the Foundry fallback.", error);
     }
     return false;
   }

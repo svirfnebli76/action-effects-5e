@@ -6,13 +6,15 @@
 - Added lease/reference counting: multiple simultaneous waits on the same token share one visual, and closing one wait cannot remove the indicator while another remains active.
 - Added `selection.withIndicator()` for arbitrary asynchronous interactions and `selection.waitForDialog()` for Foundry v14 `DialogV2.wait()` workflows; both guarantee cleanup with `finally`, including button submission, cancel/X close, and thrown errors.
 - Added a persistent Sequencer effect attached to the selecting token and broadcast through Sequencer's normal non-local effect path so other connected users viewing the Scene can see that the player is making a choice.
-- The visible indicator targets roughly 25-30% of the token footprint width (ignoring artwork texture scale) and is positioned one tenth of a token footprint inward from the token's upper-right corner for a stronger partial overlap. After live Foundry validation, the preferred Eskie d20 uses `scaleToObject(0.68)` to compensate for transparent padding in the animation canvas; the Foundry fallback remains at `0.28`. The attachment follows token movement but does not rotate with the token.
-- Preferred animation: `eskie.ui.ability_check.d20.01.roll.default.white`, tinted `#1FC91C` by AE5E. If that Sequencer database entry is unavailable, the service uses Foundry's `icons/vtt-512.png` through Sequencer as a static fallback.
-- Sequencer is now a recommended, not required, module dependency. If it is unavailable, AE5E logs a warning and the underlying rules workflow continues without the advisory visual.
+- Finalized live-tested placement at a `0.40` token-footprint corner offset and preferred Eskie scaling at `scaleToObject(0.68)`; the Foundry fallback remains `0.28`. Token artwork scale is ignored and token rotation does not orbit the indicator.
+- Preferred animation now uses the raw Eskie file `modules/eskie-effects/assets/UI/Ability_Check/D20/01/UI_Ability_Check_D20_01_Roll_Default_White.webm` instead of the Sequencer database key. This intentionally bypasses Eskie's loop-marker metadata so the persisted WebM loops seamlessly.
+- Preferred tint finalized as `#18cc46`. If Eskie Effects is not installed, the service uses Foundry's `icons/vtt-512.png` as a static fallback.
+- The indicator now uses Sequencer `aboveInterface()` plus a high effect `zIndex` so it is rendered through Foundry's ControlsLayer and can appear above the orange token control/selection outline.
+- Sequencer is recommended, not required. If it is unavailable, AE5E logs a warning and the underlying rules workflow continues without the advisory visual.
 - Added startup/stale-effect cleanup and per-token cleanup so a closed dialog does not leave a persistent marker behind.
-- Added the public `selection` API and constants for preferred asset, fallback asset, scale, and effect name.
+- Added the public `selection` API and constants for preferred asset/tint, fallback asset, scale, placement, and effect name.
 - Integrated the shared indicator with the existing interactive Push destination selector; while a player is choosing a Push destination, the marker appears on the Source/acting token and clears when the selection completes or is cancelled. Pull remains automatic and does not show an indicator.
-- Added Foundry-only `runSelectionIndicatorTest()` coverage for shared lease behavior, final cleanup, DialogV2 close cleanup, placement/scale inspection, asset fallback observation, and multi-user visibility observation. The synthetic lease phase now allows Sequencer 4.x persistent-effect initialization to settle before teardown, avoiding a test-only initialization/cleanup race.
+- Added Foundry-only `runSelectionIndicatorTest()` coverage for shared lease behavior, final cleanup, DialogV2 close cleanup, placement/scale inspection, seamless raw-WebM looping, selection-outline layering, asset fallback observation, and multi-user visibility observation. The synthetic lease phase allows Sequencer 4.x persistent-effect initialization to settle before teardown, avoiding a test-only initialization/cleanup race.
 
 ## 0.3.26
 

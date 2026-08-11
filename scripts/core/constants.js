@@ -32,8 +32,11 @@ export const OPERATION_METADATA_KEY = "actionEffects5e";
 export const SCENE_RELATIONSHIPS_FLAG = "relationships";
 export const MAX_RECENT_TRANSACTIONS = 50;
 
-export const SELECTION_INDICATOR_PREFERRED_ASSET = "eskie.ui.ability_check.d20.01.roll.default.white";
-export const SELECTION_INDICATOR_PREFERRED_TINT = "#1FC91C";
+// Use Eskie's physical WebM directly rather than its Sequencer database key.
+// The database entry carries loop-marker metadata which intentionally holds on
+// the final frame; the raw WebM itself loops seamlessly when persisted.
+export const SELECTION_INDICATOR_PREFERRED_ASSET = "modules/eskie-effects/assets/UI/Ability_Check/D20/01/UI_Ability_Check_D20_01_Roll_Default_White.webm";
+export const SELECTION_INDICATOR_PREFERRED_TINT = "#18cc46";
 export const SELECTION_INDICATOR_FALLBACK_ASSET = "icons/vtt-512.png";
 // Asset-specific scaleToObject values. The Eskie d20 has substantial transparent
 // padding in its source canvas, so its effect canvas must be larger than the
