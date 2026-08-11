@@ -357,10 +357,10 @@ The command performs an automated lease lifecycle first:
 
 It then opens an actual Foundry v14 DialogV2 through `selection.waitForDialog()`. While the dialog remains open, verify in Foundry:
 
-- the marker is centered at the controlled token's upper-right footprint corner and partially overlaps the token;
+- the marker sits slightly inward from the controlled token's upper-right footprint corner and partially overlaps the token;
 - visible marker size is approximately 25-30% of token width; repeat with 1x1, 2x2, and 3x3 tokens;
 - the marker follows token translation while the dialog is open and does not rotate around the token when the token rotates;
-- when the Eskie database key exists, `eskie.ui.ability_check.d20.01.roll.default.green` is animated; if it is absent, `icons/vtt-512.png` is shown instead;
+- when the Eskie database key exists, `eskie.ui.ability_check.d20.01.roll.default.white` is animated and tinted `#1FC91C`; if it is absent, `icons/vtt-512.png` is shown instead;
 - from a second connected client viewing the same Scene, the marker is visible even though the DialogV2 exists only on the selecting user's client;
 - closing with the default button, Cancel, or the window X removes the marker immediately;
 - after closure, `ae5e.selection.getStats()` reports `activeLeases: 0`, `activeTokens: 0`, and `renderedTokens: 0`.

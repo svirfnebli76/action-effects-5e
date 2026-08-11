@@ -172,8 +172,8 @@ export class TestHarness {
         content: `
           <div style="display:flex;flex-direction:column;gap:0.6rem;min-width:360px;">
             <p><strong>Leave this dialog open while inspecting the controlled token.</strong></p>
-            <p>The visible d20 should now be about 25-30% of the token width, centered on the token's upper-right corner so it partially overlaps the token.</p>
-            <p>If <code>eskie.ui.ability_check.d20.01.roll.default.green</code> exists, it should animate. Otherwise Foundry's <code>icons/vtt-512.png</code> should appear.</p>
+            <p>The visible d20 should be about 10% larger than the previous live test and sit slightly inward from the token's upper-right corner, overlapping the token more clearly.</p>
+            <p>If <code>eskie.ui.ability_check.d20.01.roll.default.white</code> exists, it should animate with AE5E tint <code>#1FC91C</code>. Otherwise Foundry's <code>icons/vtt-512.png</code> should appear.</p>
             <p>Other connected users viewing this Scene should see the indicator even though this dialog exists only on your client.</p>
             <p>Close with either button or the window X. The indicator must disappear immediately when the dialog closes.</p>
           </div>`,

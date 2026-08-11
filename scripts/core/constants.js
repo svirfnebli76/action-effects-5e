@@ -32,14 +32,18 @@ export const OPERATION_METADATA_KEY = "actionEffects5e";
 export const SCENE_RELATIONSHIPS_FLAG = "relationships";
 export const MAX_RECENT_TRANSACTIONS = 50;
 
-export const SELECTION_INDICATOR_PREFERRED_ASSET = "eskie.ui.ability_check.d20.01.roll.default.green";
+export const SELECTION_INDICATOR_PREFERRED_ASSET = "eskie.ui.ability_check.d20.01.roll.default.white";
+export const SELECTION_INDICATOR_PREFERRED_TINT = "#1FC91C";
 export const SELECTION_INDICATOR_FALLBACK_ASSET = "icons/vtt-512.png";
 // Asset-specific scaleToObject values. The Eskie d20 has substantial transparent
 // padding in its source canvas, so its effect canvas must be larger than the
 // desired visible die. The Foundry fallback icon has little/no equivalent
 // padding and therefore stays close to the desired visible 28% footprint.
-export const SELECTION_INDICATOR_PREFERRED_SCALE = 0.62;
+export const SELECTION_INDICATOR_PREFERRED_SCALE = 0.68;
 export const SELECTION_INDICATOR_FALLBACK_SCALE = 0.28;
+// Center-to-corner placement uses 0.5. Live validation showed the marker
+// should sit one tenth of a token footprint inward from the top/right edges.
+export const SELECTION_INDICATOR_CORNER_OFFSET_FACTOR = 0.40;
 // Compatibility alias for the primary/preferred indicator scale.
 export const SELECTION_INDICATOR_SCALE = SELECTION_INDICATOR_PREFERRED_SCALE;
 export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator`;

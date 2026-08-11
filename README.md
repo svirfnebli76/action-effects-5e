@@ -23,8 +23,8 @@ v0.3.27 adds reusable UI feedback for the periods when an AE5E workflow is waiti
 - `ae5e.selection.withIndicator()` wraps any asynchronous selection flow in guaranteed `try/finally` cleanup.
 - `ae5e.selection.waitForDialog()` wraps Foundry v14 `DialogV2.wait()` so button submission, cancel/X dismissal, and thrown errors all end the indicator.
 - With Sequencer active, the effect is attached to the token and uses Sequencer's normal shared playback, so other connected users viewing the Scene can see that the player is making a choice.
-- The visible indicator targets roughly 25-30% of the token footprint width and is centered on the upper-right token corner, producing the intended partial overlap. Token artwork scale is ignored. The preferred Eskie asset uses a larger `scaleToObject(0.62)` because the visible d20 occupies only part of that animation's transparent source canvas; the Foundry fallback remains at `0.28`.
-- Preferred asset: `eskie.ui.ability_check.d20.01.roll.default.green`. Missing database entry fallback: `icons/vtt-512.png`.
+- The visible indicator targets roughly 25-30% of the token footprint width and is positioned slightly inward from the upper-right token corner, producing the intended partial overlap. Token artwork scale is ignored. The preferred Eskie asset uses a larger `scaleToObject(0.68)` because the visible d20 occupies only part of that animation's transparent source canvas; the Foundry fallback remains at `0.28`.
+- Preferred asset: `eskie.ui.ability_check.d20.01.roll.default.white`, tinted `#1FC91C`. Missing database entry fallback: `icons/vtt-512.png`.
 - Sequencer is recommended rather than required; a missing Sequencer integration cannot interrupt the underlying rules workflow.
 - The existing interactive Push destination selector now consumes this service: the marker is shown on the acting/Source token only while the player is choosing a Push destination. Automatic Pull and preselected Push directions do not create a waiting marker.
 

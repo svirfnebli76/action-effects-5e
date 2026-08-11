@@ -4,7 +4,9 @@ import {
   SELECTION_INDICATOR_FALLBACK_ASSET,
   SELECTION_INDICATOR_FALLBACK_SCALE,
   SELECTION_INDICATOR_PREFERRED_ASSET,
-  SELECTION_INDICATOR_PREFERRED_SCALE
+  SELECTION_INDICATOR_PREFERRED_SCALE,
+  SELECTION_INDICATOR_PREFERRED_TINT,
+  SELECTION_INDICATOR_CORNER_OFFSET_FACTOR
 } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
 
@@ -167,9 +169,11 @@ export class SelectionIndicatorService {
         apiAvailable: this.#sequencerAvailable()
       },
       preferredAsset: SELECTION_INDICATOR_PREFERRED_ASSET,
+      preferredTint: SELECTION_INDICATOR_PREFERRED_TINT,
       fallbackAsset: SELECTION_INDICATOR_FALLBACK_ASSET,
       preferredScale: SELECTION_INDICATOR_PREFERRED_SCALE,
       fallbackScale: SELECTION_INDICATOR_FALLBACK_SCALE,
+      cornerOffsetFactor: SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
       activeTokens: this.#leasesByToken.size,
       activeLeases: this.#leases.size,
       renderedTokens: this.#renderedTokens.size,
@@ -201,15 +205,23 @@ export class SelectionIndicatorService {
 
       const document = token.document;
       const offset = {
-        x: Math.max(0, Number(document.width) || 1) / 2,
-        y: -Math.max(0, Number(document.height) || 1) / 2
+        x: Math.max(0, Number(document.width) || 1) * SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
+        y: -Math.max(0, Number(document.height) || 1) * SELECTION_INDICATOR_CORNER_OFFSET_FACTOR
       };
 
       const sequence = this.#createSequence();
-      sequence
+      const effect = sequence
         .effect()
         .name(SELECTION_INDICATOR_EFFECT_NAME)
-        .file(asset)
+        .file(asset);
+
+      // The preferred Eskie source is the neutral white variant so AE5E owns
+      // the indicator color rather than depending on a pre-colored database key.
+      if (asset === SELECTION_INDICATOR_PREFERRED_ASSET) {
+        effect.tint(SELECTION_INDICATOR_PREFERRED_TINT);
+      }
+
+      effect
         .attachTo(token, {
           offset,
           gridUnits: true,
@@ -225,7 +237,13 @@ export class SelectionIndicatorService {
       await sequence.play();
       this.#renderedTokens.add(uuid);
       this.#stats.effectsStarted += 1;
-      this.#record("visual-start", { tokenUuid: uuid, asset, scale, offset });
+      this.#record("visual-start", {
+        tokenUuid: uuid,
+        asset,
+        tint: asset === SELECTION_INDICATOR_PREFERRED_ASSET ? SELECTION_INDICATOR_PREFERRED_TINT : null,
+        scale,
+        offset
+      });
       return true;
     } catch (error) {
       this.#stats.startFailures += 1;
