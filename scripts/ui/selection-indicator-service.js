@@ -2,8 +2,9 @@ import {
   MODULE_ID,
   SELECTION_INDICATOR_EFFECT_NAME,
   SELECTION_INDICATOR_FALLBACK_ASSET,
+  SELECTION_INDICATOR_FALLBACK_SCALE,
   SELECTION_INDICATOR_PREFERRED_ASSET,
-  SELECTION_INDICATOR_SCALE
+  SELECTION_INDICATOR_PREFERRED_SCALE
 } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
 
@@ -167,7 +168,8 @@ export class SelectionIndicatorService {
       },
       preferredAsset: SELECTION_INDICATOR_PREFERRED_ASSET,
       fallbackAsset: SELECTION_INDICATOR_FALLBACK_ASSET,
-      scale: SELECTION_INDICATOR_SCALE,
+      preferredScale: SELECTION_INDICATOR_PREFERRED_SCALE,
+      fallbackScale: SELECTION_INDICATOR_FALLBACK_SCALE,
       activeTokens: this.#leasesByToken.size,
       activeLeases: this.#leases.size,
       renderedTokens: this.#renderedTokens.size,
@@ -192,6 +194,9 @@ export class SelectionIndicatorService {
       const asset = this.#preferredAssetAvailable()
         ? SELECTION_INDICATOR_PREFERRED_ASSET
         : SELECTION_INDICATOR_FALLBACK_ASSET;
+      const scale = asset === SELECTION_INDICATOR_PREFERRED_ASSET
+        ? SELECTION_INDICATOR_PREFERRED_SCALE
+        : SELECTION_INDICATOR_FALLBACK_SCALE;
       if (asset === SELECTION_INDICATOR_FALLBACK_ASSET) this.#stats.fallbackUses += 1;
 
       const document = token.document;
@@ -211,7 +216,7 @@ export class SelectionIndicatorService {
           bindRotation: false,
           bindScale: false
         })
-        .scaleToObject(SELECTION_INDICATOR_SCALE, {
+        .scaleToObject(scale, {
           uniform: true,
           considerTokenScale: false
         })
@@ -220,7 +225,7 @@ export class SelectionIndicatorService {
       await sequence.play();
       this.#renderedTokens.add(uuid);
       this.#stats.effectsStarted += 1;
-      this.#record("visual-start", { tokenUuid: uuid, asset, offset });
+      this.#record("visual-start", { tokenUuid: uuid, asset, scale, offset });
       return true;
     } catch (error) {
       this.#stats.startFailures += 1;

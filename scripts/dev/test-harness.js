@@ -125,6 +125,14 @@ export class TestHarness {
 
     const lease1 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-a" });
     const afterFirst = this.#selectionIndicator.getStats();
+
+    // Sequencer 4.x initializes persistent canvas effects asynchronously after
+    // Sequence.play() resolves. The lease regression used to end its first
+    // synthetic effect immediately, which could race Sequencer's sprite setup
+    // and produce a harmless but noisy `sprite === null` volume error. Give the
+    // test effect a brief settle window before exercising shared-lease cleanup.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
     const lease2 = await this.#selectionIndicator.acquire({ token, reason: "v0.3.27-lease-b" });
     const afterSecond = this.#selectionIndicator.getStats();
     await lease1.release();
@@ -164,7 +172,7 @@ export class TestHarness {
         content: `
           <div style="display:flex;flex-direction:column;gap:0.6rem;min-width:360px;">
             <p><strong>Leave this dialog open while inspecting the controlled token.</strong></p>
-            <p>The indicator should be about 28% of the token width, centered on the token's upper-right corner so it partially overlaps the token.</p>
+            <p>The visible d20 should now be about 25-30% of the token width, centered on the token's upper-right corner so it partially overlaps the token.</p>
             <p>If <code>eskie.ui.ability_check.d20.01.roll.default.green</code> exists, it should animate. Otherwise Foundry's <code>icons/vtt-512.png</code> should appear.</p>
             <p>Other connected users viewing this Scene should see the indicator even though this dialog exists only on your client.</p>
             <p>Close with either button or the window X. The indicator must disappear immediately when the dialog closes.</p>

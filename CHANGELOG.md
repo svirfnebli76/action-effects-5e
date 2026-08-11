@@ -6,13 +6,13 @@
 - Added lease/reference counting: multiple simultaneous waits on the same token share one visual, and closing one wait cannot remove the indicator while another remains active.
 - Added `selection.withIndicator()` for arbitrary asynchronous interactions and `selection.waitForDialog()` for Foundry v14 `DialogV2.wait()` workflows; both guarantee cleanup with `finally`, including button submission, cancel/X close, and thrown errors.
 - Added a persistent Sequencer effect attached to the selecting token and broadcast through Sequencer's normal non-local effect path so other connected users viewing the Scene can see that the player is making a choice.
-- The indicator scales to 28% of the token footprint width (ignoring artwork texture scale) and is centered on the token's upper-right footprint corner for a partial overlap. The attachment follows token movement but does not rotate with the token.
+- The visible indicator targets roughly 25-30% of the token footprint width (ignoring artwork texture scale) and is centered on the token's upper-right footprint corner for a partial overlap. After live Foundry validation, the preferred Eskie d20 uses `scaleToObject(0.62)` to compensate for transparent padding in the animation canvas; the Foundry fallback remains at `0.28`. The attachment follows token movement but does not rotate with the token.
 - Preferred animation: `eskie.ui.ability_check.d20.01.roll.default.green`. If that Sequencer database entry is unavailable, the service uses Foundry's `icons/vtt-512.png` through Sequencer as a static fallback.
 - Sequencer is now a recommended, not required, module dependency. If it is unavailable, AE5E logs a warning and the underlying rules workflow continues without the advisory visual.
 - Added startup/stale-effect cleanup and per-token cleanup so a closed dialog does not leave a persistent marker behind.
 - Added the public `selection` API and constants for preferred asset, fallback asset, scale, and effect name.
 - Integrated the shared indicator with the existing interactive Push destination selector; while a player is choosing a Push destination, the marker appears on the Source/acting token and clears when the selection completes or is cancelled. Pull remains automatic and does not show an indicator.
-- Added Foundry-only `runSelectionIndicatorTest()` coverage for shared lease behavior, final cleanup, DialogV2 close cleanup, placement/scale inspection, asset fallback observation, and multi-user visibility observation.
+- Added Foundry-only `runSelectionIndicatorTest()` coverage for shared lease behavior, final cleanup, DialogV2 close cleanup, placement/scale inspection, asset fallback observation, and multi-user visibility observation. The synthetic lease phase now allows Sequencer 4.x persistent-effect initialization to settle before teardown, avoiding a test-only initialization/cleanup race.
 
 ## 0.3.26
 
