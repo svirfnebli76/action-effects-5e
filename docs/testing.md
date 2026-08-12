@@ -68,6 +68,19 @@ await ae5e.tests.previewDisplacementFromControlledTokens({
 
 Expected overlay: green = clear; yellow `~` = nonhostile occupied endpoint; orange = partial distance (`actual/requested`); red `X` = hard blocked and not selectable. Press Esc to cancel.
 
+## v0.3.27 selection-indicator and external-prompt regressions
+
+After the interactive indicator tests, control exactly one token and run the automated external-prompt isolation regression:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runExternalPromptIsolationTest();
+```
+
+This is deliberately non-interactive. It exercises the external bridge's fail-closed classification path without broadcasting fake `renderApplicationV2` events to unrelated installed modules. It verifies that ordinary/unrecognized applications remain inert, tokenless adapter matches are ignored, adapter exceptions do not create indicators, AE5E-owned dialogs cannot be claimed by an external adapter, a recognized application's re-render cannot duplicate its lease, two recognized prompts for the same token share one blue visual, closing one preserves the remaining lease, and closing the final prompt returns both bridge and selection-indicator counts to zero.
+
+A complete pass reports `PASS`. The test suppresses notification audio and cleans up all temporary adapters/applications in `finally`.
+
 ## Creating a grapple geometry fixture
 
 Control exactly two tokens, Leader first and Follower second, then run:

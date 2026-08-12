@@ -353,6 +353,244 @@ export class TestHarness {
     return report;
   }
 
+  async runExternalPromptIsolationTest() {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 1) throw new Error("Control exactly one token for the external-prompt isolation test.");
+
+    const token = controlled[0];
+    const baselineBridge = this.#externalPromptBridge.getStats();
+    const baselineSelection = this.#selectionIndicator.getStats();
+    if (baselineBridge.trackedApplications !== 0 || baselineSelection.activeLeases !== 0) {
+      throw new Error("External-prompt isolation testing requires no tracked external applications or active selection leases.");
+    }
+
+    const prefix = `${MODULE_ID}-external-isolation-${Date.now()}`;
+    const recognizedClass = `${prefix}-recognized`;
+    const tokenlessClass = `${prefix}-tokenless`;
+    const throwingClass = `${prefix}-throwing`;
+    const ordinaryClasses = [
+      `${prefix}-actor-sheet`,
+      `${prefix}-item-sheet`,
+      `${prefix}-settings`,
+      `${prefix}-file-picker`,
+      `${prefix}-unknown-module-dialog`
+    ];
+    const adapterIds = {
+      throwing: `${MODULE_ID}.tests.external-isolation.throwing.${Date.now()}`,
+      tokenless: `${MODULE_ID}.tests.external-isolation.tokenless.${Date.now()}`,
+      recognized: `${MODULE_ID}.tests.external-isolation.recognized.${Date.now()}`
+    };
+
+    const hasClass = (application, className) => {
+      const raw = application?.options?.classes;
+      const classes = raw instanceof Set ? [...raw] : Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/\s+/) : [];
+      return classes.includes(className);
+    };
+
+    const unregister = [];
+    unregister.push(this.#externalPromptBridge.registerAdapter({
+      id: adapterIds.throwing,
+      priority: 300000,
+      match: ({ application }) => {
+        if (!hasClass(application, throwingClass)) return null;
+        throw new Error("Intentional AE5E external-prompt isolation adapter failure.");
+      }
+    }));
+    unregister.push(this.#externalPromptBridge.registerAdapter({
+      id: adapterIds.tokenless,
+      priority: 200000,
+      match: ({ application }) => hasClass(application, tokenlessClass)
+        ? { reason: "v0.3.27-tokenless-match", playSound: false }
+        : null
+    }));
+    unregister.push(this.#externalPromptBridge.registerAdapter({
+      id: adapterIds.recognized,
+      priority: 100000,
+      match: ({ application }) => hasClass(application, recognizedClass)
+        ? { token, reason: "v0.3.27-recognized-match", playSound: false }
+        : null
+    }));
+
+    const createSyntheticApplication = ({ id, classes = [] }) => {
+      const listeners = new Map();
+      return {
+        id,
+        options: { classes: [...classes] },
+        addEventListener(type, callback, { once = false } = {}) {
+          const list = listeners.get(type) ?? [];
+          list.push({ callback, once: Boolean(once) });
+          listeners.set(type, list);
+        },
+        dispatch(type) {
+          const list = [...(listeners.get(type) ?? [])];
+          for (const entry of list) {
+            try { entry.callback(); } catch (error) { Logger.warn("Synthetic external-prompt test listener failed.", error); }
+          }
+          listeners.set(type, (listeners.get(type) ?? []).filter((entry) => !entry.once));
+        },
+        close() { this.dispatch("close"); }
+      };
+    };
+
+    const render = async (application) => {
+      await this.#externalPromptBridge.processRenderForTesting({ application, element: null, context: {}, options: {} });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    };
+    const closeAndSettle = async (application) => {
+      application.close();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    };
+
+    const checks = [];
+    const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
+    const apps = [];
+
+    try {
+      // Ordinary/unrecognized windows must remain completely inert.
+      for (let i = 0; i < ordinaryClasses.length; i += 1) {
+        const app = createSyntheticApplication({ id: `${prefix}-ordinary-${i}`, classes: [ordinaryClasses[i]] });
+        apps.push(app);
+        await render(app);
+      }
+      let bridge = this.#externalPromptBridge.getStats();
+      let selection = this.#selectionIndicator.getStats();
+      record("Ordinary windows ignored", bridge.trackedApplications === 0
+        && selection.activeLeases === 0
+        && selection.renderedTokens === 0, { bridge, selection });
+
+      // Even a positive adapter match is non-actionable without a token.
+      const tokenless = createSyntheticApplication({ id: `${prefix}-tokenless-app`, classes: [tokenlessClass] });
+      apps.push(tokenless);
+      await render(tokenless);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("Tokenless adapter match ignored", bridge.trackedApplications === 0
+        && selection.activeLeases === 0
+        && selection.renderedTokens === 0, { bridge, selection });
+
+      // Adapter exceptions must fail closed instead of creating an indicator.
+      const throwing = createSyntheticApplication({ id: `${prefix}-throwing-app`, classes: [throwingClass] });
+      apps.push(throwing);
+      await render(throwing);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("Adapter failure isolated", bridge.adapterFailures === baselineBridge.adapterFailures + 1
+        && bridge.trackedApplications === 0
+        && selection.activeLeases === 0, { bridge, selection });
+
+      // AE5E-owned windows are excluded before external adapters can claim them,
+      // even when they also carry a class that would otherwise match.
+      const ae5eOwned = createSyntheticApplication({
+        id: `${prefix}-ae5e-owned`,
+        classes: [`${MODULE_ID}-owned-dialog`, recognizedClass]
+      });
+      apps.push(ae5eOwned);
+      await render(ae5eOwned);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("AE5E-owned dialog excluded", bridge.ae5eOwnedIgnored === baselineBridge.ae5eOwnedIgnored + 1
+        && bridge.trackedApplications === 0
+        && selection.activeLeases === 0, { bridge, selection });
+
+      // One positively recognized application should create exactly one blue
+      // external lease and one rendered token indicator.
+      const recognizedA = createSyntheticApplication({ id: `${prefix}-recognized-a`, classes: [recognizedClass] });
+      apps.push(recognizedA);
+      await render(recognizedA);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("Recognized prompt tracked once", bridge.trackedApplications === 1
+        && selection.activeLeases === 1
+        && selection.activeTokens === 1
+        && selection.renderedTokens === 1
+        && selection.activeRoles?.[SELECTION_INDICATOR_ROLES.EXTERNAL] === 1,
+      { bridge, selection });
+
+      // ApplicationV2 may re-render while still open. A re-render must not
+      // duplicate its lease or restart another visual.
+      const effectsStartedAfterA = selection.effectsStarted;
+      await render(recognizedA);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("Recognized re-render does not duplicate", bridge.trackedApplications === 1
+        && selection.activeLeases === 1
+        && selection.renderedTokens === 1
+        && selection.effectsStarted === effectsStartedAfterA,
+      { bridge, selection });
+
+      // A second recognized application for the same token gets its own lease
+      // but shares the one rendered blue indicator.
+      const recognizedB = createSyntheticApplication({ id: `${prefix}-recognized-b`, classes: [recognizedClass] });
+      apps.push(recognizedB);
+      await render(recognizedB);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("Two external prompts share one visual", bridge.trackedApplications === 2
+        && selection.activeLeases === 2
+        && selection.activeTokens === 1
+        && selection.renderedTokens === 1
+        && selection.activeRoles?.[SELECTION_INDICATOR_ROLES.EXTERNAL] === 2,
+      { bridge, selection });
+
+      // Closing one prompt must leave the shared visual alive for the other.
+      await closeAndSettle(recognizedA);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("First external close preserves remaining wait", bridge.trackedApplications === 1
+        && selection.activeLeases === 1
+        && selection.activeTokens === 1
+        && selection.renderedTokens === 1,
+      { bridge, selection });
+
+      // Closing the final prompt must return both services to a clean baseline.
+      await closeAndSettle(recognizedB);
+      bridge = this.#externalPromptBridge.getStats();
+      selection = this.#selectionIndicator.getStats();
+      record("Final external close fully cleans up", bridge.trackedApplications === 0
+        && selection.activeLeases === 0
+        && selection.activeTokens === 0
+        && selection.renderedTokens === 0,
+      { bridge, selection });
+    } finally {
+      for (const app of apps) {
+        try { app.close(); } catch (_) { /* no-op */ }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await this.#externalPromptBridge.clearAll();
+      for (const fn of unregister.reverse()) {
+        try { fn(); } catch (_) { /* no-op */ }
+      }
+    }
+
+    const finalBridge = this.#externalPromptBridge.getStats();
+    const finalSelection = this.#selectionIndicator.getStats();
+    const cleanupPassed = finalBridge.trackedApplications === 0
+      && finalSelection.activeLeases === 0
+      && finalSelection.activeTokens === 0
+      && finalSelection.renderedTokens === 0;
+    record("Test cleanup", cleanupPassed, { finalBridge, finalSelection });
+
+    const passed = checks.every((check) => check.passed);
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      tokenUuid: token.document.uuid,
+      tokenName: token.name,
+      checks,
+      baselineBridge,
+      baselineSelection,
+      finalBridge,
+      finalSelection
+    };
+    Logger.info("AE5E 0.3.27 external-prompt isolation regression", report);
+    ui?.notifications?.[passed ? "info" : "error"]?.(
+      passed
+        ? "AE5E | External-prompt isolation regression passed. Unknown/tokenless/failing prompts stayed inert and recognized prompts cleaned up correctly."
+        : "AE5E | External-prompt isolation regression failed. See the console for details."
+    );
+    return report;
+  }
+
   async createTestRelationshipFromControlledTokens() {
     const [leader, follower] = this.#controlledPair();
     const relationship = await this.#relationships.create({

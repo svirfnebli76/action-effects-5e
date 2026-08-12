@@ -292,3 +292,8 @@ Foundry validation command:
 const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runGrappleLinkObstructionTest();
 ```
+
+
+### v0.3.27 external-prompt isolation regression
+
+Control exactly one token and run `await game.modules.get("action-effects-5e").api.tests.runExternalPromptIsolationTest();` to verify fail-closed external prompt classification, duplicate prevention, shared external leases, and cleanup.

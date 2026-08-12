@@ -175,6 +175,7 @@ export class ActionEffects5eApi {
       runSelectionIndicatorTest: () => tests.runSelectionIndicatorTest(),
       runSelectionIndicatorRolePairTest: () => tests.runSelectionIndicatorRolePairTest(),
       runExternalPromptBridgeTest: () => tests.runExternalPromptBridgeTest(),
+      runExternalPromptIsolationTest: () => tests.runExternalPromptIsolationTest(),
       createTestRelationshipFromControlledTokens: () => tests.createTestRelationshipFromControlledTokens(),
       createGrappleMovementTestRelationshipFromControlledTokens: (options) => tests.createGrappleMovementTestRelationshipFromControlledTokens(options),
       removeTestRelationships: () => tests.removeTestRelationships(),

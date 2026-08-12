@@ -149,6 +149,16 @@ export class ExternalPromptBridgeService {
     return tracked.length;
   }
 
+  /**
+   * Test-harness-only entry point for exercising the same conservative render
+   * classification path without broadcasting a synthetic renderApplicationV2
+   * hook to every other installed module. Production integrations should never
+   * call this; they should register adapters and let the normal Foundry hook run.
+   */
+  async processRenderForTesting({ application, element = null, context = {}, options = {} } = {}) {
+    return this.#handleRender(application, element, context, options);
+  }
+
   getStats() {
     return {
       initialized: this.#initialized,
