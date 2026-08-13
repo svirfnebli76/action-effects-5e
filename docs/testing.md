@@ -603,3 +603,6 @@ ae5e.reactions.getEventAdapterStats();
 ```
 
 The final release gate for 0.3.28 is the Foundry matrix above. The repository's legacy Node simulation suite is not a project release gate; the finalized 0.3.27 baseline already contains six relationship-rotation simulation failures which remain unchanged in this build.
+
+### Live Midi gate duplicate-arm/timeout note (0.3.28 revised7)
+The live Midi gate remains armed for approximately 10 minutes by default. If a probe is already `armed` or `running`, a second `runReactionBrokerMidiWorkflowGateTest()` call is rejected before any second test instrumentation is installed. Use the already-armed spell probe, or call `await ae5e.tests.clearReactionBrokerTestState()` before intentionally changing modes. The mode banner is printed only after the probe has successfully armed.

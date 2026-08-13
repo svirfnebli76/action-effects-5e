@@ -444,48 +444,61 @@ export class ReactionBrokerTestSuite {
     }
   }
 
-  async runMidiWorkflowGateTest({ setup = true, mode = "resume", timeoutMs = 120_000 } = {}) {
+  async runMidiWorkflowGateTest({ setup = true, mode = "resume", timeoutMs = 600_000 } = {}) {
     if (!["resume", "abort"].includes(mode)) throw new Error("Reaction Broker Midi gate mode must be 'resume' or 'abort'.");
     if (setup && game.user.isGM) await this.setupTestScene({ activate: true });
     await this.#requireTestSceneReady();
     if (!this.#authority.hasActiveGm()) throw new Error("An active GM is required for the live Midi workflow gate test.");
 
+    const existingProbe = this.#events.getTestProbeStatus();
+    if (existingProbe && ["armed", "running"].includes(existingProbe.status)) {
+      const ageSeconds = Math.max(0, Math.floor((Date.now() - Number(existingProbe.armedAt ?? Date.now())) / 1000));
+      throw new Error(`A Reaction Broker Midi test probe is already ${existingProbe.status} (${ageSeconds}s old). Use the already-armed probe, or run ae5e.tests.clearReactionBrokerTestState() before arming another.`);
+    }
+
     const tokens = this.#fixtureTokens();
     if (!tokens.reactor1) throw new Error("Reaction Broker fixture Reactor 1 is missing. Run setupReactionBrokerTestScene().");
     await this.#installHandlersEverywhere();
 
-    const handler = mode === "abort" ? TEST_HANDLERS.ABORT : TEST_HANDLERS.CONTINUE;
-    const syntheticOffers = { [tokens.reactor1.uuid]: [{ handler }] };
-    const postPreambleEvents = [];
-    const postHook = Hooks.on("midi-qol.postPreambleComplete", (workflow) => {
-      postPreambleEvents.push({
-        workflowId: workflow?.id ?? workflow?.workflowId ?? workflow?.itemCardUuid ?? workflow?.uuid ?? null,
-        at: Date.now()
-      });
-    });
-
-    this.#banner(`AE5E 0.3.28 LIVE MIDI GATE — ${mode.toUpperCase()}`, "#7ddcff", 28);
-    const attacker = tokens.attacker?.actor;
-    const probeSpell = [...(attacker?.items ?? [])].find(item => item.getFlag?.(MODULE_ID, FIXTURE_FLAG) === "midiGateProbe")
-      ?? [...(attacker?.items ?? [])].find(item => item.name?.startsWith?.("AE5E Reaction Gate Probe"));
-    const instruction = probeSpell
-      ? `Use '${probeSpell.name}' from ${attacker.name} on THIS client now.`
-      : "Cast any real spell from a token on THIS client now. The next local Midi spell workflow will be used as the probe.";
-    console.warn(instruction);
-    console.warn(mode === "abort"
-      ? "Choose the Abort Source Test Reaction. The live spell must not advance to Midi postPreambleComplete."
-      : "Choose Continue Test Reaction or Do not use a reaction. The live spell must remain gated until the Broker closes, then advance to Midi postPreambleComplete.");
-    ui?.notifications?.info?.(`AE5E Reaction Broker live Midi test armed. ${instruction}`);
-
-    const probe = this.#events.armTestSpellProbe({ syntheticOffers, timeoutMs });
-    let outcome = null;
+    let postHook = null;
+    let probe = null;
     try {
-      outcome = await probe.promise;
+      const handler = mode === "abort" ? TEST_HANDLERS.ABORT : TEST_HANDLERS.CONTINUE;
+      const syntheticOffers = { [tokens.reactor1.uuid]: [{ handler }] };
+      const postPreambleEvents = [];
+      postHook = Hooks.on("midi-qol.postPreambleComplete", (workflow) => {
+        postPreambleEvents.push({
+          workflowId: workflow?.id ?? workflow?.workflowId ?? workflow?.itemCardUuid ?? workflow?.uuid ?? null,
+          at: Date.now()
+        });
+      });
+
+      // Arm before announcing the mode. If another probe somehow appears between
+      // the preflight check and this call, the surrounding finally block still
+      // removes this invocation's temporary hooks/handlers.
+      probe = this.#events.armTestSpellProbe({ syntheticOffers, timeoutMs });
+
+      this.#banner(`AE5E 0.3.28 LIVE MIDI GATE — ${mode.toUpperCase()}`, "#7ddcff", 28);
+      const attacker = tokens.attacker?.actor;
+      const probeSpell = [...(attacker?.items ?? [])].find(item => item.getFlag?.(MODULE_ID, FIXTURE_FLAG) === "midiGateProbe")
+        ?? [...(attacker?.items ?? [])].find(item => item.name?.startsWith?.("AE5E Reaction Gate Probe"));
+      const instruction = probeSpell
+        ? `Use '${probeSpell.name}' from ${attacker.name} on THIS client now.`
+        : "Cast any real spell from a token on THIS client now. The next local Midi spell workflow will be used as the probe.";
+      const timeoutMinutes = Math.max(1, Math.round((Number(timeoutMs) || 600_000) / 60_000));
+      console.warn(instruction);
+      console.warn(`The live probe remains armed for approximately ${timeoutMinutes} minute(s).`);
+      console.warn(mode === "abort"
+        ? "Choose the Abort Source Test Reaction. The live spell must not advance to Midi postPreambleComplete."
+        : "Choose Continue Test Reaction or Do not use a reaction. The live spell must remain gated until the Broker closes, then advance to Midi postPreambleComplete.");
+      ui?.notifications?.info?.(`AE5E Reaction Broker live Midi test armed for ~${timeoutMinutes} minutes. ${instruction}`);
+
+      const outcome = await probe.promise;
       await new Promise(resolve => setTimeout(resolve, 750));
       const post = postPreambleEvents.find(entry => entry.workflowId && entry.workflowId === outcome.sourceWorkflowId) ?? null;
       const checks = {
         matchingSpellObserved: outcome.status === "complete" && Boolean(outcome.startedAt),
-        brokerActuallyWaited: Number(outcome.brokerCompletedAt) >= Number(outcome.startedAt),
+        brokerActuallyWaited: Boolean(outcome.startedAt && outcome.brokerCompletedAt && Number(outcome.brokerCompletedAt) >= Number(outcome.startedAt)),
         requestedSourceContract: mode === "abort"
           ? outcome.result?.source === REACTION_SOURCE_RESULTS.ABORT
           : outcome.result?.source === REACTION_SOURCE_RESULTS.RESUME,
@@ -498,11 +511,15 @@ export class ReactionBrokerTestSuite {
       const passed = Object.values(checks).every(Boolean);
       this.#banner(`LIVE MIDI WORKFLOW GATE — ${passed ? "PASS" : "FAIL"}`, passed ? "#5cff8d" : "#ff5c5c", 28);
       console.table(Object.entries(checks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
+      if (outcome.status !== "complete") console.warn("AE5E live Midi probe did not observe a matching completed spell workflow.", outcome);
       console.log({ mode, outcome, postPreamble: post, allPostPreambleEvents: postPreambleEvents });
       return { result: passed ? "PASS" : "FAIL", mode, checks, outcome, postPreamble: post };
     } finally {
-      Hooks.off("midi-qol.postPreambleComplete", postHook);
-      this.#events.clearTestSpellProbe("live-midi-test-cleanup");
+      if (postHook !== null) Hooks.off("midi-qol.postPreambleComplete", postHook);
+      const activeProbe = this.#events.getTestProbeStatus();
+      if (probe && activeProbe?.id === probe.id && ["armed", "running"].includes(activeProbe.status)) {
+        this.#events.clearTestSpellProbe("live-midi-test-cleanup");
+      }
       await this.#dialogs.closeAllEverywhere({ reason: "live-midi-test-cleanup" }).catch(() => null);
       await this.#uninstallHandlersEverywhere();
     }

@@ -343,3 +343,9 @@
 - Restored the established private `notification01.ogg` cue for Reaction Broker ACTIVE Reactors by assigning the responder selection-indicator role the same one-shot notification sound used by the 0.3.27 originator role.
 - The responder visual remains role-specific/amber; only the audio cue is shared.
 - Strengthened the interactive Reaction Broker harness so every acquired ACTIVE-Reactor indicator must also request its private notification sound; missing Reaction Broker audio can no longer pass the interactive test silently.
+
+### 0.3.28 revised7 test-build adjustment
+- Hardened the live Midi workflow-gate harness after an accidental duplicate-arm test exposed misleading instrumentation. A second arm attempt is now rejected **before** temporary handlers/hooks are installed or an incorrect mode banner is printed.
+- Wrapped live-gate instrumentation in guaranteed cleanup so an arm-time exception cannot leak the temporary `midi-qol.postPreambleComplete` observer or synthetic reaction handlers.
+- Increased the live gate's default arm window from 2 minutes to 10 minutes and prints the remaining test window in the console/notification, making chat-guided Foundry validation less likely to expire before the probe spell is used.
+- Tightened `brokerActuallyWaited` so a timed-out/unstarted probe can no longer appear to pass that individual assertion merely because null timestamps coerce to zero.
