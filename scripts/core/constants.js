@@ -56,8 +56,8 @@ export const SELECTION_INDICATOR_FALLBACK_ASSET = "icons/vtt-512.png";
 
 // Originator preserves the live-tested green presentation. Responder and
 // External colors are intentionally centralized so they can be tuned without
-// changing workflow code. Only originator audio is assigned until additional
-// one-shot notification assets are supplied.
+// changing workflow code. Originator and responder prompts share the established
+// private notification cue; external prompts remain silent until explicitly assigned.
 export const SELECTION_INDICATOR_PRESENTATIONS = Object.freeze({
   [SELECTION_INDICATOR_ROLES.ORIGINATOR]: Object.freeze({
     tint: "#18cc46",
@@ -66,7 +66,7 @@ export const SELECTION_INDICATOR_PRESENTATIONS = Object.freeze({
   }),
   [SELECTION_INDICATOR_ROLES.RESPONDER]: Object.freeze({
     tint: "#ff9f1c",
-    soundAsset: null,
+    soundAsset: "modules/action-effects-5e/assets/audio/ui/notification01.ogg",
     soundVolume: 1
   }),
   [SELECTION_INDICATOR_ROLES.EXTERNAL]: Object.freeze({

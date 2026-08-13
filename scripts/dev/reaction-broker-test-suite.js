@@ -354,7 +354,8 @@ export class ReactionBrokerTestSuite {
       hostsOpened: dialogs.hostsOpened - beforeDialogs.hostsOpened,
       waits: dialogs.waits - beforeDialogs.waits,
       prompts: dialogs.prompts - beforeDialogs.prompts,
-      indicatorAcquires: dialogs.indicatorAcquires - beforeDialogs.indicatorAcquires
+      indicatorAcquires: dialogs.indicatorAcquires - beforeDialogs.indicatorAcquires,
+      notificationSoundsRequested: selection.soundsPlayed - beforeSelection.soundsPlayed
     };
     const checks = {
       transactionCompleted: Boolean(transaction?.completedAt),
@@ -365,6 +366,8 @@ export class ReactionBrokerTestSuite {
       allThreeReactorsEnteredWaitingUi: dialogDelta.waits >= 3,
       atLeastOneActivePromptActuallyOpened: dialogDelta.prompts >= 1,
       activeReactorIndicatorActuallyAcquired: dialogDelta.indicatorAcquires >= 1,
+      activeReactorNotificationSoundRequested: dialogDelta.indicatorAcquires >= 1
+        && dialogDelta.notificationSoundsRequested >= dialogDelta.indicatorAcquires,
       noBrokerErrorRecovery: result?.reason !== "broker-error",
       noStaleIndicatorLease: selection.activeLeases === (beforeSelection.activeLeases ?? 0),
       noStaleDialogHost: dialogs.openHosts === 0,

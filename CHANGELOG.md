@@ -336,3 +336,8 @@
 - Waiting Reaction Broker windows now show a single **Decline** action during normal GM-authorized operation; doing nothing continues to wait.
 - A waiting Decline is GM-authorized, records an explicit decline, closes only that Reactor's Broker window, preserves the frozen queue/history, and skips that Reactor when its turn would arrive.
 - If all GM authority is lost, waiting Decline is disabled and **Cancel** becomes available for the separate transaction-level manual-adjudication path.
+
+### 0.3.28 revised5 test-build adjustment
+- Restored the established private `notification01.ogg` cue for Reaction Broker ACTIVE Reactors by assigning the responder selection-indicator role the same one-shot notification sound used by the 0.3.27 originator role.
+- The responder visual remains role-specific/amber; only the audio cue is shared.
+- Strengthened the interactive Reaction Broker harness so every acquired ACTIVE-Reactor indicator must also request its private notification sound; missing Reaction Broker audio can no longer pass the interactive test silently.
