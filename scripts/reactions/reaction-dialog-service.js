@@ -301,7 +301,17 @@ export class ReactionDialogService {
       window: { title: "AE5E Reaction Broker" },
       classes: [`${MODULE_ID}-owned-dialog`, "ae5e-reaction-broker-dialog"],
       content: '<div class="ae5e-reaction-broker-host"></div>',
-      buttons: [],
+      // Foundry v14 DialogV2 requires at least one configured button. AE5E
+      // owns the real Reaction Broker controls inside the persistent host
+      // content, so provide one inert hidden placeholder solely to satisfy the
+      // DialogV2 contract without creating a second visible control surface.
+      buttons: [{
+        action: "ae5e-reaction-host",
+        label: "Reaction Broker Host",
+        type: "button",
+        disabled: true,
+        style: { display: "none" }
+      }],
       modal: false
     });
 

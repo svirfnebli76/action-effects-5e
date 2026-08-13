@@ -339,6 +339,8 @@ export class ReactionBrokerTestSuite {
     console.log("Expected UI: all three Reactors receive a Broker window immediately; only the ACTIVE Reactor has the animated indicator. The remaining windows say to wait.");
     console.log("Choose reactions/Do not use a reaction in sequence. Cancel means manual adjudication, not decline.");
 
+    const beforeDialogs = this.#dialogs.getStats();
+    const beforeSelection = this.#selectionIndicator.getStats();
     const result = await this.#broker.process(context, {
       tokenDocuments: [tokens.reactor3, tokens.nonReactor, tokens.reactor1, tokens.reactor2].filter(Boolean),
       scene: canvas.scene,
@@ -348,12 +350,23 @@ export class ReactionBrokerTestSuite {
     const transaction = recent.find(entry => entry.eventKey === eventKey) ?? recent[0] ?? null;
     const selection = this.#selectionIndicator.getStats();
     const dialogs = this.#dialogs.getStats();
+    const dialogDelta = {
+      hostsOpened: dialogs.hostsOpened - beforeDialogs.hostsOpened,
+      waits: dialogs.waits - beforeDialogs.waits,
+      prompts: dialogs.prompts - beforeDialogs.prompts,
+      indicatorAcquires: dialogs.indicatorAcquires - beforeDialogs.indicatorAcquires
+    };
     const checks = {
       transactionCompleted: Boolean(transaction?.completedAt),
       frozenOrderStartsWithClosest: transaction?.opportunities?.[0]?.reactorTokenUuid === tokens.reactor1.uuid,
       secondBeforeThirdByDex: transaction?.opportunities?.findIndex(entry => entry.reactorTokenUuid === tokens.reactor2.uuid)
         < transaction?.opportunities?.findIndex(entry => entry.reactorTokenUuid === tokens.reactor3.uuid),
-      noStaleIndicatorLease: selection.activeLeases === 0,
+      threeBrokerHostsActuallyOpened: dialogDelta.hostsOpened >= 3,
+      allThreeReactorsEnteredWaitingUi: dialogDelta.waits >= 3,
+      atLeastOneActivePromptActuallyOpened: dialogDelta.prompts >= 1,
+      activeReactorIndicatorActuallyAcquired: dialogDelta.indicatorAcquires >= 1,
+      noBrokerErrorRecovery: result?.reason !== "broker-error",
+      noStaleIndicatorLease: selection.activeLeases === (beforeSelection.activeLeases ?? 0),
       noStaleDialogHost: dialogs.openHosts === 0,
       resultContractValid: [REACTION_SOURCE_RESULTS.RESUME, REACTION_SOURCE_RESULTS.ABORT].includes(result?.source)
     };
@@ -363,8 +376,8 @@ export class ReactionBrokerTestSuite {
     const passed = Object.values(checks).every(Boolean);
     this.#banner(`INTERACTIVE REACTION BROKER — ${passed ? "PASS" : "FAIL"}`, passed ? "#5cff8d" : "#ff5c5c", 28);
     console.table(Object.entries(checks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
-    console.log({ result, transaction, recent, selection, dialogs });
-    return { result: passed ? "PASS" : "FAIL", checks, brokerResult: result, transaction, recent };
+    console.log({ result, transaction, recent, selection, dialogs, dialogDelta });
+    return { result: passed ? "PASS" : "FAIL", checks, brokerResult: result, transaction, recent, dialogDelta };
     } finally {
       await this.#dialogs.closeAllEverywhere({ reason: "interactive-test-cleanup" }).catch(() => null);
       await this.#uninstallHandlersEverywhere();
