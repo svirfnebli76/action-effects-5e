@@ -47,4 +47,13 @@ export function registerSettings() {
     type: Boolean,
     default: false
   });
+
+  // Hidden world-state used only to preserve deterministic GM connection order
+  // for Reaction Broker authority election. It is not user configuration.
+  game.settings.register(MODULE_ID, SETTINGS.REACTION_AUTHORITY_LEDGER, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { sequence: 0, sessions: {} }
+  });
 }

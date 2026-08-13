@@ -413,3 +413,193 @@ await ae5e.tests.previewDisplacementFromControlledTokens({ type: "push" });
 ```
 
 While the Push destination overlay is waiting for a click, the selection indicator must be on the Source/acting token, not the displaced Target. Clicking a legal destination or cancelling the selector must remove the indicator. A Pull preview should resolve its direct destination without opening the selector or displaying a waiting marker.
+
+
+## 0.3.28 Reaction Broker regression
+
+All Reaction Broker behavioral acceptance is performed inside Foundry VTT. The synthetic handlers used by this harness are installed across connected clients only while a test is running and are removed afterward. They are gated to `ae5eTest` contexts and never modify real Items.
+
+### 1. Create/reset the fixture
+
+Run as GM:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.setupReactionBrokerTestScene();
+```
+
+This creates/activates `AE5E 0.3.28 Reaction Broker Test` with Attacker, Reactor 1, Reactor 2, Reactor 3, and Non-Reactor tokens. Reactor 1 is closest to Attacker. Reactors 2 and 3 are placed at the same distance, with Reactor 2 carrying the higher Dexterity fixture. Active player accounts are assigned ownership of the Attacker/Reactor Actors when available so the same fixture can be reused for multiplayer routing. The fixture also tries to clone a harmless D&D5e cantrip onto Attacker as `AE5E Reaction Gate Probe — ...`; if no suitable core spell is available, the live Midi gate test can use any other real spell cast from the source client.
+
+### 2. Automated foundation test
+
+Run as GM:
+
+```js
+await ae5e.tests.runReactionBrokerFoundationTest();
+```
+
+The console prints large PASS/FAIL lines and a final table. It validates, without requiring user choices:
+
+- elected Reaction authority exists and is the oldest continuous browser-session start among connected GMs;
+- Activity reaction metadata parses independently from test offers;
+- `Do not use a reaction` is not registered as an offer/handler;
+- three synthetic Reactors are discovered while Non-Reactor is ignored;
+- one actual reaction remains exactly one offer and multiple actual reactions remain multiple offers;
+- distance precedes Dexterity in Reactor ordering;
+- Dexterity orders equal-distance Reactors;
+- d20 ties can reroll an unresolved subgroup without losing precedence established by the earlier roll;
+- parent/root transaction lineage is preserved for nested transactions;
+- concurrent processing of the same event key joins one in-flight transaction;
+- one synthetic spell workflow creates exactly one normalized AE5E `spellCast`;
+- a non-spell workflow creates no `spellCast`;
+- no Broker dialog or selection-indicator lease remains after the noninteractive run.
+
+### 3. Sequential UI test
+
+Run as GM (or on the source client after the GM has created the fixture):
+
+```js
+await ae5e.tests.runReactionBrokerInteractiveTest();
+```
+
+Expected behavior:
+
+1. Reactor 1, Reactor 2, and Reactor 3 receive Broker windows immediately.
+2. Only Reactor 1 is active and only Reactor 1 shows the v0.3.27 animated responder indicator.
+3. Reactor 2 and Reactor 3 display `Please wait while another actor chooses whether or not to use a reaction`.
+4. Reactor 1 shows two actual synthetic reactions plus `Do not use a reaction`.
+5. After Reactor 1 resolves/declines, its indicator and window clean up and Reactor 2's existing window becomes active. Reactor 2 has one actual reaction and still uses the same Broker window, showing that reaction plus `Do not use a reaction`.
+6. Reactor 3 follows in the same fashion.
+7. `Cancel` from any waiting or active Reactor closes the automated transaction as manual adjudication; it must never be recorded as a decline.
+8. At completion, the harness requires `activeLeases: 0` and zero Reaction Broker dialog hosts.
+
+Selecting `Abort Source Test Reaction` proves the Broker's standardized abort contract; selecting Continue/declining through the queue proves the resume path.
+
+### 4. Nested/LIFO UI test
+
+```js
+await ae5e.tests.runReactionBrokerInteractiveTest({ nested: true });
+```
+
+Choose `Nested Reaction Test` for Reactor 1. The parent transaction enters resolving while a child `spellCast` transaction is created. Any token participating in both transactions reuses its single Broker host; the child view temporarily sits above the parent view. The child transaction must complete before the parent continues, and recent diagnostics must record its parent/root lineage.
+
+### 5. Live Midi workflow gate
+
+This is the release-critical integration probe for the actual `midi-qol.prePreambleComplete` interception point. It uses the next **real spell workflow** on the client running the command while keeping the reaction itself synthetic.
+
+Resume path:
+
+```js
+await ae5e.tests.runReactionBrokerMidiWorkflowGateTest({ mode: "resume" });
+```
+
+After arming, use the `AE5E Reaction Gate Probe — ...` spell on Attacker (or cast any real spell from that same client if the fixture could not clone one). Choose `Continue Test Reaction` or `Do not use a reaction`. PASS requires the Broker transaction to complete before Midi reaches `midi-qol.postPreambleComplete`, followed by normal source continuation.
+
+Abort path:
+
+```js
+await ae5e.tests.runReactionBrokerMidiWorkflowGateTest({ mode: "abort", setup: false });
+```
+
+Cast another real spell and choose `Abort Source Test Reaction`. PASS requires the Broker to return the standardized `abort` contract and the matching workflow must **not** reach `midi-qol.postPreambleComplete`. Both modes also require zero stale Broker hosts and zero indicator leases after completion.
+
+This probe deliberately uses real Midi workflow timing rather than simulating the external hook, so it is the strongest evidence in 0.3.28 that the source workflow is actually gated by the Reaction Broker.
+
+### 6. Multiplayer routing
+
+Connect at least one player and one GM, then run:
+
+```js
+await ae5e.tests.runReactionBrokerMultiplayerTest();
+```
+
+Verify PC-owned Reactor windows appear on their owning player clients and unowned/NPC windows route to the elected GM. Only the active Reactor has an indicator even though all Reactor windows already exist. The source workflow client waits for controller responses while the primary GM authorizes those responses.
+
+With two GMs connected, inspect:
+
+```js
+ae5e.tests.inspectReactionBroker().authority;
+```
+
+The GM with the oldest active browser-session start must be primary. Disconnect that GM while the other remains: authority should transfer to the next-longest session without disabling the active Reactor's OK control.
+
+### 7. Last-GM disconnect/reconnect
+
+For the strongest recovery test, start the multiplayer test from a **player/source client** while one GM is connected:
+
+```js
+await ae5e.tests.runReactionBrokerMultiplayerTest({ setup: false, testDisconnectRecovery: true });
+```
+
+While an active Reactor is deciding, disconnect or refresh the last GM. Verify:
+
+- the source workflow remains pending rather than being treated as a decline;
+- active OK is disabled;
+- the warning is visible and available on hover: `Game Master has been disconnected, waiting for game master to reconnect. Click cancel to proceed with manual reaction selection`;
+- waiting Reactors remain waiting and do not gain indicators;
+- Cancel remains enabled and terminates automated handling as manual adjudication;
+- if a GM reconnects instead, the same active view is re-enabled and can continue;
+- final cleanup leaves no Broker hosts or indicator leases.
+
+Do not use a GM-owned source workflow for the reconnect-resume assertion: refreshing the browser which owns the original Midi workflow destroys that external workflow call stack, which no module can resume in-place.
+
+### 8. Active Reactor controller-disconnect recovery
+
+With a GM and at least one player connected, run:
+
+```js
+await ae5e.tests.runReactionBrokerMultiplayerTest({
+  setup: false,
+  testControllerDisconnectRecovery: true
+});
+```
+
+While a **player-owned Reactor is ACTIVE**, disconnect or refresh that player browser.
+
+Verify:
+
+- the Attacker/source workflow does not remain permanently suspended on the lost remote dialog request;
+- the disconnect is **not** recorded as `Do not use a reaction`;
+- AE5E revalidates the same frozen Reactor queue slot;
+- if a GM remains available, control of that Reactor's Broker prompt reroutes to the elected primary GM;
+- the original distance/DEX/d20 queue position remains frozen;
+- the rerouted decision is still GM-authorized normally.
+
+If the disconnected controller was also the **last GM**, this folds into the normal `WAITING_FOR_AUTHORITY` behavior instead: surviving Reactor windows show the GM-disconnected warning, the source remains suspended, and either a GM reconnect or `Cancel` is required.
+
+### 9. No-GM bypass
+
+Disconnect every GM and run from a player client:
+
+```js
+await ae5e.tests.runReactionBrokerNoGmTest();
+```
+
+Expected PASS: source result is `resume`, reason is `no-active-gm`, and no Reaction Broker window opens. The Broker never elects a player authority.
+
+### Test cleanup / recovery
+
+If a manual test is interrupted, a browser is refreshed, or you want a clean rerun, use:
+
+```js
+await ae5e.tests.clearReactionBrokerTestState();
+```
+
+This closes Reaction Broker hosts on all connected clients and unregisters temporary test handlers. To also remove the fixture Scene and its temporary Actors, run as GM:
+
+```js
+await ae5e.tests.clearReactionBrokerTestState({ removeFixture: true });
+```
+
+### Diagnostics
+
+```js
+ae5e.tests.inspectReactionBroker();
+ae5e.reactions.getStats();
+ae5e.reactions.getAuthorityStatus();
+ae5e.reactions.getRecentTransactions();
+ae5e.reactions.getDialogStats();
+ae5e.reactions.getEventAdapterStats();
+```
+
+The final release gate for 0.3.28 is the Foundry matrix above. The repository's legacy Node simulation suite is not a project release gate; the finalized 0.3.27 baseline already contains six relationship-rotation simulation failures which remain unchanged in this build.

@@ -2,6 +2,24 @@
 
 Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its first subsystem is a low-overhead movement, spatial-event, and rules-aware token relationship framework.
 
+### v0.3.28 Reaction Broker
+
+The module now includes the first generic Reaction Broker foundation: one normalized `spellCast` event adapter, Activity-registered reaction handlers, frozen distance/Dexterity/d20 Reactor ordering, sequential controller-routed Broker windows, longest-connected-GM arbitration, nested transaction lineage, and v0.3.27 active-Reactor indicator integration. v0.3.28 intentionally ships no real Counterspell handler; use the Foundry-only Reaction Broker test harness before building reaction features on top of it.
+
+Primary Foundry validation commands:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.setupReactionBrokerTestScene();
+await ae5e.tests.runReactionBrokerFoundationTest({ setup: false });
+await ae5e.tests.runReactionBrokerInteractiveTest({ setup: false });
+await ae5e.tests.runReactionBrokerMidiWorkflowGateTest({ setup: false, mode: "resume" });
+await ae5e.tests.runReactionBrokerMidiWorkflowGateTest({ setup: false, mode: "abort" });
+```
+
+Multiplayer, last-GM disconnect/reconnect, nested, no-GM bypass, diagnostics, and cleanup procedures are documented in `docs/testing.md`.
+
+
 ## Required modules
 
 - Midi-QOL

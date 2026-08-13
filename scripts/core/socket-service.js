@@ -40,12 +40,48 @@ export class SocketService {
 
   async executeAsGM(name, ...args) {
     if (game.user.isGM) {
-      const handler = this.#registrations.get(name);
-      if (!handler) throw new Error(`Unknown Action Effects 5E socket handler '${name}'.`);
+      const handler = this.#getHandler(name);
       return handler(...args);
     }
 
-    if (!this.#socket) throw new Error("Action Effects 5E Socketlib API is not ready.");
+    this.#assertReady();
     return this.#socket.executeAsGM(name, ...args);
+  }
+
+  async executeAsUser(name, userId, ...args) {
+    if (!userId) throw new TypeError("A target user ID is required.");
+    if (game.user?.id === userId) {
+      const handler = this.#getHandler(name);
+      return handler(...args);
+    }
+
+    this.#assertReady();
+    return this.#socket.executeAsUser(name, userId, ...args);
+  }
+
+  async executeForUsers(name, userIds, ...args) {
+    const recipients = [...new Set((userIds ?? []).filter(Boolean))];
+    if (!recipients.length) return;
+    this.#assertReady();
+    return this.#socket.executeForUsers(name, recipients, ...args);
+  }
+
+  async executeForEveryone(name, ...args) {
+    this.#assertReady();
+    return this.#socket.executeForEveryone(name, ...args);
+  }
+
+  getRegisteredNames() {
+    return [...this.#registrations.keys()];
+  }
+
+  #getHandler(name) {
+    const handler = this.#registrations.get(name);
+    if (!handler) throw new Error(`Unknown Action Effects 5E socket handler '${name}'.`);
+    return handler;
+  }
+
+  #assertReady() {
+    if (!this.#socket) throw new Error("Action Effects 5E Socketlib API is not ready.");
   }
 }

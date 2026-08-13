@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.27";
+export const MODULE_VERSION = "0.3.28";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -18,7 +18,8 @@ export const SETTINGS = Object.freeze({
   MOVEMENT_ENABLED: "movementEnabled",
   DEBUG_LOGGING: "debugLogging",
   CAPTURE_DIAGNOSTICS: "captureMovementDiagnostics",
-  OVERLAP_POLICY: "overlapPolicy"
+  OVERLAP_POLICY: "overlapPolicy",
+  REACTION_AUTHORITY_LEDGER: "reactionAuthorityLedger"
 });
 
 export const OVERLAP_POLICIES = Object.freeze({
@@ -92,6 +93,45 @@ export const SELECTION_INDICATOR_CORNER_OFFSET_FACTOR = 0.40;
 // Compatibility alias for the primary/preferred indicator scale.
 export const SELECTION_INDICATOR_SCALE = SELECTION_INDICATOR_PREFERRED_SCALE;
 export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator`;
+
+
+export const REACTION_TRIGGERS = Object.freeze({
+  SPELL_CAST: "spellCast"
+});
+
+export const REACTION_TRANSACTION_STATES = Object.freeze({
+  CREATED: "created",
+  DISCOVERING: "discovering",
+  WAITING: "waiting",
+  ACTIVE: "active",
+  RESOLVING: "resolving",
+  WAITING_FOR_AUTHORITY: "waitingForAuthority",
+  MANUAL: "manual",
+  RESUME_SOURCE: "resumeSource",
+  ABORT_SOURCE: "abortSource",
+  COMPLETE: "complete"
+});
+
+export const REACTION_RESPONSES = Object.freeze({
+  SELECTED: "selected",
+  DECLINED: "declined",
+  MANUAL: "manual",
+  // Internal transport/recovery state only. This is never a player decision
+  // and is never sent to the GM authority validator as a reaction response.
+  INTERRUPTED: "interrupted"
+});
+
+export const REACTION_SOURCE_RESULTS = Object.freeze({
+  RESUME: "resume",
+  ABORT: "abort"
+});
+
+export const REACTION_FLAG_SCOPE = MODULE_ID;
+export const REACTION_FLAG_KEY = "reaction";
+export const REACTION_AUTHORITY_POLL_MS = 1000;
+export const REACTION_AUTHORITY_GRACE_MS = 1500;
+export const REACTION_MAX_RECENT_TRANSACTIONS = 50;
+export const REACTION_TEST_HANDLER_PREFIX = `${MODULE_ID}.test.`;
 
 export const MOVEMENT_PHASES = Object.freeze({
   BEFORE: "before",
@@ -235,5 +275,10 @@ export const HOOKS = Object.freeze({
   RELATIONSHIP_CREATED: `${MODULE_ID}.relationshipCreated`,
   RELATIONSHIP_UPDATED: `${MODULE_ID}.relationshipUpdated`,
   RELATIONSHIP_REMOVED: `${MODULE_ID}.relationshipRemoved`,
-  RELATIONSHIPS_REINDEXED: `${MODULE_ID}.relationshipsReindexed`
+  RELATIONSHIPS_REINDEXED: `${MODULE_ID}.relationshipsReindexed`,
+  REACTION_EVENT: `${MODULE_ID}.reactionEvent`,
+  REACTION_TRANSACTION_CREATED: `${MODULE_ID}.reactionTransactionCreated`,
+  REACTION_TRANSACTION_UPDATED: `${MODULE_ID}.reactionTransactionUpdated`,
+  REACTION_TRANSACTION_COMPLETE: `${MODULE_ID}.reactionTransactionComplete`,
+  REACTION_AUTHORITY_CHANGED: `${MODULE_ID}.reactionAuthorityChanged`
 });

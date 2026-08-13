@@ -20,6 +20,7 @@ import { Logger } from "../core/logger.js";
 import { MovementTransaction } from "../movement/movement-transaction.js";
 import { RelationshipGeometryService } from "../relationships/relationship-geometry-service.js";
 import { OrbitDebugOverlay } from "./orbit-debug-overlay.js";
+import { ReactionBrokerTestSuite } from "./reaction-broker-test-suite.js";
 
 export class TestHarness {
   #dependencies;
@@ -34,9 +35,10 @@ export class TestHarness {
   #selectionIndicator;
   #externalPromptBridge;
   #socket;
+  #reactionSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, socket }) {
+  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -49,6 +51,49 @@ export class TestHarness {
     this.#selectionIndicator = selectionIndicator;
     this.#externalPromptBridge = externalPromptBridge;
     this.#socket = socket;
+    this.#reactionSuite = new ReactionBrokerTestSuite({
+      registry: reactionRegistry,
+      authority: reactionAuthority,
+      discovery: reactionDiscovery,
+      ordering: reactionOrdering,
+      dialogs: reactionDialogs,
+      broker: reactionBroker,
+      events: reactionEvents,
+      selectionIndicator,
+      socket
+    });
+  }
+
+  setupReactionBrokerTestScene(options) {
+    return this.#reactionSuite.setupTestScene(options);
+  }
+
+  runReactionBrokerFoundationTest(options) {
+    return this.#reactionSuite.runFoundationTest(options);
+  }
+
+  runReactionBrokerInteractiveTest(options) {
+    return this.#reactionSuite.runInteractiveTest(options);
+  }
+
+  runReactionBrokerMidiWorkflowGateTest(options) {
+    return this.#reactionSuite.runMidiWorkflowGateTest(options);
+  }
+
+  runReactionBrokerMultiplayerTest(options) {
+    return this.#reactionSuite.runMultiplayerTest(options);
+  }
+
+  runReactionBrokerNoGmTest() {
+    return this.#reactionSuite.runNoGmTest();
+  }
+
+  clearReactionBrokerTestState(options) {
+    return this.#reactionSuite.clearTestState(options);
+  }
+
+  inspectReactionBroker() {
+    return this.#reactionSuite.inspect();
   }
 
   async runFoundationSmokeTest({ notify = true } = {}) {

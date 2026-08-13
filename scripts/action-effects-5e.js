@@ -19,6 +19,13 @@ import { NonhostileEndpointGraceService } from "./displacement/nonhostile-endpoi
 import { DisplacementService } from "./displacement/displacement-service.js";
 import { SelectionIndicatorService } from "./ui/selection-indicator-service.js";
 import { ExternalPromptBridgeService } from "./ui/external-prompt-bridge-service.js";
+import { ReactionRegistry } from "./reactions/reaction-registry.js";
+import { ReactionAuthorityService } from "./reactions/reaction-authority-service.js";
+import { ReactionDiscoveryService } from "./reactions/reaction-discovery-service.js";
+import { ReactionOrderingService } from "./reactions/reaction-ordering-service.js";
+import { ReactionDialogService } from "./reactions/reaction-dialog-service.js";
+import { ReactionBroker } from "./reactions/reaction-broker.js";
+import { ReactionEventAdapter } from "./reactions/reaction-event-adapter.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -42,6 +49,20 @@ const displacementGrace = new NonhostileEndpointGraceService({
 });
 const selectionIndicator = new SelectionIndicatorService();
 const externalPromptBridge = new ExternalPromptBridgeService({ selectionIndicator });
+const reactionRegistry = new ReactionRegistry();
+const reactionAuthority = new ReactionAuthorityService({ socket });
+const reactionDiscovery = new ReactionDiscoveryService({ registry: reactionRegistry, authority: reactionAuthority });
+const reactionOrdering = new ReactionOrderingService();
+const reactionDialogs = new ReactionDialogService({ socket, selectionIndicator });
+const reactionBroker = new ReactionBroker({
+  registry: reactionRegistry,
+  discovery: reactionDiscovery,
+  ordering: reactionOrdering,
+  authority: reactionAuthority,
+  dialogs: reactionDialogs,
+  socket
+});
+const reactionEvents = new ReactionEventAdapter({ broker: reactionBroker, registry: reactionRegistry, authority: reactionAuthority });
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -75,6 +96,13 @@ const tests = new TestHarness({
   displacement,
   selectionIndicator,
   externalPromptBridge,
+  reactionRegistry,
+  reactionAuthority,
+  reactionDiscovery,
+  reactionOrdering,
+  reactionDialogs,
+  reactionBroker,
+  reactionEvents,
   socket
 });
 const api = new ActionEffects5eApi({
@@ -89,6 +117,13 @@ const api = new ActionEffects5eApi({
   displacement,
   selectionIndicator,
   externalPromptBridge,
+  reactionRegistry,
+  reactionAuthority,
+  reactionDiscovery,
+  reactionOrdering,
+  reactionDialogs,
+  reactionBroker,
+  reactionEvents,
   tests,
   socket
 });
@@ -122,6 +157,8 @@ Hooks.once("ready", async () => {
   displacement.initialize();
   await selectionIndicator.initialize();
   externalPromptBridge.initialize();
+  await reactionAuthority.initialize();
+  reactionEvents.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

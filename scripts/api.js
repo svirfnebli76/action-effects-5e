@@ -23,6 +23,10 @@ import {
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIVE_TOKEN_RELATIONSHIPS,
   RELATIONSHIP_TYPES,
+  REACTION_TRIGGERS,
+  REACTION_TRANSACTION_STATES,
+  REACTION_RESPONSES,
+  REACTION_SOURCE_RESULTS,
   SELECTION_INDICATOR_EFFECT_NAME,
   SELECTION_INDICATOR_FALLBACK_ASSET,
   SELECTION_INDICATOR_FALLBACK_SCALE,
@@ -52,6 +56,13 @@ export class ActionEffects5eApi {
     displacement,
     selectionIndicator,
     externalPromptBridge,
+    reactionRegistry,
+    reactionAuthority,
+    reactionDiscovery,
+    reactionOrdering,
+    reactionDialogs,
+    reactionBroker,
+    reactionEvents,
     tests,
     socket
   }) {
@@ -82,6 +93,10 @@ export class ActionEffects5eApi {
       ATTACHMENT_MODES,
       TELEPORT_POLICIES,
       COLLISION_POLICIES,
+      REACTION_TRIGGERS,
+      REACTION_TRANSACTION_STATES,
+      REACTION_RESPONSES,
+      REACTION_SOURCE_RESULTS,
       SELECTION_INDICATOR_PREFERRED_ASSET,
       SELECTION_INDICATOR_PREFERRED_TINT,
       SELECTION_INDICATOR_FALLBACK_ASSET,
@@ -144,6 +159,22 @@ export class ActionEffects5eApi {
       getStats: () => externalPromptBridge.getStats()
     });
 
+    this.reactions = Object.freeze({
+      registerHandler: (id, config) => reactionRegistry.registerHandler(id, config),
+      unregisterHandler: (id) => reactionRegistry.unregisterHandler(id),
+      process: (context, options) => reactionBroker.process(context, options),
+      requestManual: (transactionId, reason) => reactionBroker.requestManual(transactionId, reason),
+      getTransaction: (transactionId) => reactionBroker.getTransaction(transactionId),
+      getRecentTransactions: () => reactionBroker.getRecentTransactions(),
+      getStats: () => reactionBroker.getStats(),
+      getAuthorityStatus: () => reactionAuthority.getStatus(),
+      refreshAuthority: () => reactionAuthority.refreshLedger(),
+      getDialogStats: () => reactionDialogs.getStats(),
+      getEventAdapterStats: () => reactionEvents.getStats(),
+      getRegistration: (activity, item) => reactionDiscovery.getActivityRegistration(activity, item),
+      previewOrder: (opportunities, options) => reactionOrdering.order(opportunities, options)
+    });
+
     this.relationships = Object.freeze({
       create: (data) => relationships.create(data),
       remove: (id) => relationships.remove(id),
@@ -172,6 +203,14 @@ export class ActionEffects5eApi {
 
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
+      setupReactionBrokerTestScene: (options) => tests.setupReactionBrokerTestScene(options),
+      runReactionBrokerFoundationTest: (options) => tests.runReactionBrokerFoundationTest(options),
+      runReactionBrokerInteractiveTest: (options) => tests.runReactionBrokerInteractiveTest(options),
+      runReactionBrokerMidiWorkflowGateTest: (options) => tests.runReactionBrokerMidiWorkflowGateTest(options),
+      runReactionBrokerMultiplayerTest: (options) => tests.runReactionBrokerMultiplayerTest(options),
+      runReactionBrokerNoGmTest: () => tests.runReactionBrokerNoGmTest(),
+      clearReactionBrokerTestState: (options) => tests.clearReactionBrokerTestState(options),
+      inspectReactionBroker: () => tests.inspectReactionBroker(),
       runSelectionIndicatorTest: () => tests.runSelectionIndicatorTest(),
       runSelectionIndicatorRolePairTest: () => tests.runSelectionIndicatorRolePairTest(),
       runExternalPromptBridgeTest: () => tests.runExternalPromptBridgeTest(),

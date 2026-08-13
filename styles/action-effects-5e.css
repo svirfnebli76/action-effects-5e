@@ -4,3 +4,111 @@
 .action-effects-5e-hidden {
   display: none !important;
 }
+
+/* v0.3.28 Reaction Broker -------------------------------------------------- */
+.ae5e-reaction-broker-dialog .window-content {
+  min-width: 380px;
+}
+
+.ae5e-reaction-broker-host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 360px;
+}
+
+.ae5e-reaction-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--color-border-light-primary, rgba(128, 128, 128, 0.45));
+}
+
+.ae5e-reaction-header > span {
+  opacity: 0.72;
+  font-size: 0.9em;
+}
+
+.ae5e-reaction-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ae5e-reaction-state p {
+  margin: 0;
+}
+
+.ae5e-reaction-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.65rem;
+}
+
+.ae5e-reaction-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 34px;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ae5e-reaction-option:hover {
+  background: rgba(127, 127, 127, 0.12);
+}
+
+.ae5e-reaction-option img {
+  width: 30px;
+  height: 30px;
+  object-fit: cover;
+  border: 0;
+}
+
+.ae5e-reaction-decline {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--color-border-light-primary, rgba(128, 128, 128, 0.35));
+  padding-top: 0.55rem;
+}
+
+.ae5e-reaction-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.ae5e-reaction-gm-warning {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--color-level-warning-border, #c68b1c);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-level-warning-bg, #c68b1c) 18%, transparent);
+  font-weight: 600;
+}
+
+.ae5e-reaction-spinner {
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(127, 127, 127, 0.35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: ae5e-reaction-spin 0.85s linear infinite;
+}
+
+@keyframes ae5e-reaction-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ae5e-reaction-disabled-control {
+  display: inline-flex;
+}
+
+.ae5e-reaction-disabled-control > button {
+  width: 100%;
+}

@@ -249,3 +249,79 @@ Grapple-like relationships use three independent geometry channels during orbita
 The link is the exterior portion of the center-to-center ray after clipping it to both token footprints. Third-party creature intersection uses the complete third-party token footprint with a small non-zero link-width tolerance. The transition sweep is sampled at sub-grid intervals so the fan swept by a rotating link is evaluated rather than only its starting/final rays. Movement-wall obstruction uses Foundry v14's `CONFIG.Canvas.polygonBackends.move.testCollision` public collision backend.
 
 Hard conflicts always win. Hostile link sweep/final conflicts and wall intersections reject the orbit. Nonhostile sweep-only conflicts do not block. Nonhostile final-link conflicts share the relationship endpoint grace state and, if unresolved, restore both the prior Follower shell position and corresponding Leader rotation. Physical link handling is controlled by `linkObstructionPolicy`, defaulting to `grapple` only for Grapple / `grappleFollower` relationships and `none` otherwise.
+
+
+## v0.3.28 Reaction Broker
+
+The Reaction Broker is AE5E's generic event-driven reaction coordinator. It does not poll Actors, Items, effects, or tokens. External workflow events are normalized by a small adapter and only triggers with registered handlers enter discovery. v0.3.28 implements only `spellCast`.
+
+```text
+Midi / external workflow event
+        ↓
+ReactionEventAdapter
+        ↓
+ReactionContext
+        ↓
+ReactionBroker
+        ↓
+Activity reaction discovery
+        ↓
+Frozen Reactor order
+(distance → Dexterity → GM d20)
+        ↓
+GM-authorized sequential transaction
+        ↓
+controller-local Reaction Broker UI
+        ↓
+handler result: resume / abort
+```
+
+### Reaction registration
+
+Reaction metadata belongs primarily on a D&D5e Activity:
+
+```js
+flags.action-effects-5e.reaction = {
+  enabled: true,
+  trigger: "spellCast",
+  handler: "counterspell2024"
+};
+```
+
+The metadata identifies the reaction. Rules remain in a registered handler. Arbitrary executable JavaScript is never read from reaction flags.
+
+### Reactor queue
+
+An opportunity contains only actual registered reaction offers. `Do not use a reaction` is a Broker response (`declined`), not an offer. A Reactor with one real reaction and a Reactor with several real reactions use the same window.
+
+Initial Reactors are sorted once by:
+
+1. shortest token-space distance to the Attacker;
+2. highest Dexterity score;
+3. GM-authoritative d20 rolls, rerolling unresolved ties.
+
+The order is frozen. Eligibility is dynamic: immediately before activation, the Broker rediscovers that Reactor's offers. Lost eligibility skips the Reactor; changed offers replace the displayed choices; no new Reactor is inserted into the frozen queue.
+
+All initial Reactors receive a Broker window. Only the current Reactor is active; all others wait. The active Reactor's existing window becomes the choice view, resolves, and closes before the next eligible window activates. A resolved reaction advances by default unless its handler explicitly stops the queue or aborts the source.
+
+### Authority and dialog ownership
+
+Reaction authority and UI ownership are different roles. The longest continuously connected active GM is the arbiter, while each dialog is routed to the user controlling that Reactor. NPC/unowned Reactors route to the elected GM.
+
+AE5E stores a small hidden world ledger of GM browser-session IDs and connection sequence. Foundry's own active GM is used only to serialize writes to that ledger. If the elected GM leaves while another GM remains, the next-oldest continuous GM becomes arbiter.
+
+A source workflow is not moved into the GM browser merely to arbitrate reactions. Its awaitable orchestration remains on the source-workflow client; selected/declined decisions and ordering d20s are validated by the elected GM over Socketlib. This is what lets a player-originated source workflow remain resumable if the last GM temporarily disconnects.
+
+If no GM exists before a new opportunity begins, the Broker is bypassed. If the last GM disappears during an existing player-hosted transaction, the active view enters `WAITING_FOR_AUTHORITY`: OK is disabled, Cancel remains enabled, and reconnecting a GM restores the same view. Cancel means manual adjudication and unwinds every view in that transaction.
+
+Remote Reactor prompts are also connection-aware. If the controller who owns the currently active Broker window disconnects, that transport loss is classified as an internal `interrupted` prompt rather than `declined` or `manual`. The same frozen Reactor slot is revalidated. If another authority remains available, the controller can fall back to the elected GM and a fresh Broker host is opened there; if the lost controller was the last GM, the transaction instead follows the normal `WAITING_FOR_AUTHORITY` path until a GM returns or a surviving participant presses Cancel.
+
+A hard platform boundary remains: if the browser which owns the *originating workflow itself* disappears (for example, a GM-controlled Attacker whose GM refreshes), the live Midi/JavaScript workflow call stack is gone with that browser. Reaction transaction state can be diagnosed, but AE5E cannot reconstruct and resume a destroyed external workflow promise. The recoverable GM-loss design therefore assumes the source-workflow client remains connected.
+
+### Nested reactions
+
+Transactions carry `parentTransactionId` and `rootTransactionId`. A child reaction resolves completely before its parent's handler resumes. The dialog service keeps one host per reacting token and stacks transaction views, so a child can temporarily replace a parent waiting/resolving view without opening duplicate Broker windows for that token.
+
+### Selection indicator
+
+Only the `ACTIVE` Reactor acquires a v0.3.27 `responder` selection-indicator lease. Waiting, resolving, and authority-waiting states are intentionally unmarked. The lease is released before another Reactor becomes active or whenever the transaction exits.
