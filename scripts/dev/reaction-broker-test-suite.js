@@ -114,7 +114,10 @@ export class ReactionBrokerTestSuite {
       flags: { [MODULE_ID]: { [FIXTURE_FLAG]: true, fixtureKey: spec.key } }
     }));
     await scene.createEmbeddedDocuments("Token", tokenData);
-    if (activate) await scene.activate();
+    if (activate) {
+      await scene.activate();
+      await this.#waitForSceneCanvas(scene);
+    }
 
     this.#banner("AE5E 0.3.28 REACTION BROKER TEST SCENE READY", "#7ddcff", 26);
     console.log("Fixture order target: Reactor 1 is closest; Reactors 2 and 3 are equally distant, with Reactor 2 winning on Dexterity.");
@@ -129,7 +132,7 @@ export class ReactionBrokerTestSuite {
   async runFoundationTest({ setup = true } = {}) {
     if (!game?.user?.isGM) throw new Error("Run the Reaction Broker foundation test as a GM.");
     if (setup) await this.setupTestScene({ activate: true });
-    if (!canvas?.ready) throw new Error("The Reaction Broker test Scene must be active.");
+    await this.#requireTestSceneReady();
     await this.#installHandlersEverywhere();
     try {
 
@@ -315,7 +318,7 @@ export class ReactionBrokerTestSuite {
 
   async runInteractiveTest({ setup = true, nested = false } = {}) {
     if (setup && game.user.isGM) await this.setupTestScene({ activate: true });
-    if (!canvas?.ready) throw new Error("Activate the AE5E Reaction Broker test Scene first.");
+    await this.#requireTestSceneReady();
     if (!this.#authority.hasActiveGm()) throw new Error("An active GM is required for the interactive Reaction Broker test.");
     await this.#installHandlersEverywhere();
     try {
@@ -371,7 +374,7 @@ export class ReactionBrokerTestSuite {
   async runMidiWorkflowGateTest({ setup = true, mode = "resume", timeoutMs = 120_000 } = {}) {
     if (!["resume", "abort"].includes(mode)) throw new Error("Reaction Broker Midi gate mode must be 'resume' or 'abort'.");
     if (setup && game.user.isGM) await this.setupTestScene({ activate: true });
-    if (!canvas?.ready) throw new Error("Activate the AE5E Reaction Broker test Scene first.");
+    await this.#requireTestSceneReady();
     if (!this.#authority.hasActiveGm()) throw new Error("An active GM is required for the live Midi workflow gate test.");
 
     const tokens = this.#fixtureTokens();
@@ -645,6 +648,29 @@ export class ReactionBrokerTestSuite {
     data.flags[MODULE_ID][FIXTURE_FLAG] = "midiGateProbe";
     const [created] = await actor.createEmbeddedDocuments("Item", [data]);
     return created ?? null;
+  }
+
+  async #requireTestSceneReady({ timeoutMs = 30_000 } = {}) {
+    const scene = game.scenes?.find?.(entry => entry.name === FIXTURE_SCENE_NAME) ?? null;
+    if (!scene) throw new Error("Reaction Broker test Scene is missing. Run setupReactionBrokerTestScene().");
+
+    if (canvas?.ready && canvas?.scene?.id === scene.id) return scene;
+    if (!scene.active) throw new Error("Activate the AE5E Reaction Broker test Scene first.");
+
+    await this.#waitForSceneCanvas(scene, { timeoutMs });
+    return scene;
+  }
+
+  async #waitForSceneCanvas(scene, { timeoutMs = 30_000 } = {}) {
+    if (!scene?.id) throw new Error("Cannot wait for an invalid Reaction Broker test Scene.");
+    const startedAt = Date.now();
+
+    while ((Date.now() - startedAt) < timeoutMs) {
+      if (canvas?.ready && canvas?.scene?.id === scene.id) return true;
+      await new Promise(resolve => globalThis.setTimeout(resolve, 50));
+    }
+
+    throw new Error(`Timed out waiting for Foundry to finish drawing the Reaction Broker test Scene (${scene.name}).`);
   }
 
   #fixtureTokens() {
