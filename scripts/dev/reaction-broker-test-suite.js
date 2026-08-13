@@ -337,7 +337,7 @@ export class ReactionBrokerTestSuite {
 
     this.#banner(`AE5E 0.3.28 REACTION BROKER ${nested ? "NESTED " : ""}INTERACTIVE TEST`, "#7ddcff", 28);
     console.log("Expected UI: all three Reactors receive a Broker window immediately; only the ACTIVE Reactor has the animated indicator. The remaining windows say to wait.");
-    console.log("Choose reactions/Do not use a reaction in sequence. Cancel means manual adjudication, not decline.");
+    console.log("Choose reactions/Do not use a reaction in sequence. WAITING Reactors may press Decline to remove only themselves from the remaining queue. Cancel means manual adjudication, not decline.");
 
     const beforeDialogs = this.#dialogs.getStats();
     const beforeSelection = this.#selectionIndicator.getStats();

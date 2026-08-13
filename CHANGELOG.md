@@ -331,3 +331,8 @@
 - Added persistent Scene-based token relationship registry.
 - Added Socketlib-authorized relationship creation and removal.
 - Added test harness and syntax-check script.
+
+### 0.3.28 revised4 test-build adjustment
+- Waiting Reaction Broker windows now show a single **Decline** action during normal GM-authorized operation; doing nothing continues to wait.
+- A waiting Decline is GM-authorized, records an explicit decline, closes only that Reactor's Broker window, preserves the frozen queue/history, and skips that Reactor when its turn would arrive.
+- If all GM authority is lost, waiting Decline is disabled and **Cancel** becomes available for the separate transaction-level manual-adjudication path.

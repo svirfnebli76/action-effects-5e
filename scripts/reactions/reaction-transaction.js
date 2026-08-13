@@ -25,6 +25,7 @@ export class ReactionTransaction {
     this.completedAt = null;
     this.manualRequested = false;
     this.manualReason = null;
+    this.waitingDeclines = new Set();
     this.#record("created");
   }
 
@@ -62,6 +63,21 @@ export class ReactionTransaction {
     const snapshot = duplicateSafely(result);
     this.reactionResults.push(snapshot);
     this.#record("reaction-result", snapshot);
+  }
+
+  markWaitingDecline(reactorTokenUuid) {
+    if (!reactorTokenUuid) return false;
+    const before = this.waitingDeclines.size;
+    this.waitingDeclines.add(reactorTokenUuid);
+    if (this.waitingDeclines.size !== before) {
+      this.#record("waiting-decline", { reactorTokenUuid });
+      return true;
+    }
+    return false;
+  }
+
+  hasWaitingDecline(reactorTokenUuid) {
+    return Boolean(reactorTokenUuid && this.waitingDeclines.has(reactorTokenUuid));
   }
 
   requestManual(reason = "user-cancelled") {
@@ -107,6 +123,7 @@ export class ReactionTransaction {
       completedAt: this.completedAt,
       manualRequested: this.manualRequested,
       manualReason: this.manualReason,
+      waitingDeclinedReactorTokenUuids: [...this.waitingDeclines],
       result: duplicateSafely(this.result),
       reactionResults: duplicateSafely(this.reactionResults),
       context: this.context.toJSON?.() ?? duplicateSafely(this.context),

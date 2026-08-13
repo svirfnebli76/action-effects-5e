@@ -37,6 +37,7 @@ export class ReactionBroker {
     manualCancels: 0,
     selected: 0,
     declined: 0,
+    waitingDeclines: 0,
     aborted: 0,
     resumed: 0,
     revalidations: 0,
@@ -55,6 +56,7 @@ export class ReactionBroker {
     this.#socket = socket;
 
     socket.register("reactions.transaction.manualCancel", this.#manualCancelSocket.bind(this));
+    socket.register("reactions.transaction.waitingDecline", this.#waitingDeclineSocket.bind(this));
     authority.setDecisionValidator(this.#validateDecisionAsAuthority.bind(this));
   }
 
@@ -105,6 +107,43 @@ export class ReactionBroker {
     // prompt Promise resolves MANUAL and the source workflow can unwind.
     await this.#dialogs.closeForOpportunities(transaction.opportunities, transaction.id).catch(() => null);
     return true;
+  }
+
+
+  async requestWaitingDecline(transactionId, reactorTokenUuid) {
+    const transaction = this.#transactions.get(transactionId);
+    if (!transaction) return { accepted: false, reason: "transaction-not-found" };
+    if (!reactorTokenUuid) return { accepted: false, reason: "missing-reactor" };
+
+    const index = transaction.opportunities.findIndex(entry => entry.reactorTokenUuid === reactorTokenUuid);
+    if (index < 0) return { accepted: false, reason: "reactor-not-in-queue" };
+    if (transaction.hasWaitingDecline(reactorTokenUuid)) return { accepted: true, duplicate: true };
+    if (index <= transaction.currentIndex) return { accepted: false, reason: "reactor-not-waiting" };
+    if (transaction.manualRequested || transaction.completedAt) return { accepted: false, reason: "transaction-not-active" };
+
+    const opportunity = transaction.opportunities[index];
+    const primary = this.#authority.getPrimaryGm();
+    if (!primary) return { accepted: false, reason: "no-gm" };
+
+    const response = { type: REACTION_RESPONSES.DECLINED, phase: "waiting" };
+    const authorization = await this.#authority.authorizeDecision({
+      transaction: transaction.toJSON(),
+      context: transaction.context.toJSON?.() ?? duplicateSafely(transaction.context),
+      opportunity: this.#serializeOpportunity(opportunity),
+      response
+    });
+    if (!authorization?.authorized) {
+      return { accepted: false, reason: authorization?.reason ?? "authorization-failed" };
+    }
+
+    transaction.markWaitingDecline(reactorTokenUuid);
+    transaction.recordResponse(response);
+    this.#stats.declined += 1;
+    this.#stats.waitingDeclines += 1;
+    this.#record("waiting-decline", { transactionId, reactorTokenUuid });
+    this.#emitUpdated(transaction, { reason: "reactor-declined-while-waiting", reactorTokenUuid });
+    await this.#dialogs.closeTransaction(opportunity, transaction.id).catch(() => null);
+    return { accepted: true, primaryGmId: authorization.primaryGmId ?? primary.id };
   }
 
   getTransaction(transactionId) {
@@ -193,6 +232,16 @@ export class ReactionBroker {
           return finalResult;
         }
 
+        const frozen = ordered[index];
+        if (transaction.hasWaitingDecline(frozen.reactorTokenUuid)) {
+          this.#record("reactor-skipped-waiting-decline", {
+            transactionId: transaction.id,
+            reactorTokenUuid: frozen.reactorTokenUuid
+          });
+          await this.#dialogs.closeTransaction(frozen, transaction.id).catch(() => null);
+          continue;
+        }
+
         if (typeof sourceStillValid === "function") {
           let sourceValid = false;
           try { sourceValid = Boolean(await sourceStillValid({ context, transaction })); }
@@ -203,7 +252,6 @@ export class ReactionBroker {
           }
         }
 
-        const frozen = ordered[index];
         const opportunity = await this.#discovery.revalidate(context, frozen);
         this.#stats.revalidations += 1;
         if (!opportunity?.offers?.length) {
@@ -547,6 +595,10 @@ export class ReactionBroker {
         label: offer.label
       }))
     };
+  }
+
+  async #waitingDeclineSocket({ transactionId, reactorTokenUuid } = {}) {
+    return this.requestWaitingDecline(transactionId, reactorTokenUuid);
   }
 
   async #manualCancelSocket({ transactionId, reason = "remote-cancel" } = {}) {

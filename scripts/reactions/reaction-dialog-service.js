@@ -27,6 +27,7 @@ export class ReactionDialogService {
     waits: 0,
     responses: 0,
     manualCancels: 0,
+    waitingDeclines: 0,
     indicatorAcquires: 0,
     indicatorReleases: 0,
     authorityWaits: 0,
@@ -393,7 +394,7 @@ export class ReactionDialogService {
         ${active ? `<p class="hint">${active}</p>` : ""}
         ${authorityWarning}
         <div class="ae5e-reaction-spinner" aria-hidden="true"></div>
-        ${this.#cancelButtonHtml()}
+        ${this.#waitingActionsHtml(view)}
       </div>`;
     }
 
@@ -432,8 +433,14 @@ export class ReactionDialogService {
     </div>`;
   }
 
-  #cancelButtonHtml() {
-    return '<footer class="ae5e-reaction-actions"><button type="button" data-action="cancel">Cancel</button></footer>';
+  #waitingActionsHtml(view) {
+    if (view.authorityAvailable) {
+      return '<footer class="ae5e-reaction-actions"><button type="button" data-action="decline-waiting">Decline</button></footer>';
+    }
+    return `<footer class="ae5e-reaction-actions">
+      <span class="ae5e-reaction-disabled-control" title="${this.#escapeAttr(GM_DISCONNECTED_WARNING)}"><button type="button" data-action="decline-waiting" disabled>Decline</button></span>
+      <button type="button" data-action="cancel">Cancel</button>
+    </footer>`;
   }
 
   #bindControls(host, view, root) {
@@ -455,9 +462,51 @@ export class ReactionDialogService {
       this.#resolveView(host, view, response).catch(error => Logger.warn("Reaction Broker response handling failed.", error));
     });
 
+    root.querySelector('[data-action="decline-waiting"]')?.addEventListener("click", event => {
+      if (!view.authorityAvailable || view.status !== REACTION_TRANSACTION_STATES.WAITING) return;
+      const button = event.currentTarget;
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Declining…";
+      }
+      this.#declineWhileWaiting(host, view).catch(error => {
+        Logger.warn("Reaction Broker waiting decline failed.", error);
+        if (button?.isConnected) {
+          button.disabled = false;
+          button.textContent = "Decline";
+        }
+      });
+    });
+
     root.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
       this.#manualCancel(host, view, "user-cancelled").catch(error => Logger.warn("Reaction Broker manual cancel failed.", error));
     });
+  }
+
+  async #declineWhileWaiting(host, view) {
+    if (view.status !== REACTION_TRANSACTION_STATES.WAITING || !view.authorityAvailable) return;
+    if (!view.coordinatorUserId) throw new Error("Reaction Broker waiting decline has no source coordinator.");
+
+    const result = await this.#socket.executeAsUser("reactions.transaction.waitingDecline", view.coordinatorUserId, {
+      transactionId: view.transactionId,
+      reactorTokenUuid: view.reactorTokenUuid
+    });
+    if (result?.accepted) {
+      this.#stats.responses += 1;
+      this.#stats.waitingDeclines += 1;
+      this.#record("waiting-decline", {
+        transactionId: view.transactionId,
+        reactorTokenUuid: view.reactorTokenUuid
+      });
+      return;
+    }
+
+    if (["no-gm", "authority-unavailable", "not-primary"].includes(result?.reason)) {
+      view.authorityAvailable = false;
+      await this.#renderHost(host);
+      return;
+    }
+    throw new Error(`Reaction Broker waiting decline was rejected: ${result?.reason ?? "unknown reason"}`);
   }
 
   async #resolveView(host, view, response) {
