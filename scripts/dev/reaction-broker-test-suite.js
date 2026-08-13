@@ -2,6 +2,7 @@ import {
   MODULE_ID,
   REACTION_RESPONSES,
   REACTION_SOURCE_RESULTS,
+  REACTION_TRANSACTION_STATES,
   REACTION_TEST_HANDLER_PREFIX,
   REACTION_TRIGGERS
 } from "../core/constants.js";
@@ -373,14 +374,70 @@ export class ReactionBrokerTestSuite {
       noStaleDialogHost: dialogs.openHosts === 0,
       resultContractValid: [REACTION_SOURCE_RESULTS.RESUME, REACTION_SOURCE_RESULTS.ABORT].includes(result?.source)
     };
+    let nestedChronology = null;
     if (nested) {
-      checks.nestedChildRecorded = recent.some(entry => entry.parentTransactionId === transaction?.id || entry.rootTransactionId === transaction?.id && entry.id !== transaction?.id);
+      const child = recent.find(entry => entry.parentTransactionId === transaction?.id) ?? null;
+      const parentHistory = transaction?.history ?? [];
+      const nestedResolveStart = parentHistory.find(entry => entry.type === "state"
+        && entry.details?.state === REACTION_TRANSACTION_STATES.RESOLVING
+        && entry.details?.selectedHandler === TEST_HANDLERS.NESTED) ?? null;
+      const nestedReactionResult = parentHistory.find(entry => entry.type === "reaction-result"
+        && entry.details?.selectedHandler === TEST_HANDLERS.NESTED) ?? null;
+      const parentPostChildWaiting = parentHistory.find(entry => entry.type === "state"
+        && entry.details?.state === REACTION_TRANSACTION_STATES.WAITING
+        && Number(entry.details?.nextIndex) > 0
+        && (!nestedReactionResult || Date.parse(entry.at) >= Date.parse(nestedReactionResult.at))) ?? null;
+      const parentNextActivation = parentHistory.find(entry => entry.type === "state"
+        && entry.details?.state === REACTION_TRANSACTION_STATES.ACTIVE
+        && Number(entry.details?.index) > 0) ?? null;
+
+      const time = value => value ? Date.parse(value) : Number.NaN;
+      const parentResolveAt = time(nestedResolveStart?.at);
+      const childCreatedAt = time(child?.createdAt);
+      const childCompletedAt = time(child?.completedAt);
+      const parentResultAt = time(nestedReactionResult?.at);
+      const parentWaitingAt = time(parentPostChildWaiting?.at);
+      const parentNextActiveAt = time(parentNextActivation?.at);
+      const parentCompletedAt = time(transaction?.completedAt);
+
+      checks.nestedChildRecorded = Boolean(child);
+      checks.nestedChildParentLinkCorrect = child?.parentTransactionId === transaction?.id;
+      checks.nestedChildRootLinkCorrect = child?.rootTransactionId === transaction?.rootTransactionId;
+      checks.nestedChildCompleted = Boolean(child?.completedAt);
+      checks.parentEnteredResolvingBeforeChild = Number.isFinite(parentResolveAt)
+        && Number.isFinite(childCreatedAt)
+        && parentResolveAt <= childCreatedAt;
+      checks.childCompletedBeforeParentRecordedNestedResult = Number.isFinite(childCompletedAt)
+        && Number.isFinite(parentResultAt)
+        && childCompletedAt <= parentResultAt;
+      checks.parentResumedAfterChildCompleted = Number.isFinite(childCompletedAt)
+        && Number.isFinite(parentWaitingAt)
+        && childCompletedAt <= parentWaitingAt;
+      checks.parentDidNotAdvanceNextReactorBeforeChildCompleted = !Number.isFinite(parentNextActiveAt)
+        || (Number.isFinite(childCompletedAt) && childCompletedAt <= parentNextActiveAt);
+      checks.parentCompletedAfterChild = Number.isFinite(childCompletedAt)
+        && Number.isFinite(parentCompletedAt)
+        && childCompletedAt <= parentCompletedAt;
+
+      nestedChronology = {
+        parentTransactionId: transaction?.id ?? null,
+        childTransactionId: child?.id ?? null,
+        rootTransactionId: transaction?.rootTransactionId ?? null,
+        parentResolveAt: nestedResolveStart?.at ?? null,
+        childCreatedAt: child?.createdAt ?? null,
+        childCompletedAt: child?.completedAt ?? null,
+        parentNestedResultAt: nestedReactionResult?.at ?? null,
+        parentWaitingAfterChildAt: parentPostChildWaiting?.at ?? null,
+        parentNextActivationAt: parentNextActivation?.at ?? null,
+        parentCompletedAt: transaction?.completedAt ?? null
+      };
     }
     const passed = Object.values(checks).every(Boolean);
     this.#banner(`INTERACTIVE REACTION BROKER — ${passed ? "PASS" : "FAIL"}`, passed ? "#5cff8d" : "#ff5c5c", 28);
     console.table(Object.entries(checks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
-    console.log({ result, transaction, recent, selection, dialogs, dialogDelta });
-    return { result: passed ? "PASS" : "FAIL", checks, brokerResult: result, transaction, recent, dialogDelta };
+    console.log({ result, transaction, recent, selection, dialogs, dialogDelta, nestedChronology });
+    if (nestedChronology) console.log("AE5E nested transaction chronology", nestedChronology);
+    return { result: passed ? "PASS" : "FAIL", checks, brokerResult: result, transaction, recent, dialogDelta, nestedChronology };
     } finally {
       await this.#dialogs.closeAllEverywhere({ reason: "interactive-test-cleanup" }).catch(() => null);
       await this.#uninstallHandlersEverywhere();

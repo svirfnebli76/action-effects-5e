@@ -2,6 +2,8 @@
 
 ## 0.3.28 - Reaction Broker foundation
 
+- Revised6 test hardening: nested interactive tests now prove parent/child chronology (parent enters RESOLVING, child is created/completes, then parent records the nested result and resumes/advances) instead of only checking that a child transaction existed.
+
 - Revised test build 3: corrected the persistent Reaction Broker host for Foundry v14 `DialogV2`, which rejects an empty `buttons` configuration. The host now supplies one inert hidden placeholder button while AE5E continues to render its actual Reaction Broker controls inside the persistent host content.
 - Revised test build 3: hardened the interactive Foundry regression so the Broker error-recovery path can no longer report a false PASS. The test now requires three actual host opens/waiting views, at least one active prompt, an active-Reactor indicator acquisition, and explicitly fails on a `broker-error` result before accepting cleanup/result assertions.
 - Added the generic **Reaction Broker** subsystem as the reusable foundation for Counterspell and future AE5E reactions. The first normalized trigger vocabulary intentionally contains only `spellCast`.

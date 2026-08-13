@@ -481,7 +481,7 @@ Selecting `Abort Source Test Reaction` proves the Broker's standardized abort co
 await ae5e.tests.runReactionBrokerInteractiveTest({ nested: true });
 ```
 
-Choose `Nested Reaction Test` for Reactor 1. The parent transaction enters resolving while a child `spellCast` transaction is created. Any token participating in both transactions reuses its single Broker host; the child view temporarily sits above the parent view. The child transaction must complete before the parent continues, and recent diagnostics must record its parent/root lineage.
+Choose `Nested Reaction Test` for Reactor 1. The parent transaction enters resolving while a child `spellCast` transaction is created. Any token participating in both transactions reuses its single Broker host; the child view temporarily sits above the parent view. The child transaction must complete before the parent continues. The automated test now verifies the full chronology: parent enters `RESOLVING` before child creation, child carries the correct parent/root lineage, child reaches completion before the parent records the nested reaction result, the parent does not advance to its next Reactor before child completion, and the parent resumes/completes only afterward. The console also prints an `AE5E nested transaction chronology` object with the relevant timestamps and transaction IDs.
 
 ### 5. Live Midi workflow gate
 
