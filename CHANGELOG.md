@@ -1,3 +1,13 @@
+## 0.3.28 — Finalized Reaction Broker foundation
+
+- Finalized the v0.3.28 Reaction Broker foundation on the revised12 runtime/test baseline after the complete Foundry VTT release gate passed.
+- Final Foundry acceptance: foundation **18/18 PASS**; normal interactive Broker **12/12 PASS**; nested parent/child Broker **21/21 PASS**; live Midi RESUME gate **6/6 PASS**; live Midi ABORT gate **6/6 PASS**; ordinary multiplayer routing **6/6 PASS**; last-GM disconnect/reconnect recovery **7/7 PASS**; active-controller disconnect/reroute recovery **7/7 PASS**; no-GM startup bypass **PASS**.
+- The nested chronology regression proves the parent enters resolving before child creation, the child completes before the parent records the nested result, the parent does not advance to the next Reactor early, and the parent completes only after the child.
+- Real Midi testing proves `midi-qol.prePreambleComplete` is genuinely awaitable by AE5E: RESUME reaches `postPreambleComplete` only after Broker completion, while ABORT prevents `postPreambleComplete`.
+- Multiplayer testing proves controller-local prompt routing, longest-connected-GM arbitration, recovery after the last GM browser session is replaced, rerouting of an interrupted player-controlled Reactor to the GM without recording a decline, and clean bypass when no GM exists at transaction creation.
+- No real Counterspell handler is included in v0.3.28; this release is the reusable reaction infrastructure on which Counterspell and later reaction automations will be built.
+- The Firefox/Sequencer `Invalid URI` media warning remains the previously isolated Sequencer 4.x browser-media warning and is not an AE5E Reaction Broker release failure. A freshly reloaded browser may also defer its first private notification cue until the browser receives a user gesture because of browser audio autoplay policy.
+
 ## 0.3.28
 
 - Revised12 controller-disconnect validation: strengthened the Foundry multiplayer harness so player-controller loss can no longer false-PASS. The test now proves that the interrupted Reactor 1 slot is rerouted to the elected GM, remains the same frozen queue slot, is not recorded as a decline, opens a fresh GM prompt, reaches all three Reactors, and completes without manual/authorization fallback. Added the rerouted Reactor UUID to transaction history diagnostics.

@@ -4,7 +4,7 @@ Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation
 
 ### v0.3.28 Reaction Broker
 
-The module now includes the first generic Reaction Broker foundation: one normalized `spellCast` event adapter, Activity-registered reaction handlers, frozen distance/Dexterity/d20 Reactor ordering, sequential controller-routed Broker windows, longest-connected-GM arbitration, nested transaction lineage, and v0.3.27 active-Reactor indicator integration. v0.3.28 intentionally ships no real Counterspell handler; use the Foundry-only Reaction Broker test harness before building reaction features on top of it.
+v0.3.28 finalizes the first generic Reaction Broker foundation: one normalized `spellCast` event adapter, Activity-registered reaction handlers, frozen distance/Dexterity/d20 Reactor ordering, sequential controller-routed Broker windows, longest-connected-GM arbitration, nested transaction lineage, real Midi workflow gating, multiplayer authority recovery, and v0.3.27 active-Reactor indicator integration. v0.3.28 intentionally ships no real Counterspell handler; Counterspell and later reactions are consumers of this reusable infrastructure.
 
 Primary Foundry validation commands:
 
@@ -18,6 +18,8 @@ await ae5e.tests.runReactionBrokerMidiWorkflowGateTest({ setup: false, mode: "ab
 ```
 
 Multiplayer, last-GM disconnect/reconnect, nested, no-GM bypass, diagnostics, and cleanup procedures are documented in `docs/testing.md`.
+
+Final Foundry acceptance passed across the foundation, normal/nested interactive Broker, live Midi resume/abort gates, ordinary multiplayer routing, last-GM recovery, active-controller reroute recovery, and no-GM bypass. See `docs/testing.md` and `CHANGELOG.md` for the recorded matrix.
 
 
 ## Required modules

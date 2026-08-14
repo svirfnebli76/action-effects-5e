@@ -611,6 +611,22 @@ ae5e.reactions.getDialogStats();
 ae5e.reactions.getEventAdapterStats();
 ```
 
+### Final 0.3.28 acceptance record
+
+The finalized v0.3.28 release completed the Foundry-only release matrix with the following results:
+
+- Foundation: **18/18 PASS**.
+- Normal interactive Reaction Broker: **12/12 PASS**.
+- Nested interactive Reaction Broker and parent/child chronology: **21/21 PASS**.
+- Live Midi workflow gate — RESUME: **6/6 PASS**.
+- Live Midi workflow gate — ABORT: **6/6 PASS**.
+- Ordinary cross-client multiplayer routing: **6/6 PASS**.
+- Last-GM disconnect/reconnect recovery: **7/7 PASS**.
+- Active player-controller disconnect and GM reroute recovery: **7/7 PASS**.
+- No-GM transaction-start bypass: **PASS**.
+
+The Firefox/Sequencer `Invalid URI` media warning observed during indicator playback is the separately isolated Sequencer 4.x browser-media warning and did not fail any Reaction Broker acceptance check. A browser that has just reloaded may defer its first private notification cue until a user gesture unlocks browser audio; this does not change transaction state or routing.
+
 The final release gate for 0.3.28 is the Foundry matrix above. The repository's legacy Node simulation suite is not a project release gate; the finalized 0.3.27 baseline already contains six relationship-rotation simulation failures which remain unchanged in this build.
 
 ### Live Midi gate duplicate-arm/timeout note (0.3.28 revised7)
