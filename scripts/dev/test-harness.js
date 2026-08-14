@@ -132,7 +132,8 @@ export class TestHarness {
     });
     const accountingStatus = this.#movementAccounting.getStats();
     record("Native movement accounting", accountingStatus.sourceOfTruth === "TokenDocument.movementHistory"
-      && accountingStatus.noCostActionRegistered === true, accountingStatus);
+      && accountingStatus.noCostActionRegistered === true
+      && accountingStatus.modifierSlotsRegistered === true, accountingStatus);
     record("Relationship indexes", this.#relationships.getStats().relationships >= 0, this.#relationships.getStats());
     record("Relationship movement service", this.#relationshipMovement.getStats().initialized, this.#relationshipMovement.getStats());
     record("Relationship rotation service", this.#relationshipRotation.getStats().initialized, this.#relationshipRotation.getStats());
@@ -216,6 +217,9 @@ export class TestHarness {
       { ...destination, action: baseAction }
     ]);
     const modifierId = `${MODULE_ID}-test-plus-distance-${foundry.utils.randomID(8)}`;
+    const actionIdsBeforeModifier = actions?.keys
+      ? [...actions.keys()]
+      : Object.keys(actions ?? {});
     let modifiedAction = null;
     try {
       modifiedAction = this.#movementAccounting.registerFinalCostModifier(modifierId, {
@@ -233,9 +237,23 @@ export class TestHarness {
         modifiedResult,
         expected
       });
+      const actionIdsAfterModifier = actions?.keys
+        ? [...actions.keys()]
+        : Object.keys(actions ?? {});
+      record("Runtime modifier registration does not mutate Foundry action registry",
+        JSON.stringify(actionIdsAfterModifier) === JSON.stringify(actionIdsBeforeModifier), {
+          beforeCount: actionIdsBeforeModifier.length,
+          afterCount: actionIdsAfterModifier.length,
+          action: modifiedAction
+        });
+      record("Runtime modifier uses a pre-registered hidden slot",
+        /^action-effects-5e\.cost-slot-\d+$/.test(String(modifiedAction ?? "")), { action: modifiedAction });
     } finally {
       if (modifiedAction) this.#movementAccounting.unregisterFinalCostModifier(modifiedAction);
     }
+    record("Runtime modifier slot is released after cleanup",
+      this.#movementAccounting.getStats().activeCostModifiers.length === 0,
+      this.#movementAccounting.getStats());
 
     const historyAfter = this.#movementAccounting.getHistorySnapshot(document);
     record("Measurement probe does not alter movement history", JSON.stringify(historyAfter) === JSON.stringify(historyBefore), {

@@ -6,6 +6,8 @@ import { duplicateSafely } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 
 const COST_MODIFIER_ACTION_PREFIX = `${MODULE_ID}.cost.`;
+const COST_MODIFIER_SLOT_PREFIX = `${MODULE_ID}.cost-slot-`;
+const COST_MODIFIER_SLOT_COUNT = 8;
 const EPSILON = 1e-6;
 
 function actionsCollection() {
@@ -160,35 +162,17 @@ function defaultCostFunctionFor(descriptor = {}) {
   return (baseCost) => finiteNonnegative(baseCost) * multiplier;
 }
 
-function cloneActionPresentation(base = {}) {
-  const descriptor = {};
-  for (const key of [
-    "deriveTerrainDifficulty",
-    "getAnimationOptions",
-    "icon",
-    "img",
-    "measure",
-    "order",
-    "speedMultiplier",
-    "teleport",
-    "terrainAction",
-    "visualize",
-    "walls"
-  ]) {
-    if (base?.[key] !== undefined) descriptor[key] = base[key];
-  }
-  return descriptor;
-}
-
 export class MovementAccountingService {
   #initialized = false;
   #ownedActions = new Map();
   #costModifiers = new Map();
+  #slotAssignments = new Map();
 
   initialize() {
     if (this.#initialized) return;
     this.#initialized = true;
     this.#registerNoCostAction();
+    this.#registerModifierSlots();
     Logger.info("Movement accounting initialized with Foundry TokenDocument.movementHistory as the sole movement-resource ledger.");
   }
 
@@ -207,18 +191,20 @@ export class MovementAccountingService {
       this.#ownedActions.set(MOVEMENT_ACTION_IDS.NO_COST, current);
     }
 
-    for (const [actionId, config] of this.#costModifiers) {
-      const live = getConfiguredAction(actionId);
-      if (!live) this.#registerModifierAction(actionId, config);
-      else if (live !== this.#ownedActions.get(actionId)) this.#ownedActions.set(actionId, live);
+    for (const slotActionId of this.#modifierSlotIds()) {
+      const live = getConfiguredAction(slotActionId);
+      if (!live) {
+        throw new Error(`Movement modifier slot '${slotActionId}' is unavailable after Foundry initialization.`);
+      }
+      if (live !== this.#ownedActions.get(slotActionId)) this.#ownedActions.set(slotActionId, live);
     }
   }
 
   shutdown() {
-    for (const [actionId, descriptor] of this.#ownedActions) deleteConfiguredAction(actionId, descriptor);
-    this.#ownedActions.clear();
+    // CONFIG.Token.movement.actions is normalized and sealed by Foundry after
+    // init. Do not attempt to delete startup-registered actions at runtime.
     this.#costModifiers.clear();
-    this.#initialized = false;
+    this.#slotAssignments.clear();
   }
 
   get noCostActionId() {
@@ -276,30 +262,56 @@ export class MovementAccountingService {
   } = {}) {
     if (typeof modifier !== "function") throw new TypeError("A final movement cost modifier requires a modifier function.");
     this.ensureRegistered();
-    const actionId = sanitizeModifierId(id);
-    if (actionId === MOVEMENT_ACTION_IDS.NO_COST) throw new Error("The built-in AE5E no-cost movement action cannot be replaced.");
-    if (this.#costModifiers.has(actionId)) throw new Error(`Movement cost modifier '${actionId}' is already registered.`);
-    if (getConfiguredAction(actionId)) throw new Error(`Movement action '${actionId}' already exists.`);
+
+    const logicalId = sanitizeModifierId(id);
+    if (this.#costModifiers.has(logicalId)) throw new Error(`Movement cost modifier '${logicalId}' is already registered.`);
+
+    const requestedBaseAction = baseAction ?? globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    if (this.#isModifierSlotId(requestedBaseAction)) {
+      throw new Error("AE5E movement cost modifiers cannot use another modifier slot as their base action.");
+    }
+    if (!getConfiguredAction(requestedBaseAction)) {
+      throw new Error(`Base movement action '${requestedBaseAction}' is not registered.`);
+    }
+
+    const slotActionId = this.#modifierSlotIds().find((candidate) => !this.#slotAssignments.has(candidate));
+    if (!slotActionId) {
+      throw new Error(`All ${COST_MODIFIER_SLOT_COUNT} AE5E movement cost modifier slots are currently in use.`);
+    }
 
     const config = Object.freeze({
+      logicalId,
+      slotActionId,
       label: label ?? `Action Effects 5E — ${id}`,
-      baseAction,
+      baseAction: requestedBaseAction,
       modifier,
       canSelect
     });
-    this.#costModifiers.set(actionId, config);
-    this.#registerModifierAction(actionId, config);
-    return actionId;
+
+    this.#costModifiers.set(logicalId, config);
+    this.#slotAssignments.set(slotActionId, logicalId);
+    return slotActionId;
   }
 
   unregisterFinalCostModifier(id) {
-    const actionId = sanitizeModifierId(id);
-    const config = this.#costModifiers.get(actionId);
+    const raw = String(id ?? "").trim();
+    let logicalId = null;
+
+    if (this.#isModifierSlotId(raw)) logicalId = this.#slotAssignments.get(raw) ?? null;
+    else {
+      try {
+        logicalId = sanitizeModifierId(raw);
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    if (!logicalId) return false;
+    const config = this.#costModifiers.get(logicalId);
     if (!config) return false;
-    const descriptor = this.#ownedActions.get(actionId);
-    this.#costModifiers.delete(actionId);
-    this.#ownedActions.delete(actionId);
-    deleteConfiguredAction(actionId, descriptor);
+
+    this.#costModifiers.delete(logicalId);
+    this.#slotAssignments.delete(config.slotActionId);
     return true;
   }
 
@@ -309,7 +321,14 @@ export class MovementAccountingService {
       sourceOfTruth: "TokenDocument.movementHistory",
       noCostActionId: MOVEMENT_ACTION_IDS.NO_COST,
       noCostActionRegistered: getConfiguredAction(MOVEMENT_ACTION_IDS.NO_COST) === this.#ownedActions.get(MOVEMENT_ACTION_IDS.NO_COST),
-      costModifierActions: [...this.#costModifiers.keys()]
+      modifierSlotCount: COST_MODIFIER_SLOT_COUNT,
+      modifierSlotsRegistered: this.#modifierSlotIds().every((slotActionId) => Boolean(getConfiguredAction(slotActionId))),
+      activeCostModifiers: [...this.#costModifiers.values()].map(({ logicalId, slotActionId, baseAction, label }) => ({
+        logicalId,
+        slotActionId,
+        baseAction,
+        label
+      }))
     };
   }
 
@@ -343,48 +362,73 @@ export class MovementAccountingService {
     this.#ownedActions.set(MOVEMENT_ACTION_IDS.NO_COST, descriptor);
   }
 
-  #registerModifierAction(actionId, config) {
-    const requestedBaseAction = config.baseAction ?? globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
-    const base = getConfiguredAction(requestedBaseAction) ?? {};
-    // Runtime modifier actions are inserted after Foundry has normally
-    // completed movement-action normalization, so construct a full mutable
-    // config from the live normalized base action. Keeping it mutable also
-    // avoids repeating the startup failure if another integration touches it.
-    const descriptor = {
-      ...cloneActionPresentation(base),
-      label: config.label,
-      canSelect: typeof config.canSelect === "function"
-        ? config.canSelect
-        : () => Boolean(config.canSelect),
-      getCostFunction: (token, options) => {
-        const liveBase = getConfiguredAction(requestedBaseAction) ?? base;
-        const baseFunction = typeof liveBase?.getCostFunction === "function"
-          ? liveBase.getCostFunction(token, options)
-          : defaultCostFunctionFor(liveBase);
-
-        return (baseCost, from, to, distance, segment) => {
-          const nativeCost = finiteNonnegative(baseFunction(baseCost, from, to, distance, segment));
-          const result = Number(config.modifier({
-            nativeCost,
-            baseCost: finiteNonnegative(baseCost),
-            from,
-            to,
-            distance: finiteNonnegative(distance),
-            segment,
-            token,
-            options,
-            baseAction: requestedBaseAction
-          }));
-          if (!Number.isFinite(result) || result < -EPSILON) {
-            Logger.error(`Movement cost modifier '${actionId}' returned an invalid cost; preserving the native cost.`, { result, nativeCost });
-            return nativeCost;
-          }
-          return Math.max(0, result);
-        };
-      }
-    };
-
-    setConfiguredAction(actionId, descriptor);
-    this.#ownedActions.set(actionId, descriptor);
+  #modifierSlotIds() {
+    return Array.from({ length: COST_MODIFIER_SLOT_COUNT }, (_unused, index) => `${COST_MODIFIER_SLOT_PREFIX}${index + 1}`);
   }
+
+  #isModifierSlotId(actionId) {
+    return this.#modifierSlotIds().includes(String(actionId ?? ""));
+  }
+
+  #registerModifierSlots() {
+    for (const slotActionId of this.#modifierSlotIds()) {
+      const existing = getConfiguredAction(slotActionId);
+      const owned = this.#ownedActions.get(slotActionId);
+      if (existing && existing !== owned) {
+        throw new Error(`Movement modifier slot '${slotActionId}' is already registered by another source.`);
+      }
+      if (existing) continue;
+
+      // Register every runtime modifier slot during init, while Foundry still
+      // permits CONFIG.Token.movement.actions to be extended. Foundry later
+      // normalizes and seals the registry. Runtime modifier registration only
+      // assigns behavior to these pre-existing slots.
+      const descriptor = {
+        label: "Action Effects 5E — Internal Cost Modifier",
+        icon: "fa-solid fa-person-walking-arrow-right",
+        measure: true,
+        canSelect: false,
+        teleport: false,
+        visualize: true,
+        walls: "move",
+        terrainAction: null,
+        getCostFunction: (token, options) => this.#getModifierSlotCostFunction(slotActionId, token, options)
+      };
+      setConfiguredAction(slotActionId, descriptor);
+      this.#ownedActions.set(slotActionId, descriptor);
+    }
+  }
+
+  #getModifierSlotCostFunction(slotActionId, token, options) {
+    const logicalId = this.#slotAssignments.get(slotActionId);
+    const config = logicalId ? this.#costModifiers.get(logicalId) : null;
+    const requestedBaseAction = config?.baseAction ?? globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    const liveBase = getConfiguredAction(requestedBaseAction) ?? {};
+    const baseFunction = typeof liveBase?.getCostFunction === "function"
+      ? liveBase.getCostFunction(token, options)
+      : defaultCostFunctionFor(liveBase);
+
+    return (baseCost, from, to, distance, segment) => {
+      const nativeCost = finiteNonnegative(baseFunction(baseCost, from, to, distance, segment));
+      if (!config) return nativeCost;
+
+      const result = Number(config.modifier({
+        nativeCost,
+        baseCost: finiteNonnegative(baseCost),
+        from,
+        to,
+        distance: finiteNonnegative(distance),
+        segment,
+        token,
+        options,
+        baseAction: requestedBaseAction
+      }));
+      if (!Number.isFinite(result) || result < -EPSILON) {
+        Logger.error(`Movement cost modifier '${logicalId}' returned an invalid cost; preserving the native cost.`, { result, nativeCost });
+        return nativeCost;
+      }
+      return Math.max(0, result);
+    };
+  }
+
 }

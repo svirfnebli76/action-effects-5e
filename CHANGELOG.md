@@ -1,3 +1,10 @@
+## 0.3.29 revised3 (testing candidate)
+
+- Fixed runtime final-cost modifier registration on Foundry v14, where `CONFIG.Token.movement.actions` is sealed after initialization.
+- Reworked the reusable final-cost modifier API to use eight hidden modifier slots registered during `init`; runtime registration now assigns behavior to a pre-existing slot and does not mutate Foundry's sealed movement-action registry.
+- Expanded the Foundry-only movement-accounting test to verify modifier-slot registration, sealed-registry-safe runtime assignment, native-cost-plus-distance calculation, and slot cleanup.
+- Preserves the revised2 startup-safe no-cost movement action and all finalized 0.3.28 behavior.
+
 ## 0.3.29 revised2 — Foundry v14 mutable movement-action descriptor correction
 
 - Fixed the remaining world-startup blocker exposed after revised1: Foundry v14 expands `CONFIG.Token.movement.actions` descriptors in place during `Game.initializeConfig()`, so AE5E must not freeze the descriptor before core normalization.
