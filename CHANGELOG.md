@@ -1,5 +1,11 @@
 ## 0.3.28
 
+### 0.3.28 revised11
+- Fixed the disconnect-recovery test false positive exposed by refreshing the sole GM during a player-owned active Reactor prompt.
+- Synthetic test handlers now self-register on each client when the test suite is constructed, so a reloaded GM can immediately revalidate frozen test offers. Production handlers already register normally at module startup.
+- Added explicit recovery assertions for GM browser-session replacement, WAITING_FOR_AUTHORITY entry, authority restoration, no manual/authorization fallback, all three frozen Reactor slots being reached, and Reactor 2/3 active prompts appearing on the reloaded GM.
+- Clarified recovery UI policy: waiting windows destroyed by a GM browser refresh are not recreated immediately; their Reactors open fresh Broker hosts when they become ACTIVE.
+
 ### Revised10 test-harness correction
 - Corrected the multiplayer baseline test so distributed UI is validated by the per-client routing aggregator instead of reusing single-client assertions that require all three Broker hosts and all three waiting views on the GM client.
 - The underlying Reaction Broker routing behavior is unchanged.

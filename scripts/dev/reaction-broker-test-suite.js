@@ -54,6 +54,13 @@ export class ReactionBrokerTestSuite {
     socket.register("reactions.tests.getClientStatus", this.#getClientStatusSocket.bind(this));
     socket.register("reactions.tests.prepareMultiplayerOwnership", this.#prepareMultiplayerOwnershipSocket.bind(this));
     socket.register("reactions.tests.restoreMultiplayerOwnership", this.#restoreMultiplayerOwnership.bind(this));
+
+    // Test handlers are deliberately context-gated to AE5E synthetic test events.
+    // Install them locally when the suite is constructed so a browser that reloads
+    // in the middle of a disconnect-recovery test can immediately revalidate the
+    // frozen synthetic offers. Production reaction handlers are registered by
+    // normal module startup and do not have this reload-only test limitation.
+    this.#installHandlersSocket();
   }
 
   async setupTestScene({ activate = true, recreate = false } = {}) {
@@ -551,6 +558,8 @@ export class ReactionBrokerTestSuite {
     await this.#authority.refreshLedger();
     const primaryGm = this.#authority.getPrimaryGm();
     if (!primaryGm?.id) throw new Error("Reaction Broker multiplayer test could not resolve the elected primary GM.");
+    const authorityBefore = this.#authority.getStatus();
+    const primaryBefore = authorityBefore.activeGms?.find(entry => entry.id === primaryGm.id) ?? null;
 
     const player = game?.user && !game.user.isGM
       ? game.user
@@ -565,7 +574,7 @@ export class ReactionBrokerTestSuite {
     console.log(`Routing fixture: ${NAMES.reactor1} is owned by player '${player.name}'. ${NAMES.reactor2} and ${NAMES.reactor3} are GM-routed.`);
     console.log("Expected normal routing: Reactor 1 window appears only on the player client; Reactors 2 and 3 appear on the elected GM client. Do not stop the queue early during this baseline routing test.");
     if (testDisconnectRecovery) {
-      console.warn("DISCONNECT RECOVERY MODE: while the first active Reactor is choosing, disconnect/refresh the LAST connected GM. OK must disable with the agreed warning. Reconnect a GM to resume, or click Cancel to switch to manual adjudication.");
+      console.warn("DISCONNECT RECOVERY MODE: while the first active Reactor is choosing, disconnect/refresh the LAST connected GM. OK must disable with the agreed warning. Reconnect the GM, then finish Reactor 1 and continue Reactor 2/3 normally. Waiting windows lost with the refreshed GM browser are not recreated immediately; Reactor 2/3 must open fresh when their frozen queue slots become ACTIVE.");
     }
     if (testControllerDisconnectRecovery) {
       console.warn("CONTROLLER DISCONNECT MODE: while the PLAYER-owned Reactor 1 is ACTIVE, disconnect/refresh that player. The source workflow must not hang. AE5E must revalidate the same frozen Reactor slot and reroute its prompt to the elected GM without recording a decline.");
@@ -587,17 +596,48 @@ export class ReactionBrokerTestSuite {
         gmReceivedWaitingViews: Number(gmDelta.waits ?? 0) >= 2,
         gmEventuallyReceivedActivePrompt: Number(gmDelta.prompts ?? 0) >= 1
       } : {};
+
+      let recoveryChecks = {};
+      if (testDisconnectRecovery) {
+        await this.#authority.refreshLedger().catch(() => null);
+        const authorityAfter = this.#authority.getStatus();
+        const primaryAfter = authorityAfter.activeGms?.find(entry => entry.id === primaryGm.id) ?? null;
+        const history = interactive?.transaction?.history ?? [];
+        const activeReactorUuids = new Set(history
+          .filter(entry => entry?.type === "state" && entry?.details?.state === REACTION_TRANSACTION_STATES.ACTIVE && entry?.details?.reactorTokenUuid)
+          .map(entry => entry.details.reactorTokenUuid));
+        const waitedIndex = history.findIndex(entry => entry?.type === "state" && entry?.details?.state === REACTION_TRANSACTION_STATES.WAITING_FOR_AUTHORITY);
+        const restoredIndex = history.findIndex((entry, index) => index > waitedIndex
+          && entry?.type === "state"
+          && entry?.details?.state === REACTION_TRANSACTION_STATES.ACTIVE
+          && entry?.details?.reason === "gm-authority-restored");
+        const fixtureTokens = this.#fixtureTokens();
+        recoveryChecks = {
+          gmBrowserSessionActuallyChanged: Boolean(primaryBefore?.sessionId && primaryAfter?.sessionId && primaryBefore.sessionId !== primaryAfter.sessionId),
+          transactionEnteredWaitingForAuthority: waitedIndex >= 0,
+          transactionResumedAfterAuthorityRestored: restoredIndex > waitedIndex,
+          noManualFallbackAfterReconnect: interactive?.brokerResult?.manual !== true && interactive?.transaction?.result?.manual !== true,
+          noAuthorizationFailureFallback: interactive?.brokerResult?.reason !== "authorization-failed" && interactive?.transaction?.result?.reason !== "authorization-failed",
+          queueReachedAllThreeReactorsAfterRecovery: [fixtureTokens.reactor1?.uuid, fixtureTokens.reactor2?.uuid, fixtureTokens.reactor3?.uuid]
+            .filter(Boolean).every(uuid => activeReactorUuids.has(uuid)),
+          reloadedGmReceivedPostReconnectActivePrompts: Number(after?.[primaryGm.id]?.dialogs?.prompts ?? 0) >= 2
+        };
+      }
+
       const routingPassed = baselineRouting ? Object.values(routingChecks).every(Boolean) : true;
-      const overallPassed = interactive?.result === "PASS" && routingPassed;
+      const recoveryPassed = testDisconnectRecovery ? Object.values(recoveryChecks).every(Boolean) : true;
+      const overallPassed = interactive?.result === "PASS" && routingPassed && recoveryPassed;
 
       this.#banner(`${baselineRouting ? "MULTIPLAYER ROUTING" : "MULTIPLAYER RECOVERY"} — ${overallPassed ? "PASS" : "FAIL"}`, overallPassed ? "#5cff8d" : "#ff5c5c", 28);
       if (baselineRouting) console.table(Object.entries(routingChecks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
+      if (testDisconnectRecovery) console.table(Object.entries(recoveryChecks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
       console.log("AE5E multiplayer client routing deltas", { player: { id: player.id, name: player.name, delta: playerDelta }, primaryGm: { id: primaryGm.id, name: primaryGm.name, delta: gmDelta } });
 
       return {
         ...interactive,
         result: overallPassed ? "PASS" : "FAIL",
         routingChecks,
+        recoveryChecks,
         routingFixture,
         clientDeltas: deltas
       };
