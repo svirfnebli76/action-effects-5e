@@ -1,5 +1,7 @@
 ## 0.3.28
 
+- Revised12 controller-disconnect validation: strengthened the Foundry multiplayer harness so player-controller loss can no longer false-PASS. The test now proves that the interrupted Reactor 1 slot is rerouted to the elected GM, remains the same frozen queue slot, is not recorded as a decline, opens a fresh GM prompt, reaches all three Reactors, and completes without manual/authorization fallback. Added the rerouted Reactor UUID to transaction history diagnostics.
+
 ### 0.3.28 revised11
 - Fixed the disconnect-recovery test false positive exposed by refreshing the sole GM during a player-owned active Reactor prompt.
 - Synthetic test handlers now self-register on each client when the test suite is constructed, so a reloaded GM can immediately revalidate frozen test offers. Production handlers already register normally at module startup.

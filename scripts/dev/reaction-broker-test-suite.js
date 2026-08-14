@@ -577,7 +577,7 @@ export class ReactionBrokerTestSuite {
       console.warn("DISCONNECT RECOVERY MODE: while the first active Reactor is choosing, disconnect/refresh the LAST connected GM. OK must disable with the agreed warning. Reconnect the GM, then finish Reactor 1 and continue Reactor 2/3 normally. Waiting windows lost with the refreshed GM browser are not recreated immediately; Reactor 2/3 must open fresh when their frozen queue slots become ACTIVE.");
     }
     if (testControllerDisconnectRecovery) {
-      console.warn("CONTROLLER DISCONNECT MODE: while the PLAYER-owned Reactor 1 is ACTIVE, disconnect/refresh that player. The source workflow must not hang. AE5E must revalidate the same frozen Reactor slot and reroute its prompt to the elected GM without recording a decline.");
+      console.warn("CONTROLLER DISCONNECT MODE: run this test from the GM. While the PLAYER-owned Reactor 1 is ACTIVE, disconnect/close that player and keep the player offline until Reactor 1 has rerouted to the GM and been completed there. The source workflow must not hang. AE5E must revalidate the same frozen Reactor slot and reroute its prompt to the elected GM without recording a decline.");
     }
 
     try {
@@ -598,6 +598,7 @@ export class ReactionBrokerTestSuite {
       } : {};
 
       let recoveryChecks = {};
+      let controllerRecoveryChecks = {};
       if (testDisconnectRecovery) {
         await this.#authority.refreshLedger().catch(() => null);
         const authorityAfter = this.#authority.getStatus();
@@ -624,13 +625,50 @@ export class ReactionBrokerTestSuite {
         };
       }
 
+      if (testControllerDisconnectRecovery) {
+        const history = interactive?.transaction?.history ?? [];
+        const fixtureTokens = this.#fixtureTokens();
+        const reactor1Uuid = fixtureTokens.reactor1?.uuid ?? null;
+        const activeReactorUuids = new Set(history
+          .filter(entry => entry?.type === "state" && entry?.details?.state === REACTION_TRANSACTION_STATES.ACTIVE && entry?.details?.reactorTokenUuid)
+          .map(entry => entry.details.reactorTokenUuid));
+        const rerouteEntry = history.find(entry => entry?.type === "state"
+          && entry?.details?.state === REACTION_TRANSACTION_STATES.ACTIVE
+          && entry?.details?.reason === "controller-rerouted-after-disconnect");
+        const reroutedOpportunity = (interactive?.transaction?.opportunities ?? [])
+          .find(entry => entry?.reactorTokenUuid === reactor1Uuid) ?? null;
+
+        controllerRecoveryChecks = {
+          controllerDisconnectWasObservedAndRerouted: Boolean(rerouteEntry),
+          sameFrozenReactor1SlotWasRerouted: Boolean(reactor1Uuid && rerouteEntry?.details?.reactorTokenUuid === reactor1Uuid),
+          reactor1ReroutedToPrimaryGm: Boolean(primaryGm.id
+            && rerouteEntry?.details?.controllerUserId === primaryGm.id
+            && reroutedOpportunity?.controllerUserId === primaryGm.id),
+          reactor1WasNotRecordedAsWaitingDecline: !((interactive?.transaction?.waitingDeclinedReactorTokenUuids ?? []).includes(reactor1Uuid)),
+          gmReceivedFreshReroutedReactor1HostAndPrompt: Number(gmDelta.hostsOpened ?? 0) >= 3 && Number(gmDelta.prompts ?? 0) >= 3,
+          queueReachedAllThreeReactorsAfterControllerReroute: [fixtureTokens.reactor1?.uuid, fixtureTokens.reactor2?.uuid, fixtureTokens.reactor3?.uuid]
+            .filter(Boolean).every(uuid => activeReactorUuids.has(uuid)),
+          transactionCompletedWithoutManualFallback: interactive?.brokerResult?.manual !== true
+            && interactive?.transaction?.result?.manual !== true
+            && interactive?.brokerResult?.reason !== "authorization-failed"
+            && interactive?.transaction?.result?.reason !== "authorization-failed"
+        };
+      }
+
       const routingPassed = baselineRouting ? Object.values(routingChecks).every(Boolean) : true;
       const recoveryPassed = testDisconnectRecovery ? Object.values(recoveryChecks).every(Boolean) : true;
-      const overallPassed = interactive?.result === "PASS" && routingPassed && recoveryPassed;
+      const controllerRecoveryPassed = testControllerDisconnectRecovery ? Object.values(controllerRecoveryChecks).every(Boolean) : true;
+      const overallPassed = interactive?.result === "PASS" && routingPassed && recoveryPassed && controllerRecoveryPassed;
 
-      this.#banner(`${baselineRouting ? "MULTIPLAYER ROUTING" : "MULTIPLAYER RECOVERY"} — ${overallPassed ? "PASS" : "FAIL"}`, overallPassed ? "#5cff8d" : "#ff5c5c", 28);
+      const headline = baselineRouting
+        ? "MULTIPLAYER ROUTING"
+        : testControllerDisconnectRecovery
+          ? "CONTROLLER DISCONNECT RECOVERY"
+          : "MULTIPLAYER RECOVERY";
+      this.#banner(`${headline} — ${overallPassed ? "PASS" : "FAIL"}`, overallPassed ? "#5cff8d" : "#ff5c5c", 28);
       if (baselineRouting) console.table(Object.entries(routingChecks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
       if (testDisconnectRecovery) console.table(Object.entries(recoveryChecks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
+      if (testControllerDisconnectRecovery) console.table(Object.entries(controllerRecoveryChecks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
       console.log("AE5E multiplayer client routing deltas", { player: { id: player.id, name: player.name, delta: playerDelta }, primaryGm: { id: primaryGm.id, name: primaryGm.name, delta: gmDelta } });
 
       return {
@@ -638,6 +676,7 @@ export class ReactionBrokerTestSuite {
         result: overallPassed ? "PASS" : "FAIL",
         routingChecks,
         recoveryChecks,
+        controllerRecoveryChecks,
         routingFixture,
         clientDeltas: deltas
       };

@@ -515,6 +515,7 @@ export class ReactionBroker {
       });
       transaction.transition(REACTION_TRANSACTION_STATES.ACTIVE, {
         reason: "controller-rerouted-after-disconnect",
+        reactorTokenUuid: opportunity.reactorTokenUuid,
         controllerUserId: opportunity.controllerUserId
       });
       this.#emitUpdated(transaction, { reason: "controller-rerouted-after-disconnect" });
