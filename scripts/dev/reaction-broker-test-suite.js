@@ -11,6 +11,7 @@ import { ReactionContext } from "../reactions/reaction-context.js";
 import { ReactionTransaction } from "../reactions/reaction-transaction.js";
 
 const FIXTURE_FLAG = "reactionBroker028";
+const MULTIPLAYER_OWNERSHIP_BACKUP_FLAG = "reactionBroker028OwnershipBackup";
 const FIXTURE_SCENE_NAME = "AE5E 0.3.28 Reaction Broker Test";
 const NAMES = Object.freeze({
   attacker: "AE5E Attacker",
@@ -50,6 +51,9 @@ export class ReactionBrokerTestSuite {
 
     socket.register("reactions.tests.installHandlers", this.#installHandlersSocket.bind(this));
     socket.register("reactions.tests.uninstallHandlers", this.#uninstallHandlersSocket.bind(this));
+    socket.register("reactions.tests.getClientStatus", this.#getClientStatusSocket.bind(this));
+    socket.register("reactions.tests.prepareMultiplayerOwnership", this.#prepareMultiplayerOwnershipSocket.bind(this));
+    socket.register("reactions.tests.restoreMultiplayerOwnership", this.#restoreMultiplayerOwnership.bind(this));
   }
 
   async setupTestScene({ activate = true, recreate = false } = {}) {
@@ -530,20 +534,75 @@ export class ReactionBrokerTestSuite {
     testDisconnectRecovery = false,
     testControllerDisconnectRecovery = false
   } = {}) {
-    if (setup && game.user.isGM) await this.setupTestScene({ activate: true });
+    if (setup) {
+      if (!game?.user?.isGM) throw new Error("A GM must create/refresh the Reaction Broker fixture first. Run the player-side multiplayer test with setup: false.");
+      await this.setupTestScene({ activate: true });
+    }
+    await this.#requireTestSceneReady();
+
     const activePlayers = [...(game.users ?? [])].filter(user => user.active && !user.isGM);
     if (!activePlayers.length) throw new Error("Connect at least one player client before running the multiplayer Reaction Broker test.");
     if (!this.#authority.hasActiveGm()) throw new Error("Start this test while at least one GM is connected.");
 
+    await this.#authority.refreshLedger();
+    const primaryGm = this.#authority.getPrimaryGm();
+    if (!primaryGm?.id) throw new Error("Reaction Broker multiplayer test could not resolve the elected primary GM.");
+
+    const player = game?.user && !game.user.isGM
+      ? game.user
+      : activePlayers[0];
+    const routingFixture = game?.user?.isGM
+      ? await this.#prepareMultiplayerOwnership(player)
+      : await this.#socket.executeAsGM("reactions.tests.prepareMultiplayerOwnership", { playerId: player.id });
+    const observedUsers = [primaryGm, player];
+    const before = await this.#collectClientStatuses(observedUsers);
+
     this.#banner("AE5E 0.3.28 REACTION BROKER MULTIPLAYER TEST", "#7ddcff", 28);
-    console.log("PC-owned Reactor windows must appear only on their controlling player client. NPC/unowned Reactor windows route to the elected GM.");
+    console.log(`Routing fixture: ${NAMES.reactor1} is owned by player '${player.name}'. ${NAMES.reactor2} and ${NAMES.reactor3} are GM-routed.`);
+    console.log("Expected normal routing: Reactor 1 window appears only on the player client; Reactors 2 and 3 appear on the elected GM client. Do not stop the queue early during this baseline routing test.");
     if (testDisconnectRecovery) {
       console.warn("DISCONNECT RECOVERY MODE: while the first active Reactor is choosing, disconnect/refresh the LAST connected GM. OK must disable with the agreed warning. Reconnect a GM to resume, or click Cancel to switch to manual adjudication.");
     }
     if (testControllerDisconnectRecovery) {
-      console.warn("CONTROLLER DISCONNECT MODE: while a PLAYER-owned Reactor is ACTIVE, disconnect/refresh that player. The source workflow must not hang. AE5E must revalidate the same frozen Reactor slot and reroute its prompt to the elected GM without recording a decline.");
+      console.warn("CONTROLLER DISCONNECT MODE: while the PLAYER-owned Reactor 1 is ACTIVE, disconnect/refresh that player. The source workflow must not hang. AE5E must revalidate the same frozen Reactor slot and reroute its prompt to the elected GM without recording a decline.");
     }
-    return this.runInteractiveTest({ setup: false, nested: false });
+
+    try {
+      const interactive = await this.runInteractiveTest({ setup: false, nested: false });
+      const after = await this.#collectClientStatuses(observedUsers);
+      const deltas = this.#clientStatusDeltas(before, after);
+
+      const playerDelta = deltas[player.id]?.dialogs ?? {};
+      const gmDelta = deltas[primaryGm.id]?.dialogs ?? {};
+      const baselineRouting = !testDisconnectRecovery && !testControllerDisconnectRecovery;
+      const routingChecks = baselineRouting ? {
+        playerReceivedExactlyOneFixtureHost: Number(playerDelta.hostsOpened ?? 0) === 1,
+        playerReceivedActivePrompt: Number(playerDelta.prompts ?? 0) >= 1,
+        playerReceivedActiveIndicator: Number(playerDelta.indicatorAcquires ?? 0) >= 1,
+        gmReceivedTwoFixtureHosts: Number(gmDelta.hostsOpened ?? 0) === 2,
+        gmReceivedWaitingViews: Number(gmDelta.waits ?? 0) >= 2,
+        gmEventuallyReceivedActivePrompt: Number(gmDelta.prompts ?? 0) >= 1
+      } : {};
+      const routingPassed = baselineRouting ? Object.values(routingChecks).every(Boolean) : true;
+      const overallPassed = interactive?.result === "PASS" && routingPassed;
+
+      this.#banner(`${baselineRouting ? "MULTIPLAYER ROUTING" : "MULTIPLAYER RECOVERY"} — ${overallPassed ? "PASS" : "FAIL"}`, overallPassed ? "#5cff8d" : "#ff5c5c", 28);
+      if (baselineRouting) console.table(Object.entries(routingChecks).map(([test, ok]) => ({ test, result: ok ? "PASS" : "FAIL" })));
+      console.log("AE5E multiplayer client routing deltas", { player: { id: player.id, name: player.name, delta: playerDelta }, primaryGm: { id: primaryGm.id, name: primaryGm.name, delta: gmDelta } });
+
+      return {
+        ...interactive,
+        result: overallPassed ? "PASS" : "FAIL",
+        routingChecks,
+        routingFixture,
+        clientDeltas: deltas
+      };
+    } finally {
+      const restore = game?.user?.isGM
+        ? this.#restoreMultiplayerOwnership()
+        : this.#socket.executeAsGM("reactions.tests.restoreMultiplayerOwnership");
+      await restore.catch(error => Logger.warn("Could not restore Reaction Broker multiplayer fixture ownership after test. Run clearReactionBrokerTestState() from a GM after reconnecting.", error));
+    }
   }
 
   async runNoGmTest() {
@@ -571,6 +630,9 @@ export class ReactionBrokerTestSuite {
   async clearTestState({ removeFixture = false } = {}) {
     await this.#dialogs.closeAllEverywhere({ reason: "reaction-broker-test-clear" }).catch(() => null);
     await this.#uninstallHandlersEverywhere();
+    const ownershipRestore = game?.user?.isGM
+      ? await this.#restoreMultiplayerOwnership().catch(error => ({ restored: 0, error: error?.message ?? String(error) }))
+      : { restored: 0, skipped: "not-gm" };
 
     if (removeFixture) {
       if (!game?.user?.isGM) throw new Error("A GM is required to remove the Reaction Broker test fixture.");
@@ -584,6 +646,7 @@ export class ReactionBrokerTestSuite {
       handlers: this.#registry.getStats(),
       dialogs: this.#dialogs.getStats(),
       selection: this.#selectionIndicator.getStats(),
+      ownershipRestore,
       fixtureRemoved: Boolean(removeFixture)
     };
     this.#banner("AE5E REACTION BROKER TEST STATE CLEARED", "#7ddcff", 24);
@@ -603,6 +666,105 @@ export class ReactionBrokerTestSuite {
     };
     console.log("AE5E 0.3.28 Reaction Broker inspection", report);
     return report;
+  }
+
+  async #prepareMultiplayerOwnershipSocket({ playerId } = {}) {
+    if (!game?.user?.isGM) throw new Error("Only a GM client may prepare Reaction Broker multiplayer fixture ownership.");
+    const player = game?.users?.get?.(playerId) ?? null;
+    return this.#prepareMultiplayerOwnership(player);
+  }
+
+  async #prepareMultiplayerOwnership(player) {
+    if (!game?.user?.isGM) throw new Error("A GM is required to configure Reaction Broker multiplayer fixture ownership.");
+    if (!player?.id || player.isGM || !player.active) throw new Error("A connected non-GM player is required for multiplayer ownership routing.");
+
+    const tokens = this.#fixtureTokens();
+    const desired = {
+      reactor1: player.id,
+      reactor2: null,
+      reactor3: null
+    };
+    const summary = {};
+
+    for (const [key, ownerUserId] of Object.entries(desired)) {
+      const actor = tokens[key]?.actor ?? null;
+      if (!actor) throw new Error(`Reaction Broker multiplayer fixture is missing actor '${key}'.`);
+
+      const existingBackup = actor.getFlag?.(MODULE_ID, MULTIPLAYER_OWNERSHIP_BACKUP_FLAG) ?? null;
+      if (!existingBackup) {
+        const backup = globalThis.foundry?.utils?.deepClone
+          ? foundry.utils.deepClone(actor.ownership ?? {})
+          : JSON.parse(JSON.stringify(actor.ownership ?? {}));
+        await actor.setFlag(MODULE_ID, MULTIPLAYER_OWNERSHIP_BACKUP_FLAG, backup);
+      }
+
+      await this.#replaceActorOwnership(actor, ownerUserId);
+      summary[key] = { actorUuid: actor.uuid, ownerUserId, ownership: { ...(actor.ownership ?? {}) } };
+    }
+
+    return { playerId: player.id, playerName: player.name, actors: summary };
+  }
+
+  async #restoreMultiplayerOwnership() {
+    if (!game?.user?.isGM) return { restored: 0, skipped: "not-gm" };
+    const actors = [...(game.actors ?? [])].filter(actor => actor.getFlag?.(MODULE_ID, MULTIPLAYER_OWNERSHIP_BACKUP_FLAG));
+    let restored = 0;
+    for (const actor of actors) {
+      const backup = actor.getFlag(MODULE_ID, MULTIPLAYER_OWNERSHIP_BACKUP_FLAG);
+      if (!backup || typeof backup !== "object") continue;
+      await this.#replaceActorOwnership(actor, null, backup);
+      await actor.unsetFlag(MODULE_ID, MULTIPLAYER_OWNERSHIP_BACKUP_FLAG);
+      restored += 1;
+    }
+    return { restored };
+  }
+
+  async #replaceActorOwnership(actor, ownerUserId = null, explicitOwnership = null) {
+    const NONE = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0;
+    const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+    const current = { ...(actor?.ownership ?? {}) };
+    const target = explicitOwnership
+      ? { ...explicitOwnership }
+      : { default: NONE, ...(ownerUserId ? { [ownerUserId]: OWNER } : {}) };
+    if (!("default" in target)) target.default = NONE;
+
+    const update = {};
+    for (const key of Object.keys(current)) {
+      if (key === "default") continue;
+      if (!(key in target)) update[`ownership.-=${key}`] = null;
+    }
+    for (const [key, value] of Object.entries(target)) update[`ownership.${key}`] = Number(value);
+    await actor.update(update);
+    return { ...(actor.ownership ?? {}) };
+  }
+
+  #getClientStatusSocket() {
+    return {
+      user: { id: game?.user?.id ?? null, name: game?.user?.name ?? null, isGM: Boolean(game?.user?.isGM) },
+      dialogs: this.#dialogs.getStats(),
+      selection: this.#selectionIndicator.getStats()
+    };
+  }
+
+  async #collectClientStatuses(users) {
+    const result = {};
+    for (const user of users ?? []) {
+      if (!user?.id || !user.active) continue;
+      result[user.id] = await this.#socket.executeAsUser("reactions.tests.getClientStatus", user.id);
+    }
+    return result;
+  }
+
+  #clientStatusDeltas(before, after) {
+    const result = {};
+    const dialogCounters = ["hostsOpened", "prompts", "waits", "responses", "manualCancels", "waitingDeclines", "indicatorAcquires", "indicatorReleases", "authorityWaits"];
+    for (const [userId, afterStatus] of Object.entries(after ?? {})) {
+      const beforeStatus = before?.[userId] ?? {};
+      const dialogs = {};
+      for (const key of dialogCounters) dialogs[key] = Number(afterStatus?.dialogs?.[key] ?? 0) - Number(beforeStatus?.dialogs?.[key] ?? 0);
+      result[userId] = { user: afterStatus.user, dialogs };
+    }
+    return result;
   }
 
   async #installHandlersEverywhere() {

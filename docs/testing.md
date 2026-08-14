@@ -428,7 +428,7 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.setupReactionBrokerTestScene();
 ```
 
-This creates/activates `AE5E 0.3.28 Reaction Broker Test` with Attacker, Reactor 1, Reactor 2, Reactor 3, and Non-Reactor tokens. Reactor 1 is closest to Attacker. Reactors 2 and 3 are placed at the same distance, with Reactor 2 carrying the higher Dexterity fixture. Active player accounts are assigned ownership of the Attacker/Reactor Actors when available so the same fixture can be reused for multiplayer routing. The fixture also tries to clone a harmless D&D5e cantrip onto Attacker as `AE5E Reaction Gate Probe — ...`; if no suitable core spell is available, the live Midi gate test can use any other real spell cast from the source client.
+This creates/activates `AE5E 0.3.28 Reaction Broker Test` with Attacker, Reactor 1, Reactor 2, Reactor 3, and Non-Reactor tokens. Reactor 1 is closest to Attacker. Reactors 2 and 3 are placed at the same distance, with Reactor 2 carrying the higher Dexterity fixture. The fixture may assign currently active players during initial creation, but the dedicated multiplayer test overrides fixture ownership deterministically for the duration of that test. The fixture also tries to clone a harmless D&D5e cantrip onto Attacker as `AE5E Reaction Gate Probe — ...`; if no suitable core spell is available, the live Midi gate test can use any other real spell cast from the source client.
 
 ### 2. Automated foundation test
 
@@ -507,13 +507,22 @@ This probe deliberately uses real Midi workflow timing rather than simulating th
 
 ### 6. Multiplayer routing
 
-Connect at least one player and one GM, then run:
+Connect at least one player and one GM. The player does **not** need to place or bring a normal character token onto the fixture Scene. Run from the GM client:
 
 ```js
-await ae5e.tests.runReactionBrokerMultiplayerTest();
+await ae5e.tests.runReactionBrokerMultiplayerTest({ setup: false });
 ```
 
-Verify PC-owned Reactor windows appear on their owning player clients and unowned/NPC windows route to the elected GM. Only the active Reactor has an indicator even though all Reactor windows already exist. The source workflow client waits for controller responses while the primary GM authorizes those responses.
+The harness temporarily configures the existing fixture so **Reactor 1 is owned by the selected connected player**, while Reactor 2 and Reactor 3 are unowned and therefore route to the elected GM. Original fixture ownership is backed up and restored automatically after the transaction; `clearReactionBrokerTestState()` also restores it after an interrupted test.
+
+For the baseline routing run, let the queue advance normally (do not use the Stop Queue reaction and do not early-decline Reactor 2/3). Expected routing is:
+
+- Reactor 1 Broker host/ACTIVE prompt/indicator appear on the player client only.
+- Reactor 2 and Reactor 3 waiting hosts appear on the elected GM client.
+- After Reactor 1 resolves/declines, Reactor 2 then Reactor 3 become active on the GM client.
+- Only the currently active Reactor has the selection indicator and private notification sound.
+
+The harness captures per-client dialog counters before and after the transaction and automatically verifies the routing split, in addition to the normal interactive cleanup/order assertions.
 
 With two GMs connected, inspect:
 
@@ -525,7 +534,7 @@ The GM with the oldest active browser-session start must be primary. Disconnect 
 
 ### 7. Last-GM disconnect/reconnect
 
-For the strongest recovery test, start the multiplayer test from a **player/source client** while one GM is connected:
+For the strongest recovery test, first ensure the fixture exists, then start the multiplayer test from a **player/source client** while one GM is connected. The GM-side socket helper temporarily applies the same Reactor 1 ownership routing even though the command originates from the player:
 
 ```js
 await ae5e.tests.runReactionBrokerMultiplayerTest({ setup: false, testDisconnectRecovery: true });
