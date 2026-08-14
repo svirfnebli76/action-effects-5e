@@ -42,7 +42,7 @@ await ae5e.tests.runMovementAccountingTest();
 
 The test is non-destructive: it measures paths but does not move the controlled Token or clear its history. A complete pass verifies that:
 
-1. `action-effects-5e.no-cost` is registered with the startup-safe icon required by Foundry v14 and cannot be selected through the normal movement UI;
+1. `action-effects-5e.no-cost` survives Foundry v14 startup normalization, has the required icon, and cannot be selected through the normal movement UI;
 2. the internal action remains measured (distance is greater than 0 for a one-grid path);
 3. its normalized cost function and the measured one-grid path both resolve native movement cost to 0;
 4. the reusable final-cost modifier can wrap the current native movement action and produce `native cost + distance`; and

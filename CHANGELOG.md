@@ -1,3 +1,11 @@
+## 0.3.29 revised2 — Foundry v14 mutable movement-action descriptor correction
+
+- Fixed the remaining world-startup blocker exposed after revised1: Foundry v14 expands `CONFIG.Token.movement.actions` descriptors in place during `Game.initializeConfig()`, so AE5E must not freeze the descriptor before core normalization.
+- Replaced the hidden no-cost action with Foundry's documented simplified descriptor form: `costMultiplier: 0`, `canSelect: false`, `measure: true`, and the required icon. Foundry is allowed to normalize the descriptor into its final movement-action config.
+- Removed descriptor freezing from AE5E movement-action registration paths so Foundry/core compatibility layers can safely add or normalize fields.
+- Runtime final-cost modifier actions now expose `canSelect` in normalized function form while retaining the existing native-cost wrapper semantics.
+- No movement-rule behavior was changed from the intended 0.3.29 design.
+
 ## 0.3.29 revised1 — Foundry v14 movement-action startup correction
 
 - Fixed a world-startup blocker in the initial 0.3.29 candidate: Foundry v14 normalizes movement-action descriptors into a final config that requires an `icon`, so the hidden `action-effects-5e.no-cost` action now supplies a valid Font Awesome icon.

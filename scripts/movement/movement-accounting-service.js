@@ -324,25 +324,21 @@ export class MovementAccountingService {
       return;
     }
 
-    const descriptor = Object.freeze({
+    // IMPORTANT: this must remain a plain mutable descriptor. Foundry v14's
+    // Game.initializeConfig() expands CONFIG.Token.movement.actions entries in
+    // place, adding fields such as `img` and normalizing shorthand properties.
+    // Freezing this object prevents world startup.
+    const descriptor = {
       label: "Action Effects 5E — No Movement Cost",
-      // Foundry v14 accepts either a boolean or function in the registration
-      // descriptor, but normalizes the final config to a function. Register the
-      // final semantic form up front so the action remains stable before and
-      // after Game.initializeConfig().
-      canSelect: () => false,
-      // Foundry's final TokenMovementActionConfig requires an icon even though
-      // the registration descriptor type marks it optional. This action is
-      // hidden from normal selection, but supplying a valid Font Awesome icon
-      // is still required for world startup.
       icon: "fa-solid fa-person-walking",
       measure: true,
-      getCostFunction: () => () => 0,
+      costMultiplier: 0,
+      canSelect: false,
       teleport: false,
       visualize: true,
       walls: "move",
       terrainAction: null
-    });
+    };
     setConfiguredAction(MOVEMENT_ACTION_IDS.NO_COST, descriptor);
     this.#ownedActions.set(MOVEMENT_ACTION_IDS.NO_COST, descriptor);
   }
@@ -350,10 +346,16 @@ export class MovementAccountingService {
   #registerModifierAction(actionId, config) {
     const requestedBaseAction = config.baseAction ?? globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
     const base = getConfiguredAction(requestedBaseAction) ?? {};
-    const descriptor = Object.freeze({
+    // Runtime modifier actions are inserted after Foundry has normally
+    // completed movement-action normalization, so construct a full mutable
+    // config from the live normalized base action. Keeping it mutable also
+    // avoids repeating the startup failure if another integration touches it.
+    const descriptor = {
       ...cloneActionPresentation(base),
       label: config.label,
-      canSelect: config.canSelect,
+      canSelect: typeof config.canSelect === "function"
+        ? config.canSelect
+        : () => Boolean(config.canSelect),
       getCostFunction: (token, options) => {
         const liveBase = getConfiguredAction(requestedBaseAction) ?? base;
         const baseFunction = typeof liveBase?.getCostFunction === "function"
@@ -380,7 +382,7 @@ export class MovementAccountingService {
           return Math.max(0, result);
         };
       }
-    });
+    };
 
     setConfiguredAction(actionId, descriptor);
     this.#ownedActions.set(actionId, descriptor);
