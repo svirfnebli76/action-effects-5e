@@ -11,7 +11,7 @@
 
 AE5E does not own a second movement allowance ledger. Foundry/D&D5e `TokenDocument.movementHistory` is the sole source of truth for movement cost already consumed. `MovementTransaction` remains a semantic event model (agency, resource, source, relationship, displacement, path type, etc.), and now includes a lightweight snapshot/summary of that native history for consumers that need to reason about movement without maintaining another counter.
 
-AE5E registers a hidden `action-effects-5e.no-cost` Token movement action during `init`. It is `measure: true` with a cost multiplier of 0. This distinction is intentional: forced/follower/passenger/rollback paths still need normal spatial distance and traversal semantics, but they must not spend the moved Token's ordinary movement resource.
+AE5E registers a hidden `action-effects-5e.no-cost` Token movement action during `init`. It is `measure: true`, cannot be selected through the normal movement UI, and exposes a final movement-cost function that always returns 0. The descriptor also supplies the icon required by Foundry v14 movement-action normalization. This distinction is intentional: forced/follower/passenger/rollback paths still need normal spatial distance and traversal semantics, but they must not spend the moved Token's ordinary movement resource.
 
 Accounting ownership rules are:
 

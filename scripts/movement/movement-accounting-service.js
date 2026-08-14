@@ -25,11 +25,41 @@ function setConfiguredAction(actionId, descriptor) {
   else actions[actionId] = descriptor;
 }
 
+function noCostActionIsUnselectable(descriptor) {
+  if (!descriptor) return false;
+  if (descriptor.canSelect === false) return true;
+  if (typeof descriptor.canSelect !== "function") return false;
+  try {
+    // Foundry normalizes boolean descriptor values into functions during
+    // Game.initializeConfig(). Our own function ignores its argument, and the
+    // normalizer-generated function for `false` is likewise safe to probe.
+    return descriptor.canSelect(null) === false;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function noCostActionHasZeroCost(descriptor) {
+  if (!descriptor) return false;
+  if (Number(descriptor.costMultiplier) === 0) return true;
+  if (typeof descriptor.getCostFunction !== "function") return false;
+  try {
+    const costFunction = descriptor.getCostFunction(null, {});
+    if (typeof costFunction !== "function") return false;
+    return Math.abs(Number(costFunction(1, null, null, 1, null))) <= EPSILON
+      && Math.abs(Number(costFunction(5, null, null, 5, null))) <= EPSILON;
+  } catch (_error) {
+    return false;
+  }
+}
+
 function isCompatibleNoCostAction(descriptor) {
   return Boolean(descriptor)
-    && descriptor.canSelect === false
+    && typeof descriptor.icon === "string"
+    && descriptor.icon.length > 0
+    && noCostActionIsUnselectable(descriptor)
     && descriptor.measure !== false
-    && Number(descriptor.costMultiplier) === 0
+    && noCostActionHasZeroCost(descriptor)
     && descriptor.teleport !== true;
 }
 
@@ -296,9 +326,18 @@ export class MovementAccountingService {
 
     const descriptor = Object.freeze({
       label: "Action Effects 5E — No Movement Cost",
-      canSelect: false,
+      // Foundry v14 accepts either a boolean or function in the registration
+      // descriptor, but normalizes the final config to a function. Register the
+      // final semantic form up front so the action remains stable before and
+      // after Game.initializeConfig().
+      canSelect: () => false,
+      // Foundry's final TokenMovementActionConfig requires an icon even though
+      // the registration descriptor type marks it optional. This action is
+      // hidden from normal selection, but supplying a valid Font Awesome icon
+      // is still required for world startup.
+      icon: "fa-solid fa-person-walking",
       measure: true,
-      costMultiplier: 0,
+      getCostFunction: () => () => 0,
       teleport: false,
       visualize: true,
       walls: "move",

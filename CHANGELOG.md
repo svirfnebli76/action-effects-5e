@@ -1,3 +1,10 @@
+## 0.3.29 revised1 — Foundry v14 movement-action startup correction
+
+- Fixed a world-startup blocker in the initial 0.3.29 candidate: Foundry v14 normalizes movement-action descriptors into a final config that requires an `icon`, so the hidden `action-effects-5e.no-cost` action now supplies a valid Font Awesome icon.
+- Registered the hidden action with stable final-form semantics (`canSelect` function and `getCostFunction`) so it remains compatible before and after Foundry's movement-action normalization step.
+- Hardened the movement-accounting test to validate the startup-safe icon, evaluate normalized `canSelect` behavior, and verify zero-cost semantics through `getCostFunction` rather than relying on pre-normalization descriptor fields.
+- No movement-rule behavior was otherwise changed from the 0.3.29 candidate.
+
 ## 0.3.29 — Native Foundry/D&D5e movement accounting foundation
 
 - Made Foundry v14 `TokenDocument.movementHistory` the sole movement-resource ledger used by AE5E. AE5E retains semantic `MovementTransaction` metadata but does not maintain a second allowance/spent/remaining counter.

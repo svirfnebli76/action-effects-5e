@@ -178,9 +178,25 @@ export class TestHarness {
     const actions = globalThis.CONFIG?.Token?.movement?.actions;
     const noCost = actions?.get?.(MOVEMENT_ACTION_IDS.NO_COST) ?? actions?.[MOVEMENT_ACTION_IDS.NO_COST];
     record("Internal no-cost action registered", Boolean(noCost), noCost ?? null);
-    record("No-cost action is hidden from normal selection", noCost?.canSelect === false, { canSelect: noCost?.canSelect });
+    record("No-cost action exposes a startup-safe icon", typeof noCost?.icon === "string" && noCost.icon.length > 0, { icon: noCost?.icon });
+    let selectable = true;
+    try {
+      selectable = typeof noCost?.canSelect === "function" ? noCost.canSelect(document) : noCost?.canSelect !== false;
+    } catch (_error) {
+      selectable = true;
+    }
+    record("No-cost action is hidden from normal selection", selectable === false, { canSelect: noCost?.canSelect, evaluated: selectable });
     record("No-cost action remains measured", noCost?.measure !== false, { measure: noCost?.measure });
-    record("No-cost action has zero multiplier", Number(noCost?.costMultiplier) === 0, { costMultiplier: noCost?.costMultiplier });
+    let zeroCostFunction = false;
+    try {
+      const costFunction = noCost?.getCostFunction?.(document, {});
+      zeroCostFunction = typeof costFunction === "function"
+        && Math.abs(Number(costFunction(1, null, null, 1, null))) <= 1e-6
+        && Math.abs(Number(costFunction(5, null, null, 5, null))) <= 1e-6;
+    } catch (_error) {
+      zeroCostFunction = false;
+    }
+    record("No-cost action exposes zero-cost semantics", zeroCostFunction, { getCostFunction: typeof noCost?.getCostFunction });
 
     const historyBefore = this.#movementAccounting.getHistorySnapshot(document);
     const gridSize = Number(canvas.grid?.size ?? canvas.scene?.grid?.size ?? 100);
