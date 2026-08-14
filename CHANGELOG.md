@@ -353,3 +353,5 @@
 - Wrapped live-gate instrumentation in guaranteed cleanup so an arm-time exception cannot leak the temporary `midi-qol.postPreambleComplete` observer or synthetic reaction handlers.
 - Increased the live gate's default arm window from 2 minutes to 10 minutes and prints the remaining test window in the console/notification, making chat-guided Foundry validation less likely to expire before the probe spell is used.
 - Tightened `brokerActuallyWaited` so a timed-out/unstarted probe can no longer appear to pass that individual assertion merely because null timestamps coerce to zero.
+
+- 0.3.28 revised9: Fixed Foundry v14 multiplayer test-fixture ownership replacement.

@@ -722,20 +722,33 @@ export class ReactionBrokerTestSuite {
   async #replaceActorOwnership(actor, ownerUserId = null, explicitOwnership = null) {
     const NONE = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0;
     const OWNER = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
-    const current = { ...(actor?.ownership ?? {}) };
-    const target = explicitOwnership
-      ? { ...explicitOwnership }
+    if (!actor?.update) throw new Error("Reaction Broker multiplayer ownership update requires a valid Actor document.");
+
+    const source = explicitOwnership && typeof explicitOwnership === "object"
+      ? explicitOwnership
       : { default: NONE, ...(ownerUserId ? { [ownerUserId]: OWNER } : {}) };
+    const target = {};
+    for (const [key, rawLevel] of Object.entries(source ?? {})) {
+      const level = Number(rawLevel);
+      if (!Number.isInteger(level)) throw new Error(`Invalid ownership level '${rawLevel}' for '${key}'.`);
+      target[String(key)] = level;
+    }
     if (!("default" in target)) target.default = NONE;
 
-    const update = {};
-    for (const key of Object.keys(current)) {
-      if (key === "default") continue;
-      if (!(key in target)) update[`ownership.-=${key}`] = null;
+    // Foundry v14 validates ownership as a complete userId -> permission mapping.
+    // Replace the inner object atomically rather than using flattened -= deletion keys,
+    // which DataModel validation interprets as invalid ownership-map entries.
+    await actor.update({ ownership: target }, { diff: false, recursive: false });
+
+    const actual = Object.fromEntries(Object.entries(actor.ownership ?? {}).map(([key, value]) => [key, Number(value)]));
+    const actualKeys = Object.keys(actual).sort();
+    const targetKeys = Object.keys(target).sort();
+    const matches = actualKeys.length === targetKeys.length
+      && actualKeys.every((key, index) => key === targetKeys[index] && actual[key] === target[key]);
+    if (!matches) {
+      throw new Error(`Reaction Broker multiplayer ownership replacement did not persist as requested for '${actor.name}'.`);
     }
-    for (const [key, value] of Object.entries(target)) update[`ownership.${key}`] = Number(value);
-    await actor.update(update);
-    return { ...(actor.ownership ?? {}) };
+    return actual;
   }
 
   #getClientStatusSocket() {
