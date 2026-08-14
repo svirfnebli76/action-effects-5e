@@ -25,6 +25,7 @@ export class RelationshipMovementService {
   #socket;
   #relationships;
   #movement;
+  #accounting;
   #initialized = false;
   #consumerRemovers = new Map();
   #receiptConsumerRemovers = new Map();
@@ -38,10 +39,11 @@ export class RelationshipMovementService {
   #recentRequestIds = new Set();
   #sceneMoveWrapperRegistered = false;
 
-  constructor({ socket, relationships, movement }) {
+  constructor({ socket, relationships, movement, accounting = null }) {
     this.#socket = socket;
     this.#relationships = relationships;
     this.#movement = movement;
+    this.#accounting = accounting;
     this.#socket.register("relationships.moveGroup", this.#moveGroupAsGM.bind(this));
     this.#socket.register("relationships.syncFollowers", this.#syncFollowersAsGM.bind(this));
     this.#socket.register("relationships.detachFollowerTeleport", this.#detachFollowerAfterTeleportAsGM.bind(this));
@@ -403,6 +405,13 @@ export class RelationshipMovementService {
         && relationship.followRotation === true;
       augmentedInstructions[token.id] = followerInstruction;
     }
+    this.#applyNativeAccounting({
+      instructions: augmentedInstructions,
+      leaderId,
+      followerEntries,
+      pathType,
+      resource
+    });
 
     const detachAfterSuccess = new Set();
     while (true) {
@@ -986,6 +995,13 @@ export class RelationshipMovementService {
         pathType: normalized.pathType,
         grid: this.#gridForScene(scene)
       });
+      this.#applyNativeAccounting({
+        instructions,
+        leaderId: leader.id,
+        followerEntries,
+        pathType: normalized.pathType,
+        resource: normalized.resource
+      });
 
       while (true) {
         const activeFollowers = followerEntries.filter(({ token }) => instructions[token.id]);
@@ -1147,6 +1163,12 @@ export class RelationshipMovementService {
         };
         followerEntries.push({ token, relationship });
       }
+      this.#applyNativeAccounting({
+        instructions,
+        followerEntries,
+        pathType: normalized.pathType,
+        resource: MOVEMENT_RESOURCES.NONE
+      });
 
       while (true) {
         const activeFollowers = followerEntries.filter(({ token }) => instructions[token.id]);
@@ -1578,6 +1600,23 @@ export class RelationshipMovementService {
     return null;
   }
 
+  #applyNativeAccounting({ instructions, leaderId = null, followerEntries = [], pathType, resource }) {
+    if (!this.#accounting || pathType === PATH_TYPES.TELEPORT) return;
+    this.#accounting.ensureRegistered();
+
+    // Passenger/follower movement is spatially real but does not spend that
+    // Token's movement resource. The Leader retains the movement action supplied
+    // by Foundry/D&D5e unless the initiating movement itself is explicitly a
+    // no-resource movement transaction.
+    for (const { token } of followerEntries) {
+      const instruction = instructions[token.id];
+      if (instruction) this.#accounting.applyNoCostToInstruction(instruction);
+    }
+    if (leaderId && resource === MOVEMENT_RESOURCES.NONE && instructions[leaderId]) {
+      this.#accounting.applyNoCostToInstruction(instructions[leaderId]);
+    }
+  }
+
   #validateFollowerPaths({ followers, instructions, allowIgnoreWalls, isTeleport }) {
     if (isTeleport) return { valid: true };
 
@@ -1639,6 +1678,12 @@ export class RelationshipMovementService {
       };
     }
     if (!Object.keys(instructions).length) return;
+    const movementMode = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    const nativeMovementAction = this.#accounting?.noCostActionId ?? movementMode;
+    if (this.#accounting) {
+      this.#accounting.ensureRegistered();
+      for (const instruction of Object.values(instructions)) this.#accounting.applyNoCostToInstruction(instruction);
+    }
 
     const operationOptions = {
       method: "api",
@@ -1650,6 +1695,8 @@ export class RelationshipMovementService {
         pathType: PATH_TYPES.REPOSITION,
         agency: MOVEMENT_AGENCIES.ADMINISTRATIVE,
         resource: MOVEMENT_RESOURCES.NONE,
+        movementMode,
+        nativeMovementAction,
         leaderUuid,
         relationshipMovement: true,
         relationshipRollback: true,

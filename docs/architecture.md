@@ -7,6 +7,23 @@
 3. `setup` refreshes compatibility state.
 4. `ready` validates required dependencies, loads persisted relationships, initializes movement/relationship/displacement services plus the selection-indicator service, then emits `action-effects-5e.ready`.
 
+## v0.3.29 native movement-resource accounting
+
+AE5E does not own a second movement allowance ledger. Foundry/D&D5e `TokenDocument.movementHistory` is the sole source of truth for movement cost already consumed. `MovementTransaction` remains a semantic event model (agency, resource, source, relationship, displacement, path type, etc.), and now includes a lightweight snapshot/summary of that native history for consumers that need to reason about movement without maintaining another counter.
+
+AE5E registers a hidden `action-effects-5e.no-cost` Token movement action during `init`. It is `measure: true` with a cost multiplier of 0. This distinction is intentional: forced/follower/passenger/rollback paths still need normal spatial distance and traversal semantics, but they must not spend the moved Token's ordinary movement resource.
+
+Accounting ownership rules are:
+
+- **Normal voluntary Leader movement:** preserve Foundry/D&D5e's original movement action and native cost.
+- **Relationship Follower/passenger movement:** measured, native cost 0. The established trailing/vacated-space route is unchanged.
+- **Forced Push/Pull displacement:** measured, native cost 0; existing forced-movement semantic metadata is preserved.
+- **Orbit Follower movement:** measured, native cost 0.
+- **AE5E rollback/reposition movement:** native cost 0 and semantically administrative.
+- **Teleport:** preserve teleport movement-action semantics rather than converting the path to an ordinary traverse action.
+
+The movement accounting service also exposes a final-cost modifier action API. A modifier wraps the selected base movement action's native cost function and then returns the final segment cost. The future 2024 Grapple drag surcharge should therefore be expressed as `nativeCost + distance`, not `nativeCost * 2`; this preserves whatever D&D5e/Regions already contributed to native cost before Grapple adds one extra foot for each foot moved. v0.3.29 deliberately does not activate that surcharge because the Grapple Activity/rule layer has not been built yet. Stationary orbit charging is likewise deferred rather than represented through fake Leader movement or a parallel AE5E ledger.
+
 ## Relationship state
 
 Relationships are persisted on the Scene under the Action Effects 5E namespace and indexed by leader/follower token UUID. The generic layer stores movement semantics without embedding the D&D Grapple check itself.

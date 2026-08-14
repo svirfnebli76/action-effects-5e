@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.28";
+export const MODULE_VERSION = "0.3.29";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -167,6 +167,13 @@ export const MOVEMENT_RESOURCES = Object.freeze({
   REACTION: "reaction",
   NONE: "none",
   UNKNOWN: "unknown"
+});
+
+// Hidden Foundry movement actions used only to express native accounting semantics.
+// The no-cost action remains measured so distance/geometry/Regions still receive
+// an ordinary traversed path while TokenDocument.movementHistory records cost 0.
+export const MOVEMENT_ACTION_IDS = Object.freeze({
+  NO_COST: `${MODULE_ID}.no-cost`
 });
 
 export const DISPLACEMENT_TYPES = Object.freeze({

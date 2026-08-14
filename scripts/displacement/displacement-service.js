@@ -67,6 +67,7 @@ async function waitForDocumentPosition({
 export class DisplacementService {
   #socket;
   #movement;
+  #accounting;
   #planner;
   #overlay;
   #grace;
@@ -76,9 +77,10 @@ export class DisplacementService {
   #activeTokenBypasses = new Map();
   #recent = [];
 
-  constructor({ socket, movement, planner, overlay, grace, selectionIndicator }) {
+  constructor({ socket, movement, accounting = null, planner, overlay, grace, selectionIndicator }) {
     this.#socket = socket;
     this.#movement = movement;
+    this.#accounting = accounting;
     this.#planner = planner;
     this.#overlay = overlay;
     this.#grace = grace;
@@ -300,7 +302,9 @@ export class DisplacementService {
     }
 
     const displacementId = `${MODULE_ID}-displacement-${randomId(20)}`;
-    const action = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    const movementMode = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    this.#accounting?.ensureRegistered?.();
+    const action = this.#accounting?.noCostActionId ?? movementMode;
     const movementId = randomId(16);
     const waypoints = candidate.path.map((position, index) => ({
       x: position.x,
@@ -325,7 +329,8 @@ export class DisplacementService {
         pathType: PATH_TYPES.TRAVERSE,
         agency: MOVEMENT_AGENCIES.FORCED,
         resource: MOVEMENT_RESOURCES.NONE,
-        movementMode: action,
+        movementMode,
+        nativeMovementAction: action,
         sourceUuid: source.uuid,
         initiatorUuid: source.uuid,
         requestingUserId: requestingUser?.id ?? null,

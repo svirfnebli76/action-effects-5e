@@ -4,6 +4,7 @@ import {
   DISPLACEMENT_DIRECTION_CONSTRAINTS,
   DISPLACEMENT_TYPES,
   MODULE_ID,
+  MOVEMENT_ACTION_IDS,
   MOVEMENT_AGENCIES,
   MOVEMENT_PHASES,
   RELATIONSHIP_COORDINATION_POLICIES,
@@ -26,6 +27,7 @@ export class TestHarness {
   #dependencies;
   #compatibility;
   #movement;
+  #movementAccounting;
   #relationships;
   #relationshipMovement;
   #relationshipRotation;
@@ -38,10 +40,11 @@ export class TestHarness {
   #reactionSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
+    this.#movementAccounting = movementAccounting;
     this.#relationships = relationships;
     this.#relationshipMovement = relationshipMovement;
     this.#relationshipRotation = relationshipRotation;
@@ -127,6 +130,9 @@ export class TestHarness {
       consumersBefore,
       consumersAfter: this.#movement.getStats().registry.consumers
     });
+    const accountingStatus = this.#movementAccounting.getStats();
+    record("Native movement accounting", accountingStatus.sourceOfTruth === "TokenDocument.movementHistory"
+      && accountingStatus.noCostActionRegistered === true, accountingStatus);
     record("Relationship indexes", this.#relationships.getStats().relationships >= 0, this.#relationships.getStats());
     record("Relationship movement service", this.#relationshipMovement.getStats().initialized, this.#relationshipMovement.getStats());
     record("Relationship rotation service", this.#relationshipRotation.getStats().initialized, this.#relationshipRotation.getStats());
@@ -154,6 +160,81 @@ export class TestHarness {
         passed
           ? "Action Effects 5E foundation smoke test passed. See the console for details."
           : "Action Effects 5E foundation smoke test found a problem. See the console for details."
+      );
+    }
+    return result;
+  }
+
+  async runMovementAccountingTest({ notify = true } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 1) throw new Error("Control exactly one token for the movement-accounting test.");
+
+    const document = controlled[0].document;
+    const checks = [];
+    const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
+    this.#movementAccounting.ensureRegistered();
+
+    const actions = globalThis.CONFIG?.Token?.movement?.actions;
+    const noCost = actions?.get?.(MOVEMENT_ACTION_IDS.NO_COST) ?? actions?.[MOVEMENT_ACTION_IDS.NO_COST];
+    record("Internal no-cost action registered", Boolean(noCost), noCost ?? null);
+    record("No-cost action is hidden from normal selection", noCost?.canSelect === false, { canSelect: noCost?.canSelect });
+    record("No-cost action remains measured", noCost?.measure !== false, { measure: noCost?.measure });
+    record("No-cost action has zero multiplier", Number(noCost?.costMultiplier) === 0, { costMultiplier: noCost?.costMultiplier });
+
+    const historyBefore = this.#movementAccounting.getHistorySnapshot(document);
+    const gridSize = Number(canvas.grid?.size ?? canvas.scene?.grid?.size ?? 100);
+    const elevation = Number(document.elevation ?? 0);
+    const origin = { x: document.x, y: document.y, elevation };
+    const destination = { x: document.x + gridSize, y: document.y, elevation };
+    const noCostResult = document.measureMovementPath([
+      { ...origin, action: MOVEMENT_ACTION_IDS.NO_COST },
+      { ...destination, action: MOVEMENT_ACTION_IDS.NO_COST }
+    ]);
+    record("No-cost movement still measures distance", Number(noCostResult?.distance) > 0, noCostResult);
+    record("No-cost movement measures native cost as zero", Math.abs(Number(noCostResult?.cost ?? NaN)) <= 1e-6, noCostResult);
+
+    const baseAction = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    const baseResult = document.measureMovementPath([
+      { ...origin, action: baseAction },
+      { ...destination, action: baseAction }
+    ]);
+    const modifierId = `${MODULE_ID}-test-plus-distance-${foundry.utils.randomID(8)}`;
+    let modifiedAction = null;
+    try {
+      modifiedAction = this.#movementAccounting.registerFinalCostModifier(modifierId, {
+        label: "AE5E Test — Native Cost + Distance",
+        baseAction,
+        modifier: ({ nativeCost, distance }) => nativeCost + distance
+      });
+      const modifiedResult = document.measureMovementPath([
+        { ...origin, action: modifiedAction },
+        { ...destination, action: modifiedAction }
+      ]);
+      const expected = Number(baseResult?.cost ?? 0) + Number(baseResult?.distance ?? 0);
+      record("Final cost modifier wraps native cost", Math.abs(Number(modifiedResult?.cost ?? NaN) - expected) <= 1e-6, {
+        baseResult,
+        modifiedResult,
+        expected
+      });
+    } finally {
+      if (modifiedAction) this.#movementAccounting.unregisterFinalCostModifier(modifiedAction);
+    }
+
+    const historyAfter = this.#movementAccounting.getHistorySnapshot(document);
+    record("Measurement probe does not alter movement history", JSON.stringify(historyAfter) === JSON.stringify(historyBefore), {
+      beforeCount: historyBefore.length,
+      afterCount: historyAfter.length
+    });
+
+    const passed = checks.every((check) => check.passed);
+    const result = { passed, checks, accounting: this.#movementAccounting.getStats() };
+    Logger.info("Movement accounting test", result);
+    if (notify && ui?.notifications) {
+      ui.notifications[passed ? "info" : "warn"](
+        passed
+          ? "Action Effects 5E movement-accounting test passed. See the console for details."
+          : "Action Effects 5E movement-accounting test found a problem. See the console for details."
       );
     }
     return result;

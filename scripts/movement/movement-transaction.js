@@ -133,6 +133,7 @@ export class MovementTransaction {
     if (this.origin && typeof this.origin === "object") Object.freeze(this.origin);
     if (this.destination && typeof this.destination === "object") Object.freeze(this.destination);
     if (Array.isArray(this.relationshipIds)) Object.freeze(this.relationshipIds);
+    if (this.nativeMovement && typeof this.nativeMovement === "object") Object.freeze(this.nativeMovement);
     Object.freeze(this.metadata);
     Object.freeze(this.path);
     Object.freeze(this);
@@ -143,11 +144,13 @@ export class MovementTransaction {
     movement,
     operation = {},
     phase,
-    user = game.user
+    user = game.user,
+    accounting = null
   }) {
     const metadata = getOperationMetadata(operation);
     const movementId = movement?.id ?? metadata.transactionId ?? randomId();
     const transactionId = metadata.transactionId ?? `${MODULE_ID}-${movementId}`;
+    const nativeMovement = accounting?.getHistorySummary?.(document, movement) ?? null;
 
     return new MovementTransaction({
       id: transactionId,
@@ -174,6 +177,8 @@ export class MovementTransaction {
       agency: inferAgency(metadata, document.uuid),
       resource: inferResource(metadata, document.uuid),
       movementMode: inferMovementMode(movement, metadata),
+      nativeMovement: nativeMovement ? duplicateSafely(nativeMovement) : null,
+      movementCostConsumed: phase === "after" ? nativeMovement?.movementCost ?? null : null,
       sourceUuid: metadata.sourceUuid ?? null,
       initiatorUuid: metadata.initiatorUuid ?? null,
       leaderUuid: metadata.leaderUuid ?? null,
@@ -226,6 +231,8 @@ export class MovementTransaction {
       agency,
       resource,
       movementMode: "walk",
+      nativeMovement: null,
+      movementCostConsumed: null,
       sourceUuid: null,
       initiatorUuid: null,
       leaderUuid: null,

@@ -2,6 +2,26 @@
 
 Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its first subsystem is a low-overhead movement, spatial-event, and rules-aware token relationship framework.
 
+### v0.3.29 Native movement accounting
+
+v0.3.29 moves AE5E movement-resource accounting onto Foundry/D&D5e's native movement system. `TokenDocument.movementHistory` is the only movement-resource ledger; AE5E keeps semantic movement transactions but no parallel allowance/spent/remaining counter.
+
+- Ordinary Leader movement keeps the movement action and native cost selected by Foundry/D&D5e.
+- AE5E-generated forced displacement, Follower/passenger movement, orbit movement, and administrative rollback use a hidden **measured, zero-cost** movement action. Their path/distance remains real while their native movement cost is 0.
+- Grapple-like trailing movement remains exactly as previously validated: the Follower enters the Leader's vacated spaces.
+- A reusable final-cost modifier API is available for future rules. The planned 2024 Grapple drag cost is `native D&D5e cost + distance moved`, which preserves existing terrain/action costs before adding the Grapple surcharge.
+- Stationary Grapple-orbit charging and the actual Grapple Activity remain deferred; v0.3.29 does not create fake Leader movement or a private accounting ledger.
+
+Foundry validation:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runFoundationSmokeTest();
+await ae5e.tests.runMovementAccountingTest(); // control exactly one token
+```
+
+The complete existing v0.3.28 Reaction Broker regression matrix remains applicable because the reaction subsystem is preserved unchanged.
+
 ### v0.3.28 Reaction Broker
 
 v0.3.28 finalizes the first generic Reaction Broker foundation: one normalized `spellCast` event adapter, Activity-registered reaction handlers, frozen distance/Dexterity/d20 Reactor ordering, sequential controller-routed Broker windows, longest-connected-GM arbitration, nested transaction lineage, real Midi workflow gating, multiplayer authority recovery, and v0.3.27 active-Reactor indicator integration. v0.3.28 intentionally ships no real Counterspell handler; Counterspell and later reactions are consumers of this reusable infrastructure.

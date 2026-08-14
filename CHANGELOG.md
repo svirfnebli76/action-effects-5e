@@ -1,3 +1,18 @@
+## 0.3.29 — Native Foundry/D&D5e movement accounting foundation
+
+- Made Foundry v14 `TokenDocument.movementHistory` the sole movement-resource ledger used by AE5E. AE5E retains semantic `MovementTransaction` metadata but does not maintain a second allowance/spent/remaining counter.
+- Added an internal, non-selectable `action-effects-5e.no-cost` movement action using Foundry's movement-action configuration. The action remains measured while its native cost multiplier is 0, so generated movement still has distance/path geometry without spending a creature's ordinary movement resource.
+- AE5E forced Push/Pull displacement now uses the internal measured/no-cost action while preserving `agency: forced`, `resource: none`, Source/Target, displacement direction, requested/actual distance, and the established collision/grace semantics.
+- Coordinated relationship movement now preserves the Leader's normal Foundry/D&D5e movement action and cost, while AE5E-generated Follower/passenger movement uses the no-cost action. The validated Grapple trailing rule remains unchanged: the Follower moves through the Leader's vacated spaces rather than mirroring the Leader's displacement.
+- Orbit-generated Follower movement and AE5E administrative rollback movement now use native zero-cost accounting. Existing wall, hostile/nonhostile, Grapple-link, and 3.5-second grace behavior is unchanged.
+- Teleport relationship behavior remains on the established teleport action/path so detach/follow/block semantics and teleport classification are not converted into traversed movement.
+- Added lightweight native movement-history summaries to emitted `MovementTransaction` objects (`nativeMovement` and `movementCostConsumed`). These are observations of Foundry's ledger, not a second AE5E ledger.
+- Added public movement-accounting helpers: history snapshot/history-cost access, the internal no-cost action ID, no-cost waypoint stamping, and a reusable final-cost modifier registration API.
+- The final-cost modifier API wraps the selected native movement action's cost function before applying an AE5E modifier. This is the foundation for the later 2024 Grapple drag rule: **native D&D5e movement cost + distance moved**, rather than multiplying the already-modified native cost. The Grapple Activity itself is not added in this release.
+- Stationary Grapple orbit charging remains intentionally deferred until the Grapple rule layer is implemented; v0.3.29 does not fake Leader movement or introduce a private movement counter to charge it.
+- Added `ae5e.tests.runMovementAccountingTest()` for Foundry-only validation of the hidden measured/no-cost action, zero native measured cost, native-cost-plus-distance modifier wrapping, and non-mutation of existing movement history.
+- Preserved the finalized v0.3.28 Reaction Broker, v0.3.27 selection indicator, forced-displacement geometry, relationship collision/link obstruction, Pull `STRAIGHT_TOWARD` semantics, CPR/GPS coexistence policy, and Foundry-only release-test policy without redesign.
+
 ## 0.3.28 — Finalized Reaction Broker foundation
 
 - Finalized the v0.3.28 Reaction Broker foundation on the revised12 runtime/test baseline after the complete Foundry VTT release gate passed.

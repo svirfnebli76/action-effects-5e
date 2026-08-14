@@ -5,6 +5,7 @@ import { DependencyService } from "./core/dependencies.js";
 import { CompatibilityService } from "./core/compatibility.js";
 import { SocketService } from "./core/socket-service.js";
 import { MovementRegistry } from "./movement/movement-registry.js";
+import { MovementAccountingService } from "./movement/movement-accounting-service.js";
 import { MovementService } from "./movement/movement-service.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
@@ -33,9 +34,10 @@ const dependencies = new DependencyService();
 const compatibility = new CompatibilityService();
 const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
+const movementAccounting = new MovementAccountingService();
 const relationships = new RelationshipService({ socket });
 const relativeRelationships = new RelativeTokenRelationshipService();
-const movement = new MovementService({ registry: movementRegistry, relationships });
+const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting });
 const displacementDirections = new DisplacementDirectionService();
 const movementObstructions = new MovementObstructionService({ relativeRelationships });
 const displacementPlanner = new DisplacementPlanner({
@@ -45,6 +47,7 @@ const displacementPlanner = new DisplacementPlanner({
 const displacementOverlay = new DisplacementDestinationOverlay();
 const displacementGrace = new NonhostileEndpointGraceService({
   movement,
+  accounting: movementAccounting,
   obstructions: movementObstructions
 });
 const selectionIndicator = new SelectionIndicatorService();
@@ -66,6 +69,7 @@ const reactionEvents = new ReactionEventAdapter({ broker: reactionBroker, regist
 const displacement = new DisplacementService({
   socket,
   movement,
+  accounting: movementAccounting,
   planner: displacementPlanner,
   overlay: displacementOverlay,
   grace: displacementGrace,
@@ -75,12 +79,14 @@ const relationshipLinkObstructions = new RelationshipLinkObstructionService({ re
 const relationshipMovement = new RelationshipMovementService({
   socket,
   relationships,
-  movement
+  movement,
+  accounting: movementAccounting
 });
 const relationshipRotation = new RelationshipRotationService({
   socket,
   relationships,
   movement,
+  accounting: movementAccounting,
   relativeRelationships,
   linkObstructions: relationshipLinkObstructions
 });
@@ -88,6 +94,7 @@ const tests = new TestHarness({
   dependencies,
   compatibility,
   movement,
+  movementAccounting,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -109,6 +116,7 @@ const api = new ActionEffects5eApi({
   dependencies,
   compatibility,
   movement,
+  movementAccounting,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -134,6 +142,7 @@ socket.initialize();
 Hooks.once("init", () => {
   Logger.log("Initializing module foundation.");
   registerSettings();
+  movementAccounting.initialize();
 
   const module = game.modules.get(MODULE_ID);
   if (module) module.api = api;
@@ -150,6 +159,7 @@ Hooks.once("ready", async () => {
     return;
   }
 
+  movementAccounting.ensureRegistered();
   await relationships.initialize();
   relationshipMovement.initialize();
   relationshipRotation.initialize();

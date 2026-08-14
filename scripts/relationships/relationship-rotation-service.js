@@ -39,6 +39,7 @@ export class RelationshipRotationService {
   #socket;
   #relationships;
   #movement;
+  #accounting;
   #relativeRelationships;
   #linkObstructions;
   #initialized = false;
@@ -51,10 +52,11 @@ export class RelationshipRotationService {
   #pendingNonhostileOverlaps = new Map();
   #lastDecision = null;
 
-  constructor({ socket, relationships, movement, relativeRelationships = new RelativeTokenRelationshipService(), linkObstructions = null }) {
+  constructor({ socket, relationships, movement, accounting = null, relativeRelationships = new RelativeTokenRelationshipService(), linkObstructions = null }) {
     this.#socket = socket;
     this.#relationships = relationships;
     this.#movement = movement;
+    this.#accounting = accounting;
     this.#relativeRelationships = relativeRelationships;
     this.#linkObstructions = linkObstructions;
     this.#socket.register("relationships.orbitFollower", this.#orbitFollowerAsGM.bind(this));
@@ -850,7 +852,9 @@ export class RelationshipRotationService {
       }
 
       const movementId = randomId(16);
-      const action = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+      const movementMode = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+      this.#accounting?.ensureRegistered?.();
+      const action = this.#accounting?.noCostActionId ?? movementMode;
       const followerWaypoints = waypoints.map((waypoint) => ({ ...waypoint, action }));
       const instructions = {
         [follower.id]: {
@@ -878,7 +882,8 @@ export class RelationshipRotationService {
           pathType: PATH_TYPES.TRAVERSE,
           agency: MOVEMENT_AGENCIES.PASSENGER,
           resource: MOVEMENT_RESOURCES.NONE,
-          movementMode: action,
+          movementMode,
+          nativeMovementAction: action,
           sourceUuid: relationship.sourceUuid ?? null,
           initiatorUuid: leader.uuid,
           leaderUuid: leader.uuid,
@@ -1411,6 +1416,9 @@ export class RelationshipRotationService {
   async #rollbackFollowerPosition({ scene, leader, follower, relationship, position, requestId }) {
     if (!scene.tokens.get(follower.id)) return;
     const movementId = randomId(16);
+    const movementMode = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    this.#accounting?.ensureRegistered?.();
+    const nativeMovementAction = this.#accounting?.noCostActionId ?? movementMode;
     const instructions = {
       [follower.id]: {
         id: movementId,
@@ -1418,6 +1426,7 @@ export class RelationshipRotationService {
           x: finiteNumber(position?.x, follower.x),
           y: finiteNumber(position?.y, follower.y),
           elevation: finiteNumber(position?.elevation, follower.elevation),
+          action: nativeMovementAction,
           checkpoint: true
         },
         method: "api",
@@ -1437,6 +1446,8 @@ export class RelationshipRotationService {
         pathType: PATH_TYPES.REPOSITION,
         agency: MOVEMENT_AGENCIES.ADMINISTRATIVE,
         resource: MOVEMENT_RESOURCES.NONE,
+        movementMode,
+        nativeMovementAction,
         sourceUuid: relationship.sourceUuid ?? null,
         initiatorUuid: leader.uuid,
         leaderUuid: leader.uuid,

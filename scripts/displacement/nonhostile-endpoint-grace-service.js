@@ -23,12 +23,14 @@ function positionsEqual(a, b) {
 
 export class NonhostileEndpointGraceService {
   #movement;
+  #accounting;
   #obstructions;
   #pending = new Map();
   #consumerUnregister = new Map();
 
-  constructor({ movement, obstructions }) {
+  constructor({ movement, accounting = null, obstructions }) {
     this.#movement = movement;
+    this.#accounting = accounting;
     this.#obstructions = obstructions;
   }
 
@@ -175,7 +177,9 @@ export class NonhostileEndpointGraceService {
     }
 
     this.clear(subjectUuid, "grace-expired");
-    const action = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    const movementMode = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    this.#accounting?.ensureRegistered?.();
+    const action = this.#accounting?.noCostActionId ?? movementMode;
     const movementId = randomId(16);
     const options = {
       method: "api",
@@ -193,7 +197,8 @@ export class NonhostileEndpointGraceService {
         pathType: PATH_TYPES.REPOSITION,
         agency: MOVEMENT_AGENCIES.ADMINISTRATIVE,
         resource: MOVEMENT_RESOURCES.NONE,
-        movementMode: action,
+        movementMode,
+        nativeMovementAction: action,
         sourceUuid: entry.sourceUuid,
         initiatorUuid: entry.sourceUuid,
         requestingUserId: entry.requestingUserId,

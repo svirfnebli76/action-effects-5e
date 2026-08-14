@@ -7,6 +7,7 @@ import {
   HOOKS,
   MODULE_ID,
   MODULE_VERSION,
+  MOVEMENT_ACTION_IDS,
   MOVEMENT_AGENCIES,
   MOVEMENT_GEOMETRY_CHANNELS,
   MOVEMENT_PHASES,
@@ -48,6 +49,7 @@ export class ActionEffects5eApi {
     dependencies,
     compatibility,
     movement,
+    movementAccounting,
     relationships,
     relationshipMovement,
     relationshipRotation,
@@ -73,6 +75,7 @@ export class ActionEffects5eApi {
       HOOKS,
       MOVEMENT_PHASES,
       PATH_TYPES,
+      MOVEMENT_ACTION_IDS,
       MOVEMENT_AGENCIES,
       MOVEMENT_RESOURCES,
       MOVEMENT_GEOMETRY_CHANNELS,
@@ -128,6 +131,13 @@ export class ActionEffects5eApi {
       unregisterConsumer: (id) => movement.unregisterConsumer(id),
       createOperationOptions: (metadata) => movement.createOperationOptions(metadata),
       getRecentTransactions: () => movement.getRecentTransactions(),
+      getHistorySnapshot: (subject) => movementAccounting.getHistorySnapshot(subject),
+      getHistoryCost: (subject) => movementAccounting.getHistoryCost(subject),
+      getNoCostActionId: () => movementAccounting.noCostActionId,
+      registerFinalCostModifier: (id, config) => movementAccounting.registerFinalCostModifier(id, config),
+      unregisterFinalCostModifier: (id) => movementAccounting.unregisterFinalCostModifier(id),
+      applyNoCostToWaypoints: (waypoints, options) => movementAccounting.applyNoCostToWaypoints(waypoints, options),
+      getAccountingStats: () => movementAccounting.getStats(),
       getStats: () => movement.getStats()
     });
 
@@ -203,6 +213,7 @@ export class ActionEffects5eApi {
 
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
+      runMovementAccountingTest: (options) => tests.runMovementAccountingTest(options),
       setupReactionBrokerTestScene: (options) => tests.setupReactionBrokerTestScene(options),
       runReactionBrokerFoundationTest: (options) => tests.runReactionBrokerFoundationTest(options),
       runReactionBrokerInteractiveTest: (options) => tests.runReactionBrokerInteractiveTest(options),

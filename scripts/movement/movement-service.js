@@ -40,15 +40,17 @@ function movementContextKeys(movement = {}) {
 export class MovementService {
   #registry;
   #relationships;
+  #accounting;
   #initialized = false;
   #pending = new Map();
   #recent = [];
   #hookIds = [];
   #movementContexts = new Map();
 
-  constructor({ registry, relationships }) {
+  constructor({ registry, relationships, accounting = null }) {
     this.#registry = registry;
     this.#relationships = relationships;
+    this.#accounting = accounting;
   }
 
   initialize() {
@@ -147,6 +149,7 @@ export class MovementService {
       pendingTransactions: this.#pending.size,
       recentTransactions: this.#recent.length,
       movementContexts: this.#movementContexts.size,
+      accounting: this.#accounting?.getStats?.() ?? null,
       registry: this.#registry.getStats()
     };
   }
@@ -203,7 +206,8 @@ export class MovementService {
       movement,
       operation: effectiveOperation,
       phase: MOVEMENT_PHASES.BEFORE,
-      user: game.user
+      user: game.user,
+      accounting: this.#accounting
     });
 
     this.#pending.set(movement.id, transaction);
@@ -232,7 +236,8 @@ export class MovementService {
       movement,
       operation: effectiveOperation,
       phase: MOVEMENT_PHASES.AFTER,
-      user
+      user,
+      accounting: this.#accounting
     });
 
     this.#pending.delete(movement.id);

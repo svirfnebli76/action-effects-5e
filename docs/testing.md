@@ -31,6 +31,34 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
+## v0.3.29 native movement-accounting regression
+
+Behavioral validation remains Foundry-only. After loading v0.3.29, control exactly one ordinary Token in the active test Scene and run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runMovementAccountingTest();
+```
+
+The test is non-destructive: it measures paths but does not move the controlled Token or clear its history. A complete pass verifies that:
+
+1. `action-effects-5e.no-cost` is registered and cannot be selected through the normal movement UI;
+2. the internal action remains measured (distance is greater than 0 for a one-grid path);
+3. the same measured path has native movement cost 0;
+4. the reusable final-cost modifier can wrap the current native movement action and produce `native cost + distance`; and
+5. the controlled Token's existing `TokenDocument.movementHistory` is unchanged by the probe.
+
+Then repeat the existing movement regressions that exercise the movement types whose accounting changed:
+
+```js
+await ae5e.tests.runDisplacementFoundationTest();
+await ae5e.tests.runGrappleLinkObstructionTest();
+```
+
+For manual relationship verification, use the existing Grapple movement fixture and confirm that ordinary Leader movement still records its normal native cost while the generated Follower path records zero cost. Repeat an orbit step and confirm the Follower's movement is zero-cost. Existing trailing/vacated-space placement, wall/hostile blocking, nonhostile grace, teleport policies, and rollback behavior must remain unchanged.
+
+The finalized v0.3.28 Reaction Broker release matrix should also be rerun as the regression gate before v0.3.29 is finalized; movement accounting must not alter Broker authority, gating, dialogs, nested reactions, or multiplayer recovery.
+
 ## v0.3.25 forced-displacement foundation
 
 Run the complete Foundry-only displacement regression:
