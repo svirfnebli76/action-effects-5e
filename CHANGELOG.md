@@ -1,3 +1,9 @@
+## 0.3.28
+
+### Revised10 test-harness correction
+- Corrected the multiplayer baseline test so distributed UI is validated by the per-client routing aggregator instead of reusing single-client assertions that require all three Broker hosts and all three waiting views on the GM client.
+- The underlying Reaction Broker routing behavior is unchanged.
+
 # Changelog
 
 ## 0.3.28 - Reaction Broker foundation

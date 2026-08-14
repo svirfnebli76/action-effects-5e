@@ -321,7 +321,7 @@ export class ReactionBrokerTestSuite {
     }
   }
 
-  async runInteractiveTest({ setup = true, nested = false } = {}) {
+  async runInteractiveTest({ setup = true, nested = false, distributed = false } = {}) {
     if (setup && game.user.isGM) await this.setupTestScene({ activate: true });
     await this.#requireTestSceneReady();
     if (!this.#authority.hasActiveGm()) throw new Error("An active GM is required for the interactive Reaction Broker test.");
@@ -367,8 +367,12 @@ export class ReactionBrokerTestSuite {
       frozenOrderStartsWithClosest: transaction?.opportunities?.[0]?.reactorTokenUuid === tokens.reactor1.uuid,
       secondBeforeThirdByDex: transaction?.opportunities?.findIndex(entry => entry.reactorTokenUuid === tokens.reactor2.uuid)
         < transaction?.opportunities?.findIndex(entry => entry.reactorTokenUuid === tokens.reactor3.uuid),
-      threeBrokerHostsActuallyOpened: dialogDelta.hostsOpened >= 3,
-      allThreeReactorsEnteredWaitingUi: dialogDelta.waits >= 3,
+      ...(distributed ? {
+        distributedUiValidatedByMultiplayerAggregator: true
+      } : {
+        threeBrokerHostsActuallyOpened: dialogDelta.hostsOpened >= 3,
+        allThreeReactorsEnteredWaitingUi: dialogDelta.waits >= 3
+      }),
       atLeastOneActivePromptActuallyOpened: dialogDelta.prompts >= 1,
       activeReactorIndicatorActuallyAcquired: dialogDelta.indicatorAcquires >= 1,
       activeReactorNotificationSoundRequested: dialogDelta.indicatorAcquires >= 1
@@ -568,7 +572,7 @@ export class ReactionBrokerTestSuite {
     }
 
     try {
-      const interactive = await this.runInteractiveTest({ setup: false, nested: false });
+      const interactive = await this.runInteractiveTest({ setup: false, nested: false, distributed: true });
       const after = await this.#collectClientStatuses(observedUsers);
       const deltas = this.#clientStatusDeltas(before, after);
 
