@@ -171,7 +171,8 @@ export class TestHarness {
     const controlled = canvas.tokens.controlled;
     if (controlled.length !== 1) throw new Error("Control exactly one token for the movement-accounting test.");
 
-    const document = controlled[0].document;
+    const token = controlled[0];
+    const document = token.document;
     const checks = [];
     const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
     this.#movementAccounting.ensureRegistered();
@@ -204,7 +205,11 @@ export class TestHarness {
     const elevation = Number(document.elevation ?? 0);
     const origin = { x: document.x, y: document.y, elevation };
     const destination = { x: document.x + gridSize, y: document.y, elevation };
-    const noCostResult = document.measureMovementPath([
+    // Use the rendered Token measurement API here. Token#measureMovementPath
+    // resolves each waypoint's movement action through Foundry's normalized
+    // action-specific cost functions. TokenDocument#measureMovementPath is a
+    // lower-level geometry API and does not apply those action costs.
+    const noCostResult = token.measureMovementPath([
       { ...origin, action: MOVEMENT_ACTION_IDS.NO_COST },
       { ...destination, action: MOVEMENT_ACTION_IDS.NO_COST }
     ]);
@@ -212,7 +217,7 @@ export class TestHarness {
     record("No-cost movement measures native cost as zero", Math.abs(Number(noCostResult?.cost ?? NaN)) <= 1e-6, noCostResult);
 
     const baseAction = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
-    const baseResult = document.measureMovementPath([
+    const baseResult = token.measureMovementPath([
       { ...origin, action: baseAction },
       { ...destination, action: baseAction }
     ]);
@@ -227,7 +232,7 @@ export class TestHarness {
         baseAction,
         modifier: ({ nativeCost, distance }) => nativeCost + distance
       });
-      const modifiedResult = document.measureMovementPath([
+      const modifiedResult = token.measureMovementPath([
         { ...origin, action: modifiedAction },
         { ...destination, action: modifiedAction }
       ]);

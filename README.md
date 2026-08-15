@@ -337,3 +337,8 @@ await ae5e.tests.runGrappleLinkObstructionTest();
 ### v0.3.27 external-prompt isolation regression
 
 Control exactly one token and run `await game.modules.get("action-effects-5e").api.tests.runExternalPromptIsolationTest();` to verify fail-closed external prompt classification, duplicate prevention, shared external leases, and cleanup.
+
+
+### 0.3.29 revised4 validation note
+
+Foundry v14.365 live validation showed that internal movement actions must use an explicit `canSelect: () => false` function for deterministic hidden-selection behavior. The movement-accounting test harness also measures action-aware cost through the rendered Token API.

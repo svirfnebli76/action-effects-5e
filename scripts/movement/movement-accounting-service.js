@@ -352,7 +352,11 @@ export class MovementAccountingService {
       icon: "fa-solid fa-person-walking",
       measure: true,
       costMultiplier: 0,
-      canSelect: false,
+      // Use an explicit function rather than Foundry's boolean shorthand.
+      // Foundry v14.365 has been observed normalizing `false` to a closure
+      // that returns undefined for third-party actions. An explicit function
+      // survives normalization and guarantees the action stays hidden.
+      canSelect: () => false,
       teleport: false,
       visualize: true,
       walls: "move",
@@ -387,7 +391,9 @@ export class MovementAccountingService {
         label: "Action Effects 5E — Internal Cost Modifier",
         icon: "fa-solid fa-person-walking-arrow-right",
         measure: true,
-        canSelect: false,
+        // Hidden internal action: keep this as an explicit function so the
+        // normalized Foundry config deterministically returns false.
+        canSelect: () => false,
         teleport: false,
         visualize: true,
         walls: "move",

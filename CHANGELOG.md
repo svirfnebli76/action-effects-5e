@@ -1,5 +1,11 @@
 ## 0.3.29 revised3 (testing candidate)
 
+### Revised4 Foundry v14.365 normalization/test correction
+
+- Registers the internal no-cost action and hidden cost-modifier slots with an explicit `canSelect: () => false` function. This avoids Foundry v14.365 normalizing the boolean shorthand into an undefined-returning closure for these third-party actions.
+- Corrects the movement-accounting Foundry test harness to use the rendered `Token.measureMovementPath()` API for action-aware movement-cost measurement. The lower-level `TokenDocument.measureMovementPath()` remains useful for geometry measurement but does not resolve waypoint action costing in the same way.
+- No movement-rule semantics changed: AE5E-generated no-resource movement remains measured and zero-cost; normal voluntary movement remains native; final-cost modifiers remain pre-registered-slot based.
+
 - Fixed runtime final-cost modifier registration on Foundry v14, where `CONFIG.Token.movement.actions` is sealed after initialization.
 - Reworked the reusable final-cost modifier API to use eight hidden modifier slots registered during `init`; runtime registration now assigns behavior to a pre-existing slot and does not mutate Foundry's sealed movement-action registry.
 - Expanded the Foundry-only movement-accounting test to verify modifier-slot registration, sealed-registry-safe runtime assignment, native-cost-plus-distance calculation, and slot cleanup.
