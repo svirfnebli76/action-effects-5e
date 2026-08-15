@@ -57,7 +57,11 @@ await ae5e.tests.runGrappleLinkObstructionTest();
 
 For manual relationship verification, use the existing Grapple movement fixture and confirm that ordinary Leader movement still records its normal native cost while the generated Follower path records zero cost. Repeat an orbit step and confirm the Follower's movement is zero-cost. Existing trailing/vacated-space placement, wall/hostile blocking, nonhostile grace, teleport policies, and rollback behavior must remain unchanged.
 
-The finalized v0.3.28 Reaction Broker release matrix should also be rerun as the regression gate before v0.3.29 is finalized; movement accounting must not alter Broker authority, gating, dialogs, nested reactions, or multiplayer recovery.
+Final v0.3.29 Foundry acceptance additionally included live combat movement-history validation for ordinary Leader movement, generated Follower translation/orbit, forced Push/Pull, grace rollback, and a real hidden-slot final-cost modifier move. The final-cost acceptance recorded `5 native + 5 distance = 10` directly in Foundry's native movement history.
+
+Because the Reaction Broker runtime was unchanged in v0.3.29, release regression used a targeted sanity gate rather than repeating the entire finalized v0.3.28 matrix: Reaction Broker foundation **18/18 PASS** and normal interactive Broker **12/12 PASS**. The deeper finalized v0.3.28 nested/Midi/multiplayer/disconnect results remain the authoritative baseline for that unchanged subsystem.
+
+Final v0.3.29 acceptance matrix: foundation + movement accounting **24/24 PASS**; live Leader/Follower combat accounting **18/18 PASS**; displacement foundation **9/9 PASS**; live forced-displacement accounting **21/21 PASS**; Follower-body disposition matrix **8/8 PASS**; Grapple-link obstruction **6/6 PASS**; Reaction Broker foundation sanity **18/18 PASS**; normal interactive Broker sanity **12/12 PASS**; live final-cost modifier **6/6 PASS**.
 
 ## v0.3.25 forced-displacement foundation
 

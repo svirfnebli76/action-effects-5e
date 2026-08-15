@@ -1,4 +1,13 @@
-## 0.3.29 revised3 (testing candidate)
+## 0.3.29 — Finalized native Foundry/D&D5e movement accounting foundation
+
+### Final Foundry acceptance
+
+- Finalized the revised4 runtime implementation with no further runtime changes after the complete Foundry VTT acceptance gate passed.
+- Final v0.3.29 validation: foundation + movement accounting **24/24 PASS**; live Leader/Follower combat accounting **18/18 PASS**; displacement foundation **9/9 PASS**; live forced-displacement accounting **21/21 PASS**; Follower-body disposition matrix **8/8 PASS**; Grapple-link obstruction **6/6 PASS**; Reaction Broker foundation sanity regression **18/18 PASS**; normal interactive Reaction Broker sanity regression **12/12 PASS**; live final-cost modifier acceptance **6/6 PASS**.
+- Live native-ledger proof: ordinary 5-foot Leader movement consumed **5** native movement; generated Follower translation/orbit, forced Push/Pull, and administrative grace rollback recorded native movement history using `action-effects-5e.no-cost` with **0** movement cost.
+- Live final-cost modifier proof: a one-grid move with native cost **5** plus distance **5** recorded **10** in Foundry's native `movementHistory`, validating the future Grapple `native cost + distance` foundation.
+- The finalized v0.3.28 Reaction Broker implementation remains unchanged. A foundation and normal interactive sanity regression were rerun successfully; the deeper finalized v0.3.28 nested/Midi/multiplayer/disconnect matrix remains the authoritative baseline for unchanged Broker behavior.
+- External Terrain Mapper `updateToken` and Effect Macro combat-hook console exceptions were observed during automated fixture/combat setup, but did not alter any AE5E acceptance result and are not treated as v0.3.29 release failures.
 
 ### Revised4 Foundry v14.365 normalization/test correction
 

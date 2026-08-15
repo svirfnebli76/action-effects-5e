@@ -12,6 +12,8 @@ v0.3.29 moves AE5E movement-resource accounting onto Foundry/D&D5e's native move
 - A reusable final-cost modifier API is available for future rules. The planned 2024 Grapple drag cost is `native D&D5e cost + distance moved`, which preserves existing terrain/action costs before adding the Grapple surcharge.
 - Stationary Grapple-orbit charging and the actual Grapple Activity remain deferred; v0.3.29 does not create fake Leader movement or a private accounting ledger.
 
+Final Foundry acceptance passed across the movement-accounting foundation, live combat Leader/Follower accounting, forced Push/Pull and rollback accounting, disposition and Grapple-link geometry regressions, a Reaction Broker sanity regression, and a live final-cost modifier move. The final modifier acceptance recorded `5 native + 5 distance = 10` directly in Foundry's native movement history.
+
 Foundry validation:
 
 ```js
@@ -339,6 +341,6 @@ await ae5e.tests.runGrappleLinkObstructionTest();
 Control exactly one token and run `await game.modules.get("action-effects-5e").api.tests.runExternalPromptIsolationTest();` to verify fail-closed external prompt classification, duplicate prevention, shared external leases, and cleanup.
 
 
-### 0.3.29 revised4 validation note
+### 0.3.29 Foundry v14.365 validation note
 
 Foundry v14.365 live validation showed that internal movement actions must use an explicit `canSelect: () => false` function for deterministic hidden-selection behavior. The movement-accounting test harness also measures action-aware cost through the rendered Token API.
