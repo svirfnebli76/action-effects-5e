@@ -41,16 +41,18 @@ export class MovementService {
   #registry;
   #relationships;
   #accounting;
+  #catMovement;
   #initialized = false;
   #pending = new Map();
   #recent = [];
   #hookIds = [];
   #movementContexts = new Map();
 
-  constructor({ registry, relationships, accounting = null }) {
+  constructor({ registry, relationships, accounting = null, catMovement = null }) {
     this.#registry = registry;
     this.#relationships = relationships;
     this.#accounting = accounting;
+    this.#catMovement = catMovement;
   }
 
   initialize() {
@@ -169,6 +171,7 @@ export class MovementService {
     // MovementTransaction for it so forced displacement can be distinguished by
     // consumers even when diagnostic capture is disabled.
     if (metadata?.generatedBy === MODULE_ID) return true;
+    if (metadata?.externalMovementSemantics === true) return true;
     if (this.#captureDiagnostics()) return true;
     if (this.#relationships.involves(document.uuid) && game.user.id === userId) return true;
     return this.#registry.hasPotentialInterest(document, phase, { userId });
@@ -198,7 +201,8 @@ export class MovementService {
 
   #onPreMoveToken(document, movement, operation) {
     if (!this.#isEnabled()) return;
-    const effectiveOperation = this.#withMovementContext(movement, operation);
+    const interoperableOperation = this.#catMovement?.enrichOperation({ document, movement, operation }) ?? operation;
+    const effectiveOperation = this.#withMovementContext(movement, interoperableOperation);
     if (!this.#hasPotentialInterest(document, MOVEMENT_PHASES.BEFORE, effectiveOperation, game.user.id)) return;
 
     const transaction = MovementTransaction.fromTokenHook({
@@ -227,7 +231,8 @@ export class MovementService {
   #onMoveToken(document, movement, operation, user) {
     if (!this.#isEnabled()) return;
 
-    const effectiveOperation = this.#withMovementContext(movement, operation);
+    const interoperableOperation = this.#catMovement?.enrichOperation({ document, movement, operation }) ?? operation;
+    const effectiveOperation = this.#withMovementContext(movement, interoperableOperation);
     const wasPending = this.#pending.has(movement.id);
     if (!wasPending && !this.#hasPotentialInterest(document, MOVEMENT_PHASES.AFTER, effectiveOperation, user?.id)) return;
 

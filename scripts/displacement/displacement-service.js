@@ -72,12 +72,13 @@ export class DisplacementService {
   #overlay;
   #grace;
   #selectionIndicator;
+  #movementExecutor;
   #initialized = false;
   #dndBlockingHook = null;
   #activeTokenBypasses = new Map();
   #recent = [];
 
-  constructor({ socket, movement, accounting = null, planner, overlay, grace, selectionIndicator }) {
+  constructor({ socket, movement, accounting = null, planner, overlay, grace, selectionIndicator, movementExecutor = null }) {
     this.#socket = socket;
     this.#movement = movement;
     this.#accounting = accounting;
@@ -85,6 +86,7 @@ export class DisplacementService {
     this.#overlay = overlay;
     this.#grace = grace;
     this.#selectionIndicator = selectionIndicator;
+    this.#movementExecutor = movementExecutor;
     this.#socket.register("displacement.execute", this.#executeAsGM.bind(this));
   }
 
@@ -119,7 +121,8 @@ export class DisplacementService {
       initialized: this.#initialized,
       activeTokenBypasses: this.#activeTokenBypasses.size,
       recentResults: this.#recent.length,
-      endpointGrace: this.#grace.getStats()
+      endpointGrace: this.#grace.getStats(),
+      movementExecutor: this.#movementExecutor?.getStats?.() ?? null
     };
   }
 
@@ -383,10 +386,13 @@ export class DisplacementService {
     let afterTransaction = null;
     let documentSettlement = { reached: false, timedOut: false, elapsedMs: 0, current: scene.tokens.get(target.id) };
     try {
-      movementCompleted = await target.move(waypoints, {
+      const executionOptions = {
         ...options,
         id: movementId
-      });
+      };
+      movementCompleted = this.#movementExecutor?.moveToken
+        ? await this.#movementExecutor.moveToken(target, waypoints, executionOptions)
+        : await target.move(waypoints, executionOptions);
       if (movementCompleted === true) {
         afterTransaction = await settledTransaction;
 

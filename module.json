@@ -2,7 +2,7 @@
   "id": "action-effects-5e",
   "title": "Action Effects 5E",
   "description": "Reusable D&D5e automation infrastructure and premade effects for Foundry VTT, including Reaction Broker, forced displacement, movement, and coordinated token relationship frameworks.",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "authors": [
     {
       "name": "Matthew Larrivee"
@@ -10,7 +10,7 @@
   ],
   "compatibility": {
     "minimum": "14.357",
-    "verified": "14.365"
+    "verified": "14.366"
   },
   "relationships": {
     "systems": [
@@ -40,6 +40,10 @@
     "recommends": [
       {
         "id": "sequencer",
+        "type": "module"
+      },
+      {
+        "id": "cat",
         "type": "module"
       }
     ]

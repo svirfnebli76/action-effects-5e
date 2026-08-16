@@ -50,6 +50,7 @@ export class ActionEffects5eApi {
     compatibility,
     movement,
     movementAccounting,
+    catMovement,
     relationships,
     relationshipMovement,
     relationshipRotation,
@@ -124,6 +125,13 @@ export class ActionEffects5eApi {
       getStatus: () => compatibility.getStatus(),
       refresh: () => compatibility.refresh(),
       getPreferredController: (options) => compatibility.getPreferredController(options)
+    });
+
+    this.interoperability = Object.freeze({
+      cat: Object.freeze({
+        getStatus: () => catMovement.getStatus(),
+        getStats: () => catMovement.getStats()
+      })
     });
 
     this.movement = Object.freeze({
@@ -214,6 +222,7 @@ export class ActionEffects5eApi {
     this.tests = Object.freeze({
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
       runMovementAccountingTest: (options) => tests.runMovementAccountingTest(options),
+      runCatMovementInteroperabilityTest: (options) => tests.runCatMovementInteroperabilityTest(options),
       setupReactionBrokerTestScene: (options) => tests.setupReactionBrokerTestScene(options),
       runReactionBrokerFoundationTest: (options) => tests.runReactionBrokerFoundationTest(options),
       runReactionBrokerInteractiveTest: (options) => tests.runReactionBrokerInteractiveTest(options),

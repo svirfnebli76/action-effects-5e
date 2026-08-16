@@ -1,3 +1,17 @@
+## 0.3.30 — CAT movement interoperability
+
+- Added `CatMovementAdapter`, a single AE5E-owned facade for all CAT movement integration. Feature code no longer needs to call CAT directly.
+- CAT remains a recommended/optional module. When CAT is active and exposes `cat.utils.tokenUtils.moveToken()`, eligible AE5E single-token movement uses CAT; when CAT is unavailable before execution, the facade falls back to native `TokenDocument.move()`. CAT execution exceptions are not retried natively, preventing duplicate movement after partial execution.
+- Routed AE5E forced Push/Pull's final low-level Token movement through the CAT facade while preserving the finalized v0.3.29 semantic operation metadata, collision planning, endpoint grace, and movement-settlement handling.
+- Deliberately retained AE5E's `action-effects-5e.no-cost` movement action for forced/no-resource movement. CAT 0.0.6 `catForce` is `measure: false` and therefore records 0 distance / 0 cost; it cannot satisfy AE5E's required measured-distance/zero-cost semantics.
+- Added CAT → AE5E recognition for external `catForce` movement. Such movement is surfaced as `agency: forced`, `resource: none`, `movementMode: catForce`, and `interoperabilityProvider: cat`, while source, Push/Pull type, and direction remain unset unless explicitly supplied by another integration.
+- Ordinary CAT `walk` movement is intentionally not claimed as CAT-origin because it is indistinguishable from ordinary Foundry/API walk movement after CAT delegates it.
+- Preserved AE5E relationship group movement on the existing coordinated `Scene.moveTokens()` implementation; CAT's single-token helper is not used to replace atomic Leader/Follower movement or AE5E rollback semantics.
+- Added CAT state/version to compatibility diagnostics and public `ae5e.interoperability.cat.getStatus()` / `getStats()` diagnostics.
+- Added Foundry-only `ae5e.tests.runCatMovementInteroperabilityTest()`. The disposable fixture validates CAT execution, external `catForce` semantic recognition, AE5E-through-CAT measured distance with zero movement cost, metadata preservation, live wall-constrained execution, and cleanup.
+- Updated manifest verification to Foundry 14.366 and recommends CAT without making it a hard dependency.
+- Preserved v0.3.29 native movement accounting and the finalized v0.3.28 Reaction Broker runtime unchanged outside the movement interoperability seams.
+
 ## 0.3.29 — Finalized native Foundry/D&D5e movement accounting foundation
 
 ### Final Foundry acceptance

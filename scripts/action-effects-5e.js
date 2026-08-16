@@ -7,6 +7,7 @@ import { SocketService } from "./core/socket-service.js";
 import { MovementRegistry } from "./movement/movement-registry.js";
 import { MovementAccountingService } from "./movement/movement-accounting-service.js";
 import { MovementService } from "./movement/movement-service.js";
+import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
@@ -35,9 +36,10 @@ const compatibility = new CompatibilityService();
 const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const movementAccounting = new MovementAccountingService();
+const catMovement = new CatMovementAdapter();
 const relationships = new RelationshipService({ socket });
 const relativeRelationships = new RelativeTokenRelationshipService();
-const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting });
+const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement });
 const displacementDirections = new DisplacementDirectionService();
 const movementObstructions = new MovementObstructionService({ relativeRelationships });
 const displacementPlanner = new DisplacementPlanner({
@@ -48,7 +50,8 @@ const displacementOverlay = new DisplacementDestinationOverlay();
 const displacementGrace = new NonhostileEndpointGraceService({
   movement,
   accounting: movementAccounting,
-  obstructions: movementObstructions
+  obstructions: movementObstructions,
+  movementExecutor: catMovement
 });
 const selectionIndicator = new SelectionIndicatorService();
 const externalPromptBridge = new ExternalPromptBridgeService({ selectionIndicator });
@@ -73,7 +76,8 @@ const displacement = new DisplacementService({
   planner: displacementPlanner,
   overlay: displacementOverlay,
   grace: displacementGrace,
-  selectionIndicator
+  selectionIndicator,
+  movementExecutor: catMovement
 });
 const relationshipLinkObstructions = new RelationshipLinkObstructionService({ relativeRelationships });
 const relationshipMovement = new RelationshipMovementService({
@@ -95,6 +99,7 @@ const tests = new TestHarness({
   compatibility,
   movement,
   movementAccounting,
+  catMovement,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -117,6 +122,7 @@ const api = new ActionEffects5eApi({
   compatibility,
   movement,
   movementAccounting,
+  catMovement,
   relationships,
   relationshipMovement,
   relationshipRotation,

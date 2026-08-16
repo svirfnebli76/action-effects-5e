@@ -2,6 +2,25 @@
 
 Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its first subsystem is a low-overhead movement, spatial-event, and rules-aware token relationship framework.
 
+### v0.3.30 CAT movement interoperability
+
+v0.3.30 adds a bidirectional movement interoperability layer for **Coven's Automation Toolkit (CAT)** without transferring AE5E's rules ownership to CAT. CAT is recommended rather than required; AE5E remains usable when CAT is absent.
+
+- **AE5E → CAT:** eligible single-token execution now goes through one `CatMovementAdapter`. When CAT 0.0.6 is active and exposes `cat.utils.tokenUtils.moveToken()`, the adapter uses it; otherwise it falls back to Foundry `TokenDocument.move()` before execution begins. AE5E never retries natively after a CAT execution exception, preventing duplicate movement after a possible partial CAT move.
+- **AE5E retains semantics:** Push/Pull direction rules, large-token center geometry, creature/wall/grace handling, Grapple/link semantics, relationship movement, resource policy, and `MovementTransaction` metadata stay in AE5E. Relationship group movement remains on AE5E's coordinated `Scene.moveTokens()` path because CAT's single-token helper is not a replacement for atomic Leader/Follower movement.
+- **Measured zero-cost movement remains AE5E-owned:** CAT 0.0.6's `catForce` action is intentionally `measure: false`, so it records 0 distance / 0 cost. AE5E therefore keeps `action-effects-5e.no-cost` (`measure: true`, cost 0) and passes that action through CAT for forced displacement. This preserves real traversed distance while consuming no ordinary movement.
+- **CAT → AE5E:** external movement using CAT's unique `catForce` action is recognized as `agency: forced`, `resource: none`, with `interoperabilityProvider: "cat"`. AE5E does not invent Push/Pull type, source, or direction when CAT did not provide them. Ordinary CAT `walk` is not guessed as CAT-origin because after delegation it is indistinguishable from other native/API walk movement.
+- Public diagnostics are available at `ae5e.interoperability.cat.getStatus()` / `getStats()`.
+
+Primary Foundry validation:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runCatMovementInteroperabilityTest();
+```
+
+The test creates and deletes its own disposable Actor/Token. It validates CAT execution, CAT `catForce` recognition, preservation of AE5E's measured/zero-cost action through CAT, semantic transaction metadata, and live wall constraint handling.
+
 ### v0.3.29 Native movement accounting
 
 v0.3.29 moves AE5E movement-resource accounting onto Foundry/D&D5e's native movement system. `TokenDocument.movementHistory` is the only movement-resource ledger; AE5E keeps semantic movement transactions but no parallel allowance/spent/remaining counter.
@@ -53,6 +72,7 @@ Final Foundry acceptance passed across the foundation, normal/nested interactive
 
 ## Recommended modules
 
+- CAT (Coven's Automation Toolkit) — preferred low-level single-token movement executor/permission facade for v0.3.30. AE5E falls back to Foundry movement when CAT is inactive.
 - Sequencer — used by the v0.3.27 selection/popup activity indicator. AE5E continues to function without it; only the advisory visual is omitted.
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.

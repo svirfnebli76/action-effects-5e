@@ -151,6 +151,61 @@ test("movement transaction preserves Action Effects 5E semantic metadata", () =>
   assert.ok(Object.isFrozen(transaction));
 });
 
+
+test("CAT movement adapter recognizes external catForce semantics without inventing displacement details", async () => {
+  const { CatMovementAdapter } = await import("../scripts/integrations/cat-movement-adapter.js");
+  const previousModules = game.modules;
+  game.modules = new Map([["cat", { active: true, version: "0.0.6" }]]);
+  try {
+    const adapter = new CatMovementAdapter({ catAccessor: () => ({ utils: { tokenUtils: { moveToken: async () => true } } }) });
+    const enriched = adapter.enrichOperation({
+      movement: {
+        origin: { x: 0, y: 0, elevation: 0 },
+        destination: { x: 100, y: 0, elevation: 0, action: "catForce" },
+        passed: { waypoints: [] }
+      },
+      operation: {}
+    });
+    const metadata = enriched[OPERATION_METADATA_KEY];
+    assert.equal(metadata.agency, MOVEMENT_AGENCIES.FORCED);
+    assert.equal(metadata.resource, MOVEMENT_RESOURCES.NONE);
+    assert.equal(metadata.movementMode, "catForce");
+    assert.equal(metadata.interoperabilityProvider, "cat");
+    assert.equal(metadata.generatedBy, "cat");
+    assert.equal(metadata.displacementType, undefined);
+    assert.equal(metadata.sourceUuid, undefined);
+  } finally {
+    game.modules = previousModules;
+  }
+});
+
+test("CAT movement adapter prefers CAT when available and falls back only when unavailable before execution", async () => {
+  const { CatMovementAdapter } = await import("../scripts/integrations/cat-movement-adapter.js");
+  const previousModules = game.modules;
+  let catCalls = 0;
+  let nativeCalls = 0;
+  let active = true;
+  game.modules = new Map([["cat", { active: true, version: "0.0.6" }]]);
+  const catApi = { utils: { tokenUtils: { moveToken: async () => { catCalls += 1; return true; } } } };
+  const document = { move: async () => { nativeCalls += 1; return true; } };
+  try {
+    const adapter = new CatMovementAdapter({ catAccessor: () => active ? catApi : null });
+    assert.equal(await adapter.moveToken(document, [{ x: 100, y: 0, checkpoint: true }], {}), true);
+    assert.equal(catCalls, 1);
+    assert.equal(nativeCalls, 0);
+
+    active = false;
+    game.modules.set("cat", { active: false, version: "0.0.6" });
+    assert.equal(await adapter.moveToken(document, [{ x: 0, y: 0, checkpoint: true }], {}), true);
+    assert.equal(catCalls, 1);
+    assert.equal(nativeCalls, 1);
+    assert.equal(adapter.getStats().catExecutions, 1);
+    assert.equal(adapter.getStats().nativeFallbackExecutions, 1);
+  } finally {
+    game.modules = previousModules;
+  }
+});
+
 test("movement registry uses token indexes and removes once-only consumers", async () => {
   const registry = new MovementRegistry();
   let calls = 0;

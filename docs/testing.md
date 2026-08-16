@@ -31,6 +31,41 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
+## v0.3.30 CAT movement interoperability regression
+
+Behavioral validation remains inside Foundry VTT. CAT must be active for this specific regression. On an active Scene as GM, run the complete macro below exactly as written:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runCatMovementInteroperabilityTest();
+```
+
+No manual fixture setup is required. The harness creates a disposable character Actor and Token, then cleans both up. A complete pass verifies:
+
+1. CAT is active and `cat.utils.tokenUtils.moveToken()` is available;
+2. CAT's `catForce` action is present and remains intentionally unmeasured (`measure: false`);
+3. AE5E's `action-effects-5e.no-cost` action remains measured;
+4. a direct external CAT `catForce` move completes and produces Foundry's native `moveToken` event;
+5. AE5E converts that external CAT movement into a semantic transaction with `agency: forced`, `resource: none`, `movementMode: catForce`, and CAT provenance while leaving Source/Push/Pull details unset;
+6. an AE5E movement sent through the CAT facade actually increments CAT-execution diagnostics;
+7. the AE5E no-cost action sent through CAT still reports positive physical distance and zero movement cost;
+8. AE5E semantic operation metadata survives CAT execution;
+9. the CAT facade receives a real wall-constrained movement attempt;
+10. CAT honors the movement wall and does not move the Token through it; and
+11. the disposable Actor/Token and diagnostic Wall are removed.
+
+After this CAT-specific gate, rerun the v0.3.29 movement release regressions because forced displacement now crosses the CAT facade:
+
+```js
+await ae5e.tests.runFoundationSmokeTest();
+await ae5e.tests.runMovementAccountingTest(); // control exactly one ordinary token
+await ae5e.tests.runDisplacementFoundationTest();
+await ae5e.tests.runFollowerBodyDispositionMatrix();
+await ae5e.tests.runGrappleLinkObstructionTest();
+```
+
+The relationship movement/rotation suites are regression checks rather than CAT executor tests: v0.3.30 deliberately keeps coordinated relationship operations on AE5E's established `Scene.moveTokens()` implementation. A targeted Reaction Broker foundation/interactive sanity regression remains appropriate because CAT-origin forced movement now enters the same semantic movement pipeline used by future reaction consumers, although the Broker runtime itself is unchanged.
+
 ## v0.3.29 native movement-accounting regression
 
 Behavioral validation remains Foundry-only. After loading v0.3.29, control exactly one ordinary Token in the active test Scene and run:

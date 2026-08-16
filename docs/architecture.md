@@ -7,6 +7,35 @@
 3. `setup` refreshes compatibility state.
 4. `ready` validates required dependencies, loads persisted relationships, initializes movement/relationship/displacement services plus the selection-indicator service, then emits `action-effects-5e.ready`.
 
+## v0.3.30 CAT movement interoperability
+
+CAT is an execution/permission integration, not AE5E's rules engine. The boundary is deliberately bidirectional and asymmetric.
+
+### AE5E → CAT execution
+
+`CatMovementAdapter` is the only CAT-facing movement facade. For eligible single-token movement it calls CAT `tokenUtils.moveToken()` when CAT is active; otherwise it uses native `TokenDocument.move()`. A CAT call that throws is never automatically retried natively because the token may already have moved partway.
+
+Forced Push/Pull remains fully planned by AE5E. `DisplacementService` still determines semantic direction, complete-token geometry, hard/soft occupancy, partial distance, nonhostile grace, source/target metadata, and the movement transaction. Only the final Token execution call is delegated to the adapter.
+
+AE5E group relationship movement deliberately remains on the existing coordinated `Scene.moveTokens()` path. That code requires one multi-token operation, pre-operation snapshots, complete-group rollback, follower/passenger accounting, and relationship-specific obstruction semantics; CAT's single-token helper does not replace those responsibilities.
+
+### Movement-action ownership
+
+CAT 0.0.6 defines `catForce` with `measure: false`. Live characterization showed that it moves successfully but produces zero measured distance and zero cost. AE5E v0.3.29 requires a different semantic shape for generated forced/passenger movement: **real measured traverse distance with zero resource cost**. Therefore `action-effects-5e.no-cost` remains authoritative and is passed through CAT unchanged.
+
+This separation is intentional:
+
+- CAT may execute/authorize the Token move;
+- Foundry/D&D5e remains the native movement-history ledger;
+- AE5E selects the movement action which expresses its resource policy; and
+- AE5E remains authoritative for higher-level movement semantics.
+
+### CAT → AE5E semantic recognition
+
+`MovementService` asks the CAT adapter to enrich raw movement operations before constructing `MovementTransaction`. CAT's unique `catForce` action is sufficient evidence to classify the operation as forced/no-resource and to mark `interoperabilityProvider: "cat"`. This lets relationship/reaction consumers distinguish external forced movement from voluntary movement even when the external caller did not know AE5E's metadata schema.
+
+The adapter fails closed on information CAT does not carry. It does **not** infer a Source token, Push versus Pull, displacement direction, requested distance, or an AE5E relationship. Normal `walk` actions are not marked CAT-origin because CAT ultimately delegates them into Foundry's ordinary movement pipeline and no reliable provenance remains.
+
 ## v0.3.29 native movement-resource accounting
 
 AE5E does not own a second movement allowance ledger. Foundry/D&D5e `TokenDocument.movementHistory` is the sole source of truth for movement cost already consumed. `MovementTransaction` remains a semantic event model (agency, resource, source, relationship, displacement, path type, etc.), and now includes a lightweight snapshot/summary of that native history for consumers that need to reason about movement without maintaining another counter.

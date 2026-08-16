@@ -25,13 +25,15 @@ export class NonhostileEndpointGraceService {
   #movement;
   #accounting;
   #obstructions;
+  #movementExecutor;
   #pending = new Map();
   #consumerUnregister = new Map();
 
-  constructor({ movement, accounting = null, obstructions }) {
+  constructor({ movement, accounting = null, obstructions, movementExecutor = null }) {
     this.#movement = movement;
     this.#accounting = accounting;
     this.#obstructions = obstructions;
+    this.#movementExecutor = movementExecutor;
   }
 
   getStats() {
@@ -212,17 +214,21 @@ export class NonhostileEndpointGraceService {
     const releaseContext = this.#movement.registerMovementContext(movementId, options);
     let completed = false;
     try {
-      completed = await subject.move({
+      const rollbackWaypoint = {
         x: finiteNumber(entry.rollbackPosition?.x, subject.x),
         y: finiteNumber(entry.rollbackPosition?.y, subject.y),
         elevation: finiteNumber(entry.rollbackPosition?.elevation, subject.elevation),
         action,
         checkpoint: true,
         explicit: true
-      }, {
+      };
+      const executionOptions = {
         ...options,
         id: movementId
-      });
+      };
+      completed = this.#movementExecutor?.moveToken
+        ? await this.#movementExecutor.moveToken(subject, [rollbackWaypoint], executionOptions)
+        : await subject.move(rollbackWaypoint, executionOptions);
     } finally {
       releaseContext();
     }

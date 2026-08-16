@@ -7,6 +7,8 @@ import {
   MOVEMENT_ACTION_IDS,
   MOVEMENT_AGENCIES,
   MOVEMENT_PHASES,
+  MOVEMENT_RESOURCES,
+  PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_GEOMETRY_CHANNELS,
@@ -28,6 +30,7 @@ export class TestHarness {
   #compatibility;
   #movement;
   #movementAccounting;
+  #catMovement;
   #relationships;
   #relationshipMovement;
   #relationshipRotation;
@@ -40,11 +43,12 @@ export class TestHarness {
   #reactionSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
     this.#movementAccounting = movementAccounting;
+    this.#catMovement = catMovement;
     this.#relationships = relationships;
     this.#relationshipMovement = relationshipMovement;
     this.#relationshipRotation = relationshipRotation;
@@ -107,6 +111,8 @@ export class TestHarness {
     record("Required dependencies", dependencyStatus.healthy, dependencyStatus);
     const compatibilityStatus = this.#compatibility.refresh();
     record("Compatibility detection", true, compatibilityStatus);
+    const catInteroperabilityStatus = this.#catMovement.getStatus();
+    record("CAT interoperability detection", true, catInteroperabilityStatus);
 
     const consumerId = `${MODULE_ID}.tests.synthetic-consumer`;
     const consumersBefore = this.#movement.getStats().registry.consumers;
@@ -153,6 +159,7 @@ export class TestHarness {
       displacement: this.#displacement.getStats(),
       selection: this.#selectionIndicator.getStats(),
       externalPrompts: this.#externalPromptBridge.getStats(),
+      catInteroperability: catInteroperabilityStatus,
       compatibility: compatibilityStatus
     };
     Logger.info("Foundation smoke test", result);
@@ -277,6 +284,356 @@ export class TestHarness {
       );
     }
     return result;
+  }
+
+  async runCatMovementInteroperabilityTest({ notify = true } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    if (!game.user?.isGM) throw new Error("The CAT movement interoperability test requires a GM user.");
+
+    const status = this.#catMovement.getStatus();
+    if (!status.executionAvailable) {
+      throw new Error("CAT must be active and expose cat.utils.tokenUtils.moveToken() for the v0.3.30 interoperability test.");
+    }
+
+    const results = [];
+    const record = (name, passed, details = null) => {
+      const entry = { name, passed: Boolean(passed), details };
+      results.push(entry);
+      console[entry.passed ? "log" : "error"](
+        `%c${entry.passed ? "PASS" : "FAIL"}%c  ${name}`,
+        `font-size:14px;font-weight:bold;color:${entry.passed ? "#18cc46" : "#ff5555"}`,
+        "color:inherit",
+        details ?? ""
+      );
+      return entry;
+    };
+    const banner = (text, color = "#18cc46", size = 22) => console.log(
+      `%c${text}`,
+      `font-size:${size}px;font-weight:bold;color:${color}`
+    );
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const approx = (a, b) => Math.abs(Number(a) - Number(b)) <= 0.01;
+    const scene = canvas.scene;
+    const grid = Number(canvas.grid?.size ?? scene?.grid?.size ?? 100);
+    const maxX = Math.max(0, Number(scene.width ?? 0) - grid);
+    const maxY = Math.max(0, Number(scene.height ?? 0) - grid);
+    const baseX = Math.max(0, Math.min(Math.round((Number(scene.width ?? grid) / 2) / grid) * grid, maxX));
+    const baseY = Math.max(0, Math.min(Math.round((Number(scene.height ?? grid) / 2) / grid) * grid, maxY));
+    const direction = baseX + grid <= maxX ? 1 : -1;
+    const start = { x: baseX, y: baseY, elevation: 0 };
+    const end = { x: baseX + (direction * grid), y: baseY, elevation: 0 };
+
+    let actor = null;
+    let token = null;
+    let rawHook = null;
+    let activeCase = null;
+    let diagnosticWall = null;
+    const rawMovements = {};
+    const transactions = {};
+    const unregisterConsumers = [];
+    const originalStats = this.#catMovement.getStats();
+
+    const captureTransaction = (caseId) => {
+      let resolveTransaction = null;
+      const promise = new Promise((resolve) => { resolveTransaction = resolve; });
+      const unregister = this.#movement.registerConsumer({
+        id: `${MODULE_ID}.cat-test.${caseId}.${foundry.utils.randomID(8)}`,
+        phases: [MOVEMENT_PHASES.AFTER],
+        tokenUuids: [token.uuid],
+        execution: "initiator",
+        priority: 30_000,
+        once: true,
+        handler: (transaction) => {
+          transactions[caseId] = transaction;
+          resolveTransaction(transaction);
+        }
+      });
+      unregisterConsumers.push(unregister);
+      return Promise.race([promise, sleep(1_500).then(() => null)]);
+    };
+
+    const nativeReposition = async (position) => {
+      const actions = globalThis.CONFIG?.Token?.movement?.actions;
+      const entries = actions?.entries ? [...actions.entries()] : Object.entries(actions ?? {});
+      const teleportAction = entries.find(([, config]) => config?.teleport === true)?.[0] ?? null;
+      if (!teleportAction) throw new Error("CAT interoperability fixture requires a registered teleport movement action for cleanup positioning.");
+      return token.move({ ...position, action: teleportAction, explicit: true, checkpoint: true }, {
+        method: "api",
+        animate: false,
+        pan: false,
+        showRuler: false,
+        constrainOptions: { ignoreWalls: true, ignoreCost: true, ignoreTokens: true },
+        ...this.#movement.createOperationOptions({
+          pathType: PATH_TYPES.REPOSITION,
+          agency: MOVEMENT_AGENCIES.ADMINISTRATIVE,
+          resource: MOVEMENT_RESOURCES.NONE,
+          movementMode: teleportAction,
+          administrative: true,
+          generatedBy: MODULE_ID,
+          internal: true,
+          suppressAutomation: true,
+          testFixture: true
+        })
+      });
+    };
+
+    banner("AE5E 0.3.30 — CAT MOVEMENT INTEROPERABILITY TEST");
+
+    try {
+      record("CAT execution facade available", status.executionAvailable === true, status);
+      record("CAT catForce action remains intentionally unmeasured", status.forcedAction?.measure === false, status.forcedAction);
+
+      this.#movementAccounting.ensureRegistered();
+      const actions = globalThis.CONFIG?.Token?.movement?.actions;
+      const noCostAction = actions?.get?.(MOVEMENT_ACTION_IDS.NO_COST) ?? actions?.[MOVEMENT_ACTION_IDS.NO_COST];
+      record("AE5E no-cost action remains measured", Boolean(noCostAction) && noCostAction.measure !== false, noCostAction);
+
+      actor = await Actor.create({
+        name: "AE5E CAT Interoperability Test — Actor",
+        type: "character",
+        system: { attributes: { movement: { walk: 30 } } }
+      }, { renderSheet: false });
+      if (Number(actor.system?.attributes?.movement?.walk ?? 0) !== 30) {
+        await actor.update({ "system.attributes.movement.walk": 30 });
+      }
+
+      [token] = await scene.createEmbeddedDocuments("Token", [{
+        name: "AE5E CAT Interoperability Test — Token",
+        actorId: actor.id,
+        actorLink: true,
+        hidden: false,
+        locked: false,
+        movementAction: "walk",
+        ...start,
+        width: 1,
+        height: 1
+      }]);
+      await sleep(200);
+      record("Disposable CAT test fixture created", Boolean(actor && token?.object), {
+        actorUuid: actor?.uuid ?? null,
+        tokenUuid: token?.uuid ?? null
+      });
+
+      rawHook = Hooks.on("moveToken", (document, movement) => {
+        if (document.id !== token.id || !activeCase) return;
+        rawMovements[activeCase] = movement;
+      });
+
+      // ------------------------------------------------------
+      // CAT -> AE5E: external catForce must become semantic
+      // forced/no-resource movement even though CAT intentionally
+      // reports zero measured distance for that action.
+      // ------------------------------------------------------
+      await token.clearMovementHistory();
+      activeCase = "externalCatForce";
+      const externalTransactionPromise = captureTransaction("externalCatForce");
+      const externalResult = await globalThis.cat.utils.tokenUtils.moveToken(token, [{
+        ...end,
+        action: "catForce",
+        checkpoint: true
+      }], {
+        animate: false,
+        pan: false,
+        showRuler: false,
+        constrainOptions: { ignoreWalls: true, ignoreTokens: true }
+      });
+      const externalTransaction = await externalTransactionPromise;
+      await sleep(75);
+      record("External CAT catForce movement completed", externalResult === true && approx(token.x, end.x) && approx(token.y, end.y), {
+        result: externalResult,
+        position: { x: token.x, y: token.y }
+      });
+      record("CAT catForce produced a native moveToken event", Boolean(rawMovements.externalCatForce), rawMovements.externalCatForce ?? null);
+      record("AE5E recognized CAT catForce as forced movement", externalTransaction?.agency === MOVEMENT_AGENCIES.FORCED, externalTransaction?.toJSON?.() ?? null);
+      record("AE5E recognized CAT catForce as consuming no movement resource", externalTransaction?.resource === MOVEMENT_RESOURCES.NONE, externalTransaction?.toJSON?.() ?? null);
+      record("AE5E tagged external CAT provenance without inventing Push/Pull semantics",
+        externalTransaction?.metadata?.interoperabilityProvider === "cat"
+          && externalTransaction?.movementMode === "catForce"
+          && externalTransaction?.displacementType == null
+          && externalTransaction?.sourceUuid == null,
+        externalTransaction?.toJSON?.() ?? null);
+
+      activeCase = null;
+      await nativeReposition(start);
+      await token.clearMovementHistory();
+      await sleep(75);
+
+      // ------------------------------------------------------
+      // AE5E -> CAT: pass AE5E's own measured/zero-cost action
+      // through the CAT movement facade. CAT executes the move;
+      // Foundry still sees measured distance while native cost is 0.
+      // ------------------------------------------------------
+      activeCase = "ae5eThroughCat";
+      const ae5eTransactionPromise = captureTransaction("ae5eThroughCat");
+      const beforeCatExecutions = this.#catMovement.getStats().catExecutions;
+      const movementId = foundry.utils.randomID(16);
+      const ae5eResult = await this.#catMovement.moveToken(token, [{
+        ...end,
+        action: MOVEMENT_ACTION_IDS.NO_COST,
+        explicit: true,
+        checkpoint: true
+      }], {
+        id: movementId,
+        method: "api",
+        animate: false,
+        pan: false,
+        showRuler: false,
+        constrainOptions: { ignoreWalls: true, ignoreCost: true, ignoreTokens: true },
+        ...this.#movement.createOperationOptions({
+          transactionId: `${MODULE_ID}-cat-interoperability-${foundry.utils.randomID(8)}`,
+          pathType: PATH_TYPES.TRAVERSE,
+          agency: MOVEMENT_AGENCIES.FORCED,
+          resource: MOVEMENT_RESOURCES.NONE,
+          movementMode: "walk",
+          nativeMovementAction: MOVEMENT_ACTION_IDS.NO_COST,
+          generatedBy: MODULE_ID,
+          internal: true,
+          suppressAutomation: false,
+          catInteroperabilityTest: true
+        })
+      });
+      const ae5eTransaction = await ae5eTransactionPromise;
+      await sleep(75);
+      const afterCatExecutions = this.#catMovement.getStats().catExecutions;
+      const rawAe5e = rawMovements.ae5eThroughCat;
+      record("AE5E movement facade actually selected CAT", afterCatExecutions === beforeCatExecutions + 1, {
+        beforeCatExecutions,
+        afterCatExecutions,
+        adapter: this.#catMovement.getStats()
+      });
+      record("AE5E-through-CAT movement completed", ae5eResult === true && approx(token.x, end.x) && approx(token.y, end.y), {
+        result: ae5eResult,
+        position: { x: token.x, y: token.y }
+      });
+      record("AE5E-through-CAT path remained physically measured", Number(rawAe5e?.passed?.distance ?? 0) > 0, {
+        distance: rawAe5e?.passed?.distance ?? null,
+        cost: rawAe5e?.passed?.cost ?? null
+      });
+      record("AE5E-through-CAT path retained zero native movement cost",
+        Math.abs(Number(rawAe5e?.passed?.cost ?? NaN)) <= 1e-6
+          && Math.abs(Number(ae5eTransaction?.movementCostConsumed ?? NaN)) <= 1e-6,
+        {
+          eventCost: rawAe5e?.passed?.cost ?? null,
+          transactionCost: ae5eTransaction?.movementCostConsumed ?? null,
+          transaction: ae5eTransaction?.toJSON?.() ?? null
+        });
+      record("AE5E semantic metadata survived CAT execution",
+        ae5eTransaction?.agency === MOVEMENT_AGENCIES.FORCED
+          && ae5eTransaction?.resource === MOVEMENT_RESOURCES.NONE
+          && ae5eTransaction?.generatedBy === MODULE_ID,
+        ae5eTransaction?.toJSON?.() ?? null);
+
+      // ------------------------------------------------------
+      // CAT wall preflight: establish that the preferred CAT
+      // executor does not bypass a movement wall when AE5E asks
+      // it to honor Foundry wall constraints.
+      // ------------------------------------------------------
+      activeCase = null;
+      await nativeReposition(start);
+      await token.clearMovementHistory();
+      const boundaryX = direction > 0 ? start.x + grid : start.x;
+      [diagnosticWall] = await scene.createEmbeddedDocuments("Wall", [{
+        c: [boundaryX, start.y, boundaryX, start.y + grid],
+        flags: { [MODULE_ID]: { catInteroperabilityDiagnosticWall: true } }
+      }]);
+      await sleep(100);
+      const wallStatsBefore = this.#catMovement.getStats().catExecutions;
+      const wallResult = await this.#catMovement.moveToken(token, [{
+        ...end,
+        action: MOVEMENT_ACTION_IDS.NO_COST,
+        explicit: true,
+        checkpoint: true
+      }], {
+        method: "api",
+        animate: false,
+        pan: false,
+        showRuler: false,
+        constrainOptions: { ignoreWalls: false, ignoreCost: true, ignoreTokens: true },
+        ...this.#movement.createOperationOptions({
+          pathType: PATH_TYPES.TRAVERSE,
+          agency: MOVEMENT_AGENCIES.ADMINISTRATIVE,
+          resource: MOVEMENT_RESOURCES.NONE,
+          movementMode: "walk",
+          nativeMovementAction: MOVEMENT_ACTION_IDS.NO_COST,
+          generatedBy: MODULE_ID,
+          internal: true,
+          suppressAutomation: true,
+          testFixture: true,
+          catWallConstraintTest: true
+        })
+      });
+      await sleep(100);
+      const wallStatsAfter = this.#catMovement.getStats().catExecutions;
+      record("CAT facade handled the wall-constrained execution attempt", wallStatsAfter === wallStatsBefore + 1, {
+        before: wallStatsBefore,
+        after: wallStatsAfter,
+        result: wallResult
+      });
+      const wallNotCrossed = direction > 0
+        ? Number(token.x) < Number(end.x) - 0.01
+        : Number(token.x) > Number(end.x) + 0.01;
+      record("CAT honored the movement wall and did not move through it",
+        wallNotCrossed && approx(token.y, start.y),
+        {
+          result: wallResult,
+          blockedDestination: end,
+          actual: { x: token.x, y: token.y }
+        });
+
+    } finally {
+      activeCase = null;
+      if (rawHook !== null) Hooks.off("moveToken", rawHook);
+      if (diagnosticWall) {
+        try { await scene.deleteEmbeddedDocuments("Wall", [diagnosticWall.id]); } catch {}
+      }
+      for (const unregister of unregisterConsumers) {
+        try { unregister?.(); } catch {}
+      }
+      if (token) {
+        try { await scene.deleteEmbeddedDocuments("Token", [token.id]); } catch {}
+      }
+      if (actor) {
+        try { await actor.delete(); } catch {}
+      }
+    }
+
+    record("Disposable CAT test Token cleaned up", !token || !scene.tokens.get(token.id));
+    record("Disposable CAT test Actor cleaned up", !actor || !game.actors.get(actor.id));
+    record("Diagnostic CAT test Wall cleaned up", !diagnosticWall || !scene.walls.get(diagnosticWall.id));
+
+    const passed = results.every((entry) => entry.passed);
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      version: "0.3.30",
+      environment: {
+        foundry: game.version,
+        dnd5e: game.system.version,
+        cat: game.modules.get("cat")?.version ?? null
+      },
+      adapterBefore: originalStats,
+      adapterAfter: this.#catMovement.getStats(),
+      summary: {
+        passed: results.filter((entry) => entry.passed).length,
+        failed: results.filter((entry) => !entry.passed).length,
+        total: results.length
+      },
+      results
+    };
+
+    banner(
+      `AE5E 0.3.30 CAT INTEROPERABILITY — ${report.summary.passed}/${report.summary.total} PASSED`,
+      passed ? "#18cc46" : "#ff5555",
+      25
+    );
+    console.log(report);
+    if (notify && ui?.notifications) {
+      ui.notifications[passed ? "info" : "warn"](
+        passed
+          ? "AE5E 0.3.30 CAT movement interoperability test passed. See console for details."
+          : "AE5E 0.3.30 CAT movement interoperability test found a problem. See console for details."
+      );
+    }
+    return report;
   }
 
   async runSelectionIndicatorTest() {

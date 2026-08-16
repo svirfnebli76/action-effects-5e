@@ -7,11 +7,12 @@ import {
 import { Logger } from "./logger.js";
 
 export class CompatibilityService {
-  #status = Object.freeze({ cpr: false, gps: false, overlapPolicy: OVERLAP_POLICIES.AUTO_SAFE });
+  #status = Object.freeze({ cpr: false, gps: false, cat: false, overlapPolicy: OVERLAP_POLICIES.AUTO_SAFE });
 
   refresh() {
     const cprModule = game.modules.get(COMPATIBILITY_MODULES.CPR);
     const gpsModule = game.modules.get(COMPATIBILITY_MODULES.GPS);
+    const catModule = game.modules.get(COMPATIBILITY_MODULES.CAT);
     const overlapPolicy = game.settings.get(MODULE_ID, SETTINGS.OVERLAP_POLICY);
 
     this.#status = Object.freeze({
@@ -19,6 +20,8 @@ export class CompatibilityService {
       cprVersion: cprModule?.version ?? null,
       gps: Boolean(gpsModule?.active),
       gpsVersion: gpsModule?.version ?? null,
+      cat: Boolean(catModule?.active),
+      catVersion: catModule?.version ?? null,
       overlapPolicy
     });
 

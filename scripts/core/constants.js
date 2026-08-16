@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.29";
+export const MODULE_VERSION = "0.3.30";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -11,7 +11,8 @@ export const REQUIRED_MODULES = Object.freeze([
 
 export const COMPATIBILITY_MODULES = Object.freeze({
   CPR: "chris-premades",
-  GPS: "gambits-premades"
+  GPS: "gambits-premades",
+  CAT: "cat"
 });
 
 export const SETTINGS = Object.freeze({
