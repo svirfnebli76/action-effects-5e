@@ -7,6 +7,50 @@
 3. `setup` refreshes compatibility state.
 4. `ready` validates required dependencies, loads persisted relationships, initializes movement/relationship/displacement services plus the selection-indicator service, then emits `action-effects-5e.ready`.
 
+## v0.4.1 Spell Modifier Engine
+
+SME is a generic orchestration layer between spell-interacting feature declarations and the live Midi/D&D5e workflow. It does not embed feature names into spells and it does not make CAT the rules engine.
+
+### Responsibility split
+
+- **Midi-QOL/D&D5e** owns the actual spell workflow, target/save/damage sequence, and native rolls/application.
+- **SME event adapter** normalizes changing/raw Midi hook names into seven stable AE5E semantic phases.
+- **SME registry** owns programmatic modifier-handler definitions.
+- **SME discovery** scans only the caster Actor, embedded Items, and ActiveEffects for declarative `flags.action-effects-5e.spellModifier` registrations. It does not canvas-scan unrelated documents.
+- **SME choice service** aggregates all optional opportunities discovered at one phase into one controller-routed DialogV2 and reuses the AE5E selection-indicator lease.
+- **SpellModifierSession** owns one cast's decisions/applications/errors/conflicts/rollback stack.
+- **CatSpellAdapter** supplies characterized utility primitives when available. Feature handlers receive those utilities through `SpellModifierContext`; direct CAT calls are outside the SME contract.
+
+### Semantic lifecycle
+
+The normalized phase vocabulary is `preTargeting`, `targetingComplete`, `savesComplete`, `beforeDamageRoll`, `damageRollComplete`, `beforeDamageApplication`, and `workflowComplete`. The adapter currently maps those to the validated Midi V2/premades hooks, and duplicate damage-roll-complete/workflow-complete hook surfaces are reduced by the session event-key de-duplication layer. `beforeDamageApplication` is keyed per target so each target may legitimately run that phase once.
+
+Only the local workflow coordinator processes a spell. An explicit active `workflow.userId` wins; otherwise the first active non-GM Actor owner is used; otherwise the primary GM is the coordinator. Other connected clients observe the normal Foundry/Midi workflow but do not independently execute SME modifiers.
+
+### Registry and declarative discovery
+
+A registered modifier declares its semantic phases, automatic/optional mode, priority, optional conflict group, once-per-cast behavior, capability requirements, eligibility callback, optional runtime option generator, apply callback, and failure policy. Discovery declarations contain the handler ID plus source-specific overrides such as label, mode, priority, conflict group, phases, and once-per-cast behavior.
+
+A single handler may return multiple runtime options. Unless `allowMultipleOptions` is explicitly enabled, SME assigns those options one selection group so choosing one excludes its siblings. Explicit conflict groups work across separate modifier sources. Successful applications mark the session immediately so later phases cannot silently reapply a once-per-cast handler.
+
+Automatic modifiers execute before optional selection at the same semantic phase. The remaining optional opportunities are shown together in one choice transaction. The chooser response is validated again by the engine; UI state is never trusted as the conflict/selection authority.
+
+### Per-cast state and rollback
+
+The live `SpellModifierSession` is AE5E's authoritative transaction state. It is stored in memory against the Midi workflow, not persisted on the Actor or Item. Successful handlers may return a rollback callback; manual/session rollback executes those callbacks in reverse application order. Handler errors fail open by default, preserving the base spell, but a handler may opt into `failurePolicy: "abort"`. A handler may also explicitly return `abort: true`. Aborted, completed, and rolled-back sessions enter bounded recent-session diagnostics.
+
+CAT 0.0.6's characterized `workflowUtils.setWorkflowProperty/getWorkflowProperty` behavior is used only as a workflow-local mirror/interoperability surface. SME writes the serialized session snapshot to `workflow.cat.sme.actionEffects5e`. That state follows the same live workflow through later phases and is naturally isolated from a different cast; `SpellModifierSession` remains authoritative even if CAT is absent.
+
+### CAT utility boundary
+
+`CatSpellAdapter` exposes only characterized CAT 0.0.6 primitives: cast/save/action/damage facts, Activity substitution and damage-modified Activity data, synthetic in-memory Activities/Items, complete Activity execution, the validated roll utility set (`rollDiceSync`, `rollDice`, `getRollsTotal`, `getCriticalFormula`, `addToRoll`, `damageRoll`, `getChangedDamageRoll`, `hasDuplicateDie`), and per-target applied-damage helpers (`applyWorkflowDamage`, `modifyDamageAppliedFlat`, `setDamageItemDamage`, `negateDamageItemDamage`). Newer/uncharacterized CAT helpers are not assumed.
+
+Handlers list required capability names. If CAT is inactive or a required utility is absent, discovery omits that handler rather than partially executing it. Cast-level and save-DC facts retain narrow AE5E fallbacks for diagnostics/eligibility; mutating utilities fail explicitly if a handler calls one without the required capability.
+
+### v0.4.1 scope boundary
+
+This release builds the reusable engine and live integration seam. It deliberately does not encode individual feat/metamagic/item names in SME core and does not attempt to reproduce every feature's resource-consumption policy. Individual features will be added as registered SME consumers and can use their own validated resource logic until a genuinely generic resource abstraction is justified. The finalized v0.3.30 movement, displacement, relationship, Shove, selection-indicator, and Reaction Broker architectures remain independent and unchanged.
+
 ## v0.3.30 CAT movement interoperability
 
 CAT is an execution/permission integration, not AE5E's rules engine. The boundary is deliberately bidirectional and asymmetric.

@@ -24,6 +24,7 @@ import { MovementTransaction } from "../movement/movement-transaction.js";
 import { RelationshipGeometryService } from "../relationships/relationship-geometry-service.js";
 import { OrbitDebugOverlay } from "./orbit-debug-overlay.js";
 import { ReactionBrokerTestSuite } from "./reaction-broker-test-suite.js";
+import { SpellModifierEngineTestSuite } from "./spell-modifier-engine-test-suite.js";
 
 export class TestHarness {
   #dependencies;
@@ -42,9 +43,10 @@ export class TestHarness {
   #externalPromptBridge;
   #socket;
   #reactionSuite;
+  #smeSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -71,6 +73,21 @@ export class TestHarness {
       selectionIndicator,
       socket
     });
+    this.#smeSuite = new SpellModifierEngineTestSuite({
+      engine: spellModifiers,
+      registry: spellModifierRegistry,
+      discovery: spellModifierDiscovery,
+      events: spellModifierEvents,
+      catSpell
+    });
+  }
+
+  runSpellModifierEngineFoundationTest(options) {
+    return this.#smeSuite.runFoundationTest(options);
+  }
+
+  runSpellModifierEngineLiveActivitySubstitutionTest(options) {
+    return this.#smeSuite.runLiveActivitySubstitutionTest(options);
   }
 
   setupReactionBrokerTestScene(options) {

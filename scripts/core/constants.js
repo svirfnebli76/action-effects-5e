@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.3.30";
+export const MODULE_VERSION = "0.4.1";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -95,6 +95,34 @@ export const SELECTION_INDICATOR_CORNER_OFFSET_FACTOR = 0.40;
 export const SELECTION_INDICATOR_SCALE = SELECTION_INDICATOR_PREFERRED_SCALE;
 export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator`;
 
+
+
+export const SME_PHASES = Object.freeze({
+  PRE_TARGETING: "preTargeting",
+  TARGETING_COMPLETE: "targetingComplete",
+  SAVES_COMPLETE: "savesComplete",
+  BEFORE_DAMAGE_ROLL: "beforeDamageRoll",
+  DAMAGE_ROLL_COMPLETE: "damageRollComplete",
+  BEFORE_DAMAGE_APPLICATION: "beforeDamageApplication",
+  WORKFLOW_COMPLETE: "workflowComplete"
+});
+
+export const SME_MODIFIER_MODES = Object.freeze({
+  AUTOMATIC: "automatic",
+  OPTIONAL: "optional"
+});
+
+export const SME_SESSION_STATES = Object.freeze({
+  ACTIVE: "active",
+  ABORTED: "aborted",
+  COMPLETE: "complete",
+  ROLLED_BACK: "rolledBack"
+});
+
+export const SME_FLAG_SCOPE = MODULE_ID;
+export const SME_FLAG_KEY = "spellModifier";
+export const SME_MAX_RECENT_SESSIONS = 50;
+export const SME_WORKFLOW_STATE_PATH = "sme.actionEffects5e";
 
 export const REACTION_TRIGGERS = Object.freeze({
   SPELL_CAST: "spellCast"
@@ -288,5 +316,9 @@ export const HOOKS = Object.freeze({
   REACTION_TRANSACTION_CREATED: `${MODULE_ID}.reactionTransactionCreated`,
   REACTION_TRANSACTION_UPDATED: `${MODULE_ID}.reactionTransactionUpdated`,
   REACTION_TRANSACTION_COMPLETE: `${MODULE_ID}.reactionTransactionComplete`,
-  REACTION_AUTHORITY_CHANGED: `${MODULE_ID}.reactionAuthorityChanged`
+  REACTION_AUTHORITY_CHANGED: `${MODULE_ID}.reactionAuthorityChanged`,
+  SPELL_MODIFIER_PHASE: `${MODULE_ID}.spellModifierPhase`,
+  SPELL_MODIFIER_SESSION_CREATED: `${MODULE_ID}.spellModifierSessionCreated`,
+  SPELL_MODIFIER_APPLIED: `${MODULE_ID}.spellModifierApplied`,
+  SPELL_MODIFIER_SESSION_COMPLETE: `${MODULE_ID}.spellModifierSessionComplete`
 });

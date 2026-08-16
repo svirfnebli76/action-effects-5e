@@ -8,6 +8,7 @@ import { MovementRegistry } from "./movement/movement-registry.js";
 import { MovementAccountingService } from "./movement/movement-accounting-service.js";
 import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
+import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
@@ -28,6 +29,11 @@ import { ReactionOrderingService } from "./reactions/reaction-ordering-service.j
 import { ReactionDialogService } from "./reactions/reaction-dialog-service.js";
 import { ReactionBroker } from "./reactions/reaction-broker.js";
 import { ReactionEventAdapter } from "./reactions/reaction-event-adapter.js";
+import { SpellModifierRegistry } from "./spell-modifiers/spell-modifier-registry.js";
+import { SpellModifierDiscoveryService } from "./spell-modifiers/spell-modifier-discovery-service.js";
+import { SpellModifierChoiceService } from "./spell-modifiers/spell-modifier-choice-service.js";
+import { SpellModifierEngine } from "./spell-modifiers/spell-modifier-engine.js";
+import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-event-adapter.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -37,6 +43,7 @@ const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const movementAccounting = new MovementAccountingService();
 const catMovement = new CatMovementAdapter();
+const catSpell = new CatSpellAdapter();
 const relationships = new RelationshipService({ socket });
 const relativeRelationships = new RelativeTokenRelationshipService();
 const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement });
@@ -69,6 +76,17 @@ const reactionBroker = new ReactionBroker({
   socket
 });
 const reactionEvents = new ReactionEventAdapter({ broker: reactionBroker, registry: reactionRegistry, authority: reactionAuthority });
+const spellModifierRegistry = new SpellModifierRegistry();
+const spellModifierDiscovery = new SpellModifierDiscoveryService({ registry: spellModifierRegistry });
+const spellModifierChoices = new SpellModifierChoiceService({ socket, selectionIndicator });
+const spellModifiers = new SpellModifierEngine({
+  registry: spellModifierRegistry,
+  discovery: spellModifierDiscovery,
+  choices: spellModifierChoices,
+  catSpell,
+  authority: reactionAuthority
+});
+const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifiers, authority: reactionAuthority });
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -100,6 +118,12 @@ const tests = new TestHarness({
   movement,
   movementAccounting,
   catMovement,
+  catSpell,
+  spellModifierRegistry,
+  spellModifierDiscovery,
+  spellModifierChoices,
+  spellModifiers,
+  spellModifierEvents,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -124,6 +148,12 @@ const api = new ActionEffects5eApi({
   movement,
   movementAccounting,
   catMovement,
+  catSpell,
+  spellModifierRegistry,
+  spellModifierDiscovery,
+  spellModifierChoices,
+  spellModifiers,
+  spellModifierEvents,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -176,6 +206,7 @@ Hooks.once("ready", async () => {
   externalPromptBridge.initialize();
   await reactionAuthority.initialize();
   reactionEvents.initialize();
+  spellModifierEvents.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

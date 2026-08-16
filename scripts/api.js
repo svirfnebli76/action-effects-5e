@@ -28,6 +28,12 @@ import {
   REACTION_TRANSACTION_STATES,
   REACTION_RESPONSES,
   REACTION_SOURCE_RESULTS,
+  SME_PHASES,
+  SME_MODIFIER_MODES,
+  SME_SESSION_STATES,
+  SME_FLAG_SCOPE,
+  SME_FLAG_KEY,
+  SME_WORKFLOW_STATE_PATH,
   SELECTION_INDICATOR_EFFECT_NAME,
   SELECTION_INDICATOR_FALLBACK_ASSET,
   SELECTION_INDICATOR_FALLBACK_SCALE,
@@ -51,6 +57,12 @@ export class ActionEffects5eApi {
     movement,
     movementAccounting,
     catMovement,
+    catSpell,
+    spellModifierRegistry,
+    spellModifierDiscovery,
+    spellModifierChoices,
+    spellModifiers,
+    spellModifierEvents,
     relationships,
     relationshipMovement,
     relationshipRotation,
@@ -101,6 +113,12 @@ export class ActionEffects5eApi {
       REACTION_TRANSACTION_STATES,
       REACTION_RESPONSES,
       REACTION_SOURCE_RESULTS,
+      SME_PHASES,
+      SME_MODIFIER_MODES,
+      SME_SESSION_STATES,
+      SME_FLAG_SCOPE,
+      SME_FLAG_KEY,
+      SME_WORKFLOW_STATE_PATH,
       SELECTION_INDICATOR_PREFERRED_ASSET,
       SELECTION_INDICATOR_PREFERRED_TINT,
       SELECTION_INDICATOR_FALLBACK_ASSET,
@@ -130,9 +148,33 @@ export class ActionEffects5eApi {
     this.interoperability = Object.freeze({
       cat: Object.freeze({
         getStatus: () => catMovement.getStatus(),
-        getStats: () => catMovement.getStats()
+        getStats: () => catMovement.getStats(),
+        spell: Object.freeze({
+          getStatus: () => catSpell.getStatus(),
+          getStats: () => catSpell.getStats()
+        })
       })
     });
+
+    const smeApi = Object.freeze({
+      registerModifier: (id, config) => spellModifiers.registerModifier(id, config),
+      unregisterModifier: (id) => spellModifiers.unregisterModifier(id),
+      discover: (options) => spellModifiers.discover(options),
+      processPhase: (phase, workflow, options) => spellModifiers.processPhase(phase, workflow, options),
+      processMidiPhase: (phase, workflow, options) => spellModifierEvents.processMidiPhase(phase, workflow, options),
+      getRegistration: (source) => spellModifierDiscovery.getRegistration(source),
+      getSession: (subject) => spellModifiers.getSession(subject),
+      getRecentSessions: () => spellModifiers.getRecentSessions(),
+      rollbackSession: (subject, options) => spellModifiers.rollbackSession(subject, options),
+      clearSession: (subject, options) => spellModifiers.clearSession(subject, options),
+      getStats: () => spellModifiers.getStats(),
+      getRegistryStats: () => spellModifierRegistry.getStats(),
+      getChoiceStats: () => spellModifierChoices.getStats(),
+      getEventAdapterStats: () => spellModifierEvents.getStats(),
+      getCatStatus: () => catSpell.getStatus()
+    });
+    this.sme = smeApi;
+    this.spellModifiers = smeApi;
 
     this.movement = Object.freeze({
       registerConsumer: (config) => movement.registerConsumer(config),
@@ -220,6 +262,8 @@ export class ActionEffects5eApi {
     });
 
     this.tests = Object.freeze({
+      runSpellModifierEngineFoundationTest: (options) => tests.runSpellModifierEngineFoundationTest(options),
+      runSpellModifierEngineLiveActivitySubstitutionTest: (options) => tests.runSpellModifierEngineLiveActivitySubstitutionTest(options),
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
       runMovementAccountingTest: (options) => tests.runMovementAccountingTest(options),
       runCatMovementInteroperabilityTest: (options) => tests.runCatMovementInteroperabilityTest(options),

@@ -112,3 +112,81 @@
 .ae5e-reaction-disabled-control > button {
   width: 100%;
 }
+
+/* ------------------------------------------------------------
+ * Spell Modifier Engine (0.4.1)
+ * ---------------------------------------------------------- */
+.ae5e-sme-dialog .window-content {
+  min-width: 430px;
+}
+
+.ae5e-sme-host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ae5e-sme-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--color-border-light-2, #777);
+  padding-bottom: 0.45rem;
+}
+
+.ae5e-sme-header > span {
+  opacity: 0.72;
+  font-size: 0.85em;
+}
+
+.ae5e-sme-state > p {
+  margin-top: 0;
+}
+
+.ae5e-sme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.ae5e-sme-option {
+  display: grid;
+  grid-template-columns: auto 36px 1fr;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--color-border-light-2, #777);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.ae5e-sme-option:hover {
+  background: rgb(255 255 255 / 0.05);
+}
+
+.ae5e-sme-option > img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border: 0;
+}
+
+.ae5e-sme-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ae5e-sme-option-copy small {
+  opacity: 0.72;
+}
+
+.ae5e-sme-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}

@@ -1,4 +1,33 @@
+## 0.4.1 — Spell Modifier Engine foundation
+
+- Added the first production **Spell Modifier Engine (SME)** foundation. SME is a generic per-cast orchestration layer for feats, class features, metamagic, items, effects, and later integrations that can inspect or modify a spell workflow without requiring each spell to hard-code awareness of those features.
+- Added seven AE5E semantic spell phases: `preTargeting`, `targetingComplete`, `savesComplete`, `beforeDamageRoll`, `damageRollComplete`, `beforeDamageApplication`, and `workflowComplete`. `SpellModifierEventAdapter` normalizes the relevant live Midi-QOL hooks into those phases and de-duplicates equivalent duplicate hook surfaces.
+- Added a programmatic modifier-handler registry with priority, automatic/optional mode, capability requirements, per-cast application policy, conflict groups, multi-option support, eligibility, option generation, apply callbacks, configurable fail-open/fail-closed behavior, and reverse-order rollback callbacks.
+- Added declarative modifier discovery on caster Actor, Item, and ActiveEffect sources through `flags.action-effects-5e.spellModifier` (plus plural compatibility input). Declarations identify a registered generic handler; the engine, rather than individual spells, discovers applicable opportunities at each phase.
+- Added an aggregated optional-modifier chooser. All optional opportunities discovered at one semantic phase are presented in one movable AE5E DialogV2, use the existing originator selection indicator/audio lease, and enforce option-selection groups and explicit conflict groups before application. Closing the choice window fails open and continues the unmodified base spell.
+- Added `SpellModifierSession`, one isolated per-cast transaction that records normalized phase visits, decisions, successful applications, errors, applied/conflict keys, rollback callbacks, and terminal state. Sessions are kept off Actor/Item documents and archived into a bounded recent diagnostic history.
+- Integrated the CAT workflow-local state mechanism characterized during SME research. While CAT exposes `setWorkflowProperty` / `getWorkflowProperty`, AE5E mirrors the current session snapshot at `workflow.cat.sme.actionEffects5e` (`SME_WORKFLOW_STATE_PATH = "sme.actionEffects5e"`). AE5E's `SpellModifierSession` remains authoritative; the CAT property is a workflow-local interoperability/diagnostic mirror and does not persist between casts.
+- Added `CatSpellAdapter`, the single CAT-facing SME utility facade. It wraps the CAT 0.0.6 workflow/activity/item/roll/applied-damage primitives already characterized in Foundry, including Activity substitution, cast/save facts, synthetic in-memory Activities/Items, typed damage-roll utilities, roll augmentation/type replacement, and per-target applied-damage adjustment. Modifier handlers consume AE5E `SpellModifierContext` methods rather than calling CAT directly.
+- Capability-gated handlers simply do not become offers when their required CAT utility is unavailable. CAT therefore remains recommended rather than a hard module dependency for the generic SME core; specific modifiers may declare the capabilities they require.
+- Added public `ae5e.sme` / `ae5e.spellModifiers` APIs for handler registration, discovery, phase processing, session diagnostics/rollback/cleanup, registry/UI/event-adapter diagnostics, and CAT spell-capability diagnostics. SME constants are exposed through `ae5e.constants`.
+- Added Foundry-only SME validation: `runSpellModifierEngineFoundationTest()` covers generic registry/discovery/choice/conflict/session/rollback/event-adapter behavior, while `runSpellModifierEngineLiveActivitySubstitutionTest()` executes a disposable synthetic spell through the real Midi/CAT/D&D5e workflow and proves early fire→cold Activity substitution reaches the actual D&D5e damage roll, phase propagation, per-target damage-application timing, workflow-local state mirroring, and cleanup.
+- v0.4.1 deliberately ships **infrastructure, not hard-coded Transmuted Spell/Empowered Spell/etc. implementations**. It also does not create a second general resource-consumption engine; individual modifier implementations can add their own validated resource policy as those features are built.
+- The finalized v0.3.30 movement, Shove, relationship, displacement, selection-indicator, and Reaction Broker runtimes are otherwise preserved.
+
 ## 0.3.30 — CAT movement interoperability
+
+### Final Foundry acceptance
+
+- Finalized the revised1 runtime with **no further runtime JavaScript changes** after the complete Foundry acceptance gate passed.
+- CAT interoperability harness: **19/19 PASS**, including external `catForce` semantic recognition, AE5E-through-CAT measured/zero-cost movement, metadata preservation, real wall-constrained execution, and disposable-fixture cleanup.
+- CAT non-owner player → GM movement routing: **PASS** using a connected non-GM player against a non-owned fixture Token.
+- Broad movement regression: **48/48 PASS** across foundation smoke, native movement accounting, forced displacement, Follower-body disposition, and Grapple-link obstruction.
+- Live forced-displacement native accounting through CAT: **21/21 PASS** for Push, Pull, soft-endpoint grace, and administrative rollback, all preserving Foundry movement history and AE5E's measured zero-cost movement action.
+- Reaction Broker foundation sanity regression: **18/18 PASS**; the unchanged deeper v0.3.28 Broker certification remains authoritative.
+- Revised Shove destination geometry: **11/11 PASS**, proving three intentional 5-foot stops plus five 10-foot endpoints, mixed-direction paths inside the original AWAY fan, and separated compact selectors for 2x2/3x3 targets.
+- Live large-token selector acceptance: **PASS** for both 2x2 and 3x3 targets; all eight bright-green edge/corner handles were visually distinguishable, easy to associate with their destination, and easy to click.
+- Final post-revision displacement gate: displacement foundation **9/9 PASS** plus live forced-displacement accounting **21/21 PASS**.
+- Terrain Mapper `updateToken`, Effect Macro combat-hook, and CRLNGN UI scene-navigation console exceptions observed during test setup are external module errors previously seen outside this revision; they did not alter any AE5E acceptance result.
 
 ### Revised1 — steerable AWAY Shove destinations
 

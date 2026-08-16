@@ -15,14 +15,7 @@ The harness configures the exact `Leader`, `Follower`, `Ally`, `Enemy`, `Neutral
 
 ## Startup check
 
-After replacing module files and restarting Foundry, v0.3.24 should report:
-
-```text
-Action Effects 5E | Registered 9 Socketlib handlers.
-Action Effects 5E | v0.3.24 dependencies validated.
-Action Effects 5E | Relationship rotation service ready.
-Action Effects 5E | Foundation ready.
-```
+After replacing module files and restarting Foundry, confirm that Action Effects 5E reports its Socketlib registrations, dependency validation, and `Foundation ready` without an AE5E startup exception. The exact Socketlib handler count is not a release invariant because subsystems add handlers over time.
 
 Run the non-destructive smoke test:
 
@@ -30,6 +23,40 @@ Run the non-destructive smoke test:
 const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
+
+## v0.4.1 Spell Modifier Engine acceptance
+
+SME behavioral acceptance is performed inside Foundry. The first gate is deterministic and does not cast a real spell:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runSpellModifierEngineFoundationTest({ notify: true });
+```
+
+Expected foundation result: **24/24 PASS**. It validates the seven semantic phases, registry/discovery from caster feature flags, multi-option selection groups, automatic-before-optional ordering, one aggregated optional chooser, explicit conflicts, normalized spell facts, duplicate event suppression, once-per-cast policy, cross-phase session continuity, later-phase application, reverse-order rollback, recent-session archival, non-spell fast exit, workflow completion, event-adapter hook installation, and test-handler cleanup. This is a Foundry execution gate even though the test uses synthetic workflow objects for deterministic engine isolation.
+
+The second gate exercises the production Midi/CAT/D&D5e seam. Run as GM with CAT active, an active Scene, and **exactly one caster token controlled**. The controlled Actor must own at least one simple `damage`-type spell Activity with damage parts and no measured template; Magic Missile's dart Activity is a typical valid fixture.
+
+```js
+await ae5e.tests.runSpellModifierEngineLiveActivitySubstitutionTest({ notify: true });
+```
+
+A complete live pass should report **32/32 PASS**. The test uses the controlled Actor only as a read-only template source. It creates disposable source/target Actors and hidden Tokens, embeds only a disposable feature registration on the disposable source, builds the test spell as a CAT synthetic in-memory Item, and executes it with `consumeUsage: false`, `consumeResources: false`, and `spellSlot: false`.
+
+The live gate proves:
+
+1. required CAT 0.0.6 Activity/workflow-state/synthetic/execution capabilities are present;
+2. SME discovers a declarative feature registration on the caster;
+3. an automatic `preTargeting` handler replaces a synthetic fire Activity with cold through the AE5E CAT facade;
+4. `midi-qol.preDamageRoll` (**internal `preDamageRoll` = UI “Before Damage Roll”**) sees the cold Activity before any evaluated damage roll exists;
+5. the actual `dnd5e.rollDamage` subject and resulting DamageRoll are cold rather than fire;
+6. SME reaches `beforeDamageRoll`, `damageRollComplete`, per-target `beforeDamageApplication`, and `workflowComplete`;
+7. the same SME session crosses the real workflow and finishes `complete`;
+8. the completed session is mirrored at `workflow.cat.sme.actionEffects5e`;
+9. the real controlled caster's HP, Items, Effects, and spell-resource data remain unchanged; and
+10. all test-created Actors, Tokens, handlers, and ChatMessages are cleaned up.
+
+Do not treat external module console warnings as SME failures unless an SME acceptance check fails or the workflow result is altered. After both SME gates pass, rerun the unchanged v0.3.30 foundation/movement and targeted Reaction Broker sanity tests before finalizing 0.4.1.
 
 ## v0.3.30 CAT movement interoperability regression
 
@@ -110,6 +137,22 @@ await ae5e.tests.runShoveDestinationGeometryTest();
 The harness uses the standard `Leader`, `Follower`, `Ally`, `Enemy`, `Neutral`, and `Secret` fixture and restores it on a complete pass. It verifies: an unobstructed 10-foot northward `AWAY` Push exposes exactly eight endpoints (three intentional 5-foot stops plus five 10-foot endpoints); the two former intermediate-angle gaps are reachable by mixed direction paths; every path step stays inside the original Source-to-Target fan; a mixed two-step destination executes through the production movement executor; an intentional 5-foot selection from a 10-foot maximum reports the shorter requested distance rather than a partial failure; and 2x2/3x3 targets receive eight separated bright-green compact selection handles near the leading edges of their overlapping footprint ghosts. A failure leaves the diagnostic fixture visible.
 
 After the automated pass, perform an interactive visual/clickability smoke test with a 2x2 and then a 3x3 Target using `previewDisplacementFromControlledTokens({ distance: 10 })`. Confirm that all eight valid choices are visually distinguishable and that the bright-green compact handles, rather than the overlapping ghost footprints, are easy to click.
+
+### Final v0.3.30 acceptance record
+
+The finalized v0.3.30 runtime is the tested revised1 implementation; finalization changed release documentation only. Foundry acceptance completed with:
+
+- CAT movement interoperability: **19/19 PASS**.
+- CAT non-owner player → GM permission routing: **PASS**.
+- Broad movement regression: **48/48 PASS**.
+- Live forced-displacement native accounting: **21/21 PASS**.
+- Reaction Broker foundation sanity: **18/18 PASS**.
+- Revised Shove destination geometry: **11/11 PASS**.
+- Interactive 2x2 and 3x3 large-token Shove selector usability: **PASS** for both sizes.
+- Final post-revision displacement foundation: **9/9 PASS**.
+- Final post-revision live forced-displacement accounting: **21/21 PASS**.
+
+The final Shove rule for `AWAY` is a fixed original directional fan with step-by-step steering only among directions inside that fan, and the requested distance is a maximum: shorter legal endpoints remain selectable. `STRAIGHT_AWAY` and Pull's `STRAIGHT_TOWARD` remain fixed-ray/direct-line behaviors.
 
 ## v0.3.25 forced-displacement foundation
 

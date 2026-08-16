@@ -1,6 +1,77 @@
 # Action Effects 5E
 
-Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its first subsystem is a low-overhead movement, spatial-event, and rules-aware token relationship framework.
+Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its reusable subsystems now include rules-aware movement/relationships, forced displacement, the Reaction Broker, and the Spell Modifier Engine.
+
+### v0.4.1 Spell Modifier Engine
+
+The **Spell Modifier Engine (SME)** is AE5E's generic spell-interaction layer. A spell does not need to know that a specific feat, metamagic option, class feature, item, or effect exists. Instead, modifier sources declare a registered handler, SME discovers all legal opportunities on the caster, normalizes the live Midi workflow into stable semantic phases, aggregates optional choices, applies the selected handlers, and keeps one isolated session for that cast.
+
+The first foundation exposes these semantic phases:
+
+| SME phase | Primary live boundary | Purpose |
+|---|---|---|
+| `preTargeting` | `midi-qol.preTargetingV2` | Earliest live-workflow changes such as Activity substitution before targeting/rolling. |
+| `targetingComplete` | `midi-qol.premades.postPreambleComplete` | Target set/preamble has settled. |
+| `savesComplete` | `midi-qol.premades.postSavesComplete` | Save outcomes are available. |
+| `beforeDamageRoll` | `midi-qol.preDamageRoll` | **Midi On-Use internal pass `preDamageRoll` = UI “Before Damage Roll”**; evaluated damage rolls do not yet exist. |
+| `damageRollComplete` | Midi damage-roll-complete hooks | Evaluated damage rolls are now available. |
+| `beforeDamageApplication` | `midi-qol.preTargetDamageApplication` | Per-target final damage application can be inspected/adjusted. |
+| `workflowComplete` | Midi roll/workflow completion hooks | Terminal bookkeeping/cleanup. |
+
+Modifier implementations register once with SME, for example:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+const unregister = ae5e.sme.registerModifier("my-module.example", {
+  label: "Example Spell Modifier",
+  phases: [ae5e.constants.SME_PHASES.PRE_TARGETING],
+  mode: ae5e.constants.SME_MODIFIER_MODES.OPTIONAL,
+  priority: 100,
+  oncePerCast: true,
+  requiresCapabilities: ["setActivity"],
+  eligibility: async ({ context }) => context.facts.isSpell,
+  apply: async ({ context }) => {
+    // Use AE5E context methods; do not call CAT directly.
+    return { applied: true };
+  }
+});
+```
+
+A caster feature then opts into that generic handler with a flag rather than changing the spell:
+
+```js
+flags: {
+  "action-effects-5e": {
+    spellModifier: {
+      handler: "my-module.example",
+      enabled: true
+    }
+  }
+}
+```
+
+Declarations may live on the caster Actor, an embedded Item, or an ActiveEffect. A handler can provide multiple runtime options; SME groups those options when only one may be chosen, honors explicit conflict groups, applies automatic modifiers before optional choices, and presents all remaining optional opportunities for the current phase in **one** AE5E choice window.
+
+Every cast receives a `SpellModifierSession`. It records phase visits, decisions, applications, conflicts, errors, and rollback callbacks without writing transient state onto the Actor or spell Item. When CAT's characterized workflow-state helpers are present, AE5E also mirrors the session snapshot at `workflow.cat.sme.actionEffects5e`; that mirror is isolated to the current workflow and is not the authoritative SME state.
+
+CAT is behind `CatSpellAdapter`. Modifier handlers use methods on `SpellModifierContext` for Activity replacement, cast/save facts, synthetic Activities/Items, roll utilities, and per-target damage adjustment. If a handler declares a CAT capability that is unavailable, that handler is not offered. The generic SME registry/session/discovery layer itself does not require CAT.
+
+**v0.4.1 is the engine foundation.** It intentionally does not yet bundle bespoke implementations of Transmuted Spell, Empowered Spell, Careful Spell, Sculpt Spells, or other individual features. Those become small consumers of this subsystem rather than new spell-specific frameworks.
+
+Foundry validation begins with:
+
+```js
+await ae5e.tests.runSpellModifierEngineFoundationTest();
+```
+
+Then, with CAT active and exactly one caster token controlled that owns a simple non-template damaging spell Activity:
+
+```js
+await ae5e.tests.runSpellModifierEngineLiveActivitySubstitutionTest();
+```
+
+The live gate creates disposable Actors/Tokens and an in-memory synthetic spell, performs a real Midi workflow with zero real caster resource consumption, verifies early Activity substitution reaches D&D5e's actual damage roll, and removes its temporary documents/messages afterward.
 
 ### v0.3.30 CAT movement interoperability
 
@@ -20,6 +91,8 @@ await ae5e.tests.runCatMovementInteroperabilityTest();
 ```
 
 The test creates and deletes its own disposable Actor/Token. It validates CAT execution, CAT `catForce` recognition, preservation of AE5E's measured/zero-cost action through CAT, semantic transaction metadata, and live wall constraint handling.
+
+**Final v0.3.30 Foundry acceptance:** CAT interoperability **19/19 PASS**; non-owner player → GM CAT routing **PASS**; broad movement regression **48/48 PASS**; live forced-displacement accounting **21/21 PASS**; Reaction Broker foundation sanity **18/18 PASS**; revised Shove geometry **11/11 PASS**; live 2x2 and 3x3 large-token selector usability **PASS**; and the post-revision final displacement gate **9/9 + 21/21 PASS**. The finalized runtime is the tested revised1 implementation with release-documentation cleanup only.
 
 ### v0.3.29 Native movement accounting
 
@@ -72,7 +145,7 @@ Final Foundry acceptance passed across the foundation, normal/nested interactive
 
 ## Recommended modules
 
-- CAT (Coven's Automation Toolkit) — preferred low-level single-token movement executor/permission facade for v0.3.30. AE5E falls back to Foundry movement when CAT is inactive.
+- CAT (Coven's Automation Toolkit) — preferred low-level single-token movement executor/permission facade and the characterized utility provider used by CAT-capability-gated SME modifiers. AE5E keeps CAT behind dedicated adapters and does not make it a hard module dependency.
 - Sequencer — used by the v0.3.27 selection/popup activity indicator. AE5E continues to function without it; only the advisory visual is omitted.
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
