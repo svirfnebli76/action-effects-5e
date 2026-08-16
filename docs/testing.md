@@ -98,6 +98,19 @@ Because the Reaction Broker runtime was unchanged in v0.3.29, release regression
 
 Final v0.3.29 acceptance matrix: foundation + movement accounting **24/24 PASS**; live Leader/Follower combat accounting **18/18 PASS**; displacement foundation **9/9 PASS**; live forced-displacement accounting **21/21 PASS**; Follower-body disposition matrix **8/8 PASS**; Grapple-link obstruction **6/6 PASS**; Reaction Broker foundation sanity **18/18 PASS**; normal interactive Broker sanity **12/12 PASS**; live final-cost modifier **6/6 PASS**.
 
+## v0.3.30 revised Shove destination geometry
+
+Run the targeted Foundry-only Shove geometry regression before repeating the established displacement/accounting gates:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runShoveDestinationGeometryTest();
+```
+
+The harness uses the standard `Leader`, `Follower`, `Ally`, `Enemy`, `Neutral`, and `Secret` fixture and restores it on a complete pass. It verifies: an unobstructed 10-foot northward `AWAY` Push exposes exactly eight endpoints (three intentional 5-foot stops plus five 10-foot endpoints); the two former intermediate-angle gaps are reachable by mixed direction paths; every path step stays inside the original Source-to-Target fan; a mixed two-step destination executes through the production movement executor; an intentional 5-foot selection from a 10-foot maximum reports the shorter requested distance rather than a partial failure; and 2x2/3x3 targets receive eight separated bright-green compact selection handles near the leading edges of their overlapping footprint ghosts. A failure leaves the diagnostic fixture visible.
+
+After the automated pass, perform an interactive visual/clickability smoke test with a 2x2 and then a 3x3 Target using `previewDisplacementFromControlledTokens({ distance: 10 })`. Confirm that all eight valid choices are visually distinguishable and that the bright-green compact handles, rather than the overlapping ghost footprints, are easy to click.
+
 ## v0.3.25 forced-displacement foundation
 
 Run the complete Foundry-only displacement regression:

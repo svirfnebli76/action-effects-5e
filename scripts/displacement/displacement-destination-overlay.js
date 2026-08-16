@@ -8,6 +8,11 @@ const COLORS = Object.freeze({
   [DISPLACEMENT_DESTINATION_STATES.BLOCKED]: 0xD95C5C
 });
 
+// Large/Huge destination footprints overlap heavily. Their ghost footprint keeps
+// the normal state color, while the compact click handle is deliberately a much
+// brighter green so the actual selection target remains obvious.
+const LARGE_TOKEN_SELECTOR_COLOR = 0x39FF14;
+
 function drawRect(graphics, x, y, width, height, color, { fillAlpha = 0.22, strokeAlpha = 0.95, strokeWidth = 4 } = {}) {
   if (typeof graphics.rect === "function" && typeof graphics.fill === "function" && typeof graphics.stroke === "function") {
     graphics.rect(x, y, width, height);
@@ -20,6 +25,82 @@ function drawRect(graphics, x, y, width, height, color, { fillAlpha = 0.22, stro
   graphics.beginFill?.(color, fillAlpha);
   graphics.drawRect?.(x, y, width, height);
   graphics.endFill?.();
+}
+
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function buildLayout({ candidates = [], targetToken, gridSize }) {
+  const resolvedGridSize = Math.max(1, finiteNumber(gridSize, 100));
+  const targetWidthSquares = Math.max(finiteNumber(targetToken?.width, 1), 0.001);
+  const targetHeightSquares = Math.max(finiteNumber(targetToken?.height, 1), 0.001);
+  const width = targetWidthSquares * resolvedGridSize;
+  const height = targetHeightSquares * resolvedGridSize;
+  const compactSelection = targetWidthSquares > 1 || targetHeightSquares > 1;
+  const handleSize = Math.max(28, Math.min(resolvedGridSize * 0.44, 64));
+  const targetX = finiteNumber(targetToken?.x, 0);
+  const targetY = finiteNumber(targetToken?.y, 0);
+
+  return candidates.map((candidate, index) => {
+    const displayPosition = candidate.selectable
+      ? candidate.destination
+      : candidate.requestedDestination;
+    if (!displayPosition) return null;
+
+    const stateColor = COLORS[candidate.state] ?? 0xFFFFFF;
+    const footprint = {
+      x: finiteNumber(displayPosition.x, 0),
+      y: finiteNumber(displayPosition.y, 0),
+      width,
+      height
+    };
+
+    let handle = null;
+    if (compactSelection && candidate.selectable) {
+      const centerX = footprint.x + (width / 2);
+      const centerY = footprint.y + (height / 2);
+      const deltaX = footprint.x - targetX;
+      const deltaY = footprint.y - targetY;
+      const edgeInsetX = Math.min(resolvedGridSize / 2, width / 2);
+      const edgeInsetY = Math.min(resolvedGridSize / 2, height / 2);
+
+      let handleCenterX = centerX;
+      let handleCenterY = centerY;
+      if (deltaX > 0.001) handleCenterX = footprint.x + width - edgeInsetX;
+      else if (deltaX < -0.001) handleCenterX = footprint.x + edgeInsetX;
+      if (deltaY > 0.001) handleCenterY = footprint.y + height - edgeInsetY;
+      else if (deltaY < -0.001) handleCenterY = footprint.y + edgeInsetY;
+
+      handle = {
+        x: handleCenterX - (handleSize / 2),
+        y: handleCenterY - (handleSize / 2),
+        width: handleSize,
+        height: handleSize,
+        centerX: handleCenterX,
+        centerY: handleCenterY,
+        color: LARGE_TOKEN_SELECTOR_COLOR
+      };
+    }
+
+    return {
+      index,
+      candidate,
+      candidateKey: candidate.key ?? null,
+      state: candidate.state ?? null,
+      selectable: candidate.selectable === true,
+      displayPosition: {
+        x: footprint.x,
+        y: footprint.y,
+        elevation: finiteNumber(displayPosition.elevation, 0)
+      },
+      compactSelection,
+      stateColor,
+      footprint,
+      handle
+    };
+  }).filter(Boolean);
 }
 
 export class DisplacementDestinationOverlay {
@@ -46,6 +127,34 @@ export class DisplacementDestinationOverlay {
     if (cancelled && cancel) cancel();
   }
 
+  /**
+   * Pure geometry diagnostic used by Foundry-only regression tests. It exposes
+   * the same footprint/compact-handle placement used by select() without
+   * creating PIXI objects or opening an interaction.
+   */
+  describeLayout({ candidates = [], targetToken, gridSize = null } = {}) {
+    const resolvedGridSize = finiteNumber(
+      gridSize,
+      finiteNumber(globalThis.canvas?.scene?.grid?.size ?? globalThis.canvas?.grid?.size, 100)
+    );
+    const layout = buildLayout({ candidates, targetToken, gridSize: resolvedGridSize });
+    return {
+      gridSize: resolvedGridSize,
+      compactSelection: Math.max(finiteNumber(targetToken?.width, 1), finiteNumber(targetToken?.height, 1)) > 1,
+      largeTokenSelectorColor: LARGE_TOKEN_SELECTOR_COLOR,
+      entries: layout.map((entry) => ({
+        candidateKey: entry.candidateKey,
+        state: entry.state,
+        selectable: entry.selectable,
+        displayPosition: { ...entry.displayPosition },
+        compactSelection: entry.compactSelection,
+        stateColor: entry.stateColor,
+        footprint: { ...entry.footprint },
+        handle: entry.handle ? { ...entry.handle } : null
+      }))
+    };
+  }
+
   async select({ candidates = [], targetToken, title = "Choose forced movement destination" } = {}) {
     this.clear({ cancelled: true });
     if (!canvas?.ready) throw new Error("A Scene canvas must be active to select a displacement destination.");
@@ -61,13 +170,7 @@ export class DisplacementDestinationOverlay {
     if (!parent?.addChild) throw new Error("No suitable Foundry canvas group is available for displacement destination selection.");
 
     const gridSize = Number(canvas.scene?.grid?.size ?? canvas.grid?.size ?? 100);
-    const targetWidthSquares = Math.max(Number(targetToken?.width ?? 1), 0.001);
-    const targetHeightSquares = Math.max(Number(targetToken?.height ?? 1), 0.001);
-    const width = targetWidthSquares * gridSize;
-    const height = targetHeightSquares * gridSize;
-    const compactSelection = targetWidthSquares > 1 || targetHeightSquares > 1;
-    const handleSize = Math.max(28, Math.min(gridSize * 0.44, 64));
-
+    const layout = buildLayout({ candidates, targetToken, gridSize });
     const container = new PIXI.Container();
     container.name = "action-effects-5e-displacement-destinations";
     container.sortableChildren = true;
@@ -83,27 +186,19 @@ export class DisplacementDestinationOverlay {
       };
       this.#cancel = () => finish(null);
 
-      for (const candidate of candidates) {
-        const displayPosition = candidate.selectable
-          ? candidate.destination
-          : candidate.requestedDestination;
-        if (!displayPosition) continue;
-
-        const color = COLORS[candidate.state] ?? 0xFFFFFF;
+      for (const entry of layout) {
+        const candidate = entry.candidate;
 
         // A 1x1 target can use the entire destination square as the click target.
-        // Larger target footprints overlap one another for adjacent direction choices,
-        // so render their full footprint only as a faint ghost and use a compact,
-        // non-overlapping handle at the future token center for selection.
-        if (!compactSelection) {
+        if (!entry.compactSelection) {
           const graphics = new PIXI.Graphics();
           drawRect(
             graphics,
-            displayPosition.x,
-            displayPosition.y,
-            width,
-            height,
-            color,
+            entry.footprint.x,
+            entry.footprint.y,
+            entry.footprint.width,
+            entry.footprint.height,
+            entry.stateColor,
             {
               fillAlpha: candidate.selectable ? 0.24 : 0.12,
               strokeAlpha: candidate.selectable ? 1 : 0.7,
@@ -131,14 +226,15 @@ export class DisplacementDestinationOverlay {
           continue;
         }
 
+        // Large+ destinations keep a faint, state-colored footprint ghost.
         const ghost = new PIXI.Graphics();
         drawRect(
           ghost,
-          displayPosition.x,
-          displayPosition.y,
-          width,
-          height,
-          color,
+          entry.footprint.x,
+          entry.footprint.y,
+          entry.footprint.width,
+          entry.footprint.height,
+          entry.stateColor,
           {
             fillAlpha: candidate.selectable ? 0.045 : 0.025,
             strokeAlpha: candidate.selectable ? 0.62 : 0.42,
@@ -150,68 +246,41 @@ export class DisplacementDestinationOverlay {
         ghost.interactive = false;
         container.addChild(ghost);
 
+        // Only selectable Large+ destinations receive the compact bright-green
+        // target box. Blocked footprints remain visible in red without adding a
+        // misleading disabled selection handle.
+        if (!entry.handle) continue;
+
         const handle = new PIXI.Graphics();
-        const centerX = displayPosition.x + (width / 2);
-        const centerY = displayPosition.y + (height / 2);
-
-        // Put the compact selector on the destination footprint's leading
-        // edge/corner instead of its center. A one-grid-step displacement of
-        // a Large+ token necessarily overlaps much of its starting footprint;
-        // a centered handle can therefore sit on top of the token being moved.
-        // The leading destination cell is both visually unambiguous and remains
-        // associated with the full ghost footprint that will be occupied.
-        const targetX = Number(targetToken?.x ?? 0);
-        const targetY = Number(targetToken?.y ?? 0);
-        const deltaX = Number(displayPosition.x) - targetX;
-        const deltaY = Number(displayPosition.y) - targetY;
-        const edgeInsetX = Math.min(gridSize / 2, width / 2);
-        const edgeInsetY = Math.min(gridSize / 2, height / 2);
-
-        let handleCenterX = centerX;
-        let handleCenterY = centerY;
-
-        if (deltaX > 0.001) handleCenterX = displayPosition.x + width - edgeInsetX;
-        else if (deltaX < -0.001) handleCenterX = displayPosition.x + edgeInsetX;
-
-        if (deltaY > 0.001) handleCenterY = displayPosition.y + height - edgeInsetY;
-        else if (deltaY < -0.001) handleCenterY = displayPosition.y + edgeInsetY;
-
         drawRect(
           handle,
-          handleCenterX - (handleSize / 2),
-          handleCenterY - (handleSize / 2),
-          handleSize,
-          handleSize,
-          color,
+          entry.handle.x,
+          entry.handle.y,
+          entry.handle.width,
+          entry.handle.height,
+          entry.handle.color,
           {
-            fillAlpha: candidate.selectable ? 0.5 : 0.2,
-            strokeAlpha: candidate.selectable ? 1 : 0.72,
-            strokeWidth: candidate.selectable ? 4 : 3
+            fillAlpha: 0.62,
+            strokeAlpha: 1,
+            strokeWidth: 4
           }
         );
         handle.zIndex = 20;
-
-        if (candidate.selectable) {
-          handle.eventMode = "static";
-          handle.interactive = true;
-          handle.cursor = "pointer";
-          handle.on?.("pointerover", () => {
-            handle.alpha = 0.72;
-            ghost.alpha = 1;
-          });
-          handle.on?.("pointerout", () => {
-            handle.alpha = 1;
-            ghost.alpha = 1;
-          });
-          handle.on?.("pointertap", (event) => {
-            event?.stopPropagation?.();
-            finish(candidate);
-          });
-        } else {
-          handle.eventMode = "none";
-          handle.interactive = false;
-        }
-
+        handle.eventMode = "static";
+        handle.interactive = true;
+        handle.cursor = "pointer";
+        handle.on?.("pointerover", () => {
+          handle.alpha = 0.72;
+          ghost.alpha = 1;
+        });
+        handle.on?.("pointerout", () => {
+          handle.alpha = 1;
+          ghost.alpha = 1;
+        });
+        handle.on?.("pointertap", (event) => {
+          event?.stopPropagation?.();
+          finish(candidate);
+        });
         container.addChild(handle);
       }
 

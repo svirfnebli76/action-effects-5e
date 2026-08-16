@@ -165,8 +165,8 @@ export class DisplacementService {
       && options.directionConstraint !== DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_TOWARD) {
       throw new Error("Pull only supports STRAIGHT_TOWARD movement.");
     }
-    if (options.directionKey) {
-      throw new Error("Pull direction is resolved automatically and does not accept directionKey.");
+    if (options.directionKey || options.destinationKey) {
+      throw new Error("Pull direction is resolved automatically and does not accept directionKey or destinationKey.");
     }
     return this.request({
       ...options,
@@ -183,6 +183,7 @@ export class DisplacementService {
     directionConstraint,
     distance,
     directionKey = null,
+    destinationKey = null,
     endpointGraceMs = NONHOSTILE_ENDPOINT_GRACE_MS,
     title = null
   } = {}) {
@@ -201,12 +202,15 @@ export class DisplacementService {
 
     let candidate = null;
     if (type === DISPLACEMENT_TYPES.PULL) {
-      if (directionKey) {
-        throw new Error("Pull direction is resolved automatically and does not accept directionKey.");
+      if (directionKey || destinationKey) {
+        throw new Error("Pull direction is resolved automatically and does not accept directionKey or destinationKey.");
       }
       candidate = plan.candidates[0] ?? null;
+    } else if (destinationKey) {
+      candidate = plan.candidates.find((entry) => entry.key === destinationKey) ?? null;
+      if (!candidate) throw new Error(`Destination '${destinationKey}' is not legal for this displacement.`);
     } else if (directionKey) {
-      candidate = plan.candidates.find((entry) => entry.key === directionKey) ?? null;
+      candidate = this.#candidateForDirection(plan, directionKey);
       if (!candidate) throw new Error(`Direction '${directionKey}' is not legal for this displacement.`);
     } else {
       const selectDestination = () => this.#overlay.select({
@@ -242,8 +246,11 @@ export class DisplacementService {
         blocked: true,
         type,
         directionConstraint,
-        directionKey: candidate.key,
-        requestedDistance: finiteNumber(distance, 0),
+        destinationKey: candidate.key,
+        directionKey: candidate.directionKey ?? null,
+        directionPath: duplicateSafely(candidate.directionPath ?? []),
+        requestedDistance: candidate.requestedDistance,
+        maximumDistance: finiteNumber(distance, 0),
         candidate: duplicateSafely(candidate)
       };
     }
@@ -253,7 +260,9 @@ export class DisplacementService {
       targetUuid: target.uuid,
       type,
       directionConstraint,
-      directionKey: candidate.key,
+      candidateKey: candidate.key,
+      directionKey: candidate.directionKey ?? directionKey ?? null,
+      directionPath: duplicateSafely(candidate.directionPath ?? []),
       distance: finiteNumber(distance, 0),
       endpointGraceMs: Math.max(1, finiteNumber(endpointGraceMs, NONHOSTILE_ENDPOINT_GRACE_MS)),
       requestingUserId: game.user?.id ?? null
@@ -284,12 +293,14 @@ export class DisplacementService {
       directionConstraint: request.directionConstraint,
       distance: request.distance
     });
-    const candidate = plan.candidates.find((entry) => entry.key === request.directionKey) ?? null;
+    const candidate = request.candidateKey
+      ? plan.candidates.find((entry) => entry.key === request.candidateKey) ?? null
+      : this.#candidateForDirection(plan, request.directionKey);
     if (!candidate) {
       return this.#remember({
         completed: false,
         stale: true,
-        message: "The selected forced-movement direction is no longer legal.",
+        message: "The selected forced-movement destination is no longer legal.",
         plan
       });
     }
@@ -297,7 +308,9 @@ export class DisplacementService {
       return this.#remember({
         completed: false,
         blocked: true,
-        directionKey: candidate.key,
+        destinationKey: candidate.key,
+        directionKey: candidate.directionKey ?? null,
+        directionPath: duplicateSafely(candidate.directionPath ?? []),
         candidate,
         plan,
         message: "The target cannot be displaced in that direction."
@@ -341,7 +354,10 @@ export class DisplacementService {
         displacementId,
         displacementType: request.type,
         directionConstraint: request.directionConstraint,
-        displacementDirection: candidate.key,
+        displacementDestinationKey: candidate.key,
+        displacementDirection: candidate.directionKey ?? null,
+        displacementDirectionPath: duplicateSafely(candidate.directionPath ?? []),
+        maximumDisplacementDistance: finiteNumber(request.distance, candidate.maximumDistance),
         requestedDistance: candidate.requestedDistance,
         actualDistance: candidate.actualDistance,
         generatedBy: MODULE_ID,
@@ -458,12 +474,17 @@ export class DisplacementService {
       partial: candidate.actualDistance < candidate.requestedDistance - 1e-6,
       type: request.type,
       directionConstraint: request.directionConstraint,
-      directionKey: candidate.key,
+      destinationKey: candidate.key,
+      directionKey: candidate.directionKey ?? null,
+      directionPath: duplicateSafely(candidate.directionPath ?? []),
+      pathKey: candidate.pathKey ?? null,
       displacementId,
       sourceUuid: source.uuid,
       targetUuid: target.uuid,
+      maximumDistance: finiteNumber(request.distance, candidate.maximumDistance),
       requestedDistance: candidate.requestedDistance,
       actualDistance: candidate.actualDistance,
+      stoppedShortOfMaximum: candidate.requestedDistance < finiteNumber(request.distance, candidate.requestedDistance) - 1e-6,
       destinationState: candidate.state,
       destination: duplicateSafely(candidate.destination),
       hardBlock: duplicateSafely(candidate.obstruction),
@@ -473,6 +494,24 @@ export class DisplacementService {
     this.#remember(result);
     Hooks.callAll(HOOKS.DISPLACEMENT_RESOLVED, duplicateSafely(result));
     return duplicateSafely(result);
+  }
+
+  #candidateForDirection(plan, directionKey) {
+    if (!plan || !directionKey) return null;
+
+    if (plan.directionConstraint === DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY) {
+      // Backwards compatibility for automation which supplied a single AWAY
+      // direction before v0.3.30's steerable fan. Preserve that call as a fixed
+      // ray and choose the farthest candidate on that ray up to the requested
+      // maximum distance.
+      return plan.candidates
+        .filter((entry) => Array.isArray(entry.directionPath)
+          && entry.directionPath.length
+          && entry.directionPath.every((key) => key === directionKey))
+        .sort((a, b) => b.requestedDistance - a.requestedDistance)[0] ?? null;
+    }
+
+    return plan.candidates.find((entry) => entry.key === directionKey || entry.directionKey === directionKey) ?? null;
   }
 
   #onDetermineOccupiedGridSpaceBlocking(_gridSpace, token, _options, found) {

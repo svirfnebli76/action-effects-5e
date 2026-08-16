@@ -133,6 +133,7 @@ export class MovementTransaction {
     if (this.origin && typeof this.origin === "object") Object.freeze(this.origin);
     if (this.destination && typeof this.destination === "object") Object.freeze(this.destination);
     if (Array.isArray(this.relationshipIds)) Object.freeze(this.relationshipIds);
+    if (Array.isArray(this.displacementDirectionPath)) Object.freeze(this.displacementDirectionPath);
     if (this.nativeMovement && typeof this.nativeMovement === "object") Object.freeze(this.nativeMovement);
     Object.freeze(this.metadata);
     Object.freeze(this.path);
@@ -188,6 +189,9 @@ export class MovementTransaction {
       displacementType: metadata.displacementType ?? null,
       directionConstraint: metadata.directionConstraint ?? null,
       displacementDirection: metadata.displacementDirection ?? null,
+      displacementDirectionPath: duplicateSafely(metadata.displacementDirectionPath ?? []),
+      displacementDestinationKey: metadata.displacementDestinationKey ?? null,
+      maximumDisplacementDistance: metadata.maximumDisplacementDistance ?? null,
       requestedDistance: metadata.requestedDistance ?? null,
       actualDistance: metadata.actualDistance ?? null,
       requestingUserId: metadata.requestingUserId ?? null,
@@ -242,6 +246,9 @@ export class MovementTransaction {
       displacementType: null,
       directionConstraint: null,
       displacementDirection: null,
+      displacementDirectionPath: [],
+      displacementDestinationKey: null,
+      maximumDisplacementDistance: null,
       requestedDistance: null,
       actualDistance: null,
       requestingUserId: null,

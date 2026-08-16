@@ -37,13 +37,14 @@ export class TestHarness {
   #relativeRelationships;
   #relationshipLinkObstructions;
   #displacement;
+  #displacementOverlay;
   #selectionIndicator;
   #externalPromptBridge;
   #socket;
   #reactionSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -55,6 +56,7 @@ export class TestHarness {
     this.#relativeRelationships = relativeRelationships;
     this.#relationshipLinkObstructions = relationshipLinkObstructions;
     this.#displacement = displacement;
+    this.#displacementOverlay = displacementOverlay;
     this.#selectionIndicator = selectionIndicator;
     this.#externalPromptBridge = externalPromptBridge;
     this.#socket = socket;
@@ -1890,6 +1892,386 @@ export class TestHarness {
       passed
         ? "AE5E | Follower-body disposition matrix PASSED."
         : "AE5E | Follower-body disposition matrix FAILED."
+    );
+    return report;
+  }
+
+  async runShoveDestinationGeometryTest({ restoreOnPass = true } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    if (!game.user?.isGM) throw new Error("The Shove destination geometry test requires a GM user.");
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const banner = (text, color = "#7ddcff", size = 24) => {
+      console.log(`%c${text}`, `font-size:${size}px;font-weight:bold;color:${color};`);
+    };
+    const checks = [];
+    const record = (name, passed, details = null) => {
+      const entry = { name, passed: Boolean(passed), details };
+      checks.push(entry);
+      console.log(
+        `%c${entry.passed ? "PASS" : "FAIL"} | ${name}`,
+        `font-size:16px;font-weight:bold;color:${entry.passed ? "#5cff8d" : "#ff5c5c"};`,
+        details ?? ""
+      );
+      return entry.passed;
+    };
+
+    const names = ["Leader", "Follower", "Ally", "Enemy", "Neutral", "Secret"];
+    const tokens = {};
+    for (const name of names) {
+      const matches = canvas.tokens.placeables.filter((token) => token.document.name === name);
+      if (matches.length !== 1) {
+        throw new Error(`Expected exactly one '${name}' token on the active Scene; found ${matches.length}.`);
+      }
+      tokens[name] = matches[0].document;
+    }
+
+    const snapshots = Object.fromEntries(names.map((name) => {
+      const token = tokens[name];
+      return [name, {
+        _id: token.id,
+        x: token.x,
+        y: token.y,
+        width: token.width,
+        height: token.height,
+        rotation: token.rotation,
+        elevation: token.elevation,
+        disposition: token.disposition
+      }];
+    }));
+
+    const movementActions = globalThis.CONFIG?.Token?.movement?.actions;
+    const actionEntries = movementActions?.entries
+      ? [...movementActions.entries()]
+      : Object.entries(movementActions ?? {});
+    const teleportAction = actionEntries.find(([, config]) => config?.teleport === true)?.[0] ?? null;
+    if (!teleportAction) {
+      throw new Error("The Shove destination test requires a Foundry movement action with teleport=true for deterministic fixture placement.");
+    }
+
+    const gridSize = Number(canvas.scene?.grid?.size ?? 100);
+    const gridDistance = Number(canvas.scene?.grid?.distance ?? 5);
+    if (!(gridSize > 0) || !(gridDistance > 0)) throw new Error("The active Scene must use a positive square-grid size and distance.");
+
+    const fixtureMove = async (tokenId, { x, y, elevation = 0 }) => {
+      const token = canvas.scene.tokens.get(tokenId);
+      const completed = await token.move({
+        x,
+        y,
+        elevation,
+        action: teleportAction,
+        explicit: true,
+        checkpoint: true
+      }, {
+        method: "api",
+        animate: false,
+        showRuler: false,
+        pan: false,
+        autoRotate: false,
+        constrainOptions: {
+          ignoreWalls: true,
+          ignoreCost: true,
+          ignoreTokens: true
+        },
+        ...this.#movement.createOperationOptions({
+          pathType: PATH_TYPES.REPOSITION,
+          agency: MOVEMENT_AGENCIES.ADMINISTRATIVE,
+          resource: MOVEMENT_RESOURCES.NONE,
+          movementMode: teleportAction,
+          administrative: true,
+          generatedBy: `${MODULE_ID}-shove-destination-test`,
+          internal: true,
+          suppressAutomation: true,
+          testFixture: true
+        })
+      });
+      await wait(75);
+      return completed;
+    };
+
+    const participantUuids = new Set([tokens.Leader.uuid, tokens.Follower.uuid]);
+    const relationshipConflicts = this.#relationships.list({ sceneId: canvas.scene.id }).filter((relationship) => (
+      participantUuids.has(relationship.leaderUuid) || participantUuids.has(relationship.followerUuid)
+    ) && !(relationship.type === RELATIONSHIP_TYPES.TEST && relationship.metadata?.createdByTestHarness === true));
+    if (relationshipConflicts.length) {
+      throw new Error(`Leader/Follower participate in ${relationshipConflicts.length} non-test relationship(s). Remove those relationships before running the Shove destination test.`);
+    }
+
+    const removeHarnessRelationships = async () => {
+      const relationships = this.#relationships.list({ sceneId: canvas.scene.id, type: RELATIONSHIP_TYPES.TEST })
+        .filter((relationship) => relationship.metadata?.createdByTestHarness === true);
+      for (const relationship of relationships) await this.#relationships.remove(relationship.id);
+    };
+
+    const parkPositions = {
+      Ally: { x: 3900, y: 2200 },
+      Enemy: { x: 4100, y: 2200 },
+      Neutral: { x: 3900, y: 2500 },
+      Secret: { x: 4100, y: 2500 }
+    };
+
+    const configureSize = async (size) => {
+      this.#displacement.clearEndpointGrace(tokens.Follower.uuid);
+      await canvas.scene.updateEmbeddedDocuments("Token", [
+        { _id: tokens.Leader.id, width: size, height: size, rotation: 0 },
+        { _id: tokens.Follower.id, width: size, height: size, rotation: 0 }
+      ], { animate: false, ae5eShoveDestinationTestSetup: true });
+
+      for (const [name, position] of Object.entries(parkPositions)) {
+        await fixtureMove(tokens[name].id, { ...position, elevation: 0 });
+      }
+
+      const targetPosition = { x: 2300, y: 2600, elevation: 0 };
+      const sourcePosition = {
+        x: 2300,
+        y: 2600 + ((size + 1) * gridSize),
+        elevation: 0
+      };
+      await fixtureMove(tokens.Follower.id, targetPosition);
+      await fixtureMove(tokens.Leader.id, sourcePosition);
+      return {
+        source: canvas.scene.tokens.get(tokens.Leader.id),
+        target: canvas.scene.tokens.get(tokens.Follower.id),
+        targetPosition,
+        sourcePosition
+      };
+    };
+
+    const getPlan = async () => this.#displacement.getCandidates({
+      sourceUuid: tokens.Leader.uuid,
+      targetUuid: tokens.Follower.uuid,
+      type: DISPLACEMENT_TYPES.PUSH,
+      directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY,
+      distance: gridDistance * 2
+    });
+
+    const offsetFor = (candidate, target) => ({
+      dx: Math.round((Number(candidate?.requestedDestination?.x) - Number(target.x)) / gridSize),
+      dy: Math.round((Number(candidate?.requestedDestination?.y) - Number(target.y)) / gridSize)
+    });
+    const offsetKey = ({ dx, dy }) => `${dx},${dy}`;
+    const candidateByOffset = (plan, target, dx, dy) => plan.candidates.find((candidate) => {
+      const offset = offsetFor(candidate, target);
+      return offset.dx === dx && offset.dy === dy;
+    }) ?? null;
+
+    const handlesOverlap = (a, b) => !(
+      a.x + a.width <= b.x + 0.01
+      || b.x + b.width <= a.x + 0.01
+      || a.y + a.height <= b.y + 0.01
+      || b.y + b.height <= a.y + 0.01
+    );
+
+    const inspectLargeLayout = async (size) => {
+      const fixture = await configureSize(size);
+      const plan = await getPlan();
+      const layout = this.#displacementOverlay.describeLayout({
+        candidates: plan.candidates,
+        targetToken: fixture.target,
+        gridSize
+      });
+      const selectableEntries = layout.entries.filter((entry) => entry.selectable);
+      const handles = selectableEntries.map((entry) => entry.handle).filter(Boolean);
+      let overlap = false;
+      for (let i = 0; i < handles.length; i += 1) {
+        for (let j = i + 1; j < handles.length; j += 1) {
+          if (handlesOverlap(handles[i], handles[j])) overlap = true;
+        }
+      }
+      const nearLeadingEdge = selectableEntries.every((entry) => {
+        const handle = entry.handle;
+        if (!handle) return false;
+        const distances = [
+          Math.abs(handle.centerX - entry.footprint.x),
+          Math.abs(handle.centerX - (entry.footprint.x + entry.footprint.width)),
+          Math.abs(handle.centerY - entry.footprint.y),
+          Math.abs(handle.centerY - (entry.footprint.y + entry.footprint.height))
+        ];
+        return Math.min(...distances) <= (gridSize / 2) + 0.01;
+      });
+      return {
+        size,
+        plan,
+        layout,
+        candidateCount: plan.candidates.length,
+        selectableCount: selectableEntries.length,
+        handleCount: handles.length,
+        brightGreen: handles.every((handle) => handle.color === layout.largeTokenSelectorColor),
+        compact: layout.compactSelection === true && selectableEntries.every((entry) => entry.compactSelection === true),
+        noOverlap: !overlap,
+        nearLeadingEdge
+      };
+    };
+
+    let passed = false;
+    let failure = null;
+
+    try {
+      banner("AE5E 0.3.30 — SHOVE DESTINATION GEOMETRY", "#7ddcff", 30);
+      banner("STEERABLE AWAY FAN + UP-TO DISTANCE + LARGE-TOKEN HANDLES", "#ffcc66", 18);
+      await removeHarnessRelationships();
+
+      const fixture1 = await configureSize(1);
+      const plan1 = await getPlan();
+      const offsets = plan1.candidates.map((candidate) => offsetKey(offsetFor(candidate, fixture1.target)));
+      const expectedOffsets = [
+        "-1,-1", "0,-1", "1,-1",
+        "-2,-2", "-1,-2", "0,-2", "1,-2", "2,-2"
+      ];
+      const exactEight = offsets.length === 8
+        && new Set(offsets).size === 8
+        && expectedOffsets.every((key) => offsets.includes(key));
+      record("10 ft AWAY exposes exactly the expected eight destination squares", exactEight, {
+        expectedOffsets,
+        actualOffsets: offsets,
+        candidates: plan1.candidates
+      });
+      if (!exactEight) throw new Error("The 10-foot AWAY endpoint fan does not match the expected eight-square geometry.");
+
+      const shortCandidates = plan1.candidates.filter((candidate) => candidate.requestedDistance === gridDistance);
+      const maxCandidates = plan1.candidates.filter((candidate) => candidate.requestedDistance === gridDistance * 2);
+      record("10 ft Shove includes all three intentional 5 ft stop choices", shortCandidates.length === 3, shortCandidates);
+      record("10 ft Shove includes five distinct 10 ft endpoints", maxCandidates.length === 5, maxCandidates);
+
+      const mixedLeft = candidateByOffset(plan1, fixture1.target, -1, -2);
+      const mixedRight = candidateByOffset(plan1, fixture1.target, 1, -2);
+      const mixedRoutesValid = [mixedLeft, mixedRight].every((candidate) => candidate
+        && candidate.routeAlternativeCount >= 2
+        && candidate.directionPath.length === 2
+        && new Set(candidate.directionPath).size === 2
+        && candidate.selectable === true
+        && candidate.partial !== true);
+      record("Intermediate-angle red-box endpoints are legal mixed-direction paths", mixedRoutesValid, {
+        mixedLeft,
+        mixedRight
+      });
+
+      const allowedFan = new Set(["NW", "N", "NE"]);
+      const anchoredFan = plan1.reference.allowedDirectionKeys.length === 3
+        && plan1.reference.allowedDirectionKeys.every((key) => allowedFan.has(key))
+        && plan1.candidates.every((candidate) => candidate.directionPath.every((key) => allowedFan.has(key)));
+      record("Every step remains inside the original Source-to-Target AWAY fan", anchoredFan, {
+        reference: plan1.reference,
+        directionPaths: plan1.candidates.map((candidate) => candidate.directionPath)
+      });
+
+      // Execute one of the newly legal mixed-angle endpoints through the normal
+      // production displacement path (and CAT when CAT is active).
+      const mixedResult = await this.#displacement.push({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: gridDistance * 2,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY,
+        destinationKey: mixedLeft.key
+      });
+      await wait(200);
+      let liveTarget = canvas.scene.tokens.get(tokens.Follower.id);
+      const mixedExpected = mixedLeft.requestedDestination;
+      const mixedExecutionPassed = mixedResult?.completed === true
+        && mixedResult?.actualDistance === gridDistance * 2
+        && Array.isArray(mixedResult?.directionPath)
+        && new Set(mixedResult.directionPath).size === 2
+        && liveTarget.x === mixedExpected.x
+        && liveTarget.y === mixedExpected.y;
+      record("Mixed-angle 10 ft Shove executes the selected two-step path", mixedExecutionPassed, {
+        result: mixedResult,
+        expected: mixedExpected,
+        actual: { x: liveTarget.x, y: liveTarget.y }
+      });
+      if (!mixedExecutionPassed) throw new Error("The mixed-angle Shove endpoint planned correctly but did not execute correctly.");
+
+      await fixtureMove(tokens.Follower.id, fixture1.targetPosition);
+      const resetPlan = await getPlan();
+      const shortNorth = candidateByOffset(resetPlan, canvas.scene.tokens.get(tokens.Follower.id), 0, -1);
+      const shortResult = await this.#displacement.push({
+        sourceUuid: tokens.Leader.uuid,
+        targetUuid: tokens.Follower.uuid,
+        distance: gridDistance * 2,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY,
+        destinationKey: shortNorth.key
+      });
+      await wait(200);
+      liveTarget = canvas.scene.tokens.get(tokens.Follower.id);
+      const shortExecutionPassed = shortResult?.completed === true
+        && shortResult?.requestedDistance === gridDistance
+        && shortResult?.maximumDistance === gridDistance * 2
+        && shortResult?.actualDistance === gridDistance
+        && shortResult?.stoppedShortOfMaximum === true
+        && liveTarget.x === shortNorth.requestedDestination.x
+        && liveTarget.y === shortNorth.requestedDestination.y;
+      record("10 ft Shove may intentionally stop after only 5 ft", shortExecutionPassed, {
+        result: shortResult,
+        candidate: shortNorth,
+        actual: { x: liveTarget.x, y: liveTarget.y }
+      });
+      if (!shortExecutionPassed) throw new Error("The intentional shorter Shove destination did not execute as a 5-foot stop.");
+
+      const large2 = await inspectLargeLayout(2);
+      record("2x2 target uses eight bright-green compact selection handles", large2.candidateCount === 8
+        && large2.selectableCount === 8
+        && large2.handleCount === 8
+        && large2.compact
+        && large2.brightGreen, large2);
+      record("2x2 target selection handles stay separated near destination edges", large2.noOverlap && large2.nearLeadingEdge, large2);
+
+      const large3 = await inspectLargeLayout(3);
+      record("3x3 target uses eight bright-green compact selection handles", large3.candidateCount === 8
+        && large3.selectableCount === 8
+        && large3.handleCount === 8
+        && large3.compact
+        && large3.brightGreen, large3);
+      record("3x3 target selection handles stay separated near destination edges", large3.noOverlap && large3.nearLeadingEdge, large3);
+
+      passed = checks.every((check) => check.passed);
+      if (!passed) throw new Error("One or more Shove destination geometry checks failed.");
+    } catch (error) {
+      failure = error;
+      passed = false;
+      console.error("AE5E Shove destination geometry test failure", error);
+    } finally {
+      if (passed && restoreOnPass) {
+        try {
+          this.#displacement.clearEndpointGrace(tokens.Follower.uuid);
+          await canvas.scene.updateEmbeddedDocuments("Token", names.map((name) => ({
+            _id: snapshots[name]._id,
+            width: snapshots[name].width,
+            height: snapshots[name].height,
+            rotation: snapshots[name].rotation,
+            disposition: snapshots[name].disposition
+          })), { animate: false, ae5eShoveDestinationTestRestore: true });
+          for (const name of names) {
+            const snap = snapshots[name];
+            await fixtureMove(snap._id, { x: snap.x, y: snap.y, elevation: snap.elevation });
+          }
+          banner("SHOVE DESTINATION TEST CLEANUP — ORIGINAL TOKEN STATES RESTORED", "#5cff8d", 18);
+        } catch (error) {
+          console.warn("AE5E Shove destination test cleanup warning", error);
+        }
+      } else if (!passed) {
+        banner("SHOVE DESTINATION TEST FAILED — FIXTURE LEFT FOR INSPECTION", "#ff5c5c", 18);
+      }
+    }
+
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      version: game.modules.get(MODULE_ID)?.version ?? null,
+      checks,
+      failure: failure ? { message: failure.message, stack: failure.stack ?? null } : null,
+      cat: this.#catMovement.getStats(),
+      restored: passed && restoreOnPass
+    };
+
+    console.table(checks.map((check, index) => ({
+      "#": index + 1,
+      Check: check.name,
+      Result: check.passed ? "PASS" : "FAIL"
+    })));
+    banner(`AE5E 0.3.30 SHOVE DESTINATION GEOMETRY — ${report.result}`, passed ? "#5cff8d" : "#ff5c5c", 28);
+    console.log("AE5E Shove destination geometry full result", report);
+    ui?.notifications?.[passed ? "info" : "error"]?.(
+      passed
+        ? `AE5E Shove destination geometry passed (${checks.length}/${checks.length}).`
+        : "AE5E Shove destination geometry FAILED. See console; fixture was left for inspection."
     );
     return report;
   }

@@ -106,6 +106,7 @@ const tests = new TestHarness({
   relativeRelationships,
   relationshipLinkObstructions,
   displacement,
+  displacementOverlay,
   selectionIndicator,
   externalPromptBridge,
   reactionRegistry,

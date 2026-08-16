@@ -70,6 +70,29 @@ function validateTypeConstraintPair(type, directionConstraint) {
   }
 }
 
+function getGridMetrics({ scene, distance = null } = {}) {
+  const gridSize = finiteNumber(scene?.grid?.size);
+  const gridDistance = finiteNumber(scene?.grid?.distance);
+  if (!(gridSize > 0) || !(gridDistance > 0)) {
+    throw new Error("Displacement currently requires a Scene with a square grid size and positive grid distance.");
+  }
+
+  if (distance === null || distance === undefined) {
+    return { gridSize, gridDistance, steps: null, requestedDistance: null };
+  }
+
+  const requestedDistance = finiteNumber(distance);
+  if (!(requestedDistance > 0)) throw new Error("Displacement distance must be greater than 0.");
+
+  const rawSteps = requestedDistance / gridDistance;
+  const steps = Math.round(rawSteps);
+  if (!(steps >= 1) || Math.abs(rawSteps - steps) > EPSILON) {
+    throw new Error(`Displacement distance ${requestedDistance} must be a whole multiple of the Scene grid distance ${gridDistance}.`);
+  }
+
+  return { gridSize, gridDistance, steps, requestedDistance };
+}
+
 export class DisplacementDirectionService {
   get squareDirections() {
     return SQUARE_DIRECTIONS.map((entry) => ({ ...entry }));
@@ -159,49 +182,80 @@ export class DisplacementDirectionService {
     };
   }
 
-  buildStepPositions({ scene, targetToken, distance, direction }) {
-    const gridSize = finiteNumber(scene?.grid?.size);
-    const gridDistance = finiteNumber(scene?.grid?.distance);
-    const requestedDistance = finiteNumber(distance);
-    if (!(gridSize > 0) || !(gridDistance > 0)) {
-      throw new Error("Displacement currently requires a Scene with a square grid size and positive grid distance.");
+  getStepMetrics({ scene, distance }) {
+    return { ...getGridMetrics({ scene, distance }) };
+  }
+
+  /**
+   * Build a discrete path whose direction may change at each grid step. This
+   * is used by AWAY Push planning. The allowed direction fan is determined
+   * once from the original Source/Target geometry; this method only translates
+   * an already-approved sequence of direction keys into concrete waypoints.
+   */
+  buildPathPositions({ scene, targetToken, directionKeys = [] }) {
+    if (!Array.isArray(directionKeys) || !directionKeys.length) {
+      throw new Error("A displacement path requires at least one square-grid direction.");
     }
-    if (!(requestedDistance > 0)) throw new Error("Displacement distance must be greater than 0.");
 
-    const rawSteps = requestedDistance / gridDistance;
-    const steps = Math.round(rawSteps);
-    if (!(steps >= 1) || Math.abs(rawSteps - steps) > EPSILON) {
-      throw new Error(`Displacement distance ${requestedDistance} must be a whole multiple of the Scene grid distance ${gridDistance}.`);
-    }
-
-    const known = SQUARE_DIRECTIONS.find((entry) => entry.key === direction?.key);
-    if (!known) throw new Error(`Unknown displacement direction '${direction?.key ?? ""}'.`);
-
+    const { gridSize, gridDistance } = getGridMetrics({ scene });
     const origin = {
       x: finiteNumber(targetToken?.x, 0),
       y: finiteNumber(targetToken?.y, 0),
       elevation: finiteNumber(targetToken?.elevation, 0)
     };
 
+    let x = origin.x;
+    let y = origin.y;
+    const directions = [];
     const positions = [];
-    for (let step = 1; step <= steps; step += 1) {
+
+    for (let index = 0; index < directionKeys.length; index += 1) {
+      const key = typeof directionKeys[index] === "string"
+        ? directionKeys[index]
+        : directionKeys[index]?.key;
+      const known = SQUARE_DIRECTIONS.find((entry) => entry.key === key);
+      if (!known) throw new Error(`Unknown displacement direction '${key ?? ""}'.`);
+
+      x += known.dx * gridSize;
+      y += known.dy * gridSize;
+      directions.push({ ...known });
       positions.push({
-        x: origin.x + (known.dx * gridSize * step),
-        y: origin.y + (known.dy * gridSize * step),
+        x,
+        y,
         elevation: origin.elevation,
-        step,
-        distance: step * gridDistance
+        step: index + 1,
+        distance: (index + 1) * gridDistance,
+        directionKey: known.key
       });
     }
 
     return {
       origin,
-      direction: { ...known },
-      requestedDistance,
+      directions,
+      directionKeys: directions.map((direction) => direction.key),
+      requestedDistance: directions.length * gridDistance,
       gridDistance,
       gridSize,
-      steps,
+      steps: directions.length,
       positions
+    };
+  }
+
+  buildStepPositions({ scene, targetToken, distance, direction }) {
+    const metrics = getGridMetrics({ scene, distance });
+    const known = SQUARE_DIRECTIONS.find((entry) => entry.key === direction?.key);
+    if (!known) throw new Error(`Unknown displacement direction '${direction?.key ?? ""}'.`);
+
+    const path = this.buildPathPositions({
+      scene,
+      targetToken,
+      directionKeys: Array.from({ length: metrics.steps }, () => known.key)
+    });
+
+    return {
+      ...path,
+      direction: { ...known },
+      requestedDistance: metrics.requestedDistance
     };
   }
 }

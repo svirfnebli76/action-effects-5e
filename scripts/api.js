@@ -248,6 +248,7 @@ export class ActionEffects5eApi {
       orbitCounterclockwise: (options) => tests.orbitCounterclockwise(options),
       runFollowerBodyDispositionMatrix: (options) => tests.runFollowerBodyDispositionMatrix(options),
       previewDisplacementFromControlledTokens: (options) => tests.previewDisplacementFromControlledTokens(options),
+      runShoveDestinationGeometryTest: (options) => tests.runShoveDestinationGeometryTest(options),
       runDisplacementFoundationTest: (options) => tests.runDisplacementFoundationTest(options),
       runGrappleLinkObstructionTest: (options) => tests.runGrappleLinkObstructionTest(options)
     });

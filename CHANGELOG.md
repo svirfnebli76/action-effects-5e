@@ -1,5 +1,15 @@
 ## 0.3.30 — CAT movement interoperability
 
+### Revised1 — steerable AWAY Shove destinations
+
+- Changed `AWAY` Push from a one-time fixed 45-degree ray choice into a fixed **directional fan**: the legal fan is still calculated once from the original Source/Target center geometry, but each 5-foot step may choose any direction inside that original fan. This permits intermediate-angle endpoints such as `NW -> N` and `N -> NW` during a 10-foot shove without allowing the path to curve sideways/back around the Source.
+- `AWAY` distance is now an **up-to maximum** for destination choice. A 10-foot Shove directly away from a south-adjacent Source exposes the three legal 5-foot stops plus five legal 10-foot endpoints (eight selectable squares total when unobstructed). `STRAIGHT_AWAY` and `STRAIGHT_TOWARD` retain their established direct-ray behavior.
+- Groups multiple equal-length paths that reach the same AWAY endpoint and chooses a fully legal path when one exists. This allows an intermediate-angle endpoint to remain selectable when one ordering of its steps is obstructed but another legal ordering reaches the same square.
+- Added stable destination keys and `directionPath` metadata for multi-direction Pushes. Legacy automation which supplies a single `directionKey` for `AWAY` remains compatible and resolves to the farthest fixed-ray candidate in that direction.
+- Preserved partial-stop semantics without duplicating an orange partial selector on top of an already-offered intentional shorter AWAY endpoint.
+- Strengthened Large/Huge destination selection: overlapping full token footprints remain faint state-colored ghosts, while each selectable destination gets a separate smaller **bright-green** click handle on its leading edge/corner. Blocked footprints remain visible without a misleading disabled green handle.
+- Added `ae5e.tests.runShoveDestinationGeometryTest()` plus targeted Node coverage. The Foundry harness validates the eight-square 10-foot geometry, intentional 5-foot stopping, mixed-direction execution through the production movement path, fixed-fan semantics, and non-overlapping bright-green 2x2/3x3 selection handles.
+
 - Added `CatMovementAdapter`, a single AE5E-owned facade for all CAT movement integration. Feature code no longer needs to call CAT directly.
 - CAT remains a recommended/optional module. When CAT is active and exposes `cat.utils.tokenUtils.moveToken()`, eligible AE5E single-token movement uses CAT; when CAT is unavailable before execution, the facade falls back to native `TokenDocument.move()`. CAT execution exceptions are not retried natively, preventing duplicate movement after partial execution.
 - Routed AE5E forced Push/Pull's final low-level Token movement through the CAT facade while preserving the finalized v0.3.29 semantic operation metadata, collision planning, endpoint grace, and movement-settlement handling.
