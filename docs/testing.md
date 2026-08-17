@@ -24,6 +24,33 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
+## v0.4.1.2 Eskie crosshair acceptance
+
+After installing 0.4.1.2, run the deterministic Foundry-side resolver/catalog gate first:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runCrosshairFoundationTest({ notify: true });
+```
+
+Expected result: **18/18 PASS**. This checks the 244-entry premium catalog, 52-entry free catalog, all-six-shape coverage in both catalogs, Line-vs-Ray semantics, premium exact-color resolution, the known Generic_01 Red 60ft asymmetry, free white+tint fallback including Rectangle/Reticle, rectangle dimension normalization, Fireball-style floor sizing, custom hex tinting, unsupported-shape safety, and live module detection.
+
+Then control exactly one token on an active Scene and run:
+
+```js
+await ae5e.tests.runCrosshairInteractiveTest({
+  color: "red",
+  radius: 20,
+  range: 150
+});
+```
+
+The expected visual is the Fireball placement pattern: an Eskie Circle at the movable template and an Eskie Line tracing from the controlled source token to that template. If Patreon Eskie is active, the native premium red assets should be used. If only the free Eskie module is active, the white assets should be tinted. If neither compatible Eskie visual is available, the native Sequencer crosshair must remain visible and functional.
+
+During the custom-visual path, confirm that Sequencer's native border/fill/grid highlight are not visible. Placement and X/Escape cancellation must both end with **0 lingering AE5E crosshair effects**. The interactive test prints whether the resolver selected `premium`, `free`, or `native` mode and reports cleanup separately from placement/cancellation.
+
+This release does not migrate Fireball itself; the purpose of the test is to prove the reusable service can reproduce Fireball's established Circle + Line placement behavior before spells are converted to it.
+
 ## v0.4.1 Spell Modifier Engine acceptance
 
 SME behavioral acceptance is performed inside Foundry. The first gate is deterministic and does not cast a real spell:

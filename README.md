@@ -1,3 +1,38 @@
+### v0.4.1.2 reusable Eskie crosshair foundation
+
+AE5E now exposes a centralized `ae5e.crosshairs` service for custom spell/item placement visuals. It detects Patreon Eskie (`eskie-effects`) separately from the public free module (`eskie-effects-free`), prefers native premium recolors, falls back to the free white artwork plus Sequencer tinting when possible, and leaves the native Sequencer crosshair visible when no compatible Eskie visual exists. The catalog explicitly contains all 244 supplied premium crosshair files and 52 confirmed free white crosshair files. Rectangle and Reticle are resolved from their direct free asset paths even though the current public free Sequencer database does not register those families.
+
+Supported Eskie visual vocabulary: **Circle, Cone, Line, Ray, Rectangle, Reticle**. AE5E intentionally preserves the semantic distinction that **Line** is a source-to-template tracer (Fireball pattern), while **Ray** is the beam/path itself. The free and premium catalogs both cover all six shapes. Premium provides native Red/Teal/White/Yellow recolors, while the free catalog provides white artwork that AE5E can tint when a colored visual is requested.
+
+The proven Fireball presentation rule is centralized: when a custom Eskie replacement is available, AE5E hides the functional Sequencer crosshair with `borderAlpha: 0`, `fillAlpha: 0`, and `gridHighlight: false`; if no Eskie replacement resolves, AE5E does **not** hide the native crosshair. This release adds infrastructure only and does not rewrite the existing Fireball item.
+
+Primary APIs:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+ae5e.crosshairs.getEskieStatus();
+ae5e.crosshairs.getShapeInfo("line");
+ae5e.crosshairs.getCatalog({ source: "premium", shape: "circle" });
+ae5e.crosshairs.resolveAsset({ shape: "circle", size: 20, color: "red" });
+```
+
+A Fireball-style placement can be expressed centrally as:
+
+```js
+const result = await ae5e.crosshairs.show({
+  source: token,
+  type: "circle",
+  distance: 20,
+  limitMaxRange: 150,
+  visual: { shape: "circle", style: "fantasy_01", size: 20, color: "red" },
+  tracer: { shape: "line", style: "generic_01", size: 90, color: "red" }
+});
+
+if (result.cancelled) return;
+const position = result.position;
+```
+
 ### v0.4.1.1 compendium library foundation
 
 AE5E now ships its first module-owned Compendium Pack hierarchy: **Action Effects 5E → Spells → Cantrips / Level 1–9**. Each spell level is a separate empty D&D5e `Item` pack with a stable internal identifier (`spells-cantrips`, `spells-level-1` … `spells-level-9`) ready for AE5E spell content. The v0.4.1 runtime behavior remains the validated baseline.

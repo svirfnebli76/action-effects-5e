@@ -421,3 +421,30 @@ Transactions carry `parentTransactionId` and `rootTransactionId`. A child reacti
 ### Selection indicator
 
 Only the `ACTIVE` Reactor acquires a v0.3.27 `responder` selection-indicator lease. Waiting, resolving, and authority-waiting states are intentionally unmarked. The lease is released before another Reactor becomes active or whenever the transaction exits.
+
+
+## Reusable Eskie crosshair layer (v0.4.1.2)
+
+AE5E treats custom placement graphics as an optional presentation layer above Sequencer's functional crosshair transaction. Rules code should ask `ae5e.crosshairs` for a visual; it should not hard-code free/Patreon detection or individual Eskie paths inside each spell.
+
+Resolution order is intentionally deterministic:
+
+```text
+requested visual
+    ↓
+exact native premium recolor
+    ↓ if missing
+same-style premium white + tint
+    ↓ if missing
+alternate premium style
+    ↓ if premium unavailable/missing
+free white + tint
+    ↓ if missing
+native functional Sequencer crosshair
+```
+
+The underlying functional crosshair and the Eskie visual shape are separate concepts. For example, Fireball uses a functional circular placement plus an Eskie Circle area visual and a separate Eskie Line tracer. `Line` means a source-to-template tracer; `Ray` means the path/beam itself. This distinction is stored in `ESKIE_CROSSHAIR_SEMANTICS`.
+
+When AE5E has a valid custom replacement visual, it applies the live-proven native suppression values `borderAlpha: 0`, `fillAlpha: 0`, `gridHighlight: false`. Suppression is conditional: if the visual resolver falls back native, AE5E leaves Sequencer's normal crosshair visible so a missing optional art module can never make an item unusable.
+
+The catalog is explicit rather than synthesized. Premium v1.9.0 includes 244 supplied crosshair WebMs and contains a known asymmetric entry (`Circle/Generic_01` Red normal/base has 40ft rather than 60ft, while the white 60ft and Red NoBase 60ft assets exist). The resolver therefore checks real entries and prefers same-style white+tint before changing art styles. The confirmed free catalog used by this release contains 52 white crosshairs and covers all six shapes, including Rectangle and Reticle. Free white artwork is the tintable fallback when a native premium recolor is unavailable.

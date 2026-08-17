@@ -22,6 +22,7 @@ import { NonhostileEndpointGraceService } from "./displacement/nonhostile-endpoi
 import { DisplacementService } from "./displacement/displacement-service.js";
 import { SelectionIndicatorService } from "./ui/selection-indicator-service.js";
 import { ExternalPromptBridgeService } from "./ui/external-prompt-bridge-service.js";
+import { CrosshairService } from "./crosshairs/crosshair-service.js";
 import { ReactionRegistry } from "./reactions/reaction-registry.js";
 import { ReactionAuthorityService } from "./reactions/reaction-authority-service.js";
 import { ReactionDiscoveryService } from "./reactions/reaction-discovery-service.js";
@@ -62,6 +63,7 @@ const displacementGrace = new NonhostileEndpointGraceService({
 });
 const selectionIndicator = new SelectionIndicatorService();
 const externalPromptBridge = new ExternalPromptBridgeService({ selectionIndicator });
+const crosshairs = new CrosshairService();
 const reactionRegistry = new ReactionRegistry();
 const reactionAuthority = new ReactionAuthorityService({ socket });
 const reactionDiscovery = new ReactionDiscoveryService({ registry: reactionRegistry, authority: reactionAuthority });
@@ -133,6 +135,7 @@ const tests = new TestHarness({
   displacementOverlay,
   selectionIndicator,
   externalPromptBridge,
+  crosshairs,
   reactionRegistry,
   reactionAuthority,
   reactionDiscovery,
@@ -162,6 +165,7 @@ const api = new ActionEffects5eApi({
   displacement,
   selectionIndicator,
   externalPromptBridge,
+  crosshairs,
   reactionRegistry,
   reactionAuthority,
   reactionDiscovery,

@@ -1,3 +1,16 @@
+## 0.4.1.2 — Reusable Eskie crosshair infrastructure
+
+- Added the first centralized `ae5e.crosshairs` service for custom AE5E placement visuals. Item/spell macros can now query Eskie installation status, inspect shape semantics/catalog data, resolve the best available asset, and launch a Sequencer crosshair with an AE5E Eskie replacement visual.
+- Added explicit runtime detection for Patreon/premium Eskie (`eskie-effects`) and the public free module (`eskie-effects-free`), kept independent from Sequencer detection.
+- Added an explicit premium catalog generated from the supplied Eskie Effects v1.9.0 Crosshair archive: **244 WebM assets** across Circle (64), Cone (64), Line (20), Ray (40), Rectangle (48), and Reticle (8). Explicit paths are retained instead of assuming a perfectly symmetric filename matrix.
+- Added the confirmed free crosshair catalog: **52 white WebM assets** across all six shapes: Circle, Cone, Line, Ray, Rectangle, and Reticle. AE5E can tint these white assets when a native premium color is unavailable.
+- Added premium-first resolution: exact native premium color → same-style premium white + tint → alternate premium style → free white + tint → native crosshair fallback. This preserves same-style fidelity for the known `Circle/Generic_01` Red 60ft catalog hole rather than silently switching styles.
+- Added centralized approximate tint values for Red, Teal, and Yellow. Native Patreon recolors always take priority; tinting is a fallback for white artwork, not a claim that the result is artistically identical to the premium recolor.
+- Preserved the Fireball crosshair semantics: Eskie `Line` is a source-to-template tracer; Eskie `Ray` represents the path/beam itself.
+- Centralized the proven custom-crosshair suppression settings: `borderAlpha: 0`, `fillAlpha: 0`, `gridHighlight: false`. These are applied only when a custom Eskie visual actually resolves; otherwise Sequencer's native crosshair remains visible and functional.
+- Added `runCrosshairFoundationTest()` and `runCrosshairInteractiveTest()` Foundry harnesses. The interactive gate opens a Fireball-style Circle + Line placement from exactly one controlled token and verifies local persistent crosshair effects are cleaned up after placement/cancellation.
+- Existing v0.4.1.1 compendium hierarchy and prior SME/movement/reaction runtimes are otherwise unchanged.
+
 ## 0.4.1.1 — Module spell compendium structure
 
 - Added the first AE5E-owned compendium library structure for Foundry VTT.

@@ -49,6 +49,16 @@ import {
   SELECTION_INDICATOR_SCALE,
   TELEPORT_POLICIES
 } from "./core/constants.js";
+import {
+  ESKIE_CROSSHAIR_COLORS,
+  ESKIE_CROSSHAIR_DEFAULTS,
+  ESKIE_CROSSHAIR_SEMANTICS,
+  ESKIE_CROSSHAIR_SHAPES,
+  ESKIE_FREE_MODULE_ID,
+  ESKIE_PREMIUM_MODULE_ID,
+  ESKIE_TINT_APPROXIMATIONS,
+  SEQUENCER_MODULE_ID
+} from "./crosshairs/eskie-crosshair-catalog.js";
 
 export class ActionEffects5eApi {
   constructor({
@@ -71,6 +81,7 @@ export class ActionEffects5eApi {
     displacement,
     selectionIndicator,
     externalPromptBridge,
+    crosshairs,
     reactionRegistry,
     reactionAuthority,
     reactionDiscovery,
@@ -119,6 +130,14 @@ export class ActionEffects5eApi {
       SME_FLAG_SCOPE,
       SME_FLAG_KEY,
       SME_WORKFLOW_STATE_PATH,
+      ESKIE_PREMIUM_MODULE_ID,
+      ESKIE_FREE_MODULE_ID,
+      SEQUENCER_MODULE_ID,
+      ESKIE_CROSSHAIR_SHAPES,
+      ESKIE_CROSSHAIR_COLORS,
+      ESKIE_CROSSHAIR_DEFAULTS,
+      ESKIE_CROSSHAIR_SEMANTICS,
+      ESKIE_TINT_APPROXIMATIONS,
       SELECTION_INDICATOR_PREFERRED_ASSET,
       SELECTION_INDICATOR_PREFERRED_TINT,
       SELECTION_INDICATOR_FALLBACK_ASSET,
@@ -219,6 +238,15 @@ export class ActionEffects5eApi {
       getStats: () => externalPromptBridge.getStats()
     });
 
+    this.crosshairs = Object.freeze({
+      getEskieStatus: () => crosshairs.getEskieStatus(),
+      getShapeInfo: (shape) => crosshairs.getShapeInfo(shape),
+      getCatalog: (options) => crosshairs.getCatalog(options),
+      resolveAsset: (request, options) => crosshairs.resolveAsset(request, options),
+      show: (options) => crosshairs.show(options),
+      getStats: () => crosshairs.getStats()
+    });
+
     this.reactions = Object.freeze({
       registerHandler: (id, config) => reactionRegistry.registerHandler(id, config),
       unregisterHandler: (id) => reactionRegistry.unregisterHandler(id),
@@ -262,6 +290,8 @@ export class ActionEffects5eApi {
     });
 
     this.tests = Object.freeze({
+      runCrosshairFoundationTest: (options) => tests.runCrosshairFoundationTest(options),
+      runCrosshairInteractiveTest: (options) => tests.runCrosshairInteractiveTest(options),
       runSpellModifierEngineFoundationTest: (options) => tests.runSpellModifierEngineFoundationTest(options),
       runSpellModifierEngineLiveActivitySubstitutionTest: (options) => tests.runSpellModifierEngineLiveActivitySubstitutionTest(options),
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
