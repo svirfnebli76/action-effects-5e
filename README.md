@@ -2,6 +2,11 @@
 
 Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its reusable subsystems now include rules-aware movement/relationships, forced displacement, the Reaction Broker, and the Spell Modifier Engine.
 
+
+### v0.4.1 final acceptance
+
+The tested **revised3 runtime** is the final v0.4.1 runtime; finalization changes documentation only. Foundry acceptance completed with SME foundation **26/26**, live preserve-results damage retag **31/31**, interactive SME chooser **9/9**, remote non-GM routing **5/5** plus player-only indicator/audio confirmation, live save lifecycle **8/8**, and the preserved v0.3.30 regression suites **66/66** across foundation, native movement accounting, displacement, Follower-body disposition, Grapple-link obstruction, and Reaction Broker foundation sanity.
+
 ### v0.4.1 Spell Modifier Engine
 
 The **Spell Modifier Engine (SME)** is AE5E's generic spell-interaction layer. A spell does not need to know that a specific feat, metamagic option, class feature, item, or effect exists. Instead, modifier sources declare a registered handler, SME discovers all legal opportunities on the caster, normalizes the live Midi workflow into stable semantic phases, aggregates optional choices, applies the selected handlers, and keeps one isolated session for that cast.
@@ -10,11 +15,11 @@ The first foundation exposes these semantic phases:
 
 | SME phase | Primary live boundary | Purpose |
 |---|---|---|
-| `preTargeting` | `midi-qol.preTargetingV2` | Earliest live-workflow changes such as Activity substitution before targeting/rolling. |
+| `preTargeting` | `midi-qol.preTargetingV2` | Earliest spell-modifier eligibility, decision staging, and pre-targeting workflow work. |
 | `targetingComplete` | `midi-qol.premades.postPreambleComplete` | Target set/preamble has settled. |
 | `savesComplete` | `midi-qol.premades.postSavesComplete` | Save outcomes are available. |
-| `beforeDamageRoll` | `midi-qol.preDamageRoll` | **Midi On-Use internal pass `preDamageRoll` = UI “Before Damage Roll”**; evaluated damage rolls do not yet exist. |
-| `damageRollComplete` | Midi damage-roll-complete hooks | Evaluated damage rolls are now available. |
+| `beforeDamageRoll` | `midi-qol.preDamageRoll` | **Midi On-Use internal pass `preDamageRoll` = UI “Before Damage Roll”**; evaluated damage rolls do not yet exist, so type/resource decisions can be staged here. |
+| `damageRollComplete` | Midi damage-roll-complete hooks | Evaluated damage rolls are now available for preserve-results metadata changes such as damage-type retagging. |
 | `beforeDamageApplication` | `midi-qol.preTargetDamageApplication` | Per-target final damage application can be inspected/adjusted. |
 | `workflowComplete` | Midi roll/workflow completion hooks | Terminal bookkeeping/cleanup. |
 
@@ -57,7 +62,7 @@ Every cast receives a `SpellModifierSession`. It records phase visits, decisions
 
 CAT is behind `CatSpellAdapter`. Modifier handlers use methods on `SpellModifierContext` for Activity replacement, cast/save facts, synthetic Activities/Items, roll utilities, and per-target damage adjustment. If a handler declares a CAT capability that is unavailable, that handler is not offered. The generic SME registry/session/discovery layer itself does not require CAT.
 
-Damage-roll mutation deliberately distinguishes **re-evaluation** from **preserving an existing result**. CAT 0.0.6 `rollUtils.getChangedDamageRoll()` constructs/evaluates a new DamageRoll, so SME exposes it only under the explicit semantic name `context.rebuildChangedDamageRoll(...)`. For mechanics that already have evaluated dice and only need to change damage-type metadata (the CPR Chaos Bolt pattern), use `context.retagDamageRollsPreservingResults(type, options)`: it keeps the same roll objects/totals/formulas, changes `roll.options.type`, and commits them with Midi `workflow.setDamageRolls()`. Early mechanics such as Transmuted Spell should still prefer pre-roll Activity substitution when the new type is known before rolling.
+Damage-roll mutation deliberately distinguishes **re-evaluation** from **preserving an existing result**. CAT 0.0.6 `rollUtils.getChangedDamageRoll()` constructs/evaluates a new DamageRoll, so SME exposes it only under the explicit semantic name `context.rebuildChangedDamageRoll(...)`. For mechanics that already have evaluated dice and only need to change damage-type metadata (the CPR Chaos Bolt pattern), use `context.retagDamageRollsPreservingResults(type, options)`: it keeps the same roll objects/totals/formulas, changes `roll.options.type`, and commits them with Midi `workflow.setDamageRolls()`. Live Foundry validation proved CAT `setActivity()` does not replace the already-running D&D5e Activity instance used by `rollDamage()`, so Transmuted Spell-style mechanics should stage the chosen type before damage is rolled and perform the physical preserve-results retag at `damageRollComplete`.
 
 **v0.4.1 is the engine foundation.** It intentionally does not yet bundle bespoke implementations of Transmuted Spell, Empowered Spell, Careful Spell, Sculpt Spells, or other individual features. Those become small consumers of this subsystem rather than new spell-specific frameworks.
 
@@ -73,7 +78,7 @@ Then, with CAT active and exactly one caster token controlled that owns a simple
 await ae5e.tests.runSpellModifierEngineLiveActivitySubstitutionTest();
 ```
 
-The live gate creates disposable Actors/Tokens and an in-memory synthetic spell, performs a real Midi workflow with zero real caster resource consumption, verifies early Activity substitution reaches D&D5e's actual damage roll, and removes its temporary documents/messages afterward.
+The live gate creates disposable Actors/Tokens and an in-memory synthetic spell, performs a real Midi workflow with zero real caster resource consumption, verifies D&D5e evaluates the original damage roll once and SME then retags that exact evaluated roll without rerolling/replacing it, and removes its temporary documents/messages afterward.
 
 ### v0.3.30 CAT movement interoperability
 

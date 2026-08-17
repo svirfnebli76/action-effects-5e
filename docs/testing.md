@@ -47,9 +47,9 @@ The live gate proves:
 
 1. required CAT 0.0.6 Activity/workflow-state/synthetic/execution capabilities are present;
 2. SME discovers a declarative feature registration on the caster;
-3. an automatic `beforeDamageRoll` handler replaces a synthetic fire Activity with cold through the AE5E CAT facade at Midi's awaited pre-roll boundary;
-4. `midi-qol.preDamageRoll` (**internal `preDamageRoll` = UI “Before Damage Roll”**) sees the cold Activity before any evaluated damage roll exists;
-5. the actual `dnd5e.rollDamage` subject and resulting DamageRoll are cold rather than fire;
+3. SME stages a cold damage-type decision at `beforeDamageRoll` while no evaluated damage roll exists yet;
+4. D&D5e evaluates the original fire DamageRoll exactly once;
+5. at `damageRollComplete`, SME retags that exact evaluated roll to cold with `retagDamageRollsPreservingResults()`, preserving object identity, total, formula, and dice result;
 6. SME reaches `beforeDamageRoll`, `damageRollComplete`, and `workflowComplete`; if Midi invokes its settings/outcome-dependent `preTargetDamageApplication` hook, SME must also map that invocation to the per-target `beforeDamageApplication` phase with the target and canonical `damageItem`;
 7. the same SME session crosses the real workflow and finishes `complete`;
 8. the completed session is mirrored at `workflow.cat.sme.actionEffects5e`;
@@ -59,6 +59,22 @@ The live gate proves:
 The synthetic live spell does not force Midi to invoke `preTargetDamageApplication`, because that hook depends on damage-application settings/outcome. The gate records a passing deferred result when the raw Midi hook is absent; when it is present, the same check becomes strict and requires SME to observe the matching target/damage item.
 
 Do not treat external module console warnings as SME failures unless an SME acceptance check fails or the workflow result is altered. After both SME gates pass, rerun the unchanged v0.3.30 foundation/movement and targeted Reaction Broker sanity tests before finalizing 0.4.1.
+
+
+### Final v0.4.1 acceptance record
+
+The **revised3 runtime** is the behaviorally accepted v0.4.1 runtime. Final release packaging changes documentation only.
+
+- SME foundation: **26/26 PASS**.
+- Live Midi/CAT/D&D5e preserve-results damage retag: **31/31 PASS**.
+- Interactive real SME choice UI: **9/9 PASS**.
+- Remote non-GM controller routing: **5/5 PASS**, with manual confirmation that the chooser appeared only on the owning player, the green selection indicator stayed active while choosing, and the notification sound played only for that player.
+- Live save-spell lifecycle: **8/8 PASS**, including real `targetingComplete`, `savesComplete`, shared-session continuity, save classification, and `workflowComplete`.
+- Preserved v0.3.30 regression suites: foundation **13/13**, native movement accounting **12/12**, displacement foundation **9/9**, Follower-body disposition **8/8**, Grapple-link obstruction **6/6**, Reaction Broker foundation **18/18** — **66/66 underlying checks PASS**.
+
+The ad-hoc final aggregation console macro used after those suites initially printed `0/43 FAIL` because its normalizer expected `check.pass` while several existing harnesses report `check.passed`, and it did not normalize `casesCompleted/results` suites. That aggregate number is **not an AE5E runtime failure**: every underlying suite printed and returned its own PASS result. No module code change was made for this reporting-only macro mistake.
+
+Terrain Mapper `updateToken`, CRLNGN UI `renderSceneNavigation`, and Foundry graphics readback warnings seen during the regression remain external/known test-environment noise; they did not change any underlying AE5E suite result or cleanup outcome.
 
 ## v0.3.30 CAT movement interoperability regression
 
