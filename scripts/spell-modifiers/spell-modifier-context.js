@@ -168,7 +168,22 @@ export class SpellModifierContext {
   getCriticalFormula(...args) { return this.live.catSpell.getCriticalFormula(...args); }
   addToRoll(...args) { return this.live.catSpell.addToRoll(...args); }
   damageRoll(...args) { return this.live.catSpell.damageRoll(...args); }
-  getChangedDamageRoll(...args) { return this.live.catSpell.getChangedDamageRoll(...args); }
+
+  /**
+   * Rebuild and re-evaluate a changed damage roll using CAT. This intentionally
+   * rerolls and is therefore only appropriate while the damage roll is still
+   * mutable. For a type-only change after dice have been rolled, use
+   * retagDamageRollsPreservingResults().
+   */
+  rebuildChangedDamageRoll(...args) {
+    return this.live.catSpell.rebuildChangedDamageRoll(...args);
+  }
+
+  /** Preserve existing roll objects/results while changing their damage type. */
+  retagDamageRollsPreservingResults(damageType, options = {}) {
+    return this.live.catSpell.retagDamageRollsPreservingResults(this.workflow, damageType, options);
+  }
+
   hasDuplicateDie(...args) { return this.live.catSpell.hasDuplicateDie(...args); }
 
   applyWorkflowDamage(...args) { return this.live.catSpell.applyWorkflowDamage(...args); }

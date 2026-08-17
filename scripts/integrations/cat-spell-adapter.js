@@ -64,6 +64,8 @@ export class CatSpellAdapter {
     syntheticItems: 0,
     completeActivityUses: 0,
     rollUtilityCalls: 0,
+    damageRollRebuildCalls: 0,
+    damageRollRetagCalls: 0,
     appliedDamageUtilityCalls: 0,
     genericUtilityCalls: 0,
     fallbacks: 0,
@@ -116,7 +118,7 @@ export class CatSpellAdapter {
         getCriticalFormula: functionAvailable(rollUtils?.getCriticalFormula),
         addToRoll: functionAvailable(rollUtils?.addToRoll),
         damageRoll: functionAvailable(rollUtils?.damageRoll),
-        getChangedDamageRoll: functionAvailable(rollUtils?.getChangedDamageRoll),
+        rebuildChangedDamageRoll: functionAvailable(rollUtils?.getChangedDamageRoll),
         hasDuplicateDie: functionAvailable(rollUtils?.hasDuplicateDie),
         applyWorkflowDamage: functionAvailable(workflowUtils?.applyWorkflowDamage),
         modifyDamageAppliedFlat: functionAvailable(workflowUtils?.modifyDamageAppliedFlat),
@@ -276,7 +278,113 @@ export class CatSpellAdapter {
   getCriticalFormula(...args) { return this.#callRoll("getCriticalFormula", args); }
   addToRoll(...args) { return this.#callRoll("addToRoll", args); }
   damageRoll(...args) { return this.#callRoll("damageRoll", args); }
-  getChangedDamageRoll(...args) { return this.#callRoll("getChangedDamageRoll", args); }
+
+  /**
+   * CAT's getChangedDamageRoll() reconstructs and evaluates a new DamageRoll.
+   * The explicit AE5E name is intentional: callers must opt into the reroll.
+   * Do not use this method for a damage-type-only change that must preserve the
+   * already-rolled dice. Use retagDamageRollsPreservingResults() instead.
+   */
+  rebuildChangedDamageRoll(...args) {
+    this.#stats.damageRollRebuildCalls += 1;
+    return this.#callRoll("getChangedDamageRoll", args);
+  }
+
+  /**
+   * Change the damage-type metadata on already-evaluated Midi damage rolls
+   * without constructing or evaluating replacement rolls. This follows the
+   * proven CPR Chaos Bolt pattern: mutate roll.options.type, then commit the
+   * same roll objects through workflow.setDamageRolls().
+   *
+   * @param {object} workflow Live Midi workflow.
+   * @param {string} damageType New D&D5e damage type identifier.
+   * @param {object} options
+   * @param {number[]|null} options.indexes Optional roll indexes to retag.
+   */
+  async retagDamageRollsPreservingResults(workflow, damageType, { indexes = null } = {}) {
+    if (!workflow) throw new TypeError("retagDamageRollsPreservingResults requires a Midi workflow.");
+    if (typeof damageType !== "string" || !damageType.trim()) {
+      throw new TypeError("retagDamageRollsPreservingResults requires a non-empty damage type.");
+    }
+    if (typeof workflow.setDamageRolls !== "function") {
+      throw new Error("Midi workflow.setDamageRolls() is unavailable; cannot commit preserved damage rolls.");
+    }
+
+    const rolls = Array.isArray(workflow.damageRolls) && workflow.damageRolls.length
+      ? workflow.damageRolls
+      : workflow.damageRoll
+        ? [workflow.damageRoll]
+        : [];
+
+    if (!rolls.length) {
+      return { changed: false, reason: "no-damage-rolls", damageType, indexes: [], rolls: [] };
+    }
+
+    const selectedIndexes = indexes == null
+      ? rolls.map((_, index) => index)
+      : [...new Set(asArray(indexes).map(value => Number(value)).filter(Number.isInteger))]
+          .filter(index => index >= 0 && index < rolls.length);
+
+    if (!selectedIndexes.length) {
+      return { changed: false, reason: "no-selected-rolls", damageType, indexes: [], rolls };
+    }
+
+    const before = selectedIndexes.map(index => ({
+      index,
+      roll: rolls[index],
+      total: rolls[index]?.total ?? null,
+      formula: rolls[index]?.formula ?? null,
+      type: rolls[index]?.options?.type ?? null
+    }));
+
+    for (const index of selectedIndexes) {
+      const roll = rolls[index];
+      if (!roll || typeof roll !== "object") {
+        throw new TypeError(`Damage roll at index ${index} is unavailable.`);
+      }
+      if (!roll.options || typeof roll.options !== "object") {
+        throw new TypeError(`Damage roll at index ${index} has no mutable options object.`);
+      }
+      roll.options.type = damageType;
+    }
+
+    this.#stats.damageRollRetagCalls += 1;
+    this.#record("retagDamageRollsPreservingResults", { damageType, indexes: selectedIndexes });
+    try {
+      await workflow.setDamageRolls(rolls);
+    } catch (error) {
+      for (const entry of before) {
+        if (rolls[entry.index]?.options) rolls[entry.index].options.type = entry.type;
+      }
+      this.#recordError("retagDamageRollsPreservingResults", error);
+      throw error;
+    }
+
+    return {
+      changed: true,
+      damageType,
+      indexes: selectedIndexes,
+      rolls,
+      preserved: before.every(entry => (
+        rolls[entry.index] === entry.roll
+        && rolls[entry.index]?.total === entry.total
+        && rolls[entry.index]?.formula === entry.formula
+      )),
+      before: before.map(entry => ({
+        index: entry.index,
+        total: entry.total,
+        formula: entry.formula,
+        type: entry.type
+      })),
+      after: selectedIndexes.map(index => ({
+        index,
+        total: rolls[index]?.total ?? null,
+        formula: rolls[index]?.formula ?? null,
+        type: rolls[index]?.options?.type ?? null
+      }))
+    };
+  }
+
   hasDuplicateDie(...args) { return this.#callRoll("hasDuplicateDie", args); }
 
   applyWorkflowDamage(...args) { return this.#callAppliedDamage("applyWorkflowDamage", args); }

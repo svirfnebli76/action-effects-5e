@@ -119,6 +119,59 @@ export class SpellModifierEngineTestSuite {
       record("SME exposes the seven semantic spell phases", Object.keys(SME_PHASES).length === 7, SME_PHASES);
       record("CAT spell utility adapter exposes capability diagnostics", Boolean(this.#catSpell.getStatus()?.capabilities), this.#catSpell.getStatus());
 
+      const semanticDamageStatus = this.#catSpell.getStatus();
+      record(
+        "Damage-roll API distinguishes intentional reroll reconstruction from preserve-results retagging",
+        typeof this.#catSpell.rebuildChangedDamageRoll === "function"
+          && typeof this.#catSpell.retagDamageRollsPreservingResults === "function"
+          && semanticDamageStatus.capabilities?.rebuildChangedDamageRoll === semanticDamageStatus.active
+          && !("getChangedDamageRoll" in semanticDamageStatus.capabilities),
+        semanticDamageStatus
+      );
+
+      const retagRollA = {
+        formula: "1d8 + 2",
+        total: 7,
+        options: { type: "fire" },
+        terms: [{ values: [5] }],
+        evaluate: () => { throw new Error("Preserve-results retag must never evaluate an existing roll."); }
+      };
+      const retagRollB = {
+        formula: "1d6",
+        total: 4,
+        options: { type: "fire" },
+        terms: [{ values: [4] }],
+        evaluate: () => { throw new Error("Preserve-results retag must never evaluate an existing roll."); }
+      };
+      const originalRetagRolls = [retagRollA, retagRollB];
+      let retagCommitCalls = 0;
+      let retagCommittedRolls = null;
+      const retagWorkflow = {
+        damageRolls: originalRetagRolls,
+        setDamageRolls: async rolls => {
+          retagCommitCalls += 1;
+          retagCommittedRolls = rolls;
+          retagWorkflow.damageRolls = rolls;
+        }
+      };
+      const retagResult = await this.#catSpell.retagDamageRollsPreservingResults(retagWorkflow, "cold");
+      record(
+        "Preserve-results damage retag changes type without replacing, rerolling, or changing totals/formulas",
+        retagResult.changed === true
+          && retagResult.preserved === true
+          && retagCommitCalls === 1
+          && retagCommittedRolls === originalRetagRolls
+          && retagWorkflow.damageRolls[0] === retagRollA
+          && retagWorkflow.damageRolls[1] === retagRollB
+          && retagRollA.total === 7
+          && retagRollA.formula === "1d8 + 2"
+          && retagRollA.options.type === "cold"
+          && retagRollB.total === 4
+          && retagRollB.formula === "1d6"
+          && retagRollB.options.type === "cold",
+        { retagResult, retagCommitCalls }
+      );
+
       const target1 = fakeToken("Scene.test.Token.target1", "Target 1");
       const target2 = fakeToken("Scene.test.Token.target2", "Target 2");
 

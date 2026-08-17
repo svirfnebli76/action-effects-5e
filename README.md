@@ -57,6 +57,8 @@ Every cast receives a `SpellModifierSession`. It records phase visits, decisions
 
 CAT is behind `CatSpellAdapter`. Modifier handlers use methods on `SpellModifierContext` for Activity replacement, cast/save facts, synthetic Activities/Items, roll utilities, and per-target damage adjustment. If a handler declares a CAT capability that is unavailable, that handler is not offered. The generic SME registry/session/discovery layer itself does not require CAT.
 
+Damage-roll mutation deliberately distinguishes **re-evaluation** from **preserving an existing result**. CAT 0.0.6 `rollUtils.getChangedDamageRoll()` constructs/evaluates a new DamageRoll, so SME exposes it only under the explicit semantic name `context.rebuildChangedDamageRoll(...)`. For mechanics that already have evaluated dice and only need to change damage-type metadata (the CPR Chaos Bolt pattern), use `context.retagDamageRollsPreservingResults(type, options)`: it keeps the same roll objects/totals/formulas, changes `roll.options.type`, and commits them with Midi `workflow.setDamageRolls()`. Early mechanics such as Transmuted Spell should still prefer pre-roll Activity substitution when the new type is known before rolling.
+
 **v0.4.1 is the engine foundation.** It intentionally does not yet bundle bespoke implementations of Transmuted Spell, Empowered Spell, Careful Spell, Sculpt Spells, or other individual features. Those become small consumers of this subsystem rather than new spell-specific frameworks.
 
 Foundry validation begins with:
