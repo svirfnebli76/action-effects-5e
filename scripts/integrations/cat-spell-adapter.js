@@ -216,6 +216,12 @@ export class CatSpellAdapter {
     }
   }
 
+  /**
+   * Replace CAT/Midi workflow.activity metadata. Do not assume this swaps the
+   * D&D5e Activity instance whose use()/rollDamage() method is already running.
+   * Live Foundry validation showed that an in-flight Activity can continue to
+   * roll from its original instance even after workflow.activity is replaced.
+   */
   setActivity(workflow, activityData) {
     const fn = this.#require("workflowUtils", "setActivity");
     this.#stats.activitySubstitutions += 1;

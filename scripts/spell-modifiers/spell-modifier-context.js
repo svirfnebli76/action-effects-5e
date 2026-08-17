@@ -137,6 +137,12 @@ export class SpellModifierContext {
     return this.live.catSpell.isSustainedRoll(this.workflow);
   }
 
+  /**
+   * Replace workflow.activity metadata through CAT. This is not a guarantee
+   * that an already-running D&D5e Activity instance is replaced. For a
+   * damage-type-only change after dice exist, prefer
+   * retagDamageRollsPreservingResults().
+   */
   setActivity(activityData) {
     return this.live.catSpell.setActivity(this.workflow, activityData);
   }

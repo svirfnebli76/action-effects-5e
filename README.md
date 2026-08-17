@@ -10,12 +10,12 @@ The first foundation exposes these semantic phases:
 
 | SME phase | Primary live boundary | Purpose |
 |---|---|---|
-| `preTargeting` | `midi-qol.preTargetingV2` | Earliest spell-modifier decisions/state capture and targeting-facing changes. |
+| `preTargeting` | `midi-qol.preTargetingV2` | Earliest live-workflow changes such as Activity substitution before targeting/rolling. |
 | `targetingComplete` | `midi-qol.premades.postPreambleComplete` | Target set/preamble has settled. |
 | `savesComplete` | `midi-qol.premades.postSavesComplete` | Save outcomes are available. |
-| `beforeDamageRoll` | `midi-qol.preDamageRoll` | **Midi On-Use internal pass `preDamageRoll` = UI “Before Damage Roll”**; evaluated damage rolls do not yet exist. This is the validated boundary for replacing damage Activity data that must govern the imminent roll. |
+| `beforeDamageRoll` | `midi-qol.preDamageRoll` | **Midi On-Use internal pass `preDamageRoll` = UI “Before Damage Roll”**; evaluated damage rolls do not yet exist. |
 | `damageRollComplete` | Midi damage-roll-complete hooks | Evaluated damage rolls are now available. |
-| `beforeDamageApplication` | `midi-qol.preTargetDamageApplication` | Per-target final damage application can be inspected/adjusted when Midi invokes this settings/outcome-dependent hook. |
+| `beforeDamageApplication` | `midi-qol.preTargetDamageApplication` | Per-target final damage application can be inspected/adjusted. |
 | `workflowComplete` | Midi roll/workflow completion hooks | Terminal bookkeeping/cleanup. |
 
 Modifier implementations register once with SME, for example:
@@ -57,7 +57,7 @@ Every cast receives a `SpellModifierSession`. It records phase visits, decisions
 
 CAT is behind `CatSpellAdapter`. Modifier handlers use methods on `SpellModifierContext` for Activity replacement, cast/save facts, synthetic Activities/Items, roll utilities, and per-target damage adjustment. If a handler declares a CAT capability that is unavailable, that handler is not offered. The generic SME registry/session/discovery layer itself does not require CAT.
 
-Damage-roll mutation deliberately distinguishes **re-evaluation** from **preserving an existing result**. CAT 0.0.6 `rollUtils.getChangedDamageRoll()` constructs/evaluates a new DamageRoll, so SME exposes it only under the explicit semantic name `context.rebuildChangedDamageRoll(...)`. For mechanics that already have evaluated dice and only need to change damage-type metadata (the CPR Chaos Bolt pattern), use `context.retagDamageRollsPreservingResults(type, options)`: it keeps the same roll objects/totals/formulas, changes `roll.options.type`, and commits them with Midi `workflow.setDamageRolls()`. Mechanics such as Transmuted Spell should still prefer pre-roll Activity substitution when the new type is known before rolling; in the validated Midi 14.0.11/CAT 0.0.6 seam, the physical damage-Activity replacement belongs at `beforeDamageRoll`. A feature may make/store its choice earlier and apply that choice at this roll boundary.
+Damage-roll mutation deliberately distinguishes **re-evaluation** from **preserving an existing result**. CAT 0.0.6 `rollUtils.getChangedDamageRoll()` constructs/evaluates a new DamageRoll, so SME exposes it only under the explicit semantic name `context.rebuildChangedDamageRoll(...)`. For mechanics that already have evaluated dice and only need to change damage-type metadata (the CPR Chaos Bolt pattern), use `context.retagDamageRollsPreservingResults(type, options)`: it keeps the same roll objects/totals/formulas, changes `roll.options.type`, and commits them with Midi `workflow.setDamageRolls()`. Early mechanics such as Transmuted Spell should still prefer pre-roll Activity substitution when the new type is known before rolling.
 
 **v0.4.1 is the engine foundation.** It intentionally does not yet bundle bespoke implementations of Transmuted Spell, Empowered Spell, Careful Spell, Sculpt Spells, or other individual features. Those become small consumers of this subsystem rather than new spell-specific frameworks.
 
@@ -73,7 +73,7 @@ Then, with CAT active and exactly one caster token controlled that owns a simple
 await ae5e.tests.runSpellModifierEngineLiveActivitySubstitutionTest();
 ```
 
-The live gate creates disposable Actors/Tokens and an in-memory synthetic spell, performs a real Midi workflow with zero real caster resource consumption, verifies `beforeDamageRoll` Activity substitution reaches D&D5e's actual damage roll, and removes its temporary documents/messages afterward.
+The live gate creates disposable Actors/Tokens and an in-memory synthetic spell, performs a real Midi workflow with zero real caster resource consumption, verifies early Activity substitution reaches D&D5e's actual damage roll, and removes its temporary documents/messages afterward.
 
 ### v0.3.30 CAT movement interoperability
 
@@ -441,3 +441,6 @@ Control exactly one token and run `await game.modules.get("action-effects-5e").a
 ### 0.3.29 Foundry v14.365 validation note
 
 Foundry v14.365 live validation showed that internal movement actions must use an explicit `canSelect: () => false` function for deterministic hidden-selection behavior. The movement-accounting test harness also measures action-aware cost through the rendered Token API.
+
+### Damage-type changes in live spell workflows
+For effects such as Transmuted Spell, SME distinguishes the **decision point** from the **physical roll mutation point**. A feature may choose/store the new damage type before damage is rolled, then use `retagDamageRollsPreservingResults()` at `damageRollComplete` to change only the evaluated rolls' type metadata. CAT `setActivity()` remains exposed for workflow metadata substitution, but AE5E does not assume it replaces an already-running D&D5e Activity instance.

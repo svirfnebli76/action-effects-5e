@@ -340,7 +340,7 @@ export class SpellModifierEngineTestSuite {
       return entry;
     };
 
-    banner("AE5E 0.4.1 — SME LIVE MIDI/CAT ACTIVITY SUBSTITUTION", "#7ddcff", 26);
+    banner("AE5E 0.4.1 — SME LIVE MIDI/CAT PRESERVE-RESULTS DAMAGE RETAG", "#7ddcff", 26);
 
     if (!globalThis.game?.user?.isGM) {
       throw new Error("The SME live activity-substitution test must be run from the GM client.");
@@ -360,7 +360,6 @@ export class SpellModifierEngineTestSuite {
 
     const catStatus = this.#catSpell.getStatus();
     const requiredCapabilities = [
-      "setActivity",
       "getDamageModifiedActivityData",
       "setWorkflowProperty",
       "getWorkflowProperty",
@@ -409,15 +408,19 @@ export class SpellModifierEngineTestSuite {
     };
     const oldMessages = new Set(game.messages.map(message => message.id));
 
-    const modifierId = `${MODULE_ID}.sme-live-test.${foundry.utils.randomID(10)}.transmute`;
+    const decisionModifierId = `${MODULE_ID}.sme-live-test.${foundry.utils.randomID(10)}.transmute-decision`;
+    const retagModifierId = `${MODULE_ID}.sme-live-test.${foundry.utils.randomID(10)}.transmute-retag`;
     const observerId = `${MODULE_ID}.sme-live-test.${foundry.utils.randomID(10)}.observer`;
     const syntheticName = "AE5E SME Live Test — Synthetic Spell";
     const featureName = "AE5E SME Live Test — Modifier Source";
     const state = {
-      transmuteApplications: 0,
+      decisionApplications: 0,
+      retagApplications: 0,
+      selectedDamageType: null,
       phases: [],
       preDamage: null,
       dndDamage: null,
+      retag: null,
       targetDamageHookCalls: 0,
       targetDamageHookTargetUuid: null,
       targetDamageHookHasDamageItem: false,
@@ -432,10 +435,12 @@ export class SpellModifierEngineTestSuite {
     let syntheticItem = null;
     let syntheticActivity = null;
     let workflow = null;
-    let unregisterTransmute = null;
+    let unregisterDecision = null;
+    let unregisterRetag = null;
     let unregisterObserver = null;
     const hookHandles = [];
     let executionError = null;
+    let dndRollRefs = [];
 
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const damageTypes = activity => {
@@ -466,31 +471,82 @@ export class SpellModifierEngineTestSuite {
     );
 
     try {
-      unregisterTransmute = this.#engine.registerModifier(modifierId, {
-        label: "SME Test: Fire → Cold",
+      // Phase 1 models the player-facing Transmuted Spell decision. The
+      // selection is made before any damage dice exist, but we intentionally do
+      // NOT call CAT setActivity() here. Live validation showed that changing
+      // workflow.activity after Activity.use() has begun does not replace the
+      // D&D5e Activity instance whose rollDamage() method is already executing.
+      unregisterDecision = this.#engine.registerModifier(decisionModifierId, {
+        label: "SME Test: Select Fire → Cold",
         phases: [SME_PHASES.BEFORE_DAMAGE_ROLL],
         mode: SME_MODIFIER_MODES.AUTOMATIC,
         priority: 50_000,
-        requiresCapabilities: ["setActivity", "getDamageModifiedActivityData"],
         eligibility: async ({ context }) => context.facts.damageTypes.includes("fire"),
-        apply: async ({ context }) => {
-          const current = context.activity;
-          const coldData = context.getDamageModifiedActivityData(current, "1d6 + 2", {
-            types: ["cold"],
-            specificIndex: 0
-          });
-          coldData.damage.includeBase = false;
-          coldData.damage.parts = [coldData.damage.parts[0]];
-          coldData.name = "AE5E SME Live Test — Cold Damage";
-          await context.setActivity(coldData);
-          state.transmuteApplications += 1;
+        apply: async ({ context, session }) => {
+          session.metadata.smeLiveSelectedDamageType = "cold";
+          state.decisionApplications += 1;
+          state.selectedDamageType = "cold";
           state.phases.push({
             phase: context.phase,
+            role: "decision",
             damageTypes: [...context.facts.damageTypes],
-            afterDamageTypes: damageTypes(context.workflow.activity),
+            selectedDamageType: "cold",
             sessionId: context.sessionId
           });
-          return { applied: true, changedDamageType: "cold" };
+          return { applied: true, selectedDamageType: "cold" };
+        }
+      });
+
+      // Phase 2 applies the semantic decision after D&D5e has evaluated the
+      // original roll but before later damage processing. This preserves the
+      // exact DamageRoll objects/results and changes only their type metadata.
+      unregisterRetag = this.#engine.registerModifier(retagModifierId, {
+        label: "SME Test: Apply Fire → Cold Without Reroll",
+        phases: [SME_PHASES.DAMAGE_ROLL_COMPLETE],
+        mode: SME_MODIFIER_MODES.AUTOMATIC,
+        priority: 49_000,
+        eligibility: async ({ context, session }) => (
+          session.metadata.smeLiveSelectedDamageType === "cold"
+          && context.facts.damageRolls.length > 0
+        ),
+        apply: async ({ context, session }) => {
+          const selectedDamageType = session.metadata.smeLiveSelectedDamageType;
+          const beforeRolls = getRolls(context.workflow);
+          const before = rollSummary(beforeRolls);
+          const retagResult = await context.retagDamageRollsPreservingResults(selectedDamageType);
+          const afterRolls = getRolls(context.workflow);
+          const after = rollSummary(afterRolls);
+          const sameWorkflowObjects = beforeRolls.length === afterRolls.length
+            && beforeRolls.every((roll, index) => afterRolls[index] === roll);
+          const sameDndObjects = dndRollRefs.length === afterRolls.length
+            && dndRollRefs.every((roll, index) => afterRolls[index] === roll);
+          state.retagApplications += 1;
+          state.retag = {
+            selectedDamageType,
+            before,
+            after,
+            preserved: retagResult?.preserved === true,
+            sameWorkflowObjects,
+            sameDndObjects
+          };
+          state.phases.push({
+            phase: context.phase,
+            role: "retag",
+            damageTypes: [...context.facts.damageTypes],
+            damageRollsBefore: before,
+            damageRollsAfter: after,
+            preserved: retagResult?.preserved === true,
+            sameWorkflowObjects,
+            sameDndObjects,
+            sessionId: context.sessionId
+          });
+          return {
+            applied: true,
+            changedDamageType: selectedDamageType,
+            preserved: retagResult?.preserved === true,
+            sameWorkflowObjects,
+            sameDndObjects
+          };
         }
       });
 
@@ -532,7 +588,8 @@ export class SpellModifierEngineTestSuite {
         flags: {
           [MODULE_ID]: {
             spellModifier: [
-              { enabled: true, handler: modifierId },
+              { enabled: true, handler: decisionModifierId },
+              { enabled: true, handler: retagModifierId },
               { enabled: true, handler: observerId }
             ]
           }
@@ -591,6 +648,7 @@ export class SpellModifierEngineTestSuite {
       hookHandles.push(["dnd5e.rollDamage", Hooks.on("dnd5e.rollDamage", (rolls, data) => {
         const subject = data?.subject;
         if (!matchesActivity(subject)) return;
+        dndRollRefs = Array.from(rolls ?? []);
         state.dndDamage = {
           subjectName: subject?.name ?? null,
           subjectTypes: damageTypes(subject),
@@ -630,11 +688,32 @@ export class SpellModifierEngineTestSuite {
       );
       await sleep(500);
 
-      record("SME automatic Before Damage Roll modifier applied exactly once", state.transmuteApplications === 1, state);
-      record("SME replaced the live workflow Activity with cold before damage roll", state.preDamage?.activityTypes?.includes("cold") === true && state.preDamage?.activityTypes?.includes("fire") !== true, state.preDamage);
+      record("SME captured the cold damage-type decision at Before Damage Roll exactly once", state.decisionApplications === 1 && state.selectedDamageType === "cold", state);
+      record("SME leaves the executing fire Activity intact while staging the later type change", state.preDamage?.activityTypes?.includes("fire") === true && state.preDamage?.activityTypes?.includes("cold") !== true, state.preDamage);
       record("No evaluated damage roll existed yet at SME Before Damage Roll", (state.preDamage?.existingRolls?.length ?? -1) === 0, state.preDamage);
-      record("Actual D&D5e damage-roll subject is cold", state.dndDamage?.subjectTypes?.includes("cold") === true && state.dndDamage?.subjectTypes?.includes("fire") !== true, state.dndDamage);
-      record("Actual D&D5e damage roll is cold with no fire roll", (state.dndDamage?.rolls?.length ?? 0) > 0 && state.dndDamage.rolls.every(roll => roll.type === "cold"), state.dndDamage);
+      record(
+        "D&D5e evaluated the original fire roll before SME retagging",
+        state.dndDamage?.subjectTypes?.includes("fire") === true
+          && state.dndDamage?.subjectTypes?.includes("cold") !== true
+          && (state.dndDamage?.rolls?.length ?? 0) > 0
+          && state.dndDamage.rolls.every(roll => roll.type === "fire"),
+        state.dndDamage
+      );
+      record(
+        "SME retagged the evaluated damage roll to cold without rerolling or replacing it",
+        state.retagApplications === 1
+          && state.retag?.preserved === true
+          && state.retag?.sameWorkflowObjects === true
+          && state.retag?.sameDndObjects === true
+          && (state.retag?.after?.length ?? 0) > 0
+          && state.retag.after.every(roll => roll.type === "cold")
+          && state.retag.before.length === state.retag.after.length
+          && state.retag.before.every((roll, index) => (
+            roll.total === state.retag.after[index]?.total
+            && roll.formula === state.retag.after[index]?.formula
+          )),
+        state.retag
+      );
 
       const observedPhases = new Set(state.phases.map(entry => entry.phase));
       record("SME observed Before Damage Roll in the real Midi workflow", observedPhases.has(SME_PHASES.BEFORE_DAMAGE_ROLL), state.phases);
@@ -679,7 +758,13 @@ export class SpellModifierEngineTestSuite {
         && session.source?.itemName === syntheticName
       ));
       record("One SME session carried the synthetic spell across the live lifecycle", Boolean(recent) && recent.state === "complete" && new Set(recent.phaseVisits.map(visit => visit.phase)).has(SME_PHASES.BEFORE_DAMAGE_ROLL), recent);
-      record("SME session recorded the transmutation plus lifecycle observations", (recent?.applications?.length ?? 0) >= 4 && recent.applications.some(entry => entry.modifierId === modifierId), recent?.applications ?? null);
+      record(
+        "SME session recorded the staged transmutation plus lifecycle observations",
+        (recent?.applications?.length ?? 0) >= 5
+          && recent.applications.some(entry => entry.modifierId === decisionModifierId)
+          && recent.applications.some(entry => entry.modifierId === retagModifierId),
+        recent?.applications ?? null
+      );
       record("Live workflow completed without SME-requested abort", Boolean(workflow) && executionError === null, { workflowClass: workflow?.constructor?.name ?? null });
 
       record("Real caster HP remained unchanged", (realActor.system?.attributes?.hp?.value ?? null) === baseline.hp, { before: baseline.hp, after: realActor.system?.attributes?.hp?.value ?? null });
@@ -694,7 +779,8 @@ export class SpellModifierEngineTestSuite {
         try { Hooks.off(hook, id); } catch { /* noop */ }
       }
       try { unregisterObserver?.(); } catch { /* noop */ }
-      try { unregisterTransmute?.(); } catch { /* noop */ }
+      try { unregisterRetag?.(); } catch { /* noop */ }
+      try { unregisterDecision?.(); } catch { /* noop */ }
 
       if (workflow) {
         try { this.#engine.clearSession(workflow); } catch { /* already archived */ }
@@ -723,7 +809,13 @@ export class SpellModifierEngineTestSuite {
     record("Disposable target Actor cleaned up", !targetActor || !game.actors.get(targetActor.id));
     record("Disposable source Token cleaned up", !sourceTokenDoc || !canvas.scene.tokens.get(sourceTokenDoc.id));
     record("Disposable target Token cleaned up", !targetTokenDoc || !canvas.scene.tokens.get(targetTokenDoc.id));
-    record("Temporary SME handlers unregistered", !this.#registry.has(modifierId) && !this.#registry.has(observerId), this.#registry.getStats());
+    record(
+      "Temporary SME handlers unregistered",
+      !this.#registry.has(decisionModifierId)
+        && !this.#registry.has(retagModifierId)
+        && !this.#registry.has(observerId),
+      this.#registry.getStats()
+    );
     record("Test-created ChatMessages cleaned up", game.messages.every(message => oldMessages.has(message.id)));
     record(
       "Real caster still unchanged after cleanup",

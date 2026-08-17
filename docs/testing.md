@@ -756,3 +756,6 @@ The final release gate for 0.3.28 is the Foundry matrix above. The repository's 
 
 ### Live Midi gate duplicate-arm/timeout note (0.3.28 revised7)
 The live Midi gate remains armed for approximately 10 minutes by default. If a probe is already `armed` or `running`, a second `runReactionBrokerMidiWorkflowGateTest()` call is rejected before any second test instrumentation is installed. Use the already-armed spell probe, or call `await ae5e.tests.clearReactionBrokerTestState()` before intentionally changing modes. The mode banner is printed only after the probe has successfully armed.
+
+### SME live damage-type contract
+The live Midi/CAT/D&D5e test intentionally begins with a fire Activity, records a cold transmutation decision at SME `beforeDamageRoll`, verifies no evaluated damage roll exists yet, allows D&D5e to evaluate the original fire roll once, and then retags that exact roll to cold at SME `damageRollComplete`. Acceptance requires object identity, total, and formula to remain unchanged while the roll type becomes cold.
