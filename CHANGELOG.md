@@ -1,3 +1,12 @@
+## 0.4.1.1 — Module spell compendium structure
+
+- Added the first AE5E-owned compendium library structure for Foundry VTT.
+- Added the top-level **Action Effects 5E** Compendium Pack folder with a nested **Spells** folder.
+- Added ten empty D&D5e `Item` compendium packs beneath **Spells**: **Cantrips**, **Level 1**, **Level 2**, **Level 3**, **Level 4**, **Level 5**, **Level 6**, **Level 7**, **Level 8**, and **Level 9**.
+- Assigned stable internal pack identifiers `spells-cantrips` and `spells-level-1` through `spells-level-9` for future AE5E content and UUID references.
+- This release adds compendium/package metadata only. The finalized v0.4.1 runtime behavior is preserved; the shared `MODULE_VERSION` constant is advanced to `0.4.1.1` so the public AE5E API reports the installed package version correctly. All other runtime JavaScript, tests, styles, and localization are unchanged.
+
+
 ## 0.4.1 — Spell Modifier Engine foundation
 
 - Added the first production **Spell Modifier Engine (SME)** foundation. SME is a generic per-cast orchestration layer for feats, class features, metamagic, items, effects, and later integrations that can inspect or modify a spell workflow without requiring each spell to hard-code awareness of those features.

@@ -1,3 +1,7 @@
+### v0.4.1.1 compendium library foundation
+
+AE5E now ships its first module-owned Compendium Pack hierarchy: **Action Effects 5E → Spells → Cantrips / Level 1–9**. Each spell level is a separate empty D&D5e `Item` pack with a stable internal identifier (`spells-cantrips`, `spells-level-1` … `spells-level-9`) ready for AE5E spell content. The v0.4.1 runtime behavior remains the validated baseline.
+
 # Action Effects 5E
 
 Action Effects 5E is a Foundry VTT v14.357+ module for reusable D&D5e automation infrastructure and premade items. Its reusable subsystems now include rules-aware movement/relationships, forced displacement, the Reaction Broker, and the Spell Modifier Engine.
