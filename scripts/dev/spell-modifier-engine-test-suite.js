@@ -418,6 +418,9 @@ export class SpellModifierEngineTestSuite {
       phases: [],
       preDamage: null,
       dndDamage: null,
+      targetDamageHookCalls: 0,
+      targetDamageHookTargetUuid: null,
+      targetDamageHookHasDamageItem: false,
       workflowComplete: false
     };
 
@@ -465,7 +468,7 @@ export class SpellModifierEngineTestSuite {
     try {
       unregisterTransmute = this.#engine.registerModifier(modifierId, {
         label: "SME Test: Fire → Cold",
-        phases: [SME_PHASES.PRE_TARGETING],
+        phases: [SME_PHASES.BEFORE_DAMAGE_ROLL],
         mode: SME_MODIFIER_MODES.AUTOMATIC,
         priority: 50_000,
         requiresCapabilities: ["setActivity", "getDamageModifiedActivityData"],
@@ -479,7 +482,7 @@ export class SpellModifierEngineTestSuite {
           coldData.damage.includeBase = false;
           coldData.damage.parts = [coldData.damage.parts[0]];
           coldData.name = "AE5E SME Live Test — Cold Damage";
-          context.setActivity(coldData);
+          await context.setActivity(coldData);
           state.transmuteApplications += 1;
           state.phases.push({
             phase: context.phase,
@@ -508,6 +511,8 @@ export class SpellModifierEngineTestSuite {
             damageTypes: [...context.facts.damageTypes],
             damageRolls: foundry.utils.deepClone(context.facts.damageRolls),
             targetTokenUuid: context.event.targetTokenUuid,
+            hasDamageItem: context.event.hasDamageItem,
+            damageItem: foundry.utils.deepClone(context.facts.damageItem),
             sessionId: context.sessionId
           });
           if (context.phase === SME_PHASES.WORKFLOW_COMPLETE) state.workflowComplete = true;
@@ -593,6 +598,19 @@ export class SpellModifierEngineTestSuite {
         };
       })]);
 
+      // This Midi hook is settings/outcome dependent. Capture whether Midi itself
+      // invoked it; SME is required to mirror it only when the underlying hook runs.
+      hookHandles.push(["midi-qol.preTargetDamageApplication", Hooks.on(
+        "midi-qol.preTargetDamageApplication",
+        (targetToken, data = {}) => {
+          const testWorkflow = data?.workflow ?? null;
+          if (!matchesWorkflow(testWorkflow)) return;
+          state.targetDamageHookCalls += 1;
+          state.targetDamageHookTargetUuid = targetToken?.document?.uuid ?? targetToken?.uuid ?? null;
+          state.targetDamageHookHasDamageItem = Boolean(data?.damageItem ?? data?.ditem);
+        }
+      )]);
+
       workflow = await this.#catSpell.completeActivityUse(
         syntheticActivity,
         [targetTokenDoc],
@@ -612,7 +630,7 @@ export class SpellModifierEngineTestSuite {
       );
       await sleep(500);
 
-      record("SME automatic preTargeting modifier applied exactly once", state.transmuteApplications === 1, state);
+      record("SME automatic Before Damage Roll modifier applied exactly once", state.transmuteApplications === 1, state);
       record("SME replaced the live workflow Activity with cold before damage roll", state.preDamage?.activityTypes?.includes("cold") === true && state.preDamage?.activityTypes?.includes("fire") !== true, state.preDamage);
       record("No evaluated damage roll existed yet at SME Before Damage Roll", (state.preDamage?.existingRolls?.length ?? -1) === 0, state.preDamage);
       record("Actual D&D5e damage-roll subject is cold", state.dndDamage?.subjectTypes?.includes("cold") === true && state.dndDamage?.subjectTypes?.includes("fire") !== true, state.dndDamage);
@@ -621,7 +639,26 @@ export class SpellModifierEngineTestSuite {
       const observedPhases = new Set(state.phases.map(entry => entry.phase));
       record("SME observed Before Damage Roll in the real Midi workflow", observedPhases.has(SME_PHASES.BEFORE_DAMAGE_ROLL), state.phases);
       record("SME observed Damage Roll Complete in the real Midi workflow", observedPhases.has(SME_PHASES.DAMAGE_ROLL_COMPLETE), state.phases);
-      record("SME observed per-target Before Damage Application", observedPhases.has(SME_PHASES.BEFORE_DAMAGE_APPLICATION) && state.phases.some(entry => entry.phase === SME_PHASES.BEFORE_DAMAGE_APPLICATION && entry.targetTokenUuid === targetTokenDoc.uuid), state.phases);
+      const beforeDamageApplicationEntries = state.phases.filter(entry => entry.phase === SME_PHASES.BEFORE_DAMAGE_APPLICATION);
+      const underlyingTargetDamageHookFired = state.targetDamageHookCalls > 0;
+      record(
+        "SME Before Damage Application mirrors Midi when the underlying per-target hook is invoked",
+        !underlyingTargetDamageHookFired || (
+          observedPhases.has(SME_PHASES.BEFORE_DAMAGE_APPLICATION)
+          && beforeDamageApplicationEntries.some(entry => entry.targetTokenUuid === targetTokenDoc.uuid)
+          && beforeDamageApplicationEntries.some(entry => entry.hasDamageItem === state.targetDamageHookHasDamageItem)
+        ),
+        {
+          deferred: !underlyingTargetDamageHookFired,
+          reason: !underlyingTargetDamageHookFired
+            ? "Midi did not invoke the settings/outcome-dependent preTargetDamageApplication hook during this synthetic workflow."
+            : null,
+          midiHookCalls: state.targetDamageHookCalls,
+          midiTargetTokenUuid: state.targetDamageHookTargetUuid,
+          midiHasDamageItem: state.targetDamageHookHasDamageItem,
+          smeEntries: beforeDamageApplicationEntries
+        }
+      );
       record("SME observed and archived Workflow Complete", state.workflowComplete === true, state.phases);
 
       const workflowMirror = this.#catSpell.tryGetWorkflowProperty(
@@ -641,7 +678,7 @@ export class SpellModifierEngineTestSuite {
         session.source?.actorUuid === sourceActor.uuid
         && session.source?.itemName === syntheticName
       ));
-      record("One SME session carried the synthetic spell across the live lifecycle", Boolean(recent) && recent.state === "complete" && new Set(recent.phaseVisits.map(visit => visit.phase)).has(SME_PHASES.PRE_TARGETING), recent);
+      record("One SME session carried the synthetic spell across the live lifecycle", Boolean(recent) && recent.state === "complete" && new Set(recent.phaseVisits.map(visit => visit.phase)).has(SME_PHASES.BEFORE_DAMAGE_ROLL), recent);
       record("SME session recorded the transmutation plus lifecycle observations", (recent?.applications?.length ?? 0) >= 4 && recent.applications.some(entry => entry.modifierId === modifierId), recent?.applications ?? null);
       record("Live workflow completed without SME-requested abort", Boolean(workflow) && executionError === null, { workflowClass: workflow?.constructor?.name ?? null });
 

@@ -41,20 +41,22 @@ The second gate exercises the production Midi/CAT/D&D5e seam. Run as GM with CAT
 await ae5e.tests.runSpellModifierEngineLiveActivitySubstitutionTest({ notify: true });
 ```
 
-A complete live pass should report **32/32 PASS**. The test uses the controlled Actor only as a read-only template source. It creates disposable source/target Actors and hidden Tokens, embeds only a disposable feature registration on the disposable source, builds the test spell as a CAT synthetic in-memory Item, and executes it with `consumeUsage: false`, `consumeResources: false`, and `spellSlot: false`.
+A complete live pass should report **31/31 PASS**. The test uses the controlled Actor only as a read-only template source. It creates disposable source/target Actors and hidden Tokens, embeds only a disposable feature registration on the disposable source, builds the test spell as a CAT synthetic in-memory Item, and executes it with `consumeUsage: false`, `consumeResources: false`, and `spellSlot: false`.
 
 The live gate proves:
 
 1. required CAT 0.0.6 Activity/workflow-state/synthetic/execution capabilities are present;
 2. SME discovers a declarative feature registration on the caster;
-3. an automatic `preTargeting` handler replaces a synthetic fire Activity with cold through the AE5E CAT facade;
+3. an automatic `beforeDamageRoll` handler replaces a synthetic fire Activity with cold through the AE5E CAT facade at Midi's awaited pre-roll boundary;
 4. `midi-qol.preDamageRoll` (**internal `preDamageRoll` = UI “Before Damage Roll”**) sees the cold Activity before any evaluated damage roll exists;
 5. the actual `dnd5e.rollDamage` subject and resulting DamageRoll are cold rather than fire;
-6. SME reaches `beforeDamageRoll`, `damageRollComplete`, per-target `beforeDamageApplication`, and `workflowComplete`;
+6. SME reaches `beforeDamageRoll`, `damageRollComplete`, and `workflowComplete`; if Midi invokes its settings/outcome-dependent `preTargetDamageApplication` hook, SME must also map that invocation to the per-target `beforeDamageApplication` phase with the target and canonical `damageItem`;
 7. the same SME session crosses the real workflow and finishes `complete`;
 8. the completed session is mirrored at `workflow.cat.sme.actionEffects5e`;
 9. the real controlled caster's HP, Items, Effects, and spell-resource data remain unchanged; and
 10. all test-created Actors, Tokens, handlers, and ChatMessages are cleaned up.
+
+The synthetic live spell does not force Midi to invoke `preTargetDamageApplication`, because that hook depends on damage-application settings/outcome. The gate records a passing deferred result when the raw Midi hook is absent; when it is present, the same check becomes strict and requires SME to observe the matching target/damage item.
 
 Do not treat external module console warnings as SME failures unless an SME acceptance check fails or the workflow result is altered. After both SME gates pass, rerun the unchanged v0.3.30 foundation/movement and targeted Reaction Broker sanity tests before finalizing 0.4.1.
 

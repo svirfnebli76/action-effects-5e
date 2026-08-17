@@ -392,7 +392,8 @@ export class CatSpellAdapter {
   setDamageItemDamage(...args) { return this.#callAppliedDamage("setDamageItemDamage", args); }
   negateDamageItemDamage(...args) { return this.#callAppliedDamage("negateDamageItemDamage", args); }
 
-  buildFacts(workflow, { targetToken = null, ditem = null } = {}) {
+  buildFacts(workflow, { targetToken = null, damageItem = null, ditem = null } = {}) {
+    const appliedDamageItem = damageItem ?? ditem ?? null;
     const item = workflow?.item ?? workflow?.activity?.item ?? null;
     const activity = workflow?.activity ?? null;
     const actor = workflow?.actor ?? item?.actor ?? null;
@@ -418,17 +419,17 @@ export class CatSpellAdapter {
       failedSaves: collectionSnapshot(workflow?.failedSaves),
       hitTargets: collectionSnapshot(workflow?.hitTargets),
       targetToken: entitySnapshot(targetToken),
-      hasDamageItem: Boolean(ditem),
-      damageItem: ditem ? {
-        actorUuid: ditem.actorUuid ?? null,
-        tokenUuid: ditem.tokenUuid ?? null,
-        totalDamage: finiteNumber(ditem.totalDamage, null),
-        hpDamage: finiteNumber(ditem.hpDamage, null),
-        tempDamage: finiteNumber(ditem.tempDamage, null),
-        oldHP: finiteNumber(ditem.oldHP, null),
-        newHP: finiteNumber(ditem.newHP, null),
-        oldTempHP: finiteNumber(ditem.oldTempHP, null),
-        newTempHP: finiteNumber(ditem.newTempHP, null)
+      hasDamageItem: Boolean(appliedDamageItem),
+      damageItem: appliedDamageItem ? {
+        actorUuid: appliedDamageItem.actorUuid ?? null,
+        tokenUuid: appliedDamageItem.tokenUuid ?? null,
+        totalDamage: finiteNumber(appliedDamageItem.totalDamage, null),
+        hpDamage: finiteNumber(appliedDamageItem.hpDamage, null),
+        tempDamage: finiteNumber(appliedDamageItem.tempDamage, null),
+        oldHP: finiteNumber(appliedDamageItem.oldHP, null),
+        newHP: finiteNumber(appliedDamageItem.newHP, null),
+        oldTempHP: finiteNumber(appliedDamageItem.oldTempHP, null),
+        newTempHP: finiteNumber(appliedDamageItem.newTempHP, null)
       } : null,
       damageRolls: (Array.isArray(workflow?.damageRolls) ? workflow.damageRolls : (workflow?.damageRoll ? [workflow.damageRoll] : []))
         .map(roll => ({

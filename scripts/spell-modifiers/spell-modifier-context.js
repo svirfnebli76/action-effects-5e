@@ -25,7 +25,7 @@ export class SpellModifierContext {
     const actor = workflow?.actor ?? item?.actor ?? null;
     const token = workflow?.token?.document ?? workflow?.token ?? null;
     const targetToken = eventData?.targetToken?.document ?? eventData?.targetToken ?? null;
-    const ditem = eventData?.ditem ?? null;
+    const damageItem = eventData?.damageItem ?? eventData?.ditem ?? null;
 
     this.phase = phase;
     this.workflowId = workflowId ?? workflow?.id ?? workflow?.uuid ?? null;
@@ -40,10 +40,11 @@ export class SpellModifierContext {
       itemName: item?.name ?? null,
       activityName: activity?.name ?? null
     });
-    this.facts = Object.freeze(catSpell.buildFacts(workflow, { targetToken, ditem }));
+    this.facts = Object.freeze(catSpell.buildFacts(workflow, { targetToken, damageItem }));
     this.event = Object.freeze({
       targetTokenUuid: entityUuid(targetToken),
-      hasDitem: Boolean(ditem),
+      hasDamageItem: Boolean(damageItem),
+      hasDitem: Boolean(damageItem),
       tag: eventData?.tag ?? null,
       rawHook: eventData?.rawHook ?? null
     });
@@ -61,7 +62,8 @@ export class SpellModifierContext {
       item,
       activity,
       targetToken,
-      ditem,
+      damageItem,
+      ditem: damageItem,
       eventData,
       catSpell
     });
@@ -75,7 +77,8 @@ export class SpellModifierContext {
   get activity() { return this.live.workflow?.activity ?? this.live.activity; }
   get workflow() { return this.live.workflow; }
   get targetToken() { return this.live.targetToken; }
-  get ditem() { return this.live.ditem; }
+  get damageItem() { return this.live.damageItem; }
+  get ditem() { return this.live.damageItem; }
 
   get targetUuids() {
     return this.facts.targets.map(entry => entry.uuid).filter(Boolean);

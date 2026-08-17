@@ -120,8 +120,23 @@ export class SpellModifierEventAdapter {
       const targetToken = args?.[0] ?? null;
       const second = args?.[1] ?? null;
       const workflow = this.#findWorkflow(args) ?? second?.workflow ?? null;
-      const ditem = second?.ditem ?? args?.find(value => value?.ditem)?.ditem ?? null;
-      return { workflow, eventData: { targetToken, ditem, rawArgsCount: args.length } };
+      // Midi v14 supplies { item, workflow, damageItem }. Older integrations and
+      // some CAT-facing code used the shorthand `ditem`, so normalize both into
+      // one canonical damageItem while retaining the alias for compatibility.
+      const damageItem = second?.damageItem
+        ?? second?.ditem
+        ?? args?.find(value => value?.damageItem)?.damageItem
+        ?? args?.find(value => value?.ditem)?.ditem
+        ?? null;
+      return {
+        workflow,
+        eventData: {
+          targetToken,
+          damageItem,
+          ditem: damageItem,
+          rawArgsCount: args.length
+        }
+      };
     }
     return { workflow: this.#findWorkflow(args), eventData: { rawArgsCount: args.length } };
   }
