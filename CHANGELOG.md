@@ -8,6 +8,7 @@
 - Added centralized approximate tint values for Red, Teal, and Yellow. Native Patreon recolors always take priority; tinting is a fallback for white artwork, not a claim that the result is artistically identical to the premium recolor.
 - Preserved the Fireball crosshair semantics: Eskie `Line` is a source-to-template tracer; Eskie `Ray` represents the path/beam itself.
 - Centralized the proven custom-crosshair suppression settings: `borderAlpha: 0`, `fillAlpha: 0`, `gridHighlight: false`. These are applied only when a custom Eskie visual actually resolves; otherwise Sequencer's native crosshair remains visible and functional.
+- Corrected the live Sequencer 4.2.x adapter after interactive validation: `Sequencer.Crosshair.show()` now receives the current two-argument contract (`config`, `callbacks`), AE5E `type` is translated to Sequencer's measured-template `t`, and `limitMaxRange` is nested under `config.location`. This ensures custom SHOW callbacks actually fire and the authored distance/visual-suppression settings are honored.
 - Added `runCrosshairFoundationTest()` and `runCrosshairInteractiveTest()` Foundry harnesses. The interactive gate opens a Fireball-style Circle + Line placement from exactly one controlled token and verifies local persistent crosshair effects are cleaned up after placement/cancellation.
 - Existing v0.4.1.1 compendium hierarchy and prior SME/movement/reaction runtimes are otherwise unchanged.
 

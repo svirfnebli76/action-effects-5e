@@ -332,30 +332,54 @@ export class CrosshairService {
     );
 
     const visualShape = lower(visual?.shape);
-    const nativeType = type ?? placement.type ?? NATIVE_TYPE_BY_VISUAL[visualShape] ?? null;
+    const nativeType = type ?? placement.type ?? placement.t ?? NATIVE_TYPE_BY_VISUAL[visualShape] ?? null;
     if (!nativeType) {
       throw new Error("AE5E crosshairs require a functional Sequencer crosshair 'type'. Visual Line is a tracer and does not imply a functional template type.");
     }
 
-    const resolvedLocation = location ?? placement.location ?? (source ? { obj: source } : null);
-    const locationConfig = {
-      ...placement,
-      type: nativeType,
-      ...(resolvedLocation ? { location: resolvedLocation } : {}),
-      ...(limitMaxRange !== null && limitMaxRange !== undefined ? { limitMaxRange } : {})
-    };
+    // Sequencer 4.2.x Crosshair.show accepts one combined config object plus
+    // a callbacks object. Crosshair placement/range options live under
+    // config.location, while measured-template and appearance options live at
+    // the top level. AE5E keeps its friendlier `type` abstraction and adapts it
+    // here to Sequencer's measured-template `t` field.
+    const placementConfig = { ...placement };
+    delete placementConfig.type;
+    delete placementConfig.t;
+    delete placementConfig.location;
 
-    const appearanceConfig = {
+    const placementLocation = placement.location && typeof placement.location === "object"
+      ? { ...placement.location }
+      : {};
+    const resolvedLocation = location ?? placement.location ?? (source ? { obj: source } : null);
+    if (resolvedLocation) {
+      if (resolvedLocation?.obj !== undefined
+        || resolvedLocation?.limitMinRange !== undefined
+        || resolvedLocation?.limitMaxRange !== undefined
+        || resolvedLocation?.showRange !== undefined
+        || resolvedLocation?.wallBehavior !== undefined) {
+        Object.assign(placementLocation, resolvedLocation);
+      } else {
+        placementLocation.obj = resolvedLocation;
+      }
+    }
+    if (limitMaxRange !== null && limitMaxRange !== undefined) {
+      placementLocation.limitMaxRange = Number(limitMaxRange);
+    }
+
+    const crosshairConfig = {
+      ...placementConfig,
       ...appearance,
-      ...(distance !== null && distance !== undefined ? { distance } : {})
+      t: nativeType,
+      ...(distance !== null && distance !== undefined ? { distance: Number(distance) } : {}),
+      ...(Object.keys(placementLocation).length ? { location: placementLocation } : {})
     };
 
     // Only suppress Sequencer's native crosshair when AE5E actually has a
     // replacement visual. Without Eskie, keep the functional crosshair visible.
     if (hasVisualReplacement) {
-      appearanceConfig.borderAlpha = 0;
-      appearanceConfig.fillAlpha = 0;
-      appearanceConfig.gridHighlight = false;
+      crosshairConfig.borderAlpha = 0;
+      crosshairConfig.fillAlpha = 0;
+      crosshairConfig.gridHighlight = false;
     } else if (!nativeFallback && visual) {
       throw new Error(visualResolution?.reason ?? "The requested custom crosshair visual is unavailable.");
     }
@@ -383,7 +407,7 @@ export class CrosshairService {
 
     let position = null;
     try {
-      position = await globalThis.Sequencer.Crosshair.show(locationConfig, appearanceConfig, callbackConfig);
+      position = await globalThis.Sequencer.Crosshair.show(crosshairConfig, callbackConfig);
       if (!position) this.#stats.cancellations += 1;
       const targets = position && collectTargets
         ? await globalThis.Sequencer.Crosshair.collect(position)
