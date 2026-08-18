@@ -1,20 +1,3 @@
-## 0.4.1.3 — Ongoing effect actions and combat reminders
-
-- Added the first narrow AE5E ongoing-effect action infrastructure for effects that grant a dedicated follow-up Item such as a repeat saving throw or an escape action.
-- Added `flags.action-effects-5e.ongoingAction` on the parent ActiveEffect. A declaration references a stable compendium Item UUID, optional `turnStart`/`turnEnd` timing, mandatory-vs-optional prompt behavior, and success cleanup policy.
-- Added GM-authoritative cloning of the referenced compendium Item onto the affected Actor. Each clone carries `flags.action-effects-5e.ongoingActionGrant` with the exact parent ActiveEffect UUID and template UUID; the parent ActiveEffect stores the granted Item UUID for deterministic bidirectional lifecycle cleanup.
-- Added parent-owned cleanup and reconciliation. Removing an ongoing ActiveEffect removes only its own granted Item; missing granted Items can be recreated; orphaned granted Items can be removed. Identical template UUIDs are never used as instance identity.
-- Added CAT `documentUtils.getSavedCastData()` exposure through `CatSpellAdapter`, with fallback flag reads, so v0.4.1.3 can preserve original-cast context on granted Items without hard-coding caster values into compendium templates. This relies on the ActiveEffect document fix available in CAT 0.0.7+ when CAT is used for that capability.
-- Added combat timing for affected-actor `turnStart` and `turnEnd`. While combat is active, matching ongoing effects prompt the controlling player every applicable turn while the effect remains.
-- Mandatory prompts provide one Proceed/Roll action and automatically proceed after 10 seconds if unanswered. Execution is claim-guarded so a near-simultaneous player click and timeout cannot double-execute the Activity.
-- Optional actions such as escape attempts provide `Use Action` / `Not Now` semantics with no automatic timeout. If the effect remains, the opportunity is presented again at its next configured turn timing.
-- Outside combat, AE5E performs no world-time or six-second scheduling. The granted Actor Item remains available for normal GM-directed resolution.
-- Added a public end-of-combat chat summary listing unresolved AE5E ongoing effects that remain on combatants. The card is visible to the table and contains no scheduling/action buttons.
-- Added `ae5e.ongoingEffects` API methods for inspection, grant lifecycle, reconciliation, timing, prompt/execution, workflow result handling, summary generation, and diagnostics.
-- Added Foundry-side automated validation: a deterministic ongoing-effect foundation suite and a live Actor lifecycle suite covering bidirectional links, same-template instance isolation, selective cleanup, missing-child reconciliation, and cleanup of repaired grants.
-- Added the hidden D&D5e Item compendium **AE5E Administrative** directly under the existing **Action Effects 5E** compendium-folder hierarchy. It is GM-only and intentionally ships empty; spell/effect-specific follow-up templates and internal folders can be added later without changing the runtime contract.
-
-
 ## 0.4.1.2 — Reusable Eskie crosshair infrastructure
 
 - Added the first centralized `ae5e.crosshairs` service for custom AE5E placement visuals. Item/spell macros can now query Eskie installation status, inspect shape semantics/catalog data, resolve the best available asset, and launch a Sequencer crosshair with an AE5E Eskie replacement visual.

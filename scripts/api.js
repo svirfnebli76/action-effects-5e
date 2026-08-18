@@ -13,10 +13,6 @@ import {
   MOVEMENT_PHASES,
   MOVEMENT_RESOURCES,
   NONHOSTILE_ENDPOINT_GRACE_MS,
-  ONGOING_ACTION_EFFECT_FLAG,
-  ONGOING_ACTION_ITEM_FLAG,
-  ONGOING_ACTION_PROMPT_TIMEOUT_MS,
-  ONGOING_ACTION_TIMINGS,
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
@@ -77,7 +73,6 @@ export class ActionEffects5eApi {
     spellModifierChoices,
     spellModifiers,
     spellModifierEvents,
-    ongoingEffects,
     relationships,
     relationshipMovement,
     relationshipRotation,
@@ -135,10 +130,6 @@ export class ActionEffects5eApi {
       SME_FLAG_SCOPE,
       SME_FLAG_KEY,
       SME_WORKFLOW_STATE_PATH,
-      ONGOING_ACTION_EFFECT_FLAG,
-      ONGOING_ACTION_ITEM_FLAG,
-      ONGOING_ACTION_PROMPT_TIMEOUT_MS,
-      ONGOING_ACTION_TIMINGS,
       ESKIE_PREMIUM_MODULE_ID,
       ESKIE_FREE_MODULE_ID,
       SEQUENCER_MODULE_ID,
@@ -203,21 +194,6 @@ export class ActionEffects5eApi {
     });
     this.sme = smeApi;
     this.spellModifiers = smeApi;
-
-    this.ongoingEffects = Object.freeze({
-      getEffectConfig: (effect) => ongoingEffects.getEffectConfig(effect),
-      getGrantConfig: (item) => ongoingEffects.getGrantConfig(item),
-      validateConfig: (config) => ongoingEffects.validateConfig(config),
-      ensureGrant: (effect) => ongoingEffects.ensureGrant(effect),
-      removeGrant: (effect, grantedItemUuid) => ongoingEffects.removeGrant(effect, grantedItemUuid),
-      reconcileActor: (actor) => ongoingEffects.reconcileActor(actor),
-      processTiming: (actor, timing, options) => ongoingEffects.processTiming(actor, timing, options),
-      promptForEffect: (effect, item, options) => ongoingEffects.promptForEffect(effect, item, options),
-      executeGrantedItem: (item, effect, options) => ongoingEffects.executeGrantedItem(item, effect, options),
-      processWorkflowResult: (workflow) => ongoingEffects.processWorkflowResult(workflow),
-      postCombatSummary: (combat) => ongoingEffects.postCombatSummary(combat),
-      getStats: () => ongoingEffects.getStats()
-    });
 
     this.movement = Object.freeze({
       registerConsumer: (config) => movement.registerConsumer(config),
@@ -314,8 +290,6 @@ export class ActionEffects5eApi {
     });
 
     this.tests = Object.freeze({
-      runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),
-      runOngoingEffectLiveLifecycleTest: (options) => tests.runOngoingEffectLiveLifecycleTest(options),
       runCrosshairFoundationTest: (options) => tests.runCrosshairFoundationTest(options),
       runCrosshairInteractiveTest: (options) => tests.runCrosshairInteractiveTest(options),
       runSpellModifierEngineFoundationTest: (options) => tests.runSpellModifierEngineFoundationTest(options),

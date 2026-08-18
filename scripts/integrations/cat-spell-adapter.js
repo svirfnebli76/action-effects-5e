@@ -56,7 +56,6 @@ export class CatSpellAdapter {
   #stats = {
     castLevelCalls: 0,
     saveDcCalls: 0,
-    savedCastDataCalls: 0,
     workflowStateSets: 0,
     workflowStateGets: 0,
     activitySubstitutions: 0,
@@ -89,7 +88,6 @@ export class CatSpellAdapter {
     const workflowUtils = cat?.utils?.workflowUtils;
     const itemUtils = cat?.utils?.itemUtils;
     const rollUtils = cat?.utils?.rollUtils;
-    const documentUtils = cat?.utils?.documentUtils;
 
     const functionAvailable = fn => Boolean(module?.active) && typeof fn === "function";
 
@@ -108,7 +106,6 @@ export class CatSpellAdapter {
         isSustainedRoll: functionAvailable(workflowUtils?.isSustainedRoll),
         setActivity: functionAvailable(workflowUtils?.setActivity),
         getSaveDC: functionAvailable(activityUtils?.getSaveDC),
-        getSavedCastData: functionAvailable(documentUtils?.getSavedCastData),
         getDamageModifiedActivityData: functionAvailable(activityUtils?.getDamageModifiedActivityData),
         syntheticActivity: functionAvailable(activityUtils?.syntheticActivity),
         syntheticItem: functionAvailable(itemUtils?.syntheticItem),
@@ -156,22 +153,6 @@ export class CatSpellAdapter {
       ?? workflow?.activity?.item?.system?.level,
       null
     );
-  }
-
-  getSavedCastData(document) {
-    this.#stats.savedCastDataCalls += 1;
-    const fn = this.#active() ? this.#cat()?.utils?.documentUtils?.getSavedCastData : null;
-    if (typeof fn === "function") {
-      try {
-        return fn(document) ?? null;
-      } catch (error) {
-        this.#recordError("getSavedCastData", error);
-      }
-    }
-    this.#stats.fallbacks += 1;
-    return document?.flags?.cat?.castData
-      ?? document?.flags?.["midi-qol"]?.castData
-      ?? null;
   }
 
   getSaveDC(activity, workflow = null) {
