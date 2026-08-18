@@ -175,9 +175,18 @@ export class OngoingEffectService {
     const config = effect ? this.getEffectConfig(effect) : null;
     const itemUuid = grantedItemUuid ?? config?.grantedItemUuid ?? null;
     if (!itemUuid) return { removed: false, reason: "no-grant" };
-    const item = await fromUuid(itemUuid);
-    if (!item?.parent?.deleteEmbeddedDocuments) return { removed: false, reason: "item-unavailable" };
-    await item.parent.deleteEmbeddedDocuments("Item", [item.id], { ae5eOngoingGrantCleanup: true });
+    let item = null;
+    try { item = await fromUuid(itemUuid); } catch { /* already absent */ }
+    if (!item?.parent?.deleteEmbeddedDocuments) return { removed: false, reason: "already-absent", itemUuid };
+    if (!item.parent.items?.get?.(item.id)) return { removed: false, reason: "already-absent", itemUuid };
+    try {
+      await item.parent.deleteEmbeddedDocuments("Item", [item.id], { ae5eOngoingGrantCleanup: true });
+    } catch (error) {
+      // Document deletion is socketed; a concurrent cleanup may win the race after
+      // the existence check. Treat a now-missing child as a successful no-op.
+      if (!item.parent.items?.get?.(item.id)) return { removed: false, reason: "already-absent", itemUuid };
+      throw error;
+    }
     this.#stats.grantsRemoved += 1;
     this.#record("grant-removed", { effectUuid: effect?.uuid ?? null, itemUuid });
     return { removed: true, itemUuid };

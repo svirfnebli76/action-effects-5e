@@ -101,6 +101,10 @@ export class TestHarness {
     return this.#ongoingEffectSuite.runLiveMandatorySaveExecutionTest(options);
   }
 
+  runOngoingEffectLiveMandatorySaveSuccessTest(options = {}) {
+    return this.#ongoingEffectSuite.runLiveMandatorySaveExecutionTest({ ...options, forceSuccess: true });
+  }
+
   runCrosshairFoundationTest(options) {
     return this.#crosshairSuite.runFoundationTest(options);
   }

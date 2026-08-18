@@ -317,6 +317,7 @@ export class ActionEffects5eApi {
       runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),
       runOngoingEffectLiveLifecycleTest: (options) => tests.runOngoingEffectLiveLifecycleTest(options),
       runOngoingEffectLiveMandatorySaveExecutionTest: (options) => tests.runOngoingEffectLiveMandatorySaveExecutionTest(options),
+      runOngoingEffectLiveMandatorySaveSuccessTest: (options) => tests.runOngoingEffectLiveMandatorySaveSuccessTest(options),
       runCrosshairFoundationTest: (options) => tests.runCrosshairFoundationTest(options),
       runCrosshairInteractiveTest: (options) => tests.runCrosshairInteractiveTest(options),
       runSpellModifierEngineFoundationTest: (options) => tests.runSpellModifierEngineFoundationTest(options),

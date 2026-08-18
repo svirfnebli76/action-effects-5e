@@ -203,7 +203,7 @@ export class OngoingEffectTestSuite {
     return result;
   }
 
-  async runLiveMandatorySaveExecutionTest({ actor = null, notify = true } = {}) {
+  async runLiveMandatorySaveExecutionTest({ actor = null, notify = true, forceSuccess = false } = {}) {
     if (!game.user?.isGM) throw new Error("Run the ongoing-effect mandatory-save execution test as a GM.");
     actor ??= canvas?.tokens?.controlled?.[0]?.actor ?? null;
     if (!actor) throw new Error("Control exactly one token or provide an Actor.");
@@ -288,7 +288,8 @@ export class OngoingEffectTestSuite {
       const templateSave = findSaveActivity(template);
       record("Administrative test template retains exactly one Save Activity", activitiesFrom(template).length === 1 && Boolean(templateSave), { activities: activitiesFrom(template).map(a => ({ id: a.id, type: activityType(a), name: a.name })) });
 
-      const fakeCastData = { baseLevel: 2, castLevel: 2, saveDC: 13 };
+      const expectedSaveDC = forceSuccess ? -100 : 13;
+      const fakeCastData = { baseLevel: 2, castLevel: 2, saveDC: expectedSaveDC };
       const [createdEffect] = await actor.createEmbeddedDocuments("ActiveEffect", [{
         name: "AE5E TEST — Mandatory Save Parent",
         img: template.img,
@@ -311,14 +312,14 @@ export class OngoingEffectTestSuite {
       record("Mandatory parent effect grants the Administrative save Item", Boolean(grantItem), { effectUuid: effect.uuid, itemUuid: grantItem?.uuid ?? null });
       const grantConfig = this.#service.getGrantConfig(grantItem);
       record("Granted save Item is linked to the exact parent effect", grantConfig?.sourceEffectUuid === effect.uuid, grantConfig);
-      record("Saved cast data is copied onto the granted Item", Number(grantConfig?.savedCastData?.saveDC) === 13, grantConfig?.savedCastData ?? null);
+      record("Saved cast data is copied onto the granted Item", Number(grantConfig?.savedCastData?.saveDC) === expectedSaveDC, grantConfig?.savedCastData ?? null);
 
       const grantedSave = findSaveActivity(grantItem);
       record("Granted Item exposes a Save Activity", Boolean(grantedSave), { activities: activitiesFrom(grantItem).map(a => ({ id: a.id, type: activityType(a), name: a.name })) });
       const catStatus = this.#catSpell.getStatus();
       record("CAT completeActivityUse is available for live execution", catStatus.active === true && catStatus.capabilities?.completeActivityUse === true, catStatus);
 
-      console.log("%cAE5E TEST — perform the saving throw when Midi/D&D5e prompts. The test accepts either a success or failure; it is characterizing workflow outcome and cleanup.", "font-size:16px;font-weight:bold;color:#18cc46;");
+      console.log(`%cAE5E TEST — perform the saving throw when Midi/D&D5e prompts.${forceSuccess ? " This success-branch fixture uses DC -100 so the live save must succeed." : " The test accepts either a success or failure; it is characterizing workflow outcome and cleanup."}`, "font-size:16px;font-weight:bold;color:#18cc46;");
       execution = await this.#service.executeGrantedItem(grantItem, effect, { claimKey: `ae5e-test-save:${foundry.utils.randomID()}` });
       record("Granted save Activity executes through CAT", execution?.executed === true && execution?.via === "cat", { executed: execution?.executed, via: execution?.via });
 
@@ -332,6 +333,7 @@ export class OngoingEffectTestSuite {
         saveDC: workflow?.saveDC ?? null
       };
       record("CAT returned a live Midi workflow", Boolean(workflow), snapshot);
+      record("Live Midi workflow uses the ActiveEffect saved save DC", Number(snapshot.saveDC) === expectedSaveDC, { expectedSaveDC, actualSaveDC: snapshot.saveDC });
       workflowResult = workflow ? await this.#service.processWorkflowResult(workflow) : null;
       const determined = workflowResult?.handled === true && typeof workflowResult?.success === "boolean";
       record("AE5E can determine save success/failure from the live workflow", determined, { workflowResult, snapshot });
@@ -339,6 +341,7 @@ export class OngoingEffectTestSuite {
       await new Promise(resolve => setTimeout(resolve, 300));
       const effectStillExists = Boolean(actor.effects.get(createdEffect.id));
       const grantStillExists = Boolean(grantItem && actor.items.get(grantItem.id));
+      if (forceSuccess) record("Success-branch fixture resolves as a successful save", determined && workflowResult?.success === true, { workflowResult, snapshot });
       if (determined && workflowResult.success) {
         record("Successful save removes parent effect", effectStillExists === false, { effectStillExists });
         record("Successful save cleanup removes granted Item", grantStillExists === false, { grantStillExists });
@@ -348,6 +351,9 @@ export class OngoingEffectTestSuite {
       }
     } finally {
       if (effect?.id && actor.effects.get(effect.id)) await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]).catch(() => {});
+      // Parent-effect deletion owns child cleanup. Let that hook settle before any
+      // best-effort leftover deletion so socket races cannot emit a false error.
+      await new Promise(resolve => setTimeout(resolve, 150));
       if (grantItem?.id && actor.items.get(grantItem.id)) await actor.deleteEmbeddedDocuments("Item", [grantItem.id]).catch(() => {});
       if (template?.id) {
         try {

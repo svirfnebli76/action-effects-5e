@@ -543,3 +543,9 @@
 - Live Foundry validation proved CAT `setActivity()` changes `workflow.activity` but does not replace an already-running D&D5e Activity instance used by `rollDamage()`.
 - SME no longer treats in-flight Activity substitution as the Transmuted Spell damage-type contract. The validated pattern is: choose/stage the damage type before the roll, then at `damageRollComplete` retag the evaluated Midi damage rolls with `retagDamageRollsPreservingResults()` so the same roll objects, totals, formulas, and dice results are preserved.
 - The live SME test now validates this two-phase contract and retains conditional `preTargetDamageApplication` coverage.
+
+### 0.4.1.3 revised4 — mandatory-save success validation
+- Kept CAT saved-cast-data handling native after the updated CAT build resolved the prior live metadata issue.
+- Made ongoing granted-Item cleanup idempotent against concurrent/socketed deletion races.
+- Added a deterministic live mandatory-save success test using a temporary DC -100 fixture so CAT/D&D5e/Midi must return the real success branch.
+- Added assertions for live workflow DC propagation, parent ActiveEffect removal, and child granted-Item cleanup on success.
