@@ -488,3 +488,11 @@ Foundry v14.365 live validation showed that internal movement actions must use a
 
 ### Damage-type changes in live spell workflows
 For effects such as Transmuted Spell, SME distinguishes the **decision point** from the **physical roll mutation point**. A feature may choose/store the new damage type before damage is rolled, then use `retagDamageRollsPreservingResults()` at `damageRollComplete` to change only the evaluated rolls' type metadata. CAT `setActivity()` remains exposed for workflow metadata substitution, but AE5E does not assume it replaces an already-running D&D5e Activity instance.
+
+## Ongoing effect actions (v0.4.1.3)
+
+AE5E ongoing effects can grant an affected Actor a dedicated follow-up Item cloned from a stable compendium UUID. The ActiveEffect is the lifecycle owner: it stores the granted Item UUID, while the cloned Item stores the exact parent ActiveEffect UUID and source template UUID. This supports spell-specific actions such as **Hold Person — Repeat Save**, **Entangle — Escape**, or **Burning — Stop-Drop-and-Roll** without hard-coding their presentation into runtime JavaScript.
+
+While Combat is active, an effect may declare `turnStart` or `turnEnd` timing. Mandatory actions prompt the controlling player and auto-proceed after ten seconds if unanswered; optional actions never auto-proceed and are offered again on the next applicable turn while the effect remains. Outside Combat, AE5E does not invent a six-second clock: the granted Item remains available and the GM decides when the player should use it. If Combat ends with unresolved ongoing effects, AE5E posts a public summary chat card for the table.
+
+The module includes a GM-only **AE5E Administrative** Item compendium under the **Action Effects 5E** compendium hierarchy. It is intended for dedicated spell/effect follow-up templates whose names, artwork, descriptions, Activities, and HUD presentation can be edited independently of AE5E runtime code.

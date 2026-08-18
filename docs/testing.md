@@ -802,3 +802,37 @@ The live Midi gate remains armed for approximately 10 minutes by default. If a p
 
 ### SME live damage-type contract
 The live Midi/CAT/D&D5e test intentionally begins with a fire Activity, records a cold transmutation decision at SME `beforeDamageRoll`, verifies no evaluated damage roll exists yet, allows D&D5e to evaluate the original fire roll once, and then retags that exact roll to cold at SME `damageRollComplete`. Acceptance requires object identity, total, and formula to remain unchanged while the roll type becomes cold.
+
+## v0.4.1.3 ongoing-effect action acceptance
+
+Run all behavioral validation inside Foundry VTT after installing 0.4.1.3.
+
+First run the deterministic foundation gate:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runOngoingEffectFoundationTest({ notify: true });
+```
+
+The foundation gate validates runtime hook registration, canonical `turnStart`/`turnEnd` timing, the 10-second mandatory timeout constant, declaration validation, parent/child flag parsing, CAT Activity/saved-cast-data capability detection, and the presence plus GM-only visibility of **AE5E Administrative**.
+
+Then activate a Scene, control exactly one token, and run the live grant lifecycle gate:
+
+```js
+await ae5e.tests.runOngoingEffectLiveLifecycleTest({ notify: true });
+```
+
+The harness automatically selects an available AE5E compendium Item as a disposable template fixture. It does **not** alter the source compendium document. It creates temporary ActiveEffects and cloned Items only on the controlled Actor, then cleans them up. The live gate validates:
+
+1. ActiveEffect creation clones the referenced compendium Item onto the affected Actor;
+2. the cloned Item points to the exact parent ActiveEffect instance;
+3. the parent ActiveEffect points back to the exact cloned Item;
+4. the clone records the original compendium template UUID;
+5. pre-existing Actor Items are preserved;
+6. two effects referencing the same template receive distinct child Items;
+7. deleting one parent removes only its child Item;
+8. manually deleting a child does not delete its parent;
+9. reconciliation recreates a missing child and restores its exact parent link; and
+10. deleting the reconciled parent removes the repaired child.
+
+After the infrastructure gates pass, spell-specific acceptance should be added when the first Administrative templates are created. That later live gate must validate a real mandatory repeat save through CAT/D&D5e/Midi, the 10-second exactly-once fallback, player-owner routing, optional escape `Not Now` behavior, repeat prompting on a later turn while the effect persists, success removal of the parent effect, failure preservation, out-of-combat manual Item use, and the public unresolved-effects combat-end card.
