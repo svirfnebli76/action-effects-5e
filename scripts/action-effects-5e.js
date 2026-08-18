@@ -35,6 +35,7 @@ import { SpellModifierDiscoveryService } from "./spell-modifiers/spell-modifier-
 import { SpellModifierChoiceService } from "./spell-modifiers/spell-modifier-choice-service.js";
 import { SpellModifierEngine } from "./spell-modifiers/spell-modifier-engine.js";
 import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-event-adapter.js";
+import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -89,6 +90,7 @@ const spellModifiers = new SpellModifierEngine({
   authority: reactionAuthority
 });
 const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifiers, authority: reactionAuthority });
+const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -126,6 +128,7 @@ const tests = new TestHarness({
   spellModifierChoices,
   spellModifiers,
   spellModifierEvents,
+  ongoingEffects,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -157,6 +160,7 @@ const api = new ActionEffects5eApi({
   spellModifierChoices,
   spellModifiers,
   spellModifierEvents,
+  ongoingEffects,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -211,6 +215,7 @@ Hooks.once("ready", async () => {
   await reactionAuthority.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();
+  ongoingEffects.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

@@ -26,6 +26,7 @@ import { OrbitDebugOverlay } from "./orbit-debug-overlay.js";
 import { ReactionBrokerTestSuite } from "./reaction-broker-test-suite.js";
 import { SpellModifierEngineTestSuite } from "./spell-modifier-engine-test-suite.js";
 import { CrosshairTestSuite } from "./crosshair-test-suite.js";
+import { OngoingEffectTestSuite } from "./ongoing-effect-test-suite.js";
 
 export class TestHarness {
   #dependencies;
@@ -46,9 +47,10 @@ export class TestHarness {
   #reactionSuite;
   #smeSuite;
   #crosshairSuite;
+  #ongoingEffectSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -83,6 +85,16 @@ export class TestHarness {
       catSpell
     });
     this.#crosshairSuite = new CrosshairTestSuite({ crosshairs });
+    this.#ongoingEffectSuite = new OngoingEffectTestSuite({ service: ongoingEffects, catSpell });
+  }
+
+
+  runOngoingEffectFoundationTest(options) {
+    return this.#ongoingEffectSuite.runFoundationTest(options);
+  }
+
+  runOngoingEffectLiveLifecycleTest(options) {
+    return this.#ongoingEffectSuite.runLiveLifecycleTest(options);
   }
 
   runCrosshairFoundationTest(options) {

@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.1.2";
+export const MODULE_VERSION = "0.4.1.3";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -96,6 +96,15 @@ export const SELECTION_INDICATOR_SCALE = SELECTION_INDICATOR_PREFERRED_SCALE;
 export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator`;
 
 
+
+
+export const ONGOING_ACTION_EFFECT_FLAG = "ongoingAction";
+export const ONGOING_ACTION_ITEM_FLAG = "ongoingActionGrant";
+export const ONGOING_ACTION_PROMPT_TIMEOUT_MS = 10_000;
+export const ONGOING_ACTION_TIMINGS = Object.freeze({
+  TURN_START: "turnStart",
+  TURN_END: "turnEnd"
+});
 
 export const SME_PHASES = Object.freeze({
   PRE_TARGETING: "preTargeting",
