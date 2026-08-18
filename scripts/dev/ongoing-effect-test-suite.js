@@ -76,7 +76,11 @@ export class OngoingEffectTestSuite {
       ?? null;
     if (manifestPack) {
       record("AE5E Administrative compendium exists", true, { collection: manifestPack.collection ?? manifestPack.metadata?.id ?? null });
-      record("AE5E Administrative compendium is GM-only/private", manifestPack.metadata?.private === true || manifestPack.private === true, manifestPack.metadata ?? null);
+      const ownership = manifestPack.metadata?.ownership ?? manifestPack.ownership ?? {};
+      const none = value => value === "NONE" || value === 0 || value === CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE;
+      const owner = value => value === "OWNER" || value === 3 || value === CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER;
+      const gmOnly = none(ownership.PLAYER) && none(ownership.TRUSTED) && owner(ownership.ASSISTANT);
+      record("AE5E Administrative compendium is hidden from players", gmOnly, { ownership });
     } else {
       record("AE5E Administrative compendium exists", false, "Pack was not found in the live module.");
       record("AE5E Administrative compendium is GM-only/private", false, "Pack was not found in the live module.");

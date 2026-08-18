@@ -139,7 +139,11 @@
       "path": "packs/ae5e-administrative",
       "type": "Item",
       "system": "dnd5e",
-      "private": true
+      "ownership": {
+        "PLAYER": "NONE",
+        "TRUSTED": "NONE",
+        "ASSISTANT": "OWNER"
+      }
     }
   ],
   "packFolders": [
