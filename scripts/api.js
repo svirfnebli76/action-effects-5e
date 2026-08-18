@@ -316,6 +316,7 @@ export class ActionEffects5eApi {
     this.tests = Object.freeze({
       runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),
       runOngoingEffectLiveLifecycleTest: (options) => tests.runOngoingEffectLiveLifecycleTest(options),
+      runOngoingEffectLiveMandatorySaveExecutionTest: (options) => tests.runOngoingEffectLiveMandatorySaveExecutionTest(options),
       runCrosshairFoundationTest: (options) => tests.runCrosshairFoundationTest(options),
       runCrosshairInteractiveTest: (options) => tests.runCrosshairInteractiveTest(options),
       runSpellModifierEngineFoundationTest: (options) => tests.runSpellModifierEngineFoundationTest(options),

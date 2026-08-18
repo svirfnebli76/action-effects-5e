@@ -1,4 +1,5 @@
 ## 0.4.1.3 — Ongoing effect actions and combat reminders
+- revised2 test instrumentation: added a Foundry-only live mandatory-save execution characterization suite. The suite creates and cleans a temporary dedicated template in the hidden AE5E Administrative pack, grants it from a temporary Active Effect, executes the Save Activity through CAT/Midi, and validates live workflow outcome plus success/failure lifecycle behavior.
 
 - Added the first narrow AE5E ongoing-effect action infrastructure for effects that grant a dedicated follow-up Item such as a repeat saving throw or an escape action.
 - Added `flags.action-effects-5e.ongoingAction` on the parent ActiveEffect. A declaration references a stable compendium Item UUID, optional `turnStart`/`turnEnd` timing, mandatory-vs-optional prompt behavior, and success cleanup policy.
