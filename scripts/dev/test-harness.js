@@ -27,6 +27,7 @@ import { ReactionBrokerTestSuite } from "./reaction-broker-test-suite.js";
 import { SpellModifierEngineTestSuite } from "./spell-modifier-engine-test-suite.js";
 import { CrosshairTestSuite } from "./crosshair-test-suite.js";
 import { OngoingEffectTestSuite } from "./ongoing-effect-test-suite.js";
+import { RegionAuthorityTestSuite } from "./region-authority-test-suite.js";
 
 export class TestHarness {
   #dependencies;
@@ -48,9 +49,10 @@ export class TestHarness {
   #smeSuite;
   #crosshairSuite;
   #ongoingEffectSuite;
+  #regionAuthoritySuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -86,8 +88,17 @@ export class TestHarness {
     });
     this.#crosshairSuite = new CrosshairTestSuite({ crosshairs });
     this.#ongoingEffectSuite = new OngoingEffectTestSuite({ service: ongoingEffects, catSpell });
+    this.#regionAuthoritySuite = new RegionAuthorityTestSuite({ service: regions, socket });
   }
 
+
+  runRegionAuthorityFoundationTest(options) {
+    return this.#regionAuthoritySuite.runFoundationTest(options);
+  }
+
+  runRegionAuthorityLiveLifecycleTest(options) {
+    return this.#regionAuthoritySuite.runLiveLifecycleTest(options);
+  }
 
   runOngoingEffectFoundationTest(options) {
     return this.#ongoingEffectSuite.runFoundationTest(options);

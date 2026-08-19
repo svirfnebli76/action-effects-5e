@@ -17,6 +17,7 @@ import {
   ONGOING_ACTION_ITEM_FLAG,
   ONGOING_ACTION_PROMPT_TIMEOUT_MS,
   ONGOING_ACTION_TIMINGS,
+  REGION_AUTHORITY_FLAG,
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
@@ -78,6 +79,7 @@ export class ActionEffects5eApi {
     spellModifiers,
     spellModifierEvents,
     ongoingEffects,
+    regions,
     relationships,
     relationshipMovement,
     relationshipRotation,
@@ -139,6 +141,7 @@ export class ActionEffects5eApi {
       ONGOING_ACTION_ITEM_FLAG,
       ONGOING_ACTION_PROMPT_TIMEOUT_MS,
       ONGOING_ACTION_TIMINGS,
+      REGION_AUTHORITY_FLAG,
       ESKIE_PREMIUM_MODULE_ID,
       ESKIE_FREE_MODULE_ID,
       SEQUENCER_MODULE_ID,
@@ -212,11 +215,20 @@ export class ActionEffects5eApi {
       removeGrant: (effect, grantedItemUuid) => ongoingEffects.removeGrant(effect, grantedItemUuid),
       reconcileActor: (actor) => ongoingEffects.reconcileActor(actor),
       processTiming: (actor, timing, options) => ongoingEffects.processTiming(actor, timing, options),
+      getActivityUsability: (item, identifier) => ongoingEffects.getActivityUsability(item, identifier),
       promptForEffect: (effect, item, options) => ongoingEffects.promptForEffect(effect, item, options),
       executeGrantedItem: (item, effect, options) => ongoingEffects.executeGrantedItem(item, effect, options),
       processWorkflowResult: (workflow) => ongoingEffects.processWorkflowResult(workflow),
       postCombatSummary: (combat) => ongoingEffects.postCombatSummary(combat),
       getStats: () => ongoingEffects.getStats()
+    });
+
+    this.regions = Object.freeze({
+      create: (regionData, options) => regions.create(regionData, options),
+      delete: (regionOrUuid) => regions.delete(regionOrUuid),
+      isOwned: (region) => regions.isOwned(region),
+      getOwnership: (region) => regions.getOwnership(region),
+      getStats: () => regions.getStats()
     });
 
     this.movement = Object.freeze({
@@ -314,6 +326,8 @@ export class ActionEffects5eApi {
     });
 
     this.tests = Object.freeze({
+      runRegionAuthorityFoundationTest: (options) => tests.runRegionAuthorityFoundationTest(options),
+      runRegionAuthorityLiveLifecycleTest: (options) => tests.runRegionAuthorityLiveLifecycleTest(options),
       runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),
       runOngoingEffectLiveLifecycleTest: (options) => tests.runOngoingEffectLiveLifecycleTest(options),
       runOngoingEffectLiveMandatorySaveExecutionTest: (options) => tests.runOngoingEffectLiveMandatorySaveExecutionTest(options),

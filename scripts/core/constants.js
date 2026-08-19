@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.1.3";
+export const MODULE_VERSION = "0.4.1.4";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -97,6 +97,8 @@ export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator
 
 
 
+
+export const REGION_AUTHORITY_FLAG = "authorityRegion";
 
 export const ONGOING_ACTION_EFFECT_FLAG = "ongoingAction";
 export const ONGOING_ACTION_ITEM_FLAG = "ongoingActionGrant";

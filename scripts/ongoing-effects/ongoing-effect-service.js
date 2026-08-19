@@ -3,7 +3,8 @@ import {
   ONGOING_ACTION_EFFECT_FLAG,
   ONGOING_ACTION_ITEM_FLAG,
   ONGOING_ACTION_TIMINGS,
-  ONGOING_ACTION_PROMPT_TIMEOUT_MS
+  ONGOING_ACTION_PROMPT_TIMEOUT_MS,
+  SELECTION_INDICATOR_ROLES
 } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
 
@@ -51,6 +52,7 @@ export class OngoingEffectService {
     grantsRemoved: 0,
     grantsReconciled: 0,
     prompts: 0,
+    promptsSuppressedUnusable: 0,
     promptTimeouts: 0,
     optionalDeclines: 0,
     executions: 0,
@@ -124,6 +126,13 @@ export class OngoingEffectService {
     const timing = config.timing ?? null;
     if (timing !== null && !Object.values(ONGOING_ACTION_TIMINGS).includes(timing)) {
       return { valid: false, reason: "invalid-timing" };
+    }
+    const indicatorRole = config.indicatorRole ?? SELECTION_INDICATOR_ROLES.ORIGINATOR;
+    if (!Object.values(SELECTION_INDICATOR_ROLES).includes(indicatorRole)) {
+      return { valid: false, reason: "invalid-indicator-role" };
+    }
+    if (config.suppressPromptWhenUnusable !== undefined && typeof config.suppressPromptWhenUnusable !== "boolean") {
+      return { valid: false, reason: "invalid-suppress-prompt-when-unusable" };
     }
     return { valid: true };
   }
@@ -243,6 +252,18 @@ export class OngoingEffectService {
     const config = this.getEffectConfig(effect);
     if (!config) return { prompted: false, reason: "no-config" };
     const actor = effect.parent;
+    if (config.suppressPromptWhenUnusable === true) {
+      const usability = this.getActivityUsability(item, config.activityIdentifier ?? null);
+      if (!usability.usable) {
+        this.#stats.promptsSuppressedUnusable += 1;
+        this.#record("prompt-suppressed-unusable", {
+          effectUuid: effect.uuid,
+          itemUuid: item?.uuid ?? null,
+          usability
+        });
+        return { prompted: false, suppressed: true, reason: "activity-unusable", usability };
+      }
+    }
     const userId = this.#controllerUserId(actor);
     const claimKey = `${combat?.id ?? "manual"}:${combat?.round ?? 0}:${combat?.turn ?? -1}:${effect.uuid}:${config.timing ?? "optional"}`;
     const mandatory = config.mandatory === true;
@@ -256,11 +277,49 @@ export class OngoingEffectService {
       mandatory,
       timeoutMs: mandatory ? Number(config.timeoutMs ?? ONGOING_ACTION_PROMPT_TIMEOUT_MS) : 0,
       claimKey,
-      promptText: config.promptText ?? null
+      promptText: config.promptText ?? null,
+      indicatorRole: config.indicatorRole ?? SELECTION_INDICATOR_ROLES.ORIGINATOR
     };
     this.#stats.prompts += 1;
     this.#record("prompt", { ...payload, userId });
     return this.#socket.executeAsUser("ongoingEffects.prompt", userId, payload);
+  }
+
+  getActivityUsability(item, identifier = null) {
+    const activity = this.#resolveActivity(item, identifier);
+    if (!activity) return { usable: false, reason: "activity-unavailable", activity: null };
+    if (activity.canUse === false) {
+      return { usable: false, reason: "activity-can-use-false", activityUuid: activity.uuid ?? activity.id ?? null };
+    }
+
+    const actor = item?.actor ?? item?.parent ?? activity?.actor ?? null;
+    const activationType = activity?.activation?.type ?? null;
+    const activationValue = Math.max(1, Number(activity?.activation?.value ?? 1) || 1);
+    const activationConfig = globalThis.CONFIG?.DND5E?.activityActivationTypes?.[activationType] ?? null;
+    const property = activationConfig?.consume?.property ?? null;
+    if (actor && property) {
+      const resource = getProperty(actor.system, property);
+      const available = Number(resource?.value);
+      if (Number.isFinite(available) && available < activationValue) {
+        return {
+          usable: false,
+          reason: "activation-resource-unavailable",
+          activityUuid: activity.uuid ?? activity.id ?? null,
+          activationType,
+          required: activationValue,
+          available,
+          property
+        };
+      }
+    }
+
+    return {
+      usable: true,
+      reason: "usable",
+      activityUuid: activity.uuid ?? activity.id ?? null,
+      activationType,
+      activationResource: property ?? null
+    };
   }
 
   async executeGrantedItem(itemOrUuid, effectOrUuid = null, { claimKey = null } = {}) {
@@ -391,7 +450,10 @@ export class OngoingEffectService {
     const token = this.#tokenForActorUuid(payload?.actorUuid);
     let indicatorId = null;
     try {
-      if (token) indicatorId = await this.#selectionIndicator?.acquire?.({ token, role: "originator" });
+      if (token) indicatorId = await this.#selectionIndicator?.acquire?.({
+        token,
+        role: payload?.indicatorRole ?? SELECTION_INDICATOR_ROLES.ORIGINATOR
+      });
     } catch { /* visual enhancement only */ }
 
     try {

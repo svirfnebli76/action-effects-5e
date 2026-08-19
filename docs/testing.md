@@ -803,6 +803,35 @@ The live Midi gate remains armed for approximately 10 minutes by default. If a p
 ### SME live damage-type contract
 The live Midi/CAT/D&D5e test intentionally begins with a fire Activity, records a cold transmutation decision at SME `beforeDamageRoll`, verifies no evaluated damage roll exists yet, allows D&D5e to evaluate the original fire roll once, and then retags that exact roll to cold at SME `damageRollComplete`. Acceptance requires object identity, total, and formula to remain unchanged while the roll type becomes cold.
 
+## v0.4.1.4 generic infrastructure acceptance
+
+Run these gates inside Foundry VTT after merging the 0.4.1.4 runtime update. No spell-specific Item is required.
+
+First validate the new Region authority service:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runRegionAuthorityFoundationTest({ notify: true });
+```
+
+With an active Scene, run the live Region lifecycle gate as GM:
+
+```js
+await ae5e.tests.runRegionAuthorityLiveLifecycleTest({ notify: true });
+```
+
+The live gate creates one temporary rectangular Region, verifies the AE5E authority ownership flag and caller metadata, deletes the Region through the same authority service, verifies that the UUID no longer resolves, and performs best-effort cleanup if the test is interrupted.
+
+Then rerun the ongoing-effect foundation gate:
+
+```js
+await ae5e.tests.runOngoingEffectFoundationTest({ notify: true });
+```
+
+In addition to the v0.4.1.3 checks, this gate validates the `responder` indicator-role declaration, rejection of unknown roles, validation of `suppressPromptWhenUnusable`, D&D5e Activity `canUse` handling, activation-resource availability, and the early prompt-suppression path. Existing ongoing-action declarations which omit the new fields must remain backward-compatible.
+
+The release is accepted only after these infrastructure gates pass in Foundry. Spell-specific Region geometry/behavior and ongoing-action presentation remain the responsibility of the Item automation that consumes these APIs.
+
 ## v0.4.1.3 ongoing-effect action acceptance
 
 Run all behavioral validation inside Foundry VTT after installing 0.4.1.3.

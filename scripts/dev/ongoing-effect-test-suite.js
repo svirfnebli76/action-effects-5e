@@ -3,7 +3,8 @@ import {
   ONGOING_ACTION_EFFECT_FLAG,
   ONGOING_ACTION_ITEM_FLAG,
   ONGOING_ACTION_TIMINGS,
-  ONGOING_ACTION_PROMPT_TIMEOUT_MS
+  ONGOING_ACTION_PROMPT_TIMEOUT_MS,
+  SELECTION_INDICATOR_ROLES
 } from "../core/constants.js";
 
 export class OngoingEffectTestSuite {
@@ -30,7 +31,9 @@ export class OngoingEffectTestSuite {
       enabled: true,
       templateUuid: "Compendium.action-effects-5e.ae5e-administrative.Item.AE5ETestEscape",
       timing: ONGOING_ACTION_TIMINGS.TURN_START,
-      mandatory: false
+      mandatory: false,
+      indicatorRole: SELECTION_INDICATOR_ROLES.RESPONDER,
+      suppressPromptWhenUnusable: true
     };
 
     record("Ongoing-effect service initialized", stats.initialized === true, stats);
@@ -48,6 +51,43 @@ export class OngoingEffectTestSuite {
     record("Optional escape config validates", this.#service.validateConfig(optional).valid === true, this.#service.validateConfig(optional));
     record("Non-compendium template UUID is rejected", this.#service.validateConfig({ ...mandatory, templateUuid: "Actor.bad.Item.bad" }).reason === "invalid-template-uuid");
     record("Unknown timing is rejected", this.#service.validateConfig({ ...mandatory, timing: "worldTime" }).reason === "invalid-timing");
+    record("Responder indicator role is accepted", this.#service.validateConfig(optional).valid === true && optional.indicatorRole === "responder", optional);
+    record("Unknown indicator role is rejected", this.#service.validateConfig({ ...mandatory, indicatorRole: "purple" }).reason === "invalid-indicator-role");
+    record("Non-boolean unusable-prompt suppression is rejected", this.#service.validateConfig({ ...mandatory, suppressPromptWhenUnusable: "yes" }).reason === "invalid-suppress-prompt-when-unusable");
+
+    const unusableItem = {
+      actor: { system: {} },
+      system: { activities: new Map([["escape", { id: "escape", uuid: "Synthetic.Activity.escape", canUse: false, activation: { type: "action", value: 1 } }]]) }
+    };
+    const unusable = this.#service.getActivityUsability(unusableItem, "escape");
+    record("Activity canUse=false is recognized as unusable", unusable.usable === false && unusable.reason === "activity-can-use-false", unusable);
+
+    const suppressedPrompt = await this.#service.promptForEffect({
+      uuid: "Synthetic.ActiveEffect.escape",
+      parent: { uuid: "Synthetic.Actor.escape" },
+      flags: { [MODULE_ID]: { [ONGOING_ACTION_EFFECT_FLAG]: { ...optional, activityIdentifier: "escape" } } }
+    }, { ...unusableItem, uuid: "Synthetic.Item.escape", name: "Synthetic Escape" });
+    record(
+      "Configured unusable Activity suppresses optional prompt before routing",
+      suppressedPrompt?.prompted === false && suppressedPrompt?.suppressed === true && suppressedPrompt?.reason === "activity-unusable",
+      suppressedPrompt
+    );
+
+    const actionResourceProperty = globalThis.CONFIG?.DND5E?.activityActivationTypes?.action?.consume?.property ?? null;
+    let actionResourceUsability = null;
+    if (actionResourceProperty) {
+      const actorSystem = {};
+      const path = String(actionResourceProperty).split(".");
+      let current = actorSystem;
+      for (const part of path.slice(0, -1)) current = current[part] ??= {};
+      current[path.at(-1)] = { value: 0 };
+      const noActionItem = {
+        actor: { system: actorSystem },
+        system: { activities: new Map([["escape", { id: "escape", uuid: "Synthetic.Activity.action", canUse: true, activation: { type: "action", value: 1 } }]]) }
+      };
+      actionResourceUsability = this.#service.getActivityUsability(noActionItem, "escape");
+    }
+    record("Unavailable D&D5e activation resource suppresses Activity usability", Boolean(actionResourceProperty) && actionResourceUsability?.usable === false && actionResourceUsability?.reason === "activation-resource-unavailable", { actionResourceProperty, actionResourceUsability });
 
     const effect = {
       flags: { [MODULE_ID]: { [ONGOING_ACTION_EFFECT_FLAG]: mandatory } }
@@ -88,7 +128,7 @@ export class OngoingEffectTestSuite {
 
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, stats: this.#service.getStats(), cat: catStatus };
-    console.log(`%cAE5E 0.4.1.3 — ONGOING EFFECT FOUNDATION — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
+    console.log(`%cAE5E 0.4.1.4 — ONGOING EFFECT FOUNDATION — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     if (notify) ui?.notifications?.[passed ? "info" : "error"]?.(`AE5E ongoing-effect foundation ${passed ? "PASSED" : "FAILED"}. See console.`);
@@ -196,7 +236,7 @@ export class OngoingEffectTestSuite {
     }
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, actorUuid: actor.uuid, templateUuid };
-    console.log(`%cAE5E 0.4.1.3 — ONGOING EFFECT LIVE LIFECYCLE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
+    console.log(`%cAE5E 0.4.1.4 — ONGOING EFFECT LIVE LIFECYCLE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     if (notify) ui?.notifications?.[passed ? "info" : "error"]?.(`AE5E ongoing-effect lifecycle ${passed ? "PASSED" : "FAILED"}. See console.`);
@@ -366,7 +406,7 @@ export class OngoingEffectTestSuite {
 
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, actorUuid: actor.uuid, sourceItemUuid: source?.item?.uuid ?? null, workflowResult };
-    console.log(`%cAE5E 0.4.1.3 — ONGOING EFFECT LIVE MANDATORY SAVE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
+    console.log(`%cAE5E 0.4.1.4 — ONGOING EFFECT LIVE MANDATORY SAVE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     if (notify) ui?.notifications?.[passed ? "info" : "error"]?.(`AE5E mandatory-save execution ${passed ? "PASSED" : "FAILED"}. See console.`);

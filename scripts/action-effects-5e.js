@@ -36,6 +36,7 @@ import { SpellModifierChoiceService } from "./spell-modifiers/spell-modifier-cho
 import { SpellModifierEngine } from "./spell-modifiers/spell-modifier-engine.js";
 import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-event-adapter.js";
 import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.js";
+import { RegionAuthorityService } from "./regions/region-authority-service.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -91,6 +92,7 @@ const spellModifiers = new SpellModifierEngine({
 });
 const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifiers, authority: reactionAuthority });
 const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
+const regions = new RegionAuthorityService({ socket, authority: reactionAuthority });
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -129,6 +131,7 @@ const tests = new TestHarness({
   spellModifiers,
   spellModifierEvents,
   ongoingEffects,
+  regions,
   relationships,
   relationshipMovement,
   relationshipRotation,
@@ -161,6 +164,7 @@ const api = new ActionEffects5eApi({
   spellModifiers,
   spellModifierEvents,
   ongoingEffects,
+  regions,
   relationships,
   relationshipMovement,
   relationshipRotation,

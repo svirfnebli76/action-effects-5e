@@ -1,3 +1,13 @@
+## 0.4.1.4 — Generic Region authority and ongoing-action prompt controls
+
+- Added a generic `ae5e.regions` authority bridge for Scene Region documents. Item/activity macros remain responsible for placement geometry and spell-specific Region behaviors; AE5E only routes create/delete persistence through the primary active GM.
+- Added AE5E Region ownership metadata under `flags.action-effects-5e.authorityRegion`. The generic delete API intentionally refuses to delete Regions that were not created through AE5E Region authority.
+- Added `indicatorRole` to ongoing-action declarations. Existing declarations remain green/originator by default; callers may opt into any registered AE5E semantic selection-indicator role such as orange/responder.
+- Added opt-in `suppressPromptWhenUnusable`. When enabled, AE5E checks the granted D&D5e Activity before routing a turn prompt and suppresses the prompt when the Activity reports `canUse === false` or its configured activation resource is unavailable.
+- Exposed `ae5e.ongoingEffects.getActivityUsability()` for diagnostics and spell/item automation.
+- Added Foundry-side Region authority foundation/live-lifecycle tests and expanded the ongoing-effect foundation gate for indicator-role validation and unusable-prompt suppression.
+- This release is generic infrastructure only. No spell-specific Entangle behavior, compendium UUID, targeting rule, Difficult Terrain behavior, or animation is hard-coded into AE5E runtime.
+
 ## 0.4.1.3 — Ongoing effect actions and combat reminders
 - revised2 test instrumentation: added a Foundry-only live mandatory-save execution characterization suite. The suite creates and cleans a temporary dedicated template in the hidden AE5E Administrative pack, grants it from a temporary Active Effect, executes the Save Activity through CAT/Midi, and validates live workflow outcome plus success/failure lifecycle behavior.
 
