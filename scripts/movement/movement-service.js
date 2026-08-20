@@ -9,6 +9,7 @@ import {
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { MovementTransaction } from "./movement-transaction.js";
+import { VoluntaryMovementRestrictionPolicy } from "./voluntary-movement-restriction-policy.js";
 
 function addMovementContextKey(keys, value) {
   if (typeof value === "string" && value.length) keys.add(value);
@@ -42,17 +43,19 @@ export class MovementService {
   #relationships;
   #accounting;
   #catMovement;
+  #voluntaryMovementRestriction;
   #initialized = false;
   #pending = new Map();
   #recent = [];
   #hookIds = [];
   #movementContexts = new Map();
 
-  constructor({ registry, relationships, accounting = null, catMovement = null }) {
+  constructor({ registry, relationships, accounting = null, catMovement = null, voluntaryMovementRestriction = null }) {
     this.#registry = registry;
     this.#relationships = relationships;
     this.#accounting = accounting;
     this.#catMovement = catMovement;
+    this.#voluntaryMovementRestriction = voluntaryMovementRestriction ?? new VoluntaryMovementRestrictionPolicy();
   }
 
   initialize() {
@@ -141,6 +144,18 @@ export class MovementService {
     return this.#recent.map((transaction) => transaction.toJSON());
   }
 
+  getVoluntaryMovementRestriction(subject) {
+    return this.#voluntaryMovementRestriction.resolve(subject);
+  }
+
+  getVoluntaryMovementRestrictionFlagPath() {
+    return this.#voluntaryMovementRestriction.getFlagPath();
+  }
+
+  evaluateVoluntaryMovementRestriction(options) {
+    return this.#voluntaryMovementRestriction.evaluate(options);
+  }
+
   async dispatchSyntheticForTesting(transaction) {
     await this.#registry.dispatch(transaction, MOVEMENT_PHASES.AFTER, { synthetic: true, service: this });
   }
@@ -152,6 +167,7 @@ export class MovementService {
       recentTransactions: this.#recent.length,
       movementContexts: this.#movementContexts.size,
       accounting: this.#accounting?.getStats?.() ?? null,
+      voluntaryMovementRestriction: this.#voluntaryMovementRestriction.getStats(),
       registry: this.#registry.getStats()
     };
   }
@@ -203,6 +219,22 @@ export class MovementService {
     if (!this.#isEnabled()) return;
     const interoperableOperation = this.#catMovement?.enrichOperation({ document, movement, operation }) ?? operation;
     const effectiveOperation = this.#withMovementContext(movement, interoperableOperation);
+
+    // Voluntary movement restriction is evaluated before the ordinary movement
+    // interest fast-path. Native drag/keyboard movement often carries no AE5E
+    // metadata and would otherwise exit before an Active Effect policy could be
+    // enforced. Returning false at preMoveToken cleanly prevents the move from
+    // committing, so no corrective snapback is normally required.
+    const restriction = this.#voluntaryMovementRestriction.evaluate({
+      document,
+      movement,
+      operation: effectiveOperation
+    });
+    if (restriction.blocked) {
+      ui?.notifications?.warn?.(restriction.message);
+      return false;
+    }
+
     if (!this.#hasPotentialInterest(document, MOVEMENT_PHASES.BEFORE, effectiveOperation, game.user.id)) return;
 
     const transaction = MovementTransaction.fromTokenHook({

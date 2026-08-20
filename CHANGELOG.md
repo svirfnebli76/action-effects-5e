@@ -1,3 +1,12 @@
+## 0.4.1.7 — Voluntary movement restriction policy
+
+- Added a reusable Active Effect movement policy at `flags.action-effects-5e.movement.voluntaryRestriction`.
+- Active restrictions cancel ordinary voluntary token movement during `preMoveToken`, before AE5E's normal no-interest fast path, so native drag/keyboard walking is blocked without requiring a corrective snapback.
+- Forced, compelled, passenger/relationship-follower, administrative, and teleport movement remain allowed. An affected relationship leader is still blocked from voluntarily walking, while an affected grapple/passenger follower can still be carried or dragged by another creature.
+- Restriction resolution is Actor-local, ignores disabled/suppressed effects, supports an optional per-effect message and priority, and exposes read/evaluation diagnostics through `ae5e.movement`.
+- Added focused Node regression coverage plus a Foundry live acceptance macro.
+- No compendium contents were changed, regenerated, or migrated in this release.
+
 ## 0.4.1.6 — Ongoing-effect multiplayer result authority fix
 
 - Fixed player-controlled ongoing actions such as **Entangle — Escape** where the player prompt and roll completed but the authoritative success/failure lifecycle did not finish.
