@@ -73,21 +73,32 @@ export class OngoingEffectTestSuite {
       suppressedPrompt
     );
 
-    const actionResourceProperty = globalThis.CONFIG?.DND5E?.activityActivationTypes?.action?.consume?.property ?? null;
+    const actionActivationConfig = globalThis.CONFIG?.DND5E?.activityActivationTypes?.action ?? null;
+    const actionResourceProperty = actionActivationConfig?.consume?.property ?? null;
     let actionResourceUsability = null;
+    const actorSystem = {};
     if (actionResourceProperty) {
-      const actorSystem = {};
       const path = String(actionResourceProperty).split(".");
       let current = actorSystem;
       for (const part of path.slice(0, -1)) current = current[part] ??= {};
       current[path.at(-1)] = { value: 0 };
-      const noActionItem = {
-        actor: { system: actorSystem },
-        system: { activities: new Map([["escape", { id: "escape", uuid: "Synthetic.Activity.action", canUse: true, activation: { type: "action", value: 1 } }]]) }
-      };
-      actionResourceUsability = this.#service.getActivityUsability(noActionItem, "escape");
     }
-    record("Unavailable D&D5e activation resource suppresses Activity usability", Boolean(actionResourceProperty) && actionResourceUsability?.usable === false && actionResourceUsability?.reason === "activation-resource-unavailable", { actionResourceProperty, actionResourceUsability });
+    const noActionItem = {
+      actor: { system: actorSystem, statuses: new Set() },
+      system: { activities: new Map([["escape", { id: "escape", uuid: "Synthetic.Activity.action", canUse: true, activation: { type: "action", value: 1 } }]]) }
+    };
+    actionResourceUsability = this.#service.getActivityUsability(noActionItem, "escape");
+    const actionResourceBehaviorPass = actionResourceProperty
+      ? actionResourceUsability?.usable === false && actionResourceUsability?.reason === "activation-resource-unavailable"
+      : actionResourceUsability?.usable === true && actionResourceUsability?.activationResource === null;
+    record("D&D5e Action-resource usability follows the live system activation schema", actionResourceBehaviorPass, { actionActivationConfig, actionResourceProperty, actionResourceUsability });
+
+    const incapacitatedActionItem = {
+      actor: { system: {}, statuses: new Set(["incapacitated"]) },
+      system: { activities: new Map([["escape", { id: "escape", uuid: "Synthetic.Activity.incapacitated", canUse: true, activation: { type: "action", value: 1 } }]]) }
+    };
+    const incapacitatedUsability = this.#service.getActivityUsability(incapacitatedActionItem, "escape");
+    record("Incapacitated actor suppresses Standard-action Activity usability", incapacitatedUsability?.usable === false && incapacitatedUsability?.reason === "actor-incapacitated", incapacitatedUsability);
 
     const effect = {
       flags: { [MODULE_ID]: { [ONGOING_ACTION_EFFECT_FLAG]: mandatory } }

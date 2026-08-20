@@ -296,6 +296,29 @@ export class OngoingEffectService {
     const activationType = activity?.activation?.type ?? null;
     const activationValue = Math.max(1, Number(activity?.activation?.value ?? 1) || 1);
     const activationConfig = globalThis.CONFIG?.DND5E?.activityActivationTypes?.[activationType] ?? null;
+
+    // D&D5e 5.3.x does not model an ordinary Action as a consumable actor
+    // resource.  It does, however, expose the canonical Standard activation
+    // category and the actor's Incapacitated status.  Use those system
+    // semantics to suppress action-economy prompts when the actor cannot take
+    // actions at all, without maintaining an AE5E list of conditions such as
+    // Stunned/Paralyzed/Unconscious.  Systems/modules which apply those
+    // conditions as riders to Incapacitated are handled automatically.
+    const standardGroup = "DND5E.ACTIVATION.Category.Standard";
+    const isStandardActivation = activationConfig?.group === standardGroup;
+    const actorStatuses = actor?.statuses;
+    if (isStandardActivation && actorStatuses?.has?.("incapacitated")) {
+      return {
+        usable: false,
+        reason: "actor-incapacitated",
+        activityUuid: activity.uuid ?? activity.id ?? null,
+        activationType
+      };
+    }
+
+    // Some D&D5e activation types/versions expose a consumable actor resource.
+    // Respect it when present, but never invent one when the system does not
+    // expose it (notably ordinary Action in D&D5e 5.3.3).
     const property = activationConfig?.consume?.property ?? null;
     if (actor && property) {
       const resource = getProperty(actor.system, property);
