@@ -522,3 +522,32 @@ await ae5e.regions.delete(created.regionUuid);
 ```
 
 The delete API only accepts Regions carrying AE5E's authority ownership flag; it does not provide a generic remote-delete primitive for unrelated Scene Regions.
+
+## Animation ownership and Automated Animations (v0.4.1.5)
+
+AE5E can claim animation ownership for an Item or Active Effect without globally disabling Automated Animations. Store the policy on the owning document:
+
+```js
+flags.action-effects-5e.animation.automatedAnimations = "suppress"
+```
+
+When Automated Animations raises `AutomatedAnimations-WorkflowStart`, AE5E resolves the effective policy and sets `clonedData.stopWorkflow = true` when the workflow belongs to a suppressing owner. AE5E uses AA's `clonedData.deferrals` mechanism when an origin UUID must be resolved asynchronously. Automated Animations remains optional and no global AA setting is changed.
+
+Ownership follows effect provenance rather than the global status definition. An Item-owned Active Effect can inherit the Item policy, an embedded Active Effect can inherit from a resolvable origin chain, and a child/native status can inherit from a same-Actor suppressing Active Effect that owns the same status ID. For example, an `Entangled` Active Effect carrying native `restrained` can suppress both its own AA animation and a related `Restrained` Active Effect animation while an unrelated Restrained on another Actor remains available to AA.
+
+When AE5E or an Item macro explicitly constructs child effect data, the public helper can stamp the exact policy onto that child instead of relying on inference:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+const childData = { name: "Child Effect", flags: {} };
+ae5e.animationOwnership.inheritAutomatedAnimationsPolicy(parentEffect, childData);
+```
+
+Diagnostics:
+
+```js
+ae5e.animationOwnership.resolveAutomatedAnimationsPolicy(effect);
+ae5e.animationOwnership.getStats();
+ae5e.animationOwnership.getAutomatedAnimationsStatus();
+ae5e.interoperability.automatedAnimations.getStats();
+```

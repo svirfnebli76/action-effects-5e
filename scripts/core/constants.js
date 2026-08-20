@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.1.4";
+export const MODULE_VERSION = "0.4.1.5";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -14,6 +14,13 @@ export const COMPATIBILITY_MODULES = Object.freeze({
   GPS: "gambits-premades",
   CAT: "cat"
 });
+
+export const ANIMATION_FLAG_KEY = "animation";
+export const ANIMATION_AUTOMATED_ANIMATIONS_POLICIES = Object.freeze({
+  SUPPRESS: "suppress"
+});
+export const AUTOMATED_ANIMATIONS_MODULE_ID = "autoanimations";
+export const AUTOMATED_ANIMATIONS_WORKFLOW_START_HOOK = "AutomatedAnimations-WorkflowStart";
 
 export const SETTINGS = Object.freeze({
   MOVEMENT_ENABLED: "movementEnabled",

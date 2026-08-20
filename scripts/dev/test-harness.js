@@ -28,6 +28,7 @@ import { SpellModifierEngineTestSuite } from "./spell-modifier-engine-test-suite
 import { CrosshairTestSuite } from "./crosshair-test-suite.js";
 import { OngoingEffectTestSuite } from "./ongoing-effect-test-suite.js";
 import { RegionAuthorityTestSuite } from "./region-authority-test-suite.js";
+import { AnimationOwnershipTestSuite } from "./animation-ownership-test-suite.js";
 
 export class TestHarness {
   #dependencies;
@@ -50,9 +51,10 @@ export class TestHarness {
   #crosshairSuite;
   #ongoingEffectSuite;
   #regionAuthoritySuite;
+  #animationOwnershipSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -89,8 +91,13 @@ export class TestHarness {
     this.#crosshairSuite = new CrosshairTestSuite({ crosshairs });
     this.#ongoingEffectSuite = new OngoingEffectTestSuite({ service: ongoingEffects, catSpell });
     this.#regionAuthoritySuite = new RegionAuthorityTestSuite({ service: regions, socket });
+    this.#animationOwnershipSuite = new AnimationOwnershipTestSuite({ ownership: animationOwnership, automatedAnimations });
   }
 
+
+  runAnimationOwnershipFoundationTest(options) {
+    return this.#animationOwnershipSuite.runFoundationTest(options);
+  }
 
   runRegionAuthorityFoundationTest(options) {
     return this.#regionAuthoritySuite.runFoundationTest(options);

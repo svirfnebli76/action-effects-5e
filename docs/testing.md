@@ -803,6 +803,29 @@ The live Midi gate remains armed for approximately 10 minutes by default. If a p
 ### SME live damage-type contract
 The live Midi/CAT/D&D5e test intentionally begins with a fire Activity, records a cold transmutation decision at SME `beforeDamageRoll`, verifies no evaluated damage roll exists yet, allows D&D5e to evaluate the original fire roll once, and then retags that exact roll to cold at SME `damageRollComplete`. Acceptance requires object identity, total, and formula to remain unchanged while the roll type becomes cold.
 
+
+## v0.4.1.5 animation ownership acceptance
+
+After installing v0.4.1.5 in Foundry, run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runAnimationOwnershipFoundationTest({ notify: true });
+```
+
+The foundation gate must report PASS for direct `"suppress"` recognition, Item-owned Active Effect inheritance, same-Actor `Entangled` → `Restrained` status inheritance, isolation of an unrelated Restrained status, origin-chain inheritance, child-data flag stamping, and AA workflow veto behavior.
+
+Then inspect the live adapter status:
+
+```js
+ae5e.animationOwnership.getAutomatedAnimationsStatus();
+ae5e.interoperability.automatedAnimations.getStats();
+```
+
+With Automated Animations 7.0.22+ active, the status should report the `AutomatedAnimations-WorkflowStart` hook registered. Spell-specific acceptance should then verify that a real Entangle application with the flag on its owning Item/`Entangled` effect does not play AA's Entangled or child Restrained animation, while an unrelated Restrained application remains eligible for AA.
+
+The v0.4.1.5 build intentionally makes no compendium-content changes. Compendium byte hashes should remain identical to the supplied v0.4.1.4 baseline.
+
 ## v0.4.1.4 generic infrastructure acceptance
 
 Run these gates inside Foundry VTT after merging the 0.4.1.4 runtime update. No spell-specific Item is required.

@@ -448,3 +448,12 @@ The underlying functional crosshair and the Eskie visual shape are separate conc
 When AE5E has a valid custom replacement visual, it applies the live-proven native suppression values `borderAlpha: 0`, `fillAlpha: 0`, `gridHighlight: false`. Suppression is conditional: if the visual resolver falls back native, AE5E leaves Sequencer's normal crosshair visible so a missing optional art module can never make an item unusable.
 
 The catalog is explicit rather than synthesized. Premium v1.9.0 includes 244 supplied crosshair WebMs and contains a known asymmetric entry (`Circle/Generic_01` Red normal/base has 40ft rather than 60ft, while the white 60ft and Red NoBase 60ft assets exist). The resolver therefore checks real entries and prefers same-style white+tint before changing art styles. The confirmed free catalog used by this release contains 52 white crosshairs and covers all six shapes, including Rectangle and Reticle. Free white artwork is the tintable fallback when a native premium recolor is unavailable.
+
+
+## Animation ownership arbitration (v0.4.1.5)
+
+Animation ownership is a document policy, not a global animation-module toggle. The canonical declaration is `flags.action-effects-5e.animation.automatedAnimations = "suppress"`. The resolver checks the immediate AA subject first, then an Item parent/origin chain, then same-Actor status ownership. Status inheritance is deliberately Actor-local: AE5E never edits or suppresses Foundry's global/native Restrained definition.
+
+The Automated Animations adapter listens at `AutomatedAnimations-WorkflowStart`. A synchronous decision sets `clonedData.stopWorkflow` before AA proceeds. If resolving an origin UUID requires asynchronous work, the adapter appends a Promise to `clonedData.deferrals`; AA 7.0.22+ awaits those deferrals before testing `stopWorkflow`. This keeps arbitration inside AA's supported inter-module seam instead of monkey-patching AA or cancelling Sequencer effects after they start.
+
+For child effects created directly by AE5E/item automation, callers may copy the effective explicit policy into creation data with `ae5e.animationOwnership.inheritAutomatedAnimationsPolicy()`. This provides exact provenance where the caller controls document creation. Status-ID inheritance remains a fallback for native/third-party child status documents whose creator does not expose an explicit parent-effect reference.

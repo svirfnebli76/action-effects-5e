@@ -1,4 +1,8 @@
 import {
+  ANIMATION_AUTOMATED_ANIMATIONS_POLICIES,
+  ANIMATION_FLAG_KEY,
+  AUTOMATED_ANIMATIONS_MODULE_ID,
+  AUTOMATED_ANIMATIONS_WORKFLOW_START_HOOK,
   ATTACHMENT_MODES,
   COLLISION_POLICIES,
   DISPLACEMENT_DESTINATION_STATES,
@@ -73,6 +77,8 @@ export class ActionEffects5eApi {
     movementAccounting,
     catMovement,
     catSpell,
+    animationOwnership,
+    automatedAnimations,
     spellModifierRegistry,
     spellModifierDiscovery,
     spellModifierChoices,
@@ -104,6 +110,10 @@ export class ActionEffects5eApi {
     this.constants = Object.freeze({
       MODULE_ID,
       HOOKS,
+      ANIMATION_FLAG_KEY,
+      ANIMATION_AUTOMATED_ANIMATIONS_POLICIES,
+      AUTOMATED_ANIMATIONS_MODULE_ID,
+      AUTOMATED_ANIMATIONS_WORKFLOW_START_HOOK,
       MOVEMENT_PHASES,
       PATH_TYPES,
       MOVEMENT_ACTION_IDS,
@@ -177,6 +187,10 @@ export class ActionEffects5eApi {
     });
 
     this.interoperability = Object.freeze({
+      automatedAnimations: Object.freeze({
+        getStatus: () => automatedAnimations.getStatus(),
+        getStats: () => automatedAnimations.getStats()
+      }),
       cat: Object.freeze({
         getStatus: () => catMovement.getStatus(),
         getStats: () => catMovement.getStats(),
@@ -185,6 +199,20 @@ export class ActionEffects5eApi {
           getStats: () => catSpell.getStats()
         })
       })
+    });
+
+    this.animationOwnership = Object.freeze({
+      getExplicitAutomatedAnimationsPolicy: (document) => animationOwnership.getExplicitAutomatedAnimationsPolicy(document),
+      getStatusIds: (document) => animationOwnership.getStatusIds(document),
+      resolveAutomatedAnimationsPolicy: (subject, options) => animationOwnership.resolveAutomatedAnimationsPolicy(subject, options),
+      resolveAutomatedAnimationsPolicySync: (subject, options) => animationOwnership.resolveAutomatedAnimationsPolicySync(subject, options),
+      shouldSuppressAutomatedAnimations: (subject, options) => animationOwnership.shouldSuppressAutomatedAnimations(subject, options),
+      shouldSuppressAutomatedAnimationsSync: (subject, options) => animationOwnership.shouldSuppressAutomatedAnimationsSync(subject, options),
+      stampAutomatedAnimationsPolicy: (targetData, policy) => animationOwnership.stampAutomatedAnimationsPolicy(targetData, policy),
+      inheritAutomatedAnimationsPolicy: (source, targetData) => animationOwnership.inheritAutomatedAnimationsPolicy(source, targetData),
+      getStats: () => animationOwnership.getStats(),
+      getAutomatedAnimationsStatus: () => automatedAnimations.getStatus(),
+      getAutomatedAnimationsStats: () => automatedAnimations.getStats()
     });
 
     const smeApi = Object.freeze({
@@ -326,6 +354,7 @@ export class ActionEffects5eApi {
     });
 
     this.tests = Object.freeze({
+      runAnimationOwnershipFoundationTest: (options) => tests.runAnimationOwnershipFoundationTest(options),
       runRegionAuthorityFoundationTest: (options) => tests.runRegionAuthorityFoundationTest(options),
       runRegionAuthorityLiveLifecycleTest: (options) => tests.runRegionAuthorityLiveLifecycleTest(options),
       runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),

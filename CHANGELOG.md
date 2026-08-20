@@ -1,3 +1,13 @@
+## 0.4.1.5 — Animation ownership and Automated Animations arbitration
+
+- Added generic AE5E animation-ownership infrastructure using `flags.action-effects-5e.animation.automatedAnimations`. The first supported policy is `"suppress"`.
+- Added an Automated Animations adapter for the supported `AutomatedAnimations-WorkflowStart` arbitration hook. Direct ownership decisions set `clonedData.stopWorkflow` immediately; ownership that requires an asynchronous UUID-origin lookup is added to `clonedData.deferrals`, matching the AA 7.0.22+ interoperability contract.
+- Active Effect animation ownership can be inherited from an Item-owned effect template, from a resolvable origin document chain, or from a same-Actor suppressing Active Effect that owns the same native status ID. This allows a suppressing `Entangled` effect carrying `restrained` to suppress a related `Restrained` Active Effect animation without globally disabling Restrained animations.
+- Added `ae5e.animationOwnership` diagnostics/resolution APIs plus helpers to stamp or inherit the canonical AA policy when AE5E/item automation explicitly creates child effect data.
+- Added `ae5e.interoperability.automatedAnimations` status/statistics reporting. Automated Animations remains optional; AE5E does not globally alter AA settings.
+- Added `runAnimationOwnershipFoundationTest()` and a focused Node regression covering explicit suppression, Item-owned template inheritance, child-status inheritance/isolation, deferred UUID-origin resolution, and canonical flag stamping.
+- No compendium contents were changed, regenerated, or migrated in this release.
+
 ## 0.4.1.4 — Generic Region authority and ongoing-action prompt controls
 
 - Added a generic `ae5e.regions` authority bridge for Scene Region documents. Item/activity macros remain responsible for placement geometry and spell-specific Region behaviors; AE5E only routes create/delete persistence through the primary active GM.

@@ -9,6 +9,8 @@ import { MovementAccountingService } from "./movement/movement-accounting-servic
 import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
+import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
+import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
@@ -47,6 +49,8 @@ const movementRegistry = new MovementRegistry();
 const movementAccounting = new MovementAccountingService();
 const catMovement = new CatMovementAdapter();
 const catSpell = new CatSpellAdapter();
+const animationOwnership = new AnimationOwnershipService();
+const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const relationships = new RelationshipService({ socket });
 const relativeRelationships = new RelativeTokenRelationshipService();
 const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement });
@@ -125,6 +129,8 @@ const tests = new TestHarness({
   movementAccounting,
   catMovement,
   catSpell,
+  animationOwnership,
+  automatedAnimations,
   spellModifierRegistry,
   spellModifierDiscovery,
   spellModifierChoices,
@@ -158,6 +164,8 @@ const api = new ActionEffects5eApi({
   movementAccounting,
   catMovement,
   catSpell,
+  animationOwnership,
+  automatedAnimations,
   spellModifierRegistry,
   spellModifierDiscovery,
   spellModifierChoices,
@@ -217,6 +225,7 @@ Hooks.once("ready", async () => {
   await selectionIndicator.initialize();
   externalPromptBridge.initialize();
   await reactionAuthority.initialize();
+  automatedAnimations.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();
   ongoingEffects.initialize();
