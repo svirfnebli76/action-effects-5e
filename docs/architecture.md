@@ -450,6 +450,14 @@ When AE5E has a valid custom replacement visual, it applies the live-proven nati
 The catalog is explicit rather than synthesized. Premium v1.9.0 includes 244 supplied crosshair WebMs and contains a known asymmetric entry (`Circle/Generic_01` Red normal/base has 40ft rather than 60ft, while the white 60ft and Red NoBase 60ft assets exist). The resolver therefore checks real entries and prefers same-style white+tint before changing art styles. The confirmed free catalog used by this release contains 52 white crosshairs and covers all six shapes, including Rectangle and Reticle. Free white artwork is the tintable fallback when a native premium recolor is unavailable.
 
 
+## Ongoing-effect multiplayer result authority (v0.4.1.6)
+
+Ongoing-action execution deliberately separates **interaction authority** from **document authority**. The controlling client owns the prompt and executes the live D&D5e/Midi Activity so player agency and the normal roll UI remain local. The completed Midi Workflow is not a transport object: AE5E reduces it on that client to a versioned plain-data result envelope containing only the linked effect/item/actor/activity/workflow identifiers, success state, execution user, and simple roll diagnostics.
+
+The execution client sends that envelope through the existing AE5E Socketlib service to the primary GM. The GM re-resolves the UUIDs, validates that the granted Item still points at the supplied parent ActiveEffect and Actor, and alone performs success cleanup. A failure result leaves the ongoing effect/grant intact. Duplicate Midi completion-hook notifications are collapsed by workflow identity before routing; GM resolution is also idempotent if a successful result arrives after the effect has already been removed.
+
+This boundary is generic and does not encode Entangle or another spell name. Prompt/execute socket handlers return only serializable execution summaries and never expose a live Midi Workflow across the socket boundary.
+
 ## Animation ownership arbitration (v0.4.1.5)
 
 Animation ownership is a document policy, not a global animation-module toggle. The canonical declaration is `flags.action-effects-5e.animation.automatedAnimations = "suppress"`. The resolver checks the immediate AA subject first, then an Item parent/origin chain, then same-Actor status ownership. Status inheritance is deliberately Actor-local: AE5E never edits or suppresses Foundry's global/native Restrained definition.

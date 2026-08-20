@@ -1,3 +1,12 @@
+## 0.4.1.6 — Ongoing-effect multiplayer result authority fix
+
+- Fixed player-controlled ongoing actions such as **Entangle — Escape** where the player prompt and roll completed but the authoritative success/failure lifecycle did not finish.
+- The client that executes the D&D5e Activity now reduces the completed Midi workflow to a versioned, JSON-serializable result envelope and routes that outcome to the primary GM through AE5E's generic ongoing-effect socket. Live Midi Workflow objects are never transported over Socketlib.
+- The primary GM re-resolves and validates the exact granted Item and parent ActiveEffect UUIDs before applying consequences. Success removes the linked parent effect (which owns grant cleanup); failure leaves the effect and granted Item intact.
+- Added per-workflow result de-duplication so Midi's overlapping completion hooks cannot resolve the same ongoing action twice.
+- Added focused Node regression coverage for player-to-GM serialization/routing, duplicate-hook suppression, GM success cleanup, failure preservation, and circular/live-workflow isolation.
+- No compendium contents were changed, regenerated, or migrated in this release.
+
 ## 0.4.1.5 — Animation ownership and Automated Animations arbitration
 
 - Added generic AE5E animation-ownership infrastructure using `flags.action-effects-5e.animation.automatedAnimations`. The first supported policy is `"suppress"`.

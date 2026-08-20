@@ -139,7 +139,7 @@ export class OngoingEffectTestSuite {
 
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, stats: this.#service.getStats(), cat: catStatus };
-    console.log(`%cAE5E 0.4.1.4 — ONGOING EFFECT FOUNDATION — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
+    console.log(`%cAE5E 0.4.1.6 — ONGOING EFFECT FOUNDATION — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     if (notify) ui?.notifications?.[passed ? "info" : "error"]?.(`AE5E ongoing-effect foundation ${passed ? "PASSED" : "FAILED"}. See console.`);
@@ -247,7 +247,7 @@ export class OngoingEffectTestSuite {
     }
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, actorUuid: actor.uuid, templateUuid };
-    console.log(`%cAE5E 0.4.1.4 — ONGOING EFFECT LIVE LIFECYCLE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
+    console.log(`%cAE5E 0.4.1.6 — ONGOING EFFECT LIVE LIFECYCLE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     if (notify) ui?.notifications?.[passed ? "info" : "error"]?.(`AE5E ongoing-effect lifecycle ${passed ? "PASSED" : "FAILED"}. See console.`);
@@ -417,7 +417,7 @@ export class OngoingEffectTestSuite {
 
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, actorUuid: actor.uuid, sourceItemUuid: source?.item?.uuid ?? null, workflowResult };
-    console.log(`%cAE5E 0.4.1.4 — ONGOING EFFECT LIVE MANDATORY SAVE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
+    console.log(`%cAE5E 0.4.1.6 — ONGOING EFFECT LIVE MANDATORY SAVE — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     if (notify) ui?.notifications?.[passed ? "info" : "error"]?.(`AE5E mandatory-save execution ${passed ? "PASSED" : "FAILED"}. See console.`);

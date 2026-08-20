@@ -46,6 +46,7 @@ export class OngoingEffectService {
   #hooks = [];
   #combatState = new Map();
   #claims = new Set();
+  #workflowResultPromises = new Map();
   #stats = {
     effectsObserved: 0,
     grantsCreated: 0,
@@ -58,6 +59,9 @@ export class OngoingEffectService {
     executions: 0,
     successes: 0,
     failures: 0,
+    resultsRoutedToAuthority: 0,
+    authorityResultsResolved: 0,
+    duplicateWorkflowResults: 0,
     combatTransitions: 0,
     combatEndCards: 0,
     errors: 0,
@@ -73,7 +77,11 @@ export class OngoingEffectService {
     socket.register("ongoingEffects.createGrant", (effectUuid) => this.ensureGrant(effectUuid));
     socket.register("ongoingEffects.removeGrant", (effectUuid, grantedItemUuid = null) => this.removeGrant(effectUuid, grantedItemUuid));
     socket.register("ongoingEffects.prompt", (payload) => this.#showPrompt(payload));
-    socket.register("ongoingEffects.execute", (itemUuid, effectUuid, claimKey = null) => this.executeGrantedItem(itemUuid, effectUuid, { claimKey }));
+    socket.register("ongoingEffects.execute", async (itemUuid, effectUuid, claimKey = null) => {
+      const result = await this.executeGrantedItem(itemUuid, effectUuid, { claimKey });
+      return this.#serializeExecutionResult(result);
+    });
+    socket.register("ongoingEffects.resolveResult", (payload) => this.resolveWorkflowResultPayload(payload));
   }
 
   initialize() {
@@ -96,6 +104,7 @@ export class OngoingEffectService {
     }
     this.#hooks.length = 0;
     this.#combatState.clear();
+    this.#workflowResultPromises.clear();
     this.#initialized = false;
   }
 
@@ -380,22 +389,94 @@ export class OngoingEffectService {
     const item = workflow?.item ?? workflow?.activity?.item ?? null;
     const grant = this.getGrantConfig(item);
     if (!grant?.sourceEffectUuid) return { handled: false, reason: "not-a-granted-item" };
-    const success = this.#workflowSucceeded(workflow, item?.actor);
+    const success = this.#workflowSucceeded(workflow, item?.actor ?? item?.parent);
     if (success === null) return { handled: false, reason: "outcome-undetermined" };
-    if (!success) {
+
+    const payload = this.#buildWorkflowResultPayload(workflow, item, grant, success);
+    const resultKey = this.#workflowResultKey(payload);
+    if (resultKey && this.#workflowResultPromises.has(resultKey)) {
+      this.#stats.duplicateWorkflowResults += 1;
+      return this.#workflowResultPromises.get(resultKey);
+    }
+
+    const task = this.#isAuthority()
+      ? this.resolveWorkflowResultPayload(payload)
+      : this.#routeWorkflowResultToAuthority(payload);
+
+    if (resultKey) this.#rememberWorkflowResult(resultKey, task);
+    return task;
+  }
+
+  async resolveWorkflowResultPayload(payload) {
+    if (!this.#isAuthority()) return { handled: false, reason: "not-authority" };
+    if (!payload || payload.schema !== "ae5e.ongoing-workflow-result" || payload.version !== 1) {
+      return { handled: false, reason: "invalid-result-payload" };
+    }
+    if (typeof payload.success !== "boolean" || typeof payload.effectUuid !== "string" || typeof payload.itemUuid !== "string") {
+      return { handled: false, reason: "invalid-result-payload" };
+    }
+
+    let effect = null;
+    let item = null;
+    try { effect = await fromUuid(payload.effectUuid); } catch { /* validation below */ }
+    try { item = await fromUuid(payload.itemUuid); } catch { /* validation below */ }
+
+    // Duplicate Midi completion hooks or a second observer can arrive after the
+    // first successful resolution has already removed the parent effect and its
+    // granted Item. Treat that as an idempotent successful no-op.
+    if (!effect && payload.success === true) {
+      return { handled: true, success: true, alreadyResolved: true, effectUuid: payload.effectUuid, itemUuid: payload.itemUuid };
+    }
+    if (!effect) return { handled: false, reason: "effect-unavailable" };
+    if (!item) return { handled: false, reason: "item-unavailable" };
+
+    const grant = this.getGrantConfig(item);
+    const effectConfig = this.getEffectConfig(effect);
+    if (!grant?.sourceEffectUuid || grant.sourceEffectUuid !== effect.uuid) {
+      return { handled: false, reason: "grant-effect-mismatch" };
+    }
+    if (effectConfig?.grantedItemUuid && effectConfig.grantedItemUuid !== item.uuid) {
+      return { handled: false, reason: "effect-grant-mismatch" };
+    }
+    const itemActorUuid = item?.actor?.uuid ?? item?.parent?.uuid ?? null;
+    const effectActorUuid = effect?.parent?.uuid ?? null;
+    if (itemActorUuid && effectActorUuid && itemActorUuid !== effectActorUuid) {
+      return { handled: false, reason: "actor-mismatch" };
+    }
+    if (payload.actorUuid && effectActorUuid && payload.actorUuid !== effectActorUuid) {
+      return { handled: false, reason: "actor-mismatch" };
+    }
+
+    this.#stats.authorityResultsResolved += 1;
+    if (!payload.success) {
       this.#stats.failures += 1;
-      this.#record("failure", { itemUuid: item.uuid, effectUuid: grant.sourceEffectUuid });
-      return { handled: true, success: false };
+      this.#record("failure", {
+        itemUuid: item.uuid,
+        effectUuid: effect.uuid,
+        workflowId: payload.workflowId ?? null,
+        executionUserId: payload.executionUserId ?? null
+      });
+      return { handled: true, success: false, effectRemoved: false };
     }
+
     this.#stats.successes += 1;
-    this.#record("success", { itemUuid: item.uuid, effectUuid: grant.sourceEffectUuid });
-    if (grant.removeEffectOnSuccess !== false && this.#isAuthority()) {
-      const effect = await fromUuid(grant.sourceEffectUuid);
-      if (effect?.parent?.deleteEmbeddedDocuments) {
-        await effect.parent.deleteEmbeddedDocuments("ActiveEffect", [effect.id], { ae5eOngoingSuccess: true });
-      }
+    this.#record("success", {
+      itemUuid: item.uuid,
+      effectUuid: effect.uuid,
+      workflowId: payload.workflowId ?? null,
+      executionUserId: payload.executionUserId ?? null
+    });
+
+    let effectRemoved = false;
+    if (grant.removeEffectOnSuccess !== false && effect?.parent?.deleteEmbeddedDocuments) {
+      await effect.parent.deleteEmbeddedDocuments("ActiveEffect", [effect.id], {
+        ae5eOngoingSuccess: true,
+        ae5eOngoingWorkflowId: payload.workflowId ?? null
+      });
+      effectRemoved = true;
     }
-    return { handled: true, success: true };
+
+    return { handled: true, success: true, effectRemoved };
   }
 
   async postCombatSummary(combat) {
@@ -469,7 +550,13 @@ export class OngoingEffectService {
         ? `You have <strong>${this.#escape(effectName)}</strong> and must resolve <strong>${this.#escape(itemName)}</strong>. Proceed now?`
         : `You still have <strong>${this.#escape(effectName)}</strong>. You may use <strong>${this.#escape(itemName)}</strong> this turn.`);
 
-    const execute = () => this.executeGrantedItem(itemUuid, effectUuid, { claimKey });
+    // Socketlib return values must remain plain serializable data. A live Midi
+    // Workflow contains document references, Sets, methods, and circular state;
+    // never return it through the player -> GM prompt socket. Workflow outcome
+    // authority is handled independently by processWorkflowResult().
+    const execute = async () => this.#serializeExecutionResult(
+      await this.executeGrantedItem(itemUuid, effectUuid, { claimKey })
+    );
     const token = this.#tokenForActorUuid(payload?.actorUuid);
     let indicatorId = null;
     try {
@@ -524,6 +611,94 @@ export class OngoingEffectService {
       if (indicatorId) {
         try { await this.#selectionIndicator?.release?.(indicatorId); } catch { /* noop */ }
       }
+    }
+  }
+
+
+  async #routeWorkflowResultToAuthority(payload) {
+    this.#stats.resultsRoutedToAuthority += 1;
+    this.#record("result-routed-to-authority", {
+      itemUuid: payload.itemUuid,
+      effectUuid: payload.effectUuid,
+      workflowId: payload.workflowId ?? null,
+      success: payload.success
+    });
+    try {
+      const authorityResult = await this.#socket.executeAsGM("ongoingEffects.resolveResult", payload);
+      return {
+        handled: authorityResult?.handled === true,
+        success: payload.success,
+        routed: true,
+        authorityResult: authorityResult ?? null
+      };
+    } catch (error) {
+      this.#stats.errors += 1;
+      Logger.warn("Failed to route ongoing-effect workflow result to the primary GM.", error);
+      return { handled: false, success: payload.success, routed: false, reason: "authority-route-failed" };
+    }
+  }
+
+  #buildWorkflowResultPayload(workflow, item, grant, success) {
+    const activity = workflow?.activity ?? null;
+    const actor = item?.actor ?? item?.parent ?? activity?.actor ?? null;
+    const firstRoll = this.#firstWorkflowRoll(workflow);
+    const dc = Number(workflow?.saveDC ?? workflow?.dc ?? activity?.dc?.value ?? activity?.check?.dc ?? NaN);
+    return {
+      schema: "ae5e.ongoing-workflow-result",
+      version: 1,
+      success: Boolean(success),
+      effectUuid: grant.sourceEffectUuid,
+      itemUuid: item?.uuid ?? null,
+      actorUuid: actor?.uuid ?? null,
+      activityUuid: activity?.uuid ?? activity?.id ?? null,
+      workflowId: workflow?.uuid ?? workflow?.id ?? null,
+      executionUserId: game?.user?.id ?? null,
+      rollTotal: Number.isFinite(Number(firstRoll?.total)) ? Number(firstRoll.total) : null,
+      dc: Number.isFinite(dc) ? dc : null
+    };
+  }
+
+  #serializeExecutionResult(result) {
+    if (!result || typeof result !== "object") return { executed: false, reason: "empty-execution-result" };
+    const workflow = result.workflow ?? null;
+    return {
+      executed: result.executed === true,
+      via: result.via ?? null,
+      reason: result.reason ?? null,
+      workflowId: workflow?.uuid ?? workflow?.id ?? null,
+      activityUuid: workflow?.activity?.uuid ?? workflow?.activity?.id ?? null,
+      itemUuid: workflow?.item?.uuid ?? workflow?.activity?.item?.uuid ?? null
+    };
+  }
+
+  #firstWorkflowRoll(workflow) {
+    const candidates = [
+      workflow?.utilityRolls,
+      workflow?.checkRolls,
+      workflow?.skillRolls,
+      workflow?.abilityRolls,
+      workflow?.saveRolls,
+      workflow?.rolls
+    ];
+    for (const candidate of candidates) {
+      const rolls = asArray(candidate);
+      if (rolls.length) return rolls[0];
+      if (Array.isArray(candidate) && candidate.length) return candidate[0];
+    }
+    return workflow?.roll ?? null;
+  }
+
+  #workflowResultKey(payload) {
+    const workflowId = payload?.workflowId;
+    if (!workflowId) return null;
+    return `${payload.effectUuid ?? "effect"}:${payload.itemUuid ?? "item"}:${workflowId}`;
+  }
+
+  #rememberWorkflowResult(key, promise) {
+    this.#workflowResultPromises.set(key, Promise.resolve(promise));
+    while (this.#workflowResultPromises.size > 100) {
+      const oldest = this.#workflowResultPromises.keys().next().value;
+      this.#workflowResultPromises.delete(oldest);
     }
   }
 

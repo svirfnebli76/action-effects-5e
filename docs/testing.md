@@ -804,6 +804,30 @@ The live Midi gate remains armed for approximately 10 minutes by default. If a p
 The live Midi/CAT/D&D5e test intentionally begins with a fire Activity, records a cold transmutation decision at SME `beforeDamageRoll`, verifies no evaluated damage roll exists yet, allows D&D5e to evaluate the original fire roll once, and then retags that exact roll to cold at SME `damageRollComplete`. Acceptance requires object identity, total, and formula to remain unchanged while the roll type becomes cold.
 
 
+## v0.4.1.6 ongoing-effect multiplayer authority acceptance
+
+The focused Node regression for the v0.4.1.6 transport/authority fix is:
+
+```bash
+node --test tests/ongoing-effect-authority.test.mjs
+```
+
+Expected result: **5/5 PASS**. It proves that a non-GM execution client reduces the live workflow to JSON-serializable data, routes that result exactly once despite overlapping Midi completion hooks, never deletes the parent effect locally, and that the GM validates the linked grant before success cleanup while preserving the lifecycle on failure. It also proves the prompt socket does not return a circular/live Midi Workflow object.
+
+The repository-wide Node suite continues to contain the same six legacy relationship/orbit simulation failures present in the untouched v0.4.1.5 baseline; v0.4.1.6 adds no new failures to that suite. Foundry remains the behavioral release gate for those subsystems.
+
+For the live multiplayer acceptance, connect a GM and the non-GM player who owns the affected Actor, then use a real ongoing-action consumer such as **Entangle — Escape**:
+
+1. Apply the ongoing effect to the player-controlled Actor and confirm its granted action Item exists.
+2. From the player's prompt, choose the action and complete the Athletics/check workflow.
+3. On a **successful** check, confirm the parent ongoing ActiveEffect is removed and its owned granted Item is cleaned up.
+4. On a **failed** check, confirm both the parent effect and granted Item remain available for the next legal opportunity.
+5. Repeat once with a GM-controlled target to confirm the existing same-client authority path still resolves normally.
+
+Useful diagnostics after the player case are `ae5e.ongoingEffects.getStats()`: the execution client should increment `resultsRoutedToAuthority`, while the primary GM should increment `authorityResultsResolved` when it accepts a result.
+
+Compendium contents are intentionally unchanged in v0.4.1.6 and must remain byte-identical to v0.4.1.5.
+
 ## v0.4.1.5 animation ownership acceptance
 
 After installing v0.4.1.5 in Foundry, run:

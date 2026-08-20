@@ -502,6 +502,12 @@ v0.4.1.4 adds two optional presentation/eligibility controls to the declaration 
 
 The module includes a GM-only **AE5E Administrative** Item compendium under the **Action Effects 5E** compendium hierarchy. It is intended for dedicated spell/effect follow-up templates whose names, artwork, descriptions, Activities, and HUD presentation can be edited independently of AE5E runtime code.
 
+### v0.4.1.6 multiplayer result handoff
+
+v0.4.1.6 closes the authority gap for player-controlled ongoing actions. The controlling player's client still owns the prompt and the live D&D5e/Midi roll, but once the workflow finishes AE5E reduces the outcome to a small versioned plain-data envelope. That envelope is routed to the primary GM, which re-resolves the exact linked granted Item and parent ActiveEffect before applying success cleanup. Failure leaves the ongoing lifecycle intact.
+
+Live Midi Workflow objects are deliberately kept on the client that executed them and are never returned through Socketlib. AE5E also de-duplicates the two supported Midi completion-hook surfaces by workflow identity, so the same escape/save cannot be resolved twice. This is generic ongoing-effect infrastructure; Entangle is only one consumer.
+
 ## GM-authoritative Region persistence (v0.4.1.4)
 
 `ae5e.regions` is a deliberately narrow persistence bridge for Item/activity macros that need to create Scene Regions from player-driven placement. The caller owns geometry and all feature-specific Region behavior data; AE5E routes document creation/deletion to the primary active GM and stamps only generic AE5E ownership/lifecycle metadata.
