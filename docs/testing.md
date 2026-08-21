@@ -24,6 +24,22 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
+## v0.4.1.9 relationship-orbit regression cleanup
+
+v0.4.1.9 changes the repository test fixture and assertions only; production relationship movement/rotation runtime behavior is unchanged from v0.4.1.8. The legacy Node orbit fixture now supplies an explicit clear Grapple-link obstruction dependency, matching the Grapple-link dependency production AE5E provides while keeping those tests focused on orbit/follower-body behavior. The obsolete hostile-endpoint assertion now expects the current hard-block policy. The complete repository Node suite is **97/97 PASS** after this cleanup.
+
+Foundry remains the behavioral release environment. After installing v0.4.1.9, a focused live regression can be run as GM on an active Scene:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+await ae5e.tests.runFoundationSmokeTest({ notify: true });
+await ae5e.tests.runFollowerBodyDispositionMatrix();
+await ae5e.tests.runGrappleLinkObstructionTest();
+```
+
+The first smoke test should report a complete PASS. The Follower-body and Grapple-link suites exercise the two live collision channels whose test-fixture boundary was clarified in this release and restore their fixtures on a complete pass. No new Socketlib path is introduced by v0.4.1.9 because no production player-executed behavior changed.
+
 ## v0.4.1.8 CAT teleport compatibility acceptance
 
 With CAT active, run this test as GM on an active Scene:

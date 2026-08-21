@@ -101,6 +101,7 @@ const {
   RELATIONSHIP_ALLIED_ENDPOINT_POLICIES,
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
+  RELATIONSHIP_GEOMETRY_CHANNELS,
   RELATIONSHIP_ROTATION_POLICIES
 } = await import("../scripts/core/constants.js");
 const { MovementTransaction } = await import("../scripts/movement/movement-transaction.js");
@@ -3296,6 +3297,41 @@ function makeOrbitRig({
     createOperationOptions(metadata) { return { actionEffects5e: metadata }; },
     registerMovementContext() { return () => {}; }
   };
+  const fakeAccounting = {
+    noCostActionId: "action-effects-5e.no-cost",
+    ensureRegistered() {}
+  };
+  // Production AE5E always supplies RelationshipRotationService with the
+  // grapple-link obstruction service. These orbit tests isolate follower-body
+  // and shell behavior, so provide an explicit clear-link test double instead
+  // of accidentally exercising the service's fail-closed "preflight unavailable"
+  // fallback. Dedicated grapple-link obstruction coverage lives elsewhere.
+  const fakeLinkObstructions = {
+    inspectSweep() {
+      return {
+        blocked: false,
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+        reasonCode: "clear",
+        wallBlocked: false,
+        wallCheckAvailable: true,
+        conflicts: [],
+        hostile: [],
+        nonhostile: [],
+        samples: []
+      };
+    },
+    inspectAtPosition() {
+      return {
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.GRAPPLE_LINK,
+        segment: null,
+        wallBlocked: false,
+        wallCheckAvailable: true,
+        conflicts: [],
+        hostile: [],
+        nonhostile: []
+      };
+    }
+  };
 
   leader.update = async (changes, options = {}) => {
     const preChanges = { ...changes };
@@ -3324,12 +3360,25 @@ function makeOrbitRig({
     fakeRelationships,
     fakeSocket,
     fakeMovement,
+    fakeAccounting,
+    fakeLinkObstructions,
     registrations,
     warnings,
     socketCalls,
     moveCalls,
     cleanup
   };
+}
+
+async function makeOrbitService(rig) {
+  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
+  return new RelationshipRotationService({
+    socket: rig.fakeSocket,
+    relationships: rig.fakeRelationships,
+    movement: rig.fakeMovement,
+    accounting: rig.fakeAccounting,
+    linkObstructions: rig.fakeLinkObstructions
+  });
 }
 
 async function performWheelStep(rig, service, { modifier = "shift", nativeDelta = 45 } = {}) {
@@ -3442,8 +3491,7 @@ test("Shift-wheel and Ctrl-wheel each normalize to one identical shell step", as
       followerPosition: { x: 300, y: 100 },
       coordinationDistance: 5
     });
-    const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
-    const service = new RelationshipRotationService({ socket: rig.fakeSocket, relationships: rig.fakeRelationships, movement: rig.fakeMovement });
+    const service = await makeOrbitService(rig);
     service.initialize();
     try {
       const result = await performWheelStep(rig, service, { modifier, nativeDelta });
@@ -3482,8 +3530,7 @@ test("rapid wheel inputs use predicted shell state and serialize multiple one-bo
     followerPosition: { x: 300, y: 100 },
     coordinationDistance: 5
   });
-  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
-  const service = new RelationshipRotationService({ socket: rig.fakeSocket, relationships: rig.fakeRelationships, movement: rig.fakeMovement });
+  const service = await makeOrbitService(rig);
   service.initialize();
   try {
     const wheel = rig.registrations.find((entry) => entry.target.includes("TokenLayer"));
@@ -3520,13 +3567,17 @@ test("blocked non-45-degree shell step restores the exact pre-update leader rota
     coordinationDistance: 5,
     collision: true
   });
-  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
-  const service = new RelationshipRotationService({ socket: rig.fakeSocket, relationships: rig.fakeRelationships, movement: rig.fakeMovement });
+  const service = await makeOrbitService(rig);
   service.initialize();
   try {
     await performWheelStep(rig, service, { modifier: "shift", nativeDelta: 45 });
     assert.equal(rig.leader.rotation, 270, "Rollback must restore the exact captured pre-input facing.");
     assert.deepEqual({ x: rig.follower.x, y: rig.follower.y }, { x: 300, y: 100 });
+    assert.equal(rig.moveCalls.length, 0, "A blocked follower-body preflight must stop before Scene.moveTokens.");
+    const decision = service.getStats().lastDecision;
+    assert.equal(decision?.collision, true);
+    assert.equal(decision?.obstruction?.geometryChannel, RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY);
+    assert.equal(decision?.obstruction?.reasonCode, "environment-obstruction");
     assert.match(rig.warnings.at(-1), /cannot orbit/i);
   } finally {
     service.shutdown();
@@ -3543,8 +3594,7 @@ test("allied occupied shell endpoint starts grace and restores the exact prior o
     alliedToken: { x: 200, y: 200, disposition: -1 },
     alliedEndpointGraceMs: 500
   });
-  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
-  const service = new RelationshipRotationService({ socket: rig.fakeSocket, relationships: rig.fakeRelationships, movement: rig.fakeMovement });
+  const service = await makeOrbitService(rig);
   service.initialize();
   try {
     await performWheelStep(rig, service, { modifier: "shift", nativeDelta: 45 });
@@ -3567,8 +3617,7 @@ test("continuing out of an allied occupied shell endpoint cancels the grace roll
     alliedToken: { x: 200, y: 200, disposition: -1 },
     alliedEndpointGraceMs: 500
   });
-  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
-  const service = new RelationshipRotationService({ socket: rig.fakeSocket, relationships: rig.fakeRelationships, movement: rig.fakeMovement });
+  const service = await makeOrbitService(rig);
   service.initialize();
   try {
     await performWheelStep(rig, service, { modifier: "shift", nativeDelta: 45 });
@@ -3582,7 +3631,7 @@ test("continuing out of an allied occupied shell endpoint cancels the grace roll
   }
 });
 
-test("opposing endpoint does not arm allied grace", async () => {
+test("opposing occupied endpoint hard-blocks follower orbit and never arms nonhostile grace", async () => {
   const rig = makeOrbitRig({
     sceneId: "scene-orbit-opposing-v023",
     leaderPosition: { x: 100, y: 100 },
@@ -3591,14 +3640,17 @@ test("opposing endpoint does not arm allied grace", async () => {
     alliedToken: { x: 200, y: 200, disposition: 1 },
     alliedEndpointGraceMs: 20
   });
-  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
-  const service = new RelationshipRotationService({ socket: rig.fakeSocket, relationships: rig.fakeRelationships, movement: rig.fakeMovement });
+  const service = await makeOrbitService(rig);
   service.initialize();
   try {
     await performWheelStep(rig, service, { modifier: "shift", nativeDelta: 45 });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.deepEqual({ x: rig.follower.x, y: rig.follower.y }, { x: 200, y: 200 });
-    assert.equal(service.getStats().pendingAlliedOverlaps, 0);
+    assert.deepEqual({ x: rig.follower.x, y: rig.follower.y }, { x: 200, y: 100 });
+    assert.equal(rig.moveCalls.length, 0, "Hostile occupied endpoints must hard-block before Scene.moveTokens.");
+    const stats = service.getStats();
+    assert.equal(stats.pendingAlliedOverlaps, 0);
+    assert.equal(stats.lastDecision?.collision, true);
+    assert.equal(stats.lastDecision?.obstruction?.geometryChannel, RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY);
+    assert.equal(stats.lastDecision?.obstruction?.reasonCode, "hostile-creature");
   } finally {
     service.shutdown();
     rig.cleanup();
@@ -3615,8 +3667,7 @@ test("player wheel orbit is GM-authorized and the player does not directly move 
     followerPosition: { x: 0, y: 100 },
     coordinationDistance: 5
   });
-  const { RelationshipRotationService } = await import("../scripts/relationships/relationship-rotation-service.js");
-  const service = new RelationshipRotationService({ socket: rig.fakeSocket, relationships: rig.fakeRelationships, movement: rig.fakeMovement });
+  const service = await makeOrbitService(rig);
   service.initialize();
   try {
     await performWheelStep(rig, service, { modifier: "shift", nativeDelta: 45 });

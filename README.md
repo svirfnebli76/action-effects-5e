@@ -119,6 +119,10 @@ await ae5e.tests.runSpellModifierEngineLiveActivitySubstitutionTest();
 
 The live gate creates disposable Actors/Tokens and an in-memory synthetic spell, performs a real Midi workflow with zero real caster resource consumption, verifies D&D5e evaluates the original damage roll once and SME then retags that exact evaluated roll without rerolling/replacing it, and removes its temporary documents/messages afterward.
 
+### v0.4.1.9 relationship orbit regression-suite modernization
+
+v0.4.1.9 is a test-suite maintenance release. Production Grapple, relationship movement/rotation, collision, movement accounting, CAT interoperability, and Socketlib authority code are unchanged from v0.4.1.8. The legacy Node orbit rig now supplies the Grapple-link obstruction dependency that production AE5E already provides, eliminating five false failures caused by the runtime's intentional fail-closed behavior when link preflight is unavailable. The sixth stale assertion now matches the current Follower-body policy: hostile occupied orbit endpoints hard-block before movement rather than allowing occupancy without grace. The repository Node suite is consequently **97/97 PASS**. Foundry remains the behavioral acceptance environment.
+
 ### v0.4.1.8 CAT teleport semantic compatibility
 
 CAT's explicit teleport helper has a semantic lifecycle that is richer than its physical Foundry movement action: CAT announces `preTeleport`, performs the token move using `displace`, and then announces `postTeleport`. AE5E v0.4.1.8 observes that narrow lifecycle through `CatMovementAdapter` and correlates the announced token/destination to the normal AE5E movement hooks. The resulting `MovementTransaction` uses AE5E's existing `teleport` path type even though the underlying native action remains `displace`.

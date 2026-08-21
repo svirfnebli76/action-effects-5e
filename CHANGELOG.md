@@ -1,3 +1,12 @@
+## 0.4.1.9 — Relationship orbit regression-suite modernization
+
+- Modernized the legacy Node relationship-orbit fixture so `RelationshipRotationService` receives an explicit clear Grapple-link obstruction test double, matching the relevant production dependency shape instead of accidentally exercising the runtime's intentional `link-preflight-unavailable` fail-closed fallback.
+- Restored five stale orbit simulations covering Shift/Ctrl one-shell-step normalization, rapid serialized wheel input, nonhostile endpoint grace/continuation, and player-to-GM orbit authorization. No production relationship, movement, collision, accounting, or socket behavior was changed.
+- Updated the obsolete opposing-occupant assertion to the current Follower-body collision policy: a hostile occupied orbit endpoint hard-blocks before `Scene.moveTokens()` and never arms nonhostile endpoint grace.
+- Strengthened the non-45-degree collision rollback regression to assert the actual Follower-body environmental obstruction reason and that movement is stopped before `Scene.moveTokens()`, preventing the test from passing merely because Grapple-link preflight is unavailable.
+- The repository Node suite now completes **97/97 PASS**. This cleanup does not replace Foundry-side behavioral acceptance; it removes known simulation debt so future Node regressions are easier to distinguish from stale fixtures.
+- No compendium contents were changed, regenerated, or migrated in this release.
+
 ## 0.4.1.8 — CAT teleport semantic compatibility
 
 - Extended the existing `CatMovementAdapter` to observe CAT's explicit `preTeleport` / `postTeleport` `MovementEvent` lifecycle. CAT currently performs the physical token move with the ordinary `displace` action, so AE5E correlates CAT's semantic lifecycle to that Foundry movement rather than guessing teleportation from distance or action alone.
