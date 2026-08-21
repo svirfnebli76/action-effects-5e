@@ -84,6 +84,14 @@ This separation is intentional:
 
 The adapter fails closed on information CAT does not carry. It does **not** infer a Source token, Push versus Pull, displacement direction, requested distance, or an AE5E relationship. Normal `walk` actions are not marked CAT-origin because CAT ultimately delegates them into Foundry's ordinary movement pipeline and no reliable provenance remains.
 
+### v0.4.1.8 CAT teleport lifecycle adapter
+
+CAT's teleport lifecycle is explicit even though its physical Foundry movement is currently the ordinary `displace` action. `CatMovementAdapter` therefore wraps only `cat.lib.Events.MovementEvent.prototype.run`, records successful `preTeleport` semantics, correlates the token and destination to the following Foundry movement, and clears the temporary context at `postTeleport`. A canceled pre-event never creates a teleport context, and a destination mismatch never converts an unrelated `displace` movement. Once a Foundry movement ID has been matched, its classification is retained across both movement-hook phases.
+
+A correlated move is translated into the already-existing AE5E teleport vocabulary (`pathType: teleport`, `resource: none`, `movementMode: teleport`, plus CAT provenance and the actual native movement action). The lifecycle does not reveal whether the creature willingly teleported, so AE5E leaves `agency` unknown unless richer metadata was already supplied. No Grapple, displacement, restriction, or accounting algorithm is delegated to CAT.
+
+For a non-GM initiator, CAT may execute the physical move on a GM through CAT's own permission/query mechanism. Before CAT proceeds, AE5E sockets only the temporary plain-data teleport context to active GMs so whichever client receives the movement hook can make the same semantic classification. Existing AE5E relationship authority sockets then process any normal consequence such as teleport detachment; AE5E does not create a second token-movement permission route.
+
 ## v0.3.29 native movement-resource accounting
 
 AE5E does not own a second movement allowance ledger. Foundry/D&D5e `TokenDocument.movementHistory` is the sole source of truth for movement cost already consumed. `MovementTransaction` remains a semantic event model (agency, resource, source, relationship, displacement, path type, etc.), and now includes a lightweight snapshot/summary of that native history for consumers that need to reason about movement without maintaining another counter.

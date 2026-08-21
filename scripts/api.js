@@ -371,6 +371,7 @@ export class ActionEffects5eApi {
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),
       runMovementAccountingTest: (options) => tests.runMovementAccountingTest(options),
       runCatMovementInteroperabilityTest: (options) => tests.runCatMovementInteroperabilityTest(options),
+      runCatTeleportCompatibilityTest: (options) => tests.runCatTeleportCompatibilityTest(options),
       setupReactionBrokerTestScene: (options) => tests.setupReactionBrokerTestScene(options),
       runReactionBrokerFoundationTest: (options) => tests.runReactionBrokerFoundationTest(options),
       runReactionBrokerInteractiveTest: (options) => tests.runReactionBrokerInteractiveTest(options),

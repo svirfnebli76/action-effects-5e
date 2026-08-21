@@ -47,7 +47,7 @@ const compatibility = new CompatibilityService();
 const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const movementAccounting = new MovementAccountingService();
-const catMovement = new CatMovementAdapter();
+const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
@@ -217,6 +217,7 @@ Hooks.once("ready", async () => {
   }
 
   movementAccounting.ensureRegistered();
+  catMovement.initialize();
   await relationships.initialize();
   relationshipMovement.initialize();
   relationshipRotation.initialize();

@@ -24,6 +24,19 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runFoundationSmokeTest();
 ```
 
+## v0.4.1.8 CAT teleport compatibility acceptance
+
+With CAT active, run this test as GM on an active Scene:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runCatTeleportCompatibilityTest({ notify: true });
+```
+
+The test creates disposable Actors/Tokens, applies the reusable voluntary-movement restriction to the teleporting creature, creates a temporary Grapple relationship with the normal `detach` teleport policy, and runs CAT's real `preTeleport` → `moveToken(... displace ...)` → `postTeleport` semantic lifecycle. It verifies that both AE5E movement-hook phases are classified as teleport, the movement restriction does not block the teleport, CAT provenance/native-action metadata survives, the Grapple relationship detaches through the existing relationship service, and all disposable fixtures plus temporary semantic state are cleaned up.
+
+For multiplayer acceptance, also initiate one real CAT teleport as a non-GM player. CAT remains responsible for any GM-routed physical token move; AE5E only routes the temporary teleport classification context to active GMs. Confirm that `ae5e.interoperability.cat.getStatus().teleportLifecycle` reports the wrapper and socket handlers active and that the resulting AE5E relationship behavior matches the same GM test.
+
 ## v0.4.1.2 Eskie crosshair acceptance
 
 After installing 0.4.1.2, run the deterministic Foundry-side resolver/catalog gate first:

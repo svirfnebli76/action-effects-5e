@@ -29,6 +29,7 @@ import { CrosshairTestSuite } from "./crosshair-test-suite.js";
 import { OngoingEffectTestSuite } from "./ongoing-effect-test-suite.js";
 import { RegionAuthorityTestSuite } from "./region-authority-test-suite.js";
 import { AnimationOwnershipTestSuite } from "./animation-ownership-test-suite.js";
+import { CatTeleportTestSuite } from "./cat-teleport-test-suite.js";
 
 export class TestHarness {
   #dependencies;
@@ -52,6 +53,7 @@ export class TestHarness {
   #ongoingEffectSuite;
   #regionAuthoritySuite;
   #animationOwnershipSuite;
+  #catTeleportSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
   constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
@@ -92,6 +94,7 @@ export class TestHarness {
     this.#ongoingEffectSuite = new OngoingEffectTestSuite({ service: ongoingEffects, catSpell });
     this.#regionAuthoritySuite = new RegionAuthorityTestSuite({ service: regions, socket });
     this.#animationOwnershipSuite = new AnimationOwnershipTestSuite({ ownership: animationOwnership, automatedAnimations });
+    this.#catTeleportSuite = new CatTeleportTestSuite({ movement, catMovement, relationships });
   }
 
 
@@ -352,6 +355,10 @@ export class TestHarness {
       );
     }
     return result;
+  }
+
+  runCatTeleportCompatibilityTest(options) {
+    return this.#catTeleportSuite.runLiveLifecycleTest(options);
   }
 
   async runCatMovementInteroperabilityTest({ notify = true } = {}) {

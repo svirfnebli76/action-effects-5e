@@ -1,3 +1,14 @@
+## 0.4.1.8 — CAT teleport semantic compatibility
+
+- Extended the existing `CatMovementAdapter` to observe CAT's explicit `preTeleport` / `postTeleport` `MovementEvent` lifecycle. CAT currently performs the physical token move with the ordinary `displace` action, so AE5E correlates CAT's semantic lifecycle to that Foundry movement rather than guessing teleportation from distance or action alone.
+- CAT remains an input/execution adapter. AE5E still owns `MovementTransaction` classification consequences, voluntary-movement restrictions, Grapple/relationship policy, Push/Pull/Shove displacement, collision/obstruction rules, and Foundry/D&D5e movement accounting.
+- A correlated CAT teleport is normalized into AE5E's existing teleport path (`pathType: teleport`, `resource: none`, semantic `movementMode: teleport`) while preserving the actual native movement action and any richer metadata already supplied by the caller. AE5E does not infer willingness; agency remains unknown unless explicitly provided.
+- CAT teleports now pass the reusable v0.4.1.7 voluntary-movement restriction policy. Existing relationship semantics then apply unchanged: a grappled Follower may teleport, and the default `detach` teleport policy breaks that relationship after the move settles.
+- Added destination-correlated, bounded temporary state so unrelated `displace` movement is not mislabeled. A canceled `preTeleport` event and a destination mismatch remain ordinary movement; recognized movement IDs retain their teleport classification across both Foundry movement-hook phases.
+- Added multiplayer semantic routing. When a non-GM initiates a CAT teleport, AE5E sends only a JSON-serializable temporary teleport context to active GMs before CAT proceeds. CAT continues to own its own movement/permission query, while AE5E's existing GM-authority relationship sockets continue to resolve consequences such as Grapple detachment.
+- Added five deterministic Node regression checks plus `ae5e.tests.runCatTeleportCompatibilityTest()` for live Foundry/CAT acceptance with a disposable movement-restricted grapple fixture. The repository Node suite adds no new failures relative to v0.4.1.7.
+- No compendium contents were changed, regenerated, or migrated in this release.
+
 ## 0.4.1.7 — Voluntary movement restriction policy
 
 - Added a reusable Active Effect movement policy at `flags.action-effects-5e.movement.voluntaryRestriction`.

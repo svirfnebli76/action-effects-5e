@@ -119,6 +119,16 @@ await ae5e.tests.runSpellModifierEngineLiveActivitySubstitutionTest();
 
 The live gate creates disposable Actors/Tokens and an in-memory synthetic spell, performs a real Midi workflow with zero real caster resource consumption, verifies D&D5e evaluates the original damage roll once and SME then retags that exact evaluated roll without rerolling/replacing it, and removes its temporary documents/messages afterward.
 
+### v0.4.1.8 CAT teleport semantic compatibility
+
+CAT's explicit teleport helper has a semantic lifecycle that is richer than its physical Foundry movement action: CAT announces `preTeleport`, performs the token move using `displace`, and then announces `postTeleport`. AE5E v0.4.1.8 observes that narrow lifecycle through `CatMovementAdapter` and correlates the announced token/destination to the normal AE5E movement hooks. The resulting `MovementTransaction` uses AE5E's existing `teleport` path type even though the underlying native action remains `displace`.
+
+This is compatibility input only. CAT does not replace AE5E Grapple/relationship rules, Push/Pull/Shove displacement, movement restrictions, collision logic, or movement accounting. As a result, CAT teleports automatically inherit the behavior already established in AE5E: voluntary-movement restrictions allow teleportation, and a grappled Follower using a relationship whose teleport policy is `detach` teleports successfully and then breaks the relationship.
+
+For multiplayer CAT teleports, a non-GM initiating client sends only the temporary JSON-serializable teleport semantic context to active GMs before CAT continues. CAT still owns its own token-movement permission/GM-query path. AE5E's pre-existing relationship authority socket remains responsible for any GM-authoritative consequence after the movement.
+
+Diagnostics remain under `ae5e.interoperability.cat.getStatus()` / `getStats()`. Live Foundry acceptance is available as `ae5e.tests.runCatTeleportCompatibilityTest({ notify: true })`; it creates and cleans a disposable grappled, movement-restricted creature and verifies that the real CAT semantic lifecycle produces an AE5E teleport transaction, bypasses the voluntary restriction, and detaches the Grapple relationship.
+
 ### v0.3.30 CAT movement interoperability
 
 v0.3.30 adds a bidirectional movement interoperability layer for **Coven's Automation Toolkit (CAT)** without transferring AE5E's rules ownership to CAT. CAT is recommended rather than required; AE5E remains usable when CAT is absent.
@@ -191,7 +201,7 @@ Final Foundry acceptance passed across the foundation, normal/nested interactive
 
 ## Recommended modules
 
-- CAT (Coven's Automation Toolkit) — preferred low-level single-token movement executor/permission facade and the characterized utility provider used by CAT-capability-gated SME modifiers. AE5E keeps CAT behind dedicated adapters and does not make it a hard module dependency.
+- CAT (Coven's Automation Toolkit) — preferred low-level single-token movement executor/permission facade, explicit teleport/forced-movement semantic provider, and characterized utility provider used by CAT-capability-gated SME modifiers. AE5E keeps CAT behind dedicated adapters and does not make it a hard module dependency.
 - Sequencer — used by the v0.3.27 selection/popup activity indicator. AE5E continues to function without it; only the advisory visual is omitted.
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.
