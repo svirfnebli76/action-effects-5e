@@ -210,6 +210,10 @@ export class ActionEffects5eApi {
       shouldSuppressAutomatedAnimationsSync: (subject, options) => animationOwnership.shouldSuppressAutomatedAnimationsSync(subject, options),
       stampAutomatedAnimationsPolicy: (targetData, policy) => animationOwnership.stampAutomatedAnimationsPolicy(targetData, policy),
       inheritAutomatedAnimationsPolicy: (source, targetData) => animationOwnership.inheritAutomatedAnimationsPolicy(source, targetData),
+      claimAutomatedAnimationsSuppression: (scope) => animationOwnership.claimAutomatedAnimationsSuppression(scope),
+      releaseAutomatedAnimationsSuppression: (claimOrId) => animationOwnership.releaseAutomatedAnimationsSuppression(claimOrId),
+      withAutomatedAnimationsSuppressed: (scope, callback) => animationOwnership.withAutomatedAnimationsSuppressed(scope, callback),
+      getActiveAutomatedAnimationsSuppressions: () => animationOwnership.getActiveAutomatedAnimationsSuppressions(),
       getStats: () => animationOwnership.getStats(),
       getAutomatedAnimationsStatus: () => automatedAnimations.getStatus(),
       getAutomatedAnimationsStats: () => automatedAnimations.getStats()

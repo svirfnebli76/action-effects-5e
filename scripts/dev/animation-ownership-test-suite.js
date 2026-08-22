@@ -135,6 +135,85 @@ export class AnimationOwnershipTestSuite {
       childWorkflow.actionEffects5e
     );
 
+    const transientItem = {
+      documentName: "Item",
+      id: "transient-unarmed",
+      uuid: "Actor.animation-owner-test.Item.transient-unarmed",
+      name: "Unarmed Strike",
+      flags: {}
+    };
+    const transientAttack = {
+      id: "transient-attack",
+      uuid: `${transientItem.uuid}.Activity.transient-attack`,
+      name: "Attack",
+      parent: transientItem,
+      flags: {}
+    };
+    const transientShove = {
+      id: "transient-shove",
+      uuid: `${transientItem.uuid}.Activity.transient-shove`,
+      name: "Shove",
+      parent: transientItem,
+      flags: {}
+    };
+
+    const baselineTransientClaims = this.#ownership.getStats().activeTransientClaims;
+    const transientClaim = this.#ownership.claimAutomatedAnimationsSuppression({
+      item: transientItem,
+      activity: transientAttack,
+      reason: "animation ownership foundation"
+    });
+    const transientDecision = this.#ownership.resolveAutomatedAnimationsPolicySync({
+      item: { ...transientItem },
+      activity: { id: transientAttack.id, uuid: transientAttack.uuid, name: transientAttack.name }
+    });
+    record(
+      "Transient workflow claim matches the requested Activity",
+      transientDecision.suppress && transientDecision.relation === "transient-workflow" && transientDecision.claimId === transientClaim.id,
+      transientDecision
+    );
+
+    const siblingDecision = this.#ownership.resolveAutomatedAnimationsPolicySync({
+      item: { ...transientItem },
+      activity: { id: transientShove.id, uuid: transientShove.uuid, name: transientShove.name }
+    });
+    record("Transient Activity claim does not suppress a sibling Activity", !siblingDecision.suppress, siblingDecision);
+
+    const transientWorkflow = {
+      item: { ...transientItem },
+      activity: { id: transientAttack.id, uuid: transientAttack.uuid, name: transientAttack.name }
+    };
+    this.#automatedAnimations.processWorkflowStart(transientWorkflow, null);
+    record(
+      "AA workflow is stopped immediately by a transient Activity claim",
+      transientWorkflow.stopWorkflow === true
+        && transientWorkflow.actionEffects5e?.animationOwnership?.relation === "transient-workflow"
+        && transientWorkflow.actionEffects5e?.animationOwnership?.claimId === transientClaim.id,
+      transientWorkflow.actionEffects5e
+    );
+
+    transientClaim.release();
+    record(
+      "Transient claim release removes runtime ownership without document flags",
+      this.#ownership.getStats().activeTransientClaims === baselineTransientClaims
+        && !transientItem.flags?.[MODULE_ID]?.[ANIMATION_FLAG_KEY]?.automatedAnimations
+        && !transientAttack.flags?.[MODULE_ID]?.[ANIMATION_FLAG_KEY]?.automatedAnimations,
+      this.#ownership.getStats()
+    );
+
+    let helperObservedActiveClaim = false;
+    await this.#ownership.withAutomatedAnimationsSuppressed(
+      { item: transientItem, activity: transientAttack, reason: "scoped helper foundation" },
+      async () => {
+        helperObservedActiveClaim = this.#ownership.getStats().activeTransientClaims === baselineTransientClaims + 1;
+      }
+    );
+    record(
+      "Scoped helper automatically releases its transient claim",
+      helperObservedActiveClaim && this.#ownership.getStats().activeTransientClaims === baselineTransientClaims,
+      this.#ownership.getStats()
+    );
+
     const normalWorkflow = { item: unrelatedRestrained, activeEffect: true, token: { actor: unrelatedActor } };
     this.#automatedAnimations.processWorkflowStart(normalWorkflow, null);
     if (Array.isArray(normalWorkflow.deferrals)) await Promise.allSettled(normalWorkflow.deferrals);
@@ -152,7 +231,7 @@ export class AnimationOwnershipTestSuite {
     console.table(checks.map(({ name, passed }) => ({ check: name, result: passed ? "PASS" : "FAIL" })));
     console.log(result);
     console.groupEnd();
-    console.log(`%cAE5E 0.4.1.5 — ANIMATION OWNERSHIP FOUNDATION — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
+    console.log(`%cAE5E 0.4.1.12 — ANIMATION OWNERSHIP FOUNDATION — ${passed ? "PASS" : "FAIL"}`, `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`);
 
     if (notify && globalThis.ui?.notifications) {
       const message = `AE5E animation ownership foundation: ${checks.filter((check) => check.passed).length}/${checks.length} ${passed ? "PASS" : "FAIL"}`;

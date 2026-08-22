@@ -142,3 +142,110 @@ test("inheritance helper stamps effective Item-owned policy without replacing ot
   assert.equal(data.flags.other.keep, true);
   assert.equal(data.flags[MODULE_ID].animation.automatedAnimations, "suppress");
 });
+
+test("transient suppression claim matches only the requested Item Activity", () => {
+  const service = new AnimationOwnershipService();
+  const item = { documentName: "Item", id: "unarmed", uuid: "Actor.hero.Item.unarmed", name: "Unarmed Strike" };
+  const attack = { id: "attack", uuid: `${item.uuid}.Activity.attack`, name: "Attack", parent: item };
+  const shove = { id: "shove", uuid: `${item.uuid}.Activity.shove`, name: "Shove", parent: item };
+
+  const claim = service.claimAutomatedAnimationsSuppression({ item, activity: attack, reason: "Unarmed Strike Attack" });
+  try {
+    const matching = service.resolveAutomatedAnimationsPolicySync({
+      item: { documentName: "Item", id: item.id, uuid: item.uuid, name: item.name },
+      activity: { id: attack.id, uuid: attack.uuid, name: attack.name }
+    });
+    assert.equal(matching.suppress, true);
+    assert.equal(matching.relation, "transient-workflow");
+    assert.equal(matching.claimId, claim.id);
+    assert.equal(matching.reason, "Unarmed Strike Attack");
+
+    const sibling = service.resolveAutomatedAnimationsPolicySync({
+      item: { documentName: "Item", id: item.id, uuid: item.uuid, name: item.name },
+      activity: { id: shove.id, uuid: shove.uuid, name: shove.name }
+    });
+    assert.equal(sibling.suppress, false);
+  } finally {
+    claim.release();
+  }
+
+  assert.equal(service.getStats().activeTransientClaims, 0);
+});
+
+test("transient suppression does not persist flags onto Item or Activity documents", () => {
+  const service = new AnimationOwnershipService();
+  const item = { documentName: "Item", id: "plain-item", uuid: "Actor.hero.Item.plain-item", flags: { keep: true } };
+  const activity = { id: "plain-activity", uuid: `${item.uuid}.Activity.plain-activity`, parent: item, flags: { keep: true } };
+
+  const claim = service.claimAutomatedAnimationsSuppression({ item, activity });
+  claim.release();
+
+  assert.deepEqual(item.flags, { keep: true });
+  assert.deepEqual(activity.flags, { keep: true });
+});
+
+test("withAutomatedAnimationsSuppressed cleans up after success and failure", async () => {
+  const service = new AnimationOwnershipService();
+  const item = { documentName: "Item", id: "scope-item", uuid: "Actor.hero.Item.scope-item" };
+  const activity = { id: "scope-activity", uuid: `${item.uuid}.Activity.scope-activity`, parent: item };
+
+  const value = await service.withAutomatedAnimationsSuppressed({ item, activity }, async () => {
+    assert.equal(service.getStats().activeTransientClaims, 1);
+    return 42;
+  });
+  assert.equal(value, 42);
+  assert.equal(service.getStats().activeTransientClaims, 0);
+
+  await assert.rejects(
+    service.withAutomatedAnimationsSuppressed({ item, activity }, async () => {
+      assert.equal(service.getStats().activeTransientClaims, 1);
+      throw new Error("expected failure");
+    }),
+    /expected failure/
+  );
+  assert.equal(service.getStats().activeTransientClaims, 0);
+});
+
+test("AA adapter suppresses a matching transient workflow without requiring persistent flags", () => {
+  const service = new AnimationOwnershipService();
+  const adapter = new AutomatedAnimationsAdapter({ ownership: service });
+  const item = { documentName: "Item", id: "runtime-item", uuid: "Actor.hero.Item.runtime-item", name: "Runtime Item", flags: {} };
+  const activity = { id: "runtime-activity", uuid: `${item.uuid}.Activity.runtime-activity`, name: "Runtime Activity", parent: item, flags: {} };
+
+  const claim = service.claimAutomatedAnimationsSuppression({ item, activity, reason: "runtime test" });
+  try {
+    const data = {
+      item: { documentName: "Item", id: item.id, uuid: item.uuid, name: item.name, flags: {} },
+      activity: { id: activity.id, uuid: activity.uuid, name: activity.name, flags: {} }
+    };
+    const result = adapter.processWorkflowStart(data, null);
+    assert.equal(result.suppress, true);
+    assert.equal(data.stopWorkflow, true);
+    assert.equal(data.actionEffects5e.animationOwnership.relation, "transient-workflow");
+    assert.equal(data.actionEffects5e.animationOwnership.claimId, claim.id);
+    assert.equal(data.actionEffects5e.animationOwnership.transient, true);
+  } finally {
+    claim.release();
+  }
+});
+
+test("AA adapter can match transient workflow identity supplied by animationData context", () => {
+  const service = new AnimationOwnershipService();
+  const adapter = new AutomatedAnimationsAdapter({ ownership: service });
+  const item = { documentName: "Item", id: "context-item", uuid: "Actor.hero.Item.context-item" };
+  const activity = { id: "context-activity", uuid: `${item.uuid}.Activity.context-activity`, parent: item };
+
+  const claim = service.claimAutomatedAnimationsSuppression({ item, activity });
+  try {
+    const data = {};
+    const animationData = {
+      item: { documentName: "Item", id: item.id, uuid: item.uuid },
+      activity: { id: activity.id, uuid: activity.uuid }
+    };
+    adapter.processWorkflowStart(data, animationData);
+    assert.equal(data.stopWorkflow, true);
+    assert.equal(data.actionEffects5e.animationOwnership.relation, "transient-workflow");
+  } finally {
+    claim.release();
+  }
+});

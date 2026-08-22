@@ -192,14 +192,88 @@ function directDecision(document, relation = "explicit") {
   };
 }
 
+function stringOrNull(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function identityDescriptor(value) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const string = stringOrNull(value);
+    if (!string) return null;
+    return {
+      reference: string,
+      uuid: string.includes(".") ? string : null,
+      id: string.includes(".") ? null : string,
+      identifier: null
+    };
+  }
+  if (typeof value !== "object") return null;
+
+  const uuid = stringOrNull(value.uuid ?? value.document?.uuid);
+  const id = stringOrNull(value.id ?? value._id ?? value.document?.id ?? value.document?._id);
+  const identifier = stringOrNull(value.identifier ?? value.system?.identifier ?? value.document?.identifier ?? value.document?.system?.identifier);
+  if (!uuid && !id && !identifier) return null;
+  return { reference: null, uuid, id, identifier };
+}
+
+function identityMatches(expected, actual) {
+  if (!expected || !actual) return false;
+
+  if (expected.uuid && actual.uuid) return expected.uuid === actual.uuid;
+  if (expected.reference && actual.uuid) return expected.reference === actual.uuid;
+  if (expected.uuid && actual.reference) return expected.uuid === actual.reference;
+  if (expected.reference && actual.reference) return expected.reference === actual.reference;
+
+  if (expected.id && actual.id) return expected.id === actual.id;
+  if (expected.identifier && actual.identifier) return expected.identifier === actual.identifier;
+  return false;
+}
+
+function activityParentItem(activity) {
+  if (!activity || typeof activity !== "object") return null;
+  if (isItemDocument(activity.item)) return activity.item;
+  if (isItemDocument(activity.parent)) return activity.parent;
+  return activity.item ?? activity.parent ?? null;
+}
+
+function workflowActivity(data) {
+  if (!data || typeof data !== "object") return null;
+  return data.activity
+    ?? data.workflow?.activity
+    ?? data.midiWorkflow?.activity
+    ?? data.activityUuid
+    ?? data.activityUUID
+    ?? null;
+}
+
+function workflowItem(data) {
+  if (!data || typeof data !== "object") return null;
+  const activity = workflowActivity(data);
+  return data.item
+    ?? data.workflow?.item
+    ?? data.midiWorkflow?.item
+    ?? activityParentItem(activity)
+    ?? data.itemUuid
+    ?? data.itemUUID
+    ?? null;
+}
+
 export class AnimationOwnershipService {
+  #transientClaims = new Map();
+  #transientClaimSequence = 0;
   #stats = {
     resolutions: 0,
     suppressions: 0,
     directSuppressions: 0,
     originSuppressions: 0,
     statusSuppressions: 0,
-    inheritedStamps: 0
+    transientSuppressions: 0,
+    inheritedStamps: 0,
+    transientClaimsCreated: 0,
+    transientClaimsReleased: 0
   };
 
   getExplicitAutomatedAnimationsPolicy(document) {
@@ -210,11 +284,89 @@ export class AnimationOwnershipService {
     return Array.from(statusIds(document));
   }
 
+  claimAutomatedAnimationsSuppression({ item = null, activity = null, reason = null } = {}) {
+    const resolvedItem = item ?? activityParentItem(activity);
+    const itemIdentity = identityDescriptor(resolvedItem);
+    const activityIdentity = identityDescriptor(activity);
+
+    if (!itemIdentity && !activityIdentity) {
+      throw new TypeError("Animation ownership transient suppression requires an Item or Activity with a stable UUID/ID.");
+    }
+    if (activity && !activityIdentity) {
+      throw new TypeError("Animation ownership transient Activity suppression requires a stable Activity UUID/ID.");
+    }
+    if (resolvedItem && !itemIdentity) {
+      throw new TypeError("Animation ownership transient Item suppression requires a stable Item UUID/ID.");
+    }
+
+    const id = `aa-claim-${Date.now().toString(36)}-${(++this.#transientClaimSequence).toString(36)}`;
+    const claim = {
+      id,
+      policy: ANIMATION_AUTOMATED_ANIMATIONS_POLICIES.SUPPRESS,
+      item: resolvedItem,
+      activity,
+      itemIdentity,
+      activityIdentity,
+      reason: stringOrNull(reason),
+      createdAt: Date.now()
+    };
+
+    this.#transientClaims.set(id, claim);
+    this.#stats.transientClaimsCreated += 1;
+
+    return Object.freeze({
+      id,
+      policy: claim.policy,
+      reason: claim.reason,
+      itemUuid: itemIdentity?.uuid ?? null,
+      itemId: itemIdentity?.id ?? null,
+      activityUuid: activityIdentity?.uuid ?? null,
+      activityId: activityIdentity?.id ?? null,
+      release: () => this.releaseAutomatedAnimationsSuppression(id)
+    });
+  }
+
+  releaseAutomatedAnimationsSuppression(claimOrId) {
+    const id = typeof claimOrId === "string" ? claimOrId : claimOrId?.id;
+    if (!id || !this.#transientClaims.delete(id)) return false;
+    this.#stats.transientClaimsReleased += 1;
+    return true;
+  }
+
+  async withAutomatedAnimationsSuppressed(scope, callback) {
+    if (typeof callback !== "function") {
+      throw new TypeError("withAutomatedAnimationsSuppressed requires a callback function.");
+    }
+
+    const claim = this.claimAutomatedAnimationsSuppression(scope);
+    try {
+      return await callback(claim);
+    } finally {
+      claim.release();
+    }
+  }
+
+  getActiveAutomatedAnimationsSuppressions() {
+    return Array.from(this.#transientClaims.values()).map((claim) => ({
+      id: claim.id,
+      policy: claim.policy,
+      reason: claim.reason,
+      itemUuid: claim.itemIdentity?.uuid ?? null,
+      itemId: claim.itemIdentity?.id ?? null,
+      activityUuid: claim.activityIdentity?.uuid ?? null,
+      activityId: claim.activityIdentity?.id ?? null,
+      createdAt: claim.createdAt
+    }));
+  }
+
   resolveAutomatedAnimationsPolicySync(subject, { context = null } = {}) {
     this.#stats.resolutions += 1;
     const data = this.#normalizeContext(subject, context);
-    const candidates = this.#primaryCandidates(data);
 
+    const transientDecision = this.#resolveTransientClaim(data);
+    if (transientDecision) return this.#record(transientDecision);
+
+    const candidates = this.#primaryCandidates(data);
     for (const candidate of candidates) {
       const decision = this.#resolveDocumentChainSync(candidate, new Set(), 0);
       if (decision) return this.#record(decision);
@@ -229,8 +381,11 @@ export class AnimationOwnershipService {
   async resolveAutomatedAnimationsPolicy(subject, { context = null } = {}) {
     this.#stats.resolutions += 1;
     const data = this.#normalizeContext(subject, context);
-    const candidates = this.#primaryCandidates(data);
 
+    const transientDecision = this.#resolveTransientClaim(data);
+    if (transientDecision) return this.#record(transientDecision);
+
+    const candidates = this.#primaryCandidates(data);
     for (const candidate of candidates) {
       const decision = await this.#resolveDocumentChain(candidate, new Set(), 0);
       if (decision) return this.#record(decision);
@@ -271,26 +426,79 @@ export class AnimationOwnershipService {
   }
 
   getStats() {
-    return { ...this.#stats };
+    return {
+      ...this.#stats,
+      activeTransientClaims: this.#transientClaims.size
+    };
   }
 
   #normalizeContext(subject, context) {
-    if (context && typeof context === "object") {
-      return { ...context, item: context.item ?? subject };
-    }
-
-    const looksLikeAaData = subject && typeof subject === "object" && (
-      Object.hasOwn(subject, "item") || Object.hasOwn(subject, "activity") || Object.hasOwn(subject, "activeEffect")
+    const looksLikeDocument = subject && typeof subject === "object" && (
+      Object.hasOwn(subject, "documentName")
+      || Object.hasOwn(subject, "uuid")
+      || Object.hasOwn(subject, "id")
+      || Object.hasOwn(subject, "_id")
     );
-    if (looksLikeAaData) return subject;
-    return { item: subject };
+    const looksLikeAaData = subject && typeof subject === "object" && (
+      Object.hasOwn(subject, "item")
+      || Object.hasOwn(subject, "activity")
+      || Object.hasOwn(subject, "activeEffect")
+      || Object.hasOwn(subject, "workflow")
+      || (context && !looksLikeDocument)
+    );
+
+    const subjectData = looksLikeAaData ? subject : { item: subject };
+    if (!context || typeof context !== "object") return subjectData;
+
+    return {
+      ...context,
+      ...subjectData,
+      item: subjectData.item ?? context.item ?? (!looksLikeAaData ? subject : null),
+      activity: subjectData.activity ?? context.activity ?? null,
+      workflow: subjectData.workflow ?? context.workflow ?? null,
+      token: subjectData.token ?? context.token ?? null,
+      actor: subjectData.actor ?? context.actor ?? null,
+      targets: subjectData.targets ?? context.targets ?? null
+    };
   }
 
   #primaryCandidates(data) {
     const candidates = [];
-    if (data?.activity) candidates.push(data.activity);
-    if (data?.item && !candidates.includes(data.item)) candidates.push(data.item);
+    const activity = workflowActivity(data);
+    const item = workflowItem(data);
+    if (activity && typeof activity === "object") candidates.push(activity);
+    if (item && typeof item === "object" && !candidates.includes(item)) candidates.push(item);
     return candidates;
+  }
+
+  #resolveTransientClaim(data) {
+    if (!this.#transientClaims.size) return null;
+
+    const activity = workflowActivity(data);
+    const item = workflowItem(data);
+    const activityIdentity = identityDescriptor(activity);
+    const itemIdentity = identityDescriptor(item);
+    const claims = Array.from(this.#transientClaims.values()).reverse();
+
+    for (const claim of claims) {
+      if (claim.activityIdentity && !identityMatches(claim.activityIdentity, activityIdentity)) continue;
+      if (claim.itemIdentity && !identityMatches(claim.itemIdentity, itemIdentity)) continue;
+
+      const source = claim.activity ?? claim.item ?? null;
+      return {
+        policy: claim.policy,
+        suppress: true,
+        relation: "transient-workflow",
+        source,
+        sourceUuid: documentIdentity(source),
+        sourceLabel: documentLabel(source),
+        transient: true,
+        claimId: claim.id,
+        reason: claim.reason
+      };
+    }
+
+    return null;
   }
 
   #resolveDocumentChainSync(document, visited, depth) {
@@ -405,7 +613,8 @@ export class AnimationOwnershipService {
   #record(decision) {
     if (!decision?.suppress) return decision;
     this.#stats.suppressions += 1;
-    if (decision.relation === "status-owner") this.#stats.statusSuppressions += 1;
+    if (decision.relation === "transient-workflow") this.#stats.transientSuppressions += 1;
+    else if (decision.relation === "status-owner") this.#stats.statusSuppressions += 1;
     else if (decision.relation === "origin" || decision.relation === "parent-item") this.#stats.originSuppressions += 1;
     else this.#stats.directSuppressions += 1;
     return decision;

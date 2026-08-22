@@ -1,3 +1,37 @@
+## v0.4.1.12 transient Automated Animations ownership acceptance
+
+This release adds client-local runtime arbitration and does not require a new Socketlib path. After installing v0.4.1.12 with Automated Animations 7.0.22+ active, run the existing animation-ownership foundation test in Foundry:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+await ae5e.tests.runAnimationOwnershipFoundationTest({ notify: true });
+```
+
+The foundation gate now additionally verifies that a transient claim matches the requested Activity, does not suppress a sibling Activity on the same Item, immediately vetoes the matching AA workflow, leaves no persistent animation flag on the Item/Activity, and is automatically released by `withAutomatedAnimationsSuppressed()`. Existing persistent ownership checks (explicit flag, Item-owned effect inheritance, Entangled→Restrained same-Actor inheritance, origin chain, and ordinary unsuppressed workflow) remain part of the same gate.
+
+Then verify the live adapter and runtime-claim diagnostics:
+
+```js
+console.log(ae5e.version);
+console.log(ae5e.interoperability.automatedAnimations.getStatus());
+console.log(ae5e.animationOwnership.getActiveAutomatedAnimationsSuppressions());
+```
+
+Expected baseline: `ae5e.version` is `0.4.1.12`, AA reports its workflow-start hook registered, and the active transient-claim list is empty when no scoped Activity is running.
+
+For the real Item acceptance, use an Item with at least two Activities (the common Unarmed Strike Attack/Shove/Grapple Item is suitable) and wrap only one selected Activity:
+
+```js
+await ae5e.animationOwnership.withAutomatedAnimationsSuppressed(
+  { item: sourceItem, activity: selectedActivity, reason: "AA transient acceptance" },
+  async () => selectedActivity.use({})
+);
+```
+
+Confirm that AA does not play for the wrapped Activity, AE5E/custom animation may play normally, and a different sibling Activity remains eligible for AA when used without the wrapper. After either completion or cancellation/error, `getActiveAutomatedAnimationsSuppressions()` must return an empty array. No Item/Activity `flags.action-effects-5e.animation` value should have been written by the transient API.
+
+The repository development regression suite is **106/106 PASS**. Per project policy, that is supporting regression coverage rather than a substitute for the live Foundry acceptance above. Compendium contents are intentionally unchanged from v0.4.1.11.
+
 ## v0.4.1.11 common actions compendium acceptance
 
 This release changes compendium/package metadata only. After installing v0.4.1.11, open the Foundry **Compendium Packs** sidebar and confirm the hierarchy contains:

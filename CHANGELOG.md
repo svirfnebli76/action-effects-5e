@@ -1,3 +1,15 @@
+## 0.4.1.12 — Transient Automated Animations workflow ownership
+
+- Retained AE5E's existing Automated Animations 7.0.22+ arbitration integration: synchronous ownership still sets `clonedData.stopWorkflow` immediately, while ownership requiring asynchronous resolution continues to use AA's supported `clonedData.deferrals` seam.
+- Added transient, workflow-scoped animation ownership for one-shot Item/Activity execution. Item macros can now suppress AA for a specific Activity without writing persistent Item or Active Effect flags.
+- Added `ae5e.animationOwnership.withAutomatedAnimationsSuppressed(scope, callback)` as the preferred scoped API, plus lower-level claim/release helpers and active-claim diagnostics. Claims are always released by the scoped helper in `finally`, including when the wrapped Activity throws or rejects.
+- Transient matching is Activity-specific when an Activity is supplied. Stable Item and Activity UUID/ID identity is used so sibling Activities on the same Item (for example Attack, Shove, and Grapple) are not broadly suppressed.
+- Extended AA workflow-context handling so Item/Activity identity can be resolved from the cloned workflow payload or AA's secondary animation context. AA diagnostics now annotate transient claim id/reason without mutating the source Item/Activity.
+- Persistent `flags.action-effects-5e.animation.automatedAnimations = "suppress"`, origin-chain inheritance, same-Actor status ownership, and child-policy stamping remain unchanged for persistent effects such as Entangled.
+- No new Socketlib path is required. Transient claims are client-local runtime state surrounding the initiating Activity execution and perform no privileged document updates.
+- Added focused regression coverage for Activity isolation, non-persistence, cleanup on success/failure, AA adapter suppression, and secondary-context identity matching. The repository development suite is **106/106 PASS**.
+- No compendium contents were changed, regenerated, migrated, or overwritten in this release.
+
 ## 0.4.1.11 — Common actions compendium structure
 
 - Added a new **Actions - Common** Compendium Pack folder beneath the existing top-level **Action Effects 5E** compendium folder.

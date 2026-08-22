@@ -1,3 +1,34 @@
+### v0.4.1.12 transient Automated Animations workflow ownership
+
+AE5E now supports two complementary animation-ownership modes. Persistent ownership continues to use `flags.action-effects-5e.animation.automatedAnimations = "suppress"` for documents/effects whose future AA workflows remain AE5E-owned. One-shot Item/Activity automations can instead use a transient runtime claim that exists only while the requested Activity executes.
+
+The preferred public API is:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+await ae5e.animationOwnership.withAutomatedAnimationsSuppressed(
+  {
+    item: sourceItem,
+    activity: activities[choice],
+    reason: "Unarmed Strike"
+  },
+  async () => activities[choice].use({})
+);
+```
+
+When an Activity is supplied, the claim is Activity-specific; sibling Activities on the same Item remain eligible for AA. The helper creates no Item/Effect updates and releases the runtime claim in `finally`. AE5E's existing AA 7.0.22+ adapter remains the arbitration boundary: immediate matches set `clonedData.stopWorkflow`, and asynchronous document-origin resolution still uses `clonedData.deferrals`.
+
+Lower-level diagnostics/helpers are available when needed:
+
+```js
+const claim = ae5e.animationOwnership.claimAutomatedAnimationsSuppression({ item, activity, reason: "custom" });
+claim.release();
+
+ae5e.animationOwnership.getActiveAutomatedAnimationsSuppressions();
+ae5e.animationOwnership.getStats();
+```
+
 ### v0.4.1.11 common actions compendium structure
 
 AE5E now includes **Action Effects 5E → Actions - Common → Actions - Common**, with the leaf pack implemented as an empty D&D5e `Item` compendium using the stable internal identifier `actions-common`. This release only extends the module-owned compendium hierarchy; all pre-existing compendium data and runtime behavior are preserved.
@@ -558,19 +589,28 @@ await ae5e.regions.delete(created.regionUuid);
 
 The delete API only accepts Regions carrying AE5E's authority ownership flag; it does not provide a generic remote-delete primitive for unrelated Scene Regions.
 
-## Animation ownership and Automated Animations (v0.4.1.5)
+## Animation ownership and Automated Animations (v0.4.1.5, expanded v0.4.1.12)
 
-AE5E can claim animation ownership for an Item or Active Effect without globally disabling Automated Animations. Store the policy on the owning document:
+AE5E can claim animation ownership without globally disabling Automated Animations. Persistent ownership remains document-based and is appropriate when future workflows associated with an Item/effect must remain AE5E-owned:
 
 ```js
 flags.action-effects-5e.animation.automatedAnimations = "suppress"
 ```
 
-When Automated Animations raises `AutomatedAnimations-WorkflowStart`, AE5E resolves the effective policy and sets `clonedData.stopWorkflow = true` when the workflow belongs to a suppressing owner. AE5E uses AA's `clonedData.deferrals` mechanism when an origin UUID must be resolved asynchronously. Automated Animations remains optional and no global AA setting is changed.
+Transient ownership is runtime-only and is preferred for one-shot Item/Activity execution:
 
-Ownership follows effect provenance rather than the global status definition. An Item-owned Active Effect can inherit the Item policy, an embedded Active Effect can inherit from a resolvable origin chain, and a child/native status can inherit from a same-Actor suppressing Active Effect that owns the same status ID. For example, an `Entangled` Active Effect carrying native `restrained` can suppress both its own AA animation and a related `Restrained` Active Effect animation while an unrelated Restrained on another Actor remains available to AA.
+```js
+await ae5e.animationOwnership.withAutomatedAnimationsSuppressed(
+  { item, activity, reason: "custom animation" },
+  async () => activity.use({})
+);
+```
 
-When AE5E or an Item macro explicitly constructs child effect data, the public helper can stamp the exact policy onto that child instead of relying on inference:
+When Automated Animations raises `AutomatedAnimations-WorkflowStart`, AE5E resolves the effective persistent or transient policy and sets `clonedData.stopWorkflow = true` when the workflow belongs to a suppressing owner. AE5E uses AA's `clonedData.deferrals` mechanism when an origin UUID must be resolved asynchronously. Automated Animations remains optional and no global AA setting is changed.
+
+Persistent ownership follows effect provenance rather than the global status definition. An Item-owned Active Effect can inherit the Item policy, an embedded Active Effect can inherit from a resolvable origin chain, and a child/native status can inherit from a same-Actor suppressing Active Effect that owns the same status ID. For example, an `Entangled` Active Effect carrying native `restrained` can suppress both its own AA animation and a related `Restrained` Active Effect animation while an unrelated Restrained on another Actor remains available to AA.
+
+When AE5E or an Item macro explicitly constructs child effect data, the public helper can stamp the exact persistent policy onto that child instead of relying on inference:
 
 ```js
 const ae5e = game.modules.get("action-effects-5e").api;
@@ -582,6 +622,7 @@ Diagnostics:
 
 ```js
 ae5e.animationOwnership.resolveAutomatedAnimationsPolicy(effect);
+ae5e.animationOwnership.getActiveAutomatedAnimationsSuppressions();
 ae5e.animationOwnership.getStats();
 ae5e.animationOwnership.getAutomatedAnimationsStatus();
 ae5e.interoperability.automatedAnimations.getStats();

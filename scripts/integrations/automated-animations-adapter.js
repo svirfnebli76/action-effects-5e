@@ -35,10 +35,11 @@ export class AutomatedAnimationsAdapter {
     if (!clonedData || typeof clonedData !== "object") return null;
     this.#stats.workflowsSeen += 1;
 
-    // Most ownership decisions (including same-Actor child status inheritance)
-    // are available synchronously. Setting stopWorkflow immediately also keeps
-    // the direct flag useful with older AA releases that do not await deferrals.
-    const immediate = this.#ownership.resolveAutomatedAnimationsPolicySync(clonedData);
+    // Most ownership decisions, including transient workflow claims and
+    // same-Actor child status inheritance, are available synchronously.
+    // Setting stopWorkflow immediately also retains compatibility with older
+    // AA releases that do not await deferrals.
+    const immediate = this.#ownership.resolveAutomatedAnimationsPolicySync(clonedData, { context: animationData });
     if (immediate.suppress) {
       clonedData.stopWorkflow = true;
       this.#stats.synchronousSuppressions += 1;
@@ -84,8 +85,8 @@ export class AutomatedAnimationsAdapter {
     };
   }
 
-  async #resolveDeferred(clonedData) {
-    const decision = await this.#ownership.resolveAutomatedAnimationsPolicy(clonedData);
+  async #resolveDeferred(clonedData, animationData = null) {
+    const decision = await this.#ownership.resolveAutomatedAnimationsPolicy(clonedData, { context: animationData });
     if (decision.policy !== ANIMATION_AUTOMATED_ANIMATIONS_POLICIES.SUPPRESS) return decision;
 
     clonedData.stopWorkflow = true;
@@ -102,17 +103,24 @@ export class AutomatedAnimationsAdapter {
       relation: decision.relation,
       sourceUuid: decision.sourceUuid,
       sourceLabel: decision.sourceLabel,
-      inheritedByStatuses: decision.inheritedByStatuses ?? []
+      inheritedByStatuses: decision.inheritedByStatuses ?? [],
+      transient: decision.transient === true,
+      claimId: decision.claimId ?? null,
+      reason: decision.reason ?? null
     };
   }
 
   #diagnostic(decision, clonedData) {
     return {
       item: clonedData?.item?.name ?? clonedData?.item?.label ?? clonedData?.item?.uuid ?? null,
+      activity: clonedData?.activity?.name ?? clonedData?.activity?.label ?? clonedData?.activity?.uuid ?? null,
       policy: decision.policy,
       relation: decision.relation,
       sourceUuid: decision.sourceUuid,
       sourceLabel: decision.sourceLabel,
+      transient: decision.transient === true,
+      claimId: decision.claimId ?? null,
+      reason: decision.reason ?? null,
       inheritedByStatuses: decision.inheritedByStatuses ?? []
     };
   }
