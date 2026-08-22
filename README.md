@@ -1,3 +1,7 @@
+### v0.4.1.11 common actions compendium structure
+
+AE5E now includes **Action Effects 5E → Actions - Common → Actions - Common**, with the leaf pack implemented as an empty D&D5e `Item` compendium using the stable internal identifier `actions-common`. This release only extends the module-owned compendium hierarchy; all pre-existing compendium data and runtime behavior are preserved.
+
 ### v0.4.1.10 custom-color Eskie resolver correction
 
 Custom hex crosshair colors now remain tint requests even when Patreon/premium Eskie is installed. AE5E still prefers the matching premium white artwork as the tintable base, but it no longer mistakes that white lookup asset for a caller request for native white. For example, `{ color: "#8FD8FF" }` on the 30-foot `Fantasy_01` no-base Circle resolves the premium white WebM with `tint: "#8FD8FF"` and `reason: "premium-white-tinted"`. Authored premium Red/Teal/White/Yellow requests retain their existing native-recolor behavior.

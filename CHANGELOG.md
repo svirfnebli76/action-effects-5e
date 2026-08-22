@@ -1,3 +1,10 @@
+## 0.4.1.11 — Common actions compendium structure
+
+- Added a new **Actions - Common** Compendium Pack folder beneath the existing top-level **Action Effects 5E** compendium folder.
+- Added a new empty D&D5e `Item` compendium named **Actions - Common** inside that folder, using the stable internal pack identifier `actions-common`.
+- Existing spell and administrative compendium contents were preserved byte-for-byte; no existing compendium was regenerated, migrated, or overwritten.
+- Advanced module/package/runtime version metadata to `0.4.1.11`. No runtime behavior, macros, sockets, movement services, CAT interoperability, or crosshair behavior changed in this release.
+
 ## 0.4.1.10 — Eskie custom-color crosshair resolver fix
 
 - Fixed custom hex crosshair colors when Patreon/premium Eskie is active. A custom color such as Misty Step's `#8FD8FF` is no longer normalized to the white asset lookup color and then incorrectly classified as a native premium-white request.

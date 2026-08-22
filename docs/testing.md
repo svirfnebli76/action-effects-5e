@@ -1,3 +1,15 @@
+## v0.4.1.11 common actions compendium acceptance
+
+This release changes compendium/package metadata only. After installing v0.4.1.11, open the Foundry **Compendium Packs** sidebar and confirm the hierarchy contains:
+
+```text
+Action Effects 5E
+└─ Actions - Common
+   └─ Actions - Common
+```
+
+The leaf pack must be a D&D5e `Item` compendium with internal id `actions-common`. Existing **Spells** and **AE5E Administrative** packs should retain their prior contents unchanged. No multiplayer or Socketlib acceptance is required because v0.4.1.11 introduces no player-executed or privileged runtime behavior.
+
 ## v0.4.1.10 Eskie custom-color resolver regression
 
 After installing v0.4.1.10, run the existing Foundry crosshair foundation test as GM:
