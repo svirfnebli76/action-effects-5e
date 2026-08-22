@@ -1,9 +1,4 @@
-2026/08/21-11:26:40.427 8dac Recovering log #33
-2026/08/21-11:26:40.428 8dac Recovering log #39
-2026/08/21-11:26:40.429 8dac Delete type=0 #33
-2026/08/21-11:26:40.430 8dac Delete type=0 #39
-2026/08/21-11:26:40.430 8dac Delete type=3 #30
-2026/08/21-20:14:54.802 349c Level-0 table #42: started
-2026/08/21-20:14:54.802 349c Level-0 table #42: 0 bytes OK
-2026/08/21-20:14:54.802 349c Delete type=0 #40
-2026/08/21-20:14:54.803 349c Manual compaction at level-0 from 'undefined' @ 72057594037927935 : 1 .. 'undefined' @ 0 : 0; will stop at (end)
+2026/08/21-20:15:35.417 8ea4 Recovering log #41
+2026/08/21-20:15:35.419 8ea4 Delete type=0 #41
+2026/08/21-20:15:35.420 8ea4 Delete type=3 #34
+2026/08/21-20:15:35.420 8ea4 Delete type=3 #38
