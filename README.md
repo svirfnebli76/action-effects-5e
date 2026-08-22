@@ -1,3 +1,14 @@
+### v0.4.1.10 custom-color Eskie resolver correction
+
+Custom hex crosshair colors now remain tint requests even when Patreon/premium Eskie is installed. AE5E still prefers the matching premium white artwork as the tintable base, but it no longer mistakes that white lookup asset for a caller request for native white. For example, `{ color: "#8FD8FF" }` on the 30-foot `Fantasy_01` no-base Circle resolves the premium white WebM with `tint: "#8FD8FF"` and `reason: "premium-white-tinted"`. Authored premium Red/Teal/White/Yellow requests retain their existing native-recolor behavior.
+
+Foundry validation uses the existing crosshair foundation macro:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+await ae5e.tests.runCrosshairFoundationTest({ notify: true });
+```
+
 ### v0.4.1.2 reusable Eskie crosshair foundation
 
 AE5E now exposes a centralized `ae5e.crosshairs` service for custom spell/item placement visuals. It detects Patreon Eskie (`eskie-effects`) separately from the public free module (`eskie-effects-free`), prefers native premium recolors, falls back to the free white artwork plus Sequencer tinting when possible, and leaves the native Sequencer crosshair visible when no compatible Eskie visual exists. The catalog explicitly contains all 244 supplied premium crosshair files and 52 confirmed free white crosshair files. Rectangle and Reticle are resolved from their direct free asset paths even though the current public free Sequencer database does not register those families.

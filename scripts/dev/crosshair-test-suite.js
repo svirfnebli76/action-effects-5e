@@ -25,7 +25,7 @@ export class CrosshairTestSuite {
       return entry;
     };
 
-    banner("AE5E 0.4.1.2 — ESKIE CROSSHAIR FOUNDATION", "#7ddcff", 26);
+    banner("AE5E 0.4.1.10 — ESKIE CROSSHAIR FOUNDATION", "#7ddcff", 26);
 
     const allCatalog = this.#crosshairs.getCatalog();
     const premiumCatalog = this.#crosshairs.getCatalog({ source: "premium" });
@@ -133,6 +133,20 @@ export class CrosshairTestSuite {
       && customTint.tint === "#ff66cc"
       && customTint.file?.includes("White_30ft.webm"), customTint);
 
+    const mistyStepTint = this.#crosshairs.resolveAsset({
+      shape: "circle",
+      style: "fantasy_01",
+      base: "no_base",
+      size: 30,
+      sizeStrategy: "exact",
+      color: "#8FD8FF"
+    }, { status: { premium: true, free: true } });
+    record("Custom hex color keeps its tint when premium white artwork is the selected base", mistyStepTint.source === "premium"
+      && mistyStepTint.tint === "#8FD8FF"
+      && mistyStepTint.reason === "premium-white-tinted"
+      && mistyStepTint.fallback === true
+      && mistyStepTint.file?.endsWith("Crosshair_Circle_Fantasy_01_White_NoBase_30ft.webm"), mistyStepTint);
+
     const unsupported = this.#crosshairs.resolveAsset({ shape: "hexagon", color: "red" }, {
       status: { premium: true, free: true }
     });
@@ -168,13 +182,13 @@ export class CrosshairTestSuite {
     };
 
     console.table(checks.map((check, index) => ({ "#": index + 1, Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
-    banner(`AE5E 0.4.1.2 CROSSHAIR FOUNDATION — ${report.summary.passed}/${report.summary.total} ${passed ? "PASS" : "FAIL"}`, passed ? "#18cc46" : "#ff5555", 28);
+    banner(`AE5E 0.4.1.10 CROSSHAIR FOUNDATION — ${report.summary.passed}/${report.summary.total} ${passed ? "PASS" : "FAIL"}`, passed ? "#18cc46" : "#ff5555", 28);
     console.log("AE5E crosshair foundation full result", report);
     if (notify && ui?.notifications) {
       ui.notifications[passed ? "info" : "error"](
         passed
-          ? `AE5E 0.4.1.2 crosshair foundation passed (${report.summary.passed}/${report.summary.total}).`
-          : `AE5E 0.4.1.2 crosshair foundation FAILED (${report.summary.failed} failing checks). See console.`
+          ? `AE5E 0.4.1.10 crosshair foundation passed (${report.summary.passed}/${report.summary.total}).`
+          : `AE5E 0.4.1.10 crosshair foundation FAILED (${report.summary.failed} failing checks). See console.`
       );
     }
     return report;

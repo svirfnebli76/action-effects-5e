@@ -1,3 +1,11 @@
+## 0.4.1.10 — Eskie custom-color crosshair resolver fix
+
+- Fixed custom hex crosshair colors when Patreon/premium Eskie is active. A custom color such as Misty Step's `#8FD8FF` is no longer normalized to the white asset lookup color and then incorrectly classified as a native premium-white request.
+- Premium white artwork remains the preferred tintable base for custom colors. The resolver now returns the requested tint with reasons such as `premium-white-tinted`; authored premium Red/Teal/White/Yellow requests still use their native recolors without Sequencer tinting.
+- Added a Foundry foundation regression for the exact 30-foot `Fantasy_01` no-base Misty Step request and four targeted Node resolver regressions covering premium custom hex, premium-only custom hex, native named color preservation, and true white preservation.
+- No new Socketlib path is required: crosshair asset resolution and Sequencer tint application execute on the client that owns the placement UI and do not perform privileged document changes.
+- No compendium contents were changed, regenerated, or migrated in this release.
+
 ## 0.4.1.9 — Relationship orbit regression-suite modernization
 
 - Modernized the legacy Node relationship-orbit fixture so `RelationshipRotationService` receives an explicit clear Grapple-link obstruction test double, matching the relevant production dependency shape instead of accidentally exercising the runtime's intentional `link-preflight-unavailable` fail-closed fallback.

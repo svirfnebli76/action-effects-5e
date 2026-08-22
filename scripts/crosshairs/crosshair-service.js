@@ -200,7 +200,8 @@ export class CrosshairService {
     const size = request.size ?? defaults.size;
     const rawColor = request.color ?? "white";
     const requestedColor = lower(rawColor, "white");
-    const namedColor = ESKIE_CROSSHAIR_COLORS.includes(requestedColor) ? requestedColor : "white";
+    const hasNativeNamedColor = ESKIE_CROSSHAIR_COLORS.includes(requestedColor);
+    const namedColor = hasNativeNamedColor ? requestedColor : "white";
     const tint = requestTint(rawColor, request.tint);
     const sizeStrategy = lower(request.sizeStrategy, "floor");
     const allowStyleFallback = request.allowStyleFallback !== false;
@@ -218,7 +219,14 @@ export class CrosshairService {
       // Preserve the requested style before considering a different authored
       // style. This matters for known asymmetric premium entries: a same-style
       // white asset plus tint is preferable to silently switching art styles.
-      const native = this.#findEntry("premium", criteria, namedColor, false);
+      // Only treat a premium recolor as a native-color match when the caller
+      // actually requested one of Eskie's authored named colors. Custom hex
+      // colors intentionally use white artwork as the tintable base; the
+      // normalized `namedColor === "white"` lookup surrogate must not erase
+      // the caller's requested tint.
+      const native = hasNativeNamedColor
+        ? this.#findEntry("premium", criteria, namedColor, false)
+        : null;
       if (native) {
         this.#stats.premiumResolves += 1;
         return this.#resolution(native, {

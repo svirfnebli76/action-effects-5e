@@ -1,3 +1,14 @@
+## v0.4.1.10 Eskie custom-color resolver regression
+
+After installing v0.4.1.10, run the existing Foundry crosshair foundation test as GM:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+await ae5e.tests.runCrosshairFoundationTest({ notify: true });
+```
+
+The suite now includes the exact Misty Step resolver request (`Circle`, `Fantasy_01`, `NoBase`, 30 ft, exact sizing, `#8FD8FF`) with premium and free Eskie both available. It must resolve the premium white 30-foot WebM with `tint: "#8FD8FF"`, `reason: "premium-white-tinted"`, and no native fallback. Native premium named-color checks remain in the same suite. No multiplayer/Socketlib acceptance is required for this resolver-only change because no privileged document write or GM-authoritative operation is involved.
+
 # Action Effects 5E testing
 
 ## Project test policy
