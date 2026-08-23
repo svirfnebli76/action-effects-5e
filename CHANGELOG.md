@@ -1,3 +1,14 @@
+## 0.4.1.13 — Remote choice prompt infrastructure
+
+- Added generic `ae5e.prompts.choose()` infrastructure for small controller-owned decisions such as a Shove defender choosing Strength or Dexterity. Callers provide Actor/token context plus plain choice descriptors; the API returns only the selected choice id or `null`.
+- Added centralized controller resolution. AE5E prefers an active non-GM owner of the target Actor, falls back to the primary active GM when no player owner is online, and can reroute a remote prompt to an active GM if the selected player disconnects while the prompt is open.
+- Added the Socketlib handler `prompts.choose`. Live Actor, Token, Workflow, or other document objects are never transported through Socketlib; only UUIDs and JSON-serializable prompt data cross the boundary.
+- Integrated the existing semantic `responder` selection-indicator role so the target token carries the amber `#ff9f1c` indicator for the full DialogV2 lifetime with guaranteed cleanup.
+- Routed the existing selection-indicator Sequencer notification sound through Foundry's `interface` audio channel via `.audioChannel("interface")`.
+- Added `ae5e.prompts.resolveController()`, `validateChoiceRequest()`, and `getStats()` diagnostics, plus Foundry foundation/interactive test entry points.
+- Added four focused Node regressions covering request validation, active-player-owner routing, offline-owner GM fallback, socket-safe result transport, responder indicator ownership, and mid-prompt disconnect rerouting. The repository development suite is **110/110 PASS**.
+- No compendium contents were changed, regenerated, migrated, or overwritten in this release.
+
 ## 0.4.1.12 — Transient Automated Animations workflow ownership
 
 - Retained AE5E's existing Automated Animations 7.0.22+ arbitration integration: synchronous ownership still sets `clonedData.stopWorkflow` immediately, while ownership requiring asynchronous resolution continues to use AA's supported `clonedData.deferrals` seam.

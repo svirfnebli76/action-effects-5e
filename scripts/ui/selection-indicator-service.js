@@ -361,6 +361,7 @@ export class SelectionIndicatorService {
           .sound()
           .file(presentation.soundAsset)
           .volume(presentation.soundVolume)
+          .audioChannel("interface")
           .forUsers(notifyUserId);
         this.#stats.soundsPlayed += 1;
       }

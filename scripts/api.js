@@ -94,6 +94,7 @@ export class ActionEffects5eApi {
     displacement,
     selectionIndicator,
     externalPromptBridge,
+    choicePrompts,
     crosshairs,
     reactionRegistry,
     reactionAuthority,
@@ -309,6 +310,13 @@ export class ActionEffects5eApi {
       getStats: () => externalPromptBridge.getStats()
     });
 
+    this.prompts = Object.freeze({
+      choose: (options) => choicePrompts.choose(options),
+      resolveController: (options) => choicePrompts.resolveController(options),
+      validateChoiceRequest: (options) => choicePrompts.validateRequest(options),
+      getStats: () => choicePrompts.getStats()
+    });
+
     this.crosshairs = Object.freeze({
       getEskieStatus: () => crosshairs.getEskieStatus(),
       getShapeInfo: (shape) => crosshairs.getShapeInfo(shape),
@@ -386,6 +394,8 @@ export class ActionEffects5eApi {
       inspectReactionBroker: () => tests.inspectReactionBroker(),
       runSelectionIndicatorTest: () => tests.runSelectionIndicatorTest(),
       runSelectionIndicatorRolePairTest: () => tests.runSelectionIndicatorRolePairTest(),
+      runChoicePromptFoundationTest: (options) => tests.runChoicePromptFoundationTest(options),
+      runChoicePromptInteractiveTest: (options) => tests.runChoicePromptInteractiveTest(options),
       runExternalPromptBridgeTest: () => tests.runExternalPromptBridgeTest(),
       runExternalPromptIsolationTest: () => tests.runExternalPromptIsolationTest(),
       createTestRelationshipFromControlledTokens: () => tests.createTestRelationshipFromControlledTokens(),

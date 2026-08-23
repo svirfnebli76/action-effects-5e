@@ -16,6 +16,7 @@ import {
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIVE_TOKEN_RELATIONSHIPS,
   RELATIONSHIP_TYPES,
+  SELECTION_INDICATOR_PRESENTATIONS,
   SELECTION_INDICATOR_ROLES,
   TELEPORT_POLICIES
 } from "../core/constants.js";
@@ -46,6 +47,7 @@ export class TestHarness {
   #displacementOverlay;
   #selectionIndicator;
   #externalPromptBridge;
+  #choicePrompts;
   #socket;
   #reactionSuite;
   #smeSuite;
@@ -56,7 +58,7 @@ export class TestHarness {
   #catTeleportSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -71,6 +73,7 @@ export class TestHarness {
     this.#displacementOverlay = displacementOverlay;
     this.#selectionIndicator = selectionIndicator;
     this.#externalPromptBridge = externalPromptBridge;
+    this.#choicePrompts = choicePrompts;
     this.#socket = socket;
     this.#reactionSuite = new ReactionBrokerTestSuite({
       registry: reactionRegistry,
@@ -217,6 +220,7 @@ export class TestHarness {
     record("Displacement service", this.#displacement.getStats().initialized, this.#displacement.getStats());
     record("Selection indicator service", this.#selectionIndicator.getStats().initialized, this.#selectionIndicator.getStats());
     record("External prompt bridge", this.#externalPromptBridge.getStats().initialized, this.#externalPromptBridge.getStats());
+    record("Remote choice prompt service", Boolean(this.#choicePrompts?.getStats), this.#choicePrompts?.getStats?.() ?? null);
     record("Socketlib registration", this.#socket.ready, { ready: this.#socket.ready });
 
     const passed = checks.every((check) => check.passed);
@@ -230,6 +234,7 @@ export class TestHarness {
       displacement: this.#displacement.getStats(),
       selection: this.#selectionIndicator.getStats(),
       externalPrompts: this.#externalPromptBridge.getStats(),
+      prompts: this.#choicePrompts?.getStats?.() ?? null,
       catInteroperability: catInteroperabilityStatus,
       compatibility: compatibilityStatus
     };
@@ -849,7 +854,7 @@ export class TestHarness {
           <div style="display:flex;flex-direction:column;gap:0.6rem;min-width:390px;">
             <p><strong>Inspect both controlled tokens before closing this dialog.</strong></p>
             <p>The first-controlled token <strong>${originator.name}</strong> should show the existing green <code>originator</code> indicator and play <code>notification01.ogg</code> once for this user.</p>
-            <p>The second-controlled token <strong>${responder.name}</strong> should show the temporary amber <code>responder</code> indicator. No responder sound asset is assigned yet, so it should be silent.</p>
+            <p>The second-controlled token <strong>${responder.name}</strong> should show the amber <code>responder</code> indicator and play the responder notification cue once for this user.</p>
             <p>Both indicators should remain above token selection outlines and disappear when this test dialog closes.</p>
           </div>`,
         buttons: [
@@ -874,6 +879,117 @@ export class TestHarness {
       finalStats
     };
     Logger.info("AE5E 0.3.27 selection-indicator role-pair test", report);
+    return report;
+  }
+
+  async runChoicePromptFoundationTest({ notify = true } = {}) {
+    const checks = [];
+    const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
+
+    const valid = this.#choicePrompts.validateRequest({
+      title: "Shove Saving Throw",
+      prompt: "Choose the ability you would like to use for this saving throw.",
+      choices: [
+        { id: "str", label: "Strength", detail: "+2" },
+        { id: "dex", label: "Dexterity", detail: "+3" }
+      ],
+      role: SELECTION_INDICATOR_ROLES.RESPONDER
+    });
+    record("Canonical Shove-style choice request validates", valid.valid === true, valid);
+
+    const duplicate = this.#choicePrompts.validateRequest({
+      title: "Duplicate Test",
+      prompt: "Choose one.",
+      choices: [
+        { id: "str", label: "Strength" },
+        { id: "str", label: "Dexterity" }
+      ]
+    });
+    record("Duplicate choice ids are rejected", duplicate.reason === "duplicate-choice-id", duplicate);
+
+    const badRole = this.#choicePrompts.validateRequest({
+      title: "Role Test",
+      prompt: "Choose one.",
+      choices: [{ id: "str", label: "Strength" }],
+      role: "purple"
+    });
+    record("Unknown indicator roles are rejected", badRole.reason === "invalid-indicator-role", badRole);
+
+    const socketRegistered = this.#socket.getRegisteredNames?.().includes("prompts.choose") ?? false;
+    record("Remote choice Socketlib handler is registered", socketRegistered, this.#socket.getRegisteredNames?.() ?? []);
+
+    const responder = SELECTION_INDICATOR_PRESENTATIONS[SELECTION_INDICATOR_ROLES.RESPONDER] ?? null;
+    record("Responder presentation remains amber", responder?.tint?.toLowerCase?.() === "#ff9f1c", responder);
+    record("Choice prompt diagnostics are available", typeof this.#choicePrompts.getStats === "function", this.#choicePrompts.getStats());
+
+    const passed = checks.every(check => check.passed);
+    const report = { passed, checks, stats: this.#choicePrompts.getStats() };
+    Logger.info("AE5E remote choice prompt foundation", report);
+    console.log(
+      `%cAE5E 0.4.1.13 — REMOTE CHOICE PROMPT FOUNDATION — ${passed ? "PASS" : "FAIL"}`,
+      `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`
+    );
+    console.log(`AE5E remote choice prompt foundation: ${checks.filter(check => check.passed).length}/${checks.length} PASS`);
+    if (notify && ui?.notifications) {
+      ui.notifications[passed ? "info" : "error"](
+        passed
+          ? "AE5E remote choice prompt foundation passed. See the console for details."
+          : "AE5E remote choice prompt foundation failed. See the console for details."
+      );
+    }
+    return report;
+  }
+
+  async runChoicePromptInteractiveTest({ notify = true } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 1) throw new Error("Control exactly one target token for the remote choice prompt test.");
+
+    const token = controlled[0];
+    const controller = await this.#choicePrompts.resolveController({ actor: token.actor, token });
+    if (!controller.userId) throw new Error("The controlled token has no active player controller and no active GM fallback.");
+
+    const baseline = this.#selectionIndicator.getStats();
+    const choice = await this.#choicePrompts.choose({
+      actor: token.actor,
+      token,
+      title: "AE5E Remote Choice Prompt Test",
+      prompt: `Choose the ability ${token.name} would use to resist a Shove.`,
+      choices: [
+        { id: "str", label: "Strength", detail: "+2" },
+        { id: "dex", label: "Dexterity", detail: "+3" }
+      ],
+      role: SELECTION_INDICATOR_ROLES.RESPONDER,
+      reason: "v0.4.1.13-remote-choice-test",
+      allowCancel: false
+    });
+    const finalStats = this.#selectionIndicator.getStats();
+    const validChoice = choice === "str" || choice === "dex";
+    const cleanupPassed = finalStats.activeLeases === baseline.activeLeases
+      && finalStats.activeTokens === baseline.activeTokens;
+    const passed = validChoice && cleanupPassed;
+    const report = {
+      passed,
+      choice,
+      controller,
+      target: { tokenUuid: token.document.uuid, tokenName: token.name, actorUuid: token.actor?.uuid ?? null },
+      baselineSelectionStats: baseline,
+      finalSelectionStats: finalStats,
+      promptStats: this.#choicePrompts.getStats()
+    };
+
+    Logger.info("AE5E remote choice prompt interactive test", report);
+    console.log(
+      `%cAE5E 0.4.1.13 — REMOTE CHOICE PROMPT INTERACTIVE — ${passed ? "PASS" : "FAIL"}`,
+      `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`
+    );
+    if (notify && ui?.notifications) {
+      ui.notifications[passed ? "info" : "error"](
+        passed
+          ? `AE5E remote choice prompt passed (${choice.toUpperCase()}).`
+          : "AE5E remote choice prompt test failed or was closed without a choice. See the console."
+      );
+    }
     return report;
   }
 

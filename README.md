@@ -1,3 +1,27 @@
+### v0.4.1.13 remote choice prompt infrastructure
+
+AE5E now exposes a reusable controller-routed choice prompt at `ae5e.prompts.choose()`. It is intended for Item/Activity automations where another creature's controller must make a small rules choice, such as choosing Strength or Dexterity to resist a Shove.
+
+The service prefers an active non-GM owner of the target Actor, falls back to the primary active GM when no player owner is online, and reroutes an already-open remote request to an active GM if that player disconnects. Only plain serializable prompt data crosses Socketlib. The target token owns AE5E's existing amber `responder` selection indicator for the full lifetime of the DialogV2, and the selected choice is returned to the initiating macro as a simple id such as `"str"` or `"dex"`.
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+const choice = await ae5e.prompts.choose({
+  actor: targetActor,
+  token: targetToken,
+  title: "Shove Saving Throw",
+  prompt: "Choose the ability you would like to use for this saving throw.",
+  role: "responder",
+  choices: [
+    { id: "str", label: "Strength", detail: "+2" },
+    { id: "dex", label: "Dexterity", detail: "+3" }
+  ]
+});
+```
+
+`ae5e.prompts.resolveController()` and `ae5e.prompts.getStats()` expose routing diagnostics. Selection-indicator notification sounds are routed through Foundry's `interface` audio channel. No compendium content is changed by this infrastructure release.
+
 ### v0.4.1.12 transient Automated Animations workflow ownership
 
 AE5E now supports two complementary animation-ownership modes. Persistent ownership continues to use `flags.action-effects-5e.animation.automatedAnimations = "suppress"` for documents/effects whose future AA workflows remain AE5E-owned. One-shot Item/Activity automations can instead use a transient runtime claim that exists only while the requested Activity executes.

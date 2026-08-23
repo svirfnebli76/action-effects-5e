@@ -644,7 +644,7 @@ const ae5e = game.modules.get("action-effects-5e").api;
 await ae5e.tests.runSelectionIndicatorRolePairTest();
 ```
 
-Verify the first token has the green `originator` indicator and plays `notification01.ogg` once for the executing user. Verify the second token simultaneously has the temporary amber `responder` indicator and is silent because no responder audio asset is assigned yet. Closing the test dialog must remove both indicators.
+Verify the first token has the green `originator` indicator and plays `notification01.ogg` once for the executing user. Verify the second token simultaneously has the amber `responder` indicator and plays its responder notification cue once for the executing user. Closing the test dialog must remove both indicators.
 
 ### External ApplicationV2 bridge
 
@@ -998,3 +998,33 @@ The harness automatically selects an available AE5E compendium Item as a disposa
 10. deleting the reconciled parent removes the repaired child.
 
 After the infrastructure gates pass, spell-specific acceptance should be added when the first Administrative templates are created. That later live gate must validate a real mandatory repeat save through CAT/D&D5e/Midi, the 10-second exactly-once fallback, player-owner routing, optional escape `Not Now` behavior, repeat prompting on a later turn while the effect persists, success removal of the parent effect, failure preservation, out-of-combat manual Item use, and the public unresolved-effects combat-end card.
+
+
+## v0.4.1.13 remote choice prompt acceptance
+
+Run the deterministic Foundry foundation gate after installing v0.4.1.13:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.runChoicePromptFoundationTest({ notify: true });
+```
+
+Expected result: **6/6 PASS** and the large console banner `AE5E 0.4.1.13 — REMOTE CHOICE PROMPT FOUNDATION — PASS`. This verifies the canonical Shove-style request schema, duplicate-id rejection, indicator-role validation, Socketlib registration, the amber responder presentation, and prompt diagnostics.
+
+For the live routing check, activate a Scene and control exactly one target token, then run:
+
+```js
+await ae5e.tests.runChoicePromptInteractiveTest({ notify: true });
+```
+
+If that Actor has an active non-GM owner, the STR/DEX dialog must open on that player's client. If the Actor has no active player owner, it must open on the primary active GM instead. While the dialog is open, the target token must show the amber responder indicator; closing by choosing Strength or Dexterity must remove the indicator immediately. The console report records `controller.reason` (`active-owner` or `gm-fallback`) and the returned `choice` (`str` or `dex`).
+
+For the offline-owner case, leave the Actor owned by a player who is disconnected and rerun the interactive test from the GM. The dialog must appear on the GM without trying to route to the offline user. For a mid-prompt disconnect check, open the prompt on the player and disconnect that client before making a choice; AE5E should reroute the same plain-data request to an active GM rather than leaving the initiating workflow waiting indefinitely.
+
+The Node regression is:
+
+```bash
+node --test tests/choice-prompt.test.mjs
+```
+
+Expected result: **4/4 PASS**. The complete repository suite is **110/110 PASS**. Compendium contents must remain byte-identical to the supplied v0.4.1.12 build.
