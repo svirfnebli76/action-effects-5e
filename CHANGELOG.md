@@ -1,3 +1,12 @@
+## 0.4.1.15 — Non-positional movement history write-gate fix
+
+- Fixed the live Foundry failure discovered by the v0.4.1.14 acceptance test. Foundry v14 deliberately removes `_movementHistory` from ordinary Token updates inside `TokenDocument#preUpdateMovement`, so v0.4.1.14's spend write was silently discarded before verification and no receipt could be committed.
+- Updated AE5E's centralized non-positional movement bridge to use Foundry's own explicit movement-history write gate: history-only updates now carry `isUndo: true`, `diff: false`, and `animate: false`, matching the gate used by Foundry's native `revertRecordedMovement()` implementation while leaving Token position untouched. Item/Activity macros still never write `_movementHistory` directly.
+- Applied the same protected history-write path to spend rollback, verification-failure cleanup, and the live acceptance test's fail-safe restoration.
+- Strengthened the Node fixture to reproduce Foundry's direct-history-write protection: ordinary `_movementHistory` updates are now stripped unless the explicit undo gate is present. This converts the exact v0.4.1.14 live failure into a deterministic regression instead of allowing a mock-only false positive.
+- The focused movement-spend suite is now **6/6 PASS** and the complete repository suite is **116/116 PASS**.
+- No compendium contents were changed, regenerated, migrated, or overwritten in this release.
+
 ## 0.4.1.14 — Non-positional movement spending
 
 - Added reusable `ae5e.movement.spend(token, amount, { reason })` infrastructure for rules that consume movement without changing token position, such as standing from Prone. Successful spends return a versioned receipt containing the exact committed movement-history delta.

@@ -18,6 +18,7 @@ class FakeTokenDocument {
     this.movementAction = "walk";
     this.movementHistory = [];
     this.ownerIds = new Set(ownerIds);
+    this.updateCalls = [];
   }
 
   getCompleteMovementPath([point]) {
@@ -39,8 +40,15 @@ class FakeTokenDocument {
     }];
   }
 
-  async update(changes) {
-    if (Array.isArray(changes?._movementHistory)) {
+  async update(changes, options = {}) {
+    this.updateCalls.push({
+      changes: structuredClone(changes ?? {}),
+      options: structuredClone(options ?? {})
+    });
+
+    // Mirror Foundry v14 TokenDocument#preUpdateMovement: direct history
+    // writes are stripped unless the operation uses the explicit undo gate.
+    if (Array.isArray(changes?._movementHistory) && options?.isUndo === true) {
       this.movementHistory = structuredClone(changes._movementHistory);
     }
     return this;
@@ -149,9 +157,13 @@ test("non-positional spend records exact cost without changing token position an
   assert.deepEqual({ x: document.x, y: document.y, elevation: document.elevation }, position);
   assert.equal(document.movementHistory.at(-1).movementId, receipt.movementId);
   assert.equal(document.movementHistory.at(-1).cost, 15);
+  assert.equal(document.updateCalls.at(-1)?.options?.isUndo, true);
+  assert.equal(document.updateCalls.at(-1)?.options?.diff, false);
+  assert.equal(document.updateCalls.at(-1)?.options?.animate, false);
 
   const rollback = await service.rollbackSpend(receipt);
   assert.equal(rollback.rolledBack, true);
+  assert.equal(document.updateCalls.at(-1)?.options?.isUndo, true);
   assert.deepEqual(document.movementHistory, before);
   assert.deepEqual({ x: document.x, y: document.y, elevation: document.elevation }, position);
 });
@@ -210,5 +222,15 @@ test("receipt rollback is idempotent after the charge has already been removed",
   const second = await service.rollbackSpend(receipt);
   assert.equal(second.rolledBack, false);
   assert.equal(second.reason, "receipt-not-present");
+  assert.equal(document.movementHistory.length, 0);
+});
+
+
+test("Foundry-style ordinary history updates are stripped by the fixture", async () => {
+  game.user = gm;
+  const { document } = createFixture();
+  await document.update({
+    _movementHistory: [{ cost: 15, movementId: "ordinary00000001" }]
+  });
   assert.equal(document.movementHistory.length, 0);
 });
