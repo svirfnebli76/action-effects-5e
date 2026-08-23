@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.1.15";
+export const MODULE_VERSION = "0.4.1.16";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -39,6 +39,8 @@ export const OVERLAP_POLICIES = Object.freeze({
 
 export const OPERATION_METADATA_KEY = "actionEffects5e";
 export const SCENE_RELATIONSHIPS_FLAG = "relationships";
+export const RELATIONSHIP_GRANT_FLAG = "relationshipGrant";
+export const RELATIONSHIP_LIFECYCLE_SCHEMA_VERSION = 1;
 export const MAX_RECENT_TRANSACTIONS = 50;
 
 // Selection indicators are semantic: the color communicates why a user is
@@ -246,6 +248,11 @@ export const MOVEMENT_GEOMETRY_CHANNELS = Object.freeze({
 });
 
 export const NONHOSTILE_ENDPOINT_GRACE_MS = 3_500;
+
+export const RELATIONSHIP_PARTICIPANTS = Object.freeze({
+  LEADER: "leader",
+  FOLLOWER: "follower"
+});
 
 export const RELATIONSHIP_TYPES = Object.freeze({
   GRAPPLE: "grapple",

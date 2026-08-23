@@ -1,3 +1,31 @@
+### v0.4.1.16 relationship lifecycle grants
+
+v0.4.1.16 adds the generic lifecycle infrastructure required by persistent actions such as Unarmed Grapple. Relationship ownership is explicit and opt-in, so existing `sourceUuid` callers are unchanged.
+
+A relationship may bind its source Active Effect and grant temporary participant Items:
+
+```js
+const relationship = await ae5e.relationships.create({
+  type: ae5e.constants.RELATIONSHIP_TYPES.GRAPPLE,
+  attachmentMode: ae5e.constants.ATTACHMENT_MODES.GRAPPLE_FOLLOWER,
+  leaderUuid: grapplerToken.document.uuid,
+  followerUuid: targetToken.document.uuid,
+  sourceUuid: grappleEffect.uuid,
+  lifecycle: {
+    sourceEffect: {},
+    participantItemGrants: [{
+      participant: ae5e.constants.RELATIONSHIP_PARTICIPANTS.LEADER,
+      role: "release",
+      templateUuid: releaseGrappleTemplateUuid
+    }]
+  }
+});
+```
+
+With that lifecycle enabled, deleting the source effect removes the relationship, and removing the relationship deletes both the linked source effect and all relationship-owned Item grants. `sourceEffect: {}` enables both directions by default. The granted Item receives `flags.action-effects-5e.relationshipGrant`, and a player-owned leader can end the relationship through the existing socketed `ae5e.relationships.remove(relationshipId)` API.
+
+No compendium or asset content is changed by this infrastructure release.
+
 ### v0.4.1.15 non-positional movement write-gate correction
 
 The v0.4.1.14 live acceptance exposed an important Foundry v14 protection: `TokenDocument#preUpdateMovement` strips `_movementHistory` from normal document updates. AE5E's spend verification correctly refused to return a receipt, but the compatibility bridge never reached the authoritative ledger.

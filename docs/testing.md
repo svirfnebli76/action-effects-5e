@@ -1085,3 +1085,34 @@ node --test tests/movement-spend.test.mjs
 ```
 
 Expected result: **6/6 PASS**. The complete repository suite is **116/116 PASS**. The regression fixture now mirrors Foundry v14 by stripping ordinary `_movementHistory` writes unless the explicit undo gate is used. Compendium contents must remain byte-identical to the supplied v0.4.1.14 build.
+
+
+## v0.4.1.16 relationship lifecycle grant acceptance
+
+Activate a Scene as the GM and control exactly two tokens in **leader first, follower second** order. The two tokens must not already participate in an AE5E relationship. Then run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+if (!ae5e) throw new Error("Action Effects 5E API is unavailable.");
+
+console.log("AE5E Version:", ae5e.version);
+
+const result = await ae5e.tests.runRelationshipLifecycleGrantTest({
+  notify: true
+});
+
+console.log("Relationship Lifecycle Grants:", result);
+console.log("Relationship Lifecycle Stats:", ae5e.relationships.getLifecycleStats());
+
+return result;
+```
+
+Expected result: the large console banner `AE5E 0.4.1.16 — RELATIONSHIP LIFECYCLE GRANTS — PASS`. The live test creates only temporary embedded documents on the two controlled Actors: one disposable Item template, relationship-owned Item clones, and disposable source Active Effects. It does not modify any compendium. It verifies both directions of source-effect ownership, leader-side grant stamping/cleanup, and lifecycle hook registration, then removes all temporary documents.
+
+The deterministic repository regression is:
+
+```bash
+node --test tests/relationship-lifecycle.test.mjs
+```
+
+The complete repository suite is **121/121 PASS**. Compendium and asset contents must remain byte-identical to the supplied v0.4.1.15 build.

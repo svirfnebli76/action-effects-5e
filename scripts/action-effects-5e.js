@@ -13,6 +13,7 @@ import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
 import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
+import { RelationshipLifecycleService } from "./relationships/relationship-lifecycle-service.js";
 import { RelationshipMovementService } from "./relationships/relationship-movement-service.js";
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
 import { RelationshipLinkObstructionService } from "./relationships/relationship-link-obstruction-service.js";
@@ -54,7 +55,8 @@ const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
-const relationships = new RelationshipService({ socket });
+const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
+const relationships = new RelationshipService({ socket, lifecycle: relationshipLifecycle });
 const relativeRelationships = new RelativeTokenRelationshipService();
 const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement });
 const displacementDirections = new DisplacementDirectionService();
@@ -144,6 +146,7 @@ const tests = new TestHarness({
   ongoingEffects,
   regions,
   relationships,
+  relationshipLifecycle,
   relationshipMovement,
   relationshipRotation,
   relativeRelationships,
@@ -181,6 +184,7 @@ const api = new ActionEffects5eApi({
   ongoingEffects,
   regions,
   relationships,
+  relationshipLifecycle,
   relationshipMovement,
   relationshipRotation,
   relativeRelationships,
@@ -227,6 +231,7 @@ Hooks.once("ready", async () => {
   movementAccounting.ensureRegistered();
   catMovement.initialize();
   await relationships.initialize();
+  await relationshipLifecycle.initialize();
   relationshipMovement.initialize();
   relationshipRotation.initialize();
   movement.initialize();

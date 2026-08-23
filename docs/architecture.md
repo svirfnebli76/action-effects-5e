@@ -127,6 +127,8 @@ Important geometry fields are:
 
 When both are finite, `coordinationDistance` may not exceed `breakDistance`; relationship creation or geometry-update requests that violate this invariant are rejected before Scene persistence.
 
+v0.4.1.16 adds an explicit, opt-in `lifecycle` block to persisted relationships. This is deliberately separate from legacy `sourceUuid` provenance so existing relationships do not accidentally gain document ownership. When `lifecycle.sourceEffect` is present, `sourceUuid` must resolve to an Active Effect; deleting that effect removes the relationship, and relationship removal can delete the source effect. `lifecycle.participantItemGrants` can clone relationship-owned Items onto the leader or follower Actor and persists each clone UUID with the relationship. Grant clones carry `flags.action-effects-5e.relationshipGrant` so cleanup can verify ownership before deleting them. All normal detach paths converge on the same centralized relationship-removal method, so teleport, break-distance, collision/policy detachment, explicit Release actions, and token cleanup share one lifecycle cleanup path.
+
 ## Central movement pipeline
 
 `MovementService` owns the Foundry movement hook set. `MovementRegistry` indexes only consumers which can care about a token. Relationship movement uses namespaced transient metadata so AE5E-generated operations are classified, deduplicated, and kept distinct from ordinary player/external movement.
@@ -313,6 +315,7 @@ Production-facing helpers include:
 
 - `displacement.request/push/pull/getCandidates`
 - `relationships.create/remove/updateGeometry`
+- `relationships.getGrantConfig/getLifecycleStats`
 - `relationships.moveGroup`
 - `relationships.waitForMovementSettled`
 - `relationships.resolveRelativeRelationship` / `resolveRelativeRelationshipForGeometry`

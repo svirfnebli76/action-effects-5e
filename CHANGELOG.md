@@ -1,3 +1,15 @@
+## 0.4.1.16 — Relationship lifecycle grants
+
+- Added opt-in relationship lifecycle ownership without changing legacy `sourceUuid` semantics. A relationship can now explicitly bind its `sourceUuid` to an Active Effect using `lifecycle.sourceEffect`; ordinary relationships that use `sourceUuid` for Tokens, Items, or other provenance remain non-owning.
+- Added bidirectional relationship ↔ source-effect cleanup. With source-effect lifecycle enabled, deleting the linked Active Effect removes the persisted relationship, while every normal AE5E relationship-removal path deletes the linked source effect. This includes direct Release-style removal, teleport detach, break-distance detach, collision/detachment flows, and token cleanup because they converge on the relationship service's centralized removal path.
+- Added generic relationship-owned participant Item grants through `lifecycle.participantItemGrants`. Each grant clones an Item template onto either the relationship `leader` or `follower`, persists the granted Item UUID with the relationship, and stamps the clone with `flags.action-effects-5e.relationshipGrant` including the relationship id, role, participant, leader/follower UUIDs, source-effect UUID, and template UUID.
+- Relationship-owned Item grants are deleted whenever the owning relationship ends. Grant creation is transactional with relationship persistence: if relationship persistence fails, newly cloned grant Items are rolled back.
+- Preserved the existing GM-authoritative Socketlib removal route. A player who owns the relationship leader can invoke `ae5e.relationships.remove(id)` (for example from a temporary `Release Grapple` Item), while privileged relationship/effect/grant cleanup executes on the GM.
+- Added startup reconciliation for lifecycle relationships whose required source Active Effect disappeared while AE5E was offline; those stale relationships are removed through the same centralized cleanup path.
+- Added `ae5e.relationships.getGrantConfig(item)`, `getLifecycleStats()`, exported lifecycle constants, and the live Foundry acceptance entry point `ae5e.tests.runRelationshipLifecycleGrantTest()`.
+- Added five focused lifecycle regressions covering relationship-owned leader grants, relationship→effect cleanup, effect→relationship cleanup, legacy `sourceUuid` compatibility, source-effect validation, and player→GM removal routing. The complete repository suite is **121/121 PASS**.
+- No compendium or asset contents were changed, regenerated, migrated, or overwritten in this release.
+
 ## 0.4.1.15 — Non-positional movement history write-gate fix
 
 - Fixed the live Foundry failure discovered by the v0.4.1.14 acceptance test. Foundry v14 deliberately removes `_movementHistory` from ordinary Token updates inside `TokenDocument#preUpdateMovement`, so v0.4.1.14's spend write was silently discarded before verification and no receipt could be committed.

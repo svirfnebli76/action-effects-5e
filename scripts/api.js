@@ -24,6 +24,9 @@ import {
   REGION_AUTHORITY_FLAG,
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
+  RELATIONSHIP_GRANT_FLAG,
+  RELATIONSHIP_LIFECYCLE_SCHEMA_VERSION,
+  RELATIONSHIP_PARTICIPANTS,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_GEOMETRY_CHANNELS,
   RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
@@ -88,6 +91,7 @@ export class ActionEffects5eApi {
     ongoingEffects,
     regions,
     relationships,
+    relationshipLifecycle,
     relationshipMovement,
     relationshipRotation,
     relativeRelationships,
@@ -127,6 +131,9 @@ export class ActionEffects5eApi {
       DISPLACEMENT_DESTINATION_STATES,
       NONHOSTILE_ENDPOINT_GRACE_MS,
       RELATIONSHIP_TYPES,
+      RELATIONSHIP_PARTICIPANTS,
+      RELATIONSHIP_GRANT_FLAG,
+      RELATIONSHIP_LIFECYCLE_SCHEMA_VERSION,
       RELATIONSHIP_COORDINATION_POLICIES,
       RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
       RELATIONSHIP_ROTATION_POLICIES,
@@ -369,10 +376,13 @@ export class ActionEffects5eApi {
       }),
       resolveRelativeRelationshipForGeometry: (options = {}) => relativeRelationships.resolveForGeometry(options),
       inspectGrappleLinkAtPosition: (options = {}) => relationshipLinkObstructions.inspectAtPosition(options),
-      inspectGrappleLinkSweep: (options = {}) => relationshipLinkObstructions.inspectSweep(options)
+      inspectGrappleLinkSweep: (options = {}) => relationshipLinkObstructions.inspectSweep(options),
+      getGrantConfig: (item) => relationshipLifecycle.getGrantConfig(item),
+      getLifecycleStats: () => relationshipLifecycle.getStats()
     });
 
     this.tests = Object.freeze({
+      runRelationshipLifecycleGrantTest: (options) => tests.runRelationshipLifecycleGrantTest(options),
       runAnimationOwnershipFoundationTest: (options) => tests.runAnimationOwnershipFoundationTest(options),
       runRegionAuthorityFoundationTest: (options) => tests.runRegionAuthorityFoundationTest(options),
       runRegionAuthorityLiveLifecycleTest: (options) => tests.runRegionAuthorityLiveLifecycleTest(options),

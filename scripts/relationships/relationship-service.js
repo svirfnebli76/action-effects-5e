@@ -18,6 +18,7 @@ import { Logger } from "../core/logger.js";
 
 export class RelationshipService {
   #socket;
+  #lifecycle;
   #relationships = new Map();
   #followersByLeader = new Map();
   #relationshipsByFollower = new Map();
@@ -27,8 +28,9 @@ export class RelationshipService {
   #updateSceneHook = null;
   #deleteSceneHook = null;
 
-  constructor({ socket }) {
+  constructor({ socket, lifecycle = null }) {
     this.#socket = socket;
+    this.#lifecycle = lifecycle;
     this.#socket.register("relationships.create", this.#createAsGM.bind(this));
     this.#socket.register("relationships.remove", this.#removeAsGM.bind(this));
     this.#socket.register("relationships.updateGeometry", this.#updateGeometryAsGM.bind(this));
@@ -160,15 +162,30 @@ export class RelationshipService {
       throw new Error("Relationship chains and cycles are not supported by the current Action Effects 5E relationship model.");
     }
 
-    const scene = game.scenes.get(normalized.sceneId);
-    const relationships = this.#getSceneRelationships(scene);
-    relationships.push(normalized);
-    await scene.setFlag(MODULE_ID, SCENE_RELATIONSHIPS_FLAG, relationships);
+    let persisted = normalized;
+    let provisionedItemUuids = [];
+    if (this.#lifecycle) {
+      const provisioned = await this.#lifecycle.provisionParticipantItemGrants(normalized);
+      persisted = provisioned.relationship;
+      provisionedItemUuids = provisioned.createdItemUuids ?? [];
+    }
 
-    this.#index(normalized);
-    Hooks.callAll(HOOKS.RELATIONSHIP_CREATED, duplicateSafely(normalized));
-    Logger.debug("Created relationship", normalized);
-    return duplicateSafely(normalized);
+    const scene = game.scenes.get(persisted.sceneId);
+    const relationships = this.#getSceneRelationships(scene);
+    relationships.push(persisted);
+    try {
+      await scene.setFlag(MODULE_ID, SCENE_RELATIONSHIPS_FLAG, relationships);
+    } catch (error) {
+      if (this.#lifecycle && provisionedItemUuids.length) {
+        await this.#lifecycle.cleanupProvisionedItems(provisionedItemUuids, persisted.id);
+      }
+      throw error;
+    }
+
+    this.#index(persisted);
+    Hooks.callAll(HOOKS.RELATIONSHIP_CREATED, duplicateSafely(persisted));
+    Logger.debug("Created relationship", persisted);
+    return duplicateSafely(persisted);
   }
 
   async #removeAsGM({ requestingUserId, id }) {
@@ -177,14 +194,7 @@ export class RelationshipService {
     if (!relationship) return false;
 
     await this.#validateRequestingUser(requestingUserId, relationship.leaderUuid);
-    const scene = game.scenes.get(relationship.sceneId);
-    const relationships = this.#getSceneRelationships(scene).filter((entry) => entry.id !== id);
-    await scene.setFlag(MODULE_ID, SCENE_RELATIONSHIPS_FLAG, relationships);
-
-    this.#unindex(relationship);
-    Hooks.callAll(HOOKS.RELATIONSHIP_REMOVED, duplicateSafely(relationship));
-    Logger.debug("Removed relationship", relationship);
-    return true;
+    return (await this.#removeManyPersisted(new Set([id]))) > 0;
   }
 
 
@@ -259,8 +269,14 @@ export class RelationshipService {
       await scene.setFlag(MODULE_ID, SCENE_RELATIONSHIPS_FLAG, relationships);
     }
 
+    // Unindex first so source-effect cleanup cannot recursively discover the
+    // relationship while deleting its owned ActiveEffect.
+    for (const relationship of removed) this.#unindex(relationship);
+
     for (const relationship of removed) {
-      this.#unindex(relationship);
+      if (this.#lifecycle) {
+        await this.#lifecycle.cleanupRemovedRelationship(relationship);
+      }
       Hooks.callAll(HOOKS.RELATIONSHIP_REMOVED, duplicateSafely(relationship));
       Logger.debug("Removed relationship", relationship);
     }
@@ -297,8 +313,18 @@ export class RelationshipService {
       : null;
     this.#assertGeometryDistanceInvariant({ coordinationDistance, breakDistance });
 
+    const id = data.id ?? randomId(20);
+    const sourceUuid = data.sourceUuid ?? null;
+    const lifecycle = this.#lifecycle
+      ? await this.#lifecycle.normalize(data.lifecycle, {
+          sourceUuid,
+          leader,
+          follower
+        })
+      : (data.lifecycle ? duplicateSafely(data.lifecycle) : null);
+
     return Object.freeze({
-      id: data.id ?? randomId(20),
+      id,
       sceneId: leader.parent.id,
       leaderUuid: leader.uuid,
       followerUuid: follower.uuid,
@@ -336,7 +362,8 @@ export class RelationshipService {
       // example 5 on a standard 5-foot D&D grid). Null disables automatic
       // separation detachment for the relationship.
       breakDistance,
-      sourceUuid: data.sourceUuid ?? null,
+      sourceUuid,
+      lifecycle,
       metadata: duplicateSafely(data.metadata ?? {}),
       createdBy: data.createdBy ?? game.user.id,
       createdAt: data.createdAt ?? nowIso()
