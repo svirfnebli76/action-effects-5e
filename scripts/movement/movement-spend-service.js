@@ -81,10 +81,7 @@ function configuredDefaultAction() {
  * movement execution, and movement rollback, but it does not expose a public
  * operation for charging movement without changing position. AE5E therefore
  * owns the narrow persistence bridge which appends one validated measured
- * waypoint to the Token's authoritative movement-history data field. Foundry
- * deliberately strips direct `_movementHistory` changes from normal updates;
- * the bridge therefore uses the same explicit `isUndo` history-write gate that
- * Foundry itself uses for `revertRecordedMovement()`, without changing position.
+ * waypoint to the Token's authoritative movement-history data field.
  *
  * Callers never write `_movementHistory` themselves. The public API is:
  *   await ae5e.movement.spend(token, 15, { reason: "stand-from-prone" });
@@ -193,7 +190,7 @@ export class MovementSpendService {
       });
       const nextHistory = [...beforeHistory, waypoint];
 
-      await this.#writeHistory(document, nextHistory, {
+      await document.update({ _movementHistory: nextHistory }, {
         ae5eNonPositionalMovementSpend: true,
         ae5eMovementSpendId: movementId
       });
@@ -269,7 +266,7 @@ export class MovementSpendService {
 
       const beforeCost = this.#accounting.getHistoryCost(document);
       const nextHistory = beforeHistory.filter((_entry, entryIndex) => entryIndex !== index);
-      await this.#writeHistory(document, nextHistory, {
+      await document.update({ _movementHistory: nextHistory }, {
         ae5eNonPositionalMovementRollback: true,
         ae5eMovementSpendId: receipt.movementId
       });
@@ -306,33 +303,17 @@ export class MovementSpendService {
     try {
       const history = this.#accounting.getHistorySnapshot(document);
       if (!history.some((entry) => entry?.movementId === movementId)) return false;
-      await this.#writeHistory(
-        document,
-        history.filter((entry) => entry?.movementId !== movementId),
-        {
-          ae5eNonPositionalMovementRollback: true,
-          ae5eMovementSpendId: movementId
-        }
-      );
+      await document.update({
+        _movementHistory: history.filter((entry) => entry?.movementId !== movementId)
+      }, {
+        ae5eNonPositionalMovementRollback: true,
+        ae5eMovementSpendId: movementId
+      });
       return true;
     } catch (error) {
       Logger.error("Unable to clean up an unverified non-positional movement-spend entry.", error);
       return false;
     }
-  }
-
-  async #writeHistory(document, history, metadata = {}) {
-    // Foundry v14 protects movement history from arbitrary Document updates.
-    // TokenDocument#preUpdateMovement deletes `_movementHistory` unless the
-    // operation is explicitly marked as an undo (or a full clear). Foundry's
-    // own revertRecordedMovement() uses this same `isUndo: true` gate. AE5E
-    // changes only the history field here, so no positional undo is inferred.
-    return document.update({ _movementHistory: duplicateSafely(history) }, {
-      ...metadata,
-      isUndo: true,
-      diff: false,
-      animate: false
-    });
   }
 
   #buildSpendWaypoint(document, { amount, movementId, userId }) {

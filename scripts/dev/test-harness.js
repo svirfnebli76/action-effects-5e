@@ -391,7 +391,7 @@ export class TestHarness {
         spendStats);
 
       receipt = await this.#movementSpending.spend(document, spendAmount, {
-        reason: "v0.4.1.15-live-acceptance"
+        reason: "v0.4.1.14-live-acceptance"
       });
 
       const historySpent = this.#movementAccounting.getHistorySnapshot(document);
@@ -445,9 +445,6 @@ export class TestHarness {
       if (JSON.stringify(current) !== JSON.stringify(historyBefore)) {
         try {
           await document.update({ _movementHistory: historyBefore }, {
-            isUndo: true,
-            diff: false,
-            animate: false,
             ae5eNonPositionalMovementTestCleanup: true
           });
         } catch (cleanupError) {
@@ -469,7 +466,7 @@ export class TestHarness {
     };
     Logger.info("Non-positional movement-spend test", result);
     console.log(
-      `%cAE5E 0.4.1.15 — NON-POSITIONAL MOVEMENT SPENDING — ${passed ? "PASS" : "FAIL"}`,
+      `%cAE5E 0.4.1.14 — NON-POSITIONAL MOVEMENT SPENDING — ${passed ? "PASS" : "FAIL"}`,
       `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`
     );
     console.table(checks.map((check, index) => ({

@@ -1030,7 +1030,7 @@ node --test tests/choice-prompt.test.mjs
 Expected result: **4/4 PASS**. The complete repository suite is **110/110 PASS**. Compendium contents must remain byte-identical to the supplied v0.4.1.12 build.
 
 
-## v0.4.1.15 non-positional movement-spend acceptance
+## v0.4.1.14 non-positional movement-spend acceptance
 
 Activate a Scene, control exactly one Token as the GM, and run:
 
@@ -1054,9 +1054,7 @@ console.log("Movement Spend Stats:", ae5e.movement.getSpendStats());
 return result;
 ```
 
-Expected result: **9/9 PASS** and the large console banner `AE5E 0.4.1.15 — NON-POSITIONAL MOVEMENT SPENDING — PASS`. The test snapshots the controlled Token's current authoritative movement history, spends 15 movement without changing position, verifies the exact cost delta and receipt entry, rolls that receipt back, and confirms that the original movement cost and byte-equivalent history data are restored. A fail-safe cleanup attempts to restore the original history if live acceptance fails partway through.
-
-This specifically regresses the v0.4.1.14 live failure: Foundry strips direct `_movementHistory` changes from ordinary Token updates. AE5E now uses Foundry's explicit `isUndo` history-write gate for history-only spend/rollback operations, matching the mechanism used by native `revertRecordedMovement()` without changing Token position.
+Expected result: **9/9 PASS** and the large console banner `AE5E 0.4.1.14 — NON-POSITIONAL MOVEMENT SPENDING — PASS`. The test snapshots the controlled Token's current authoritative movement history, spends 15 movement without changing position, verifies the exact cost delta and receipt entry, rolls that receipt back, and confirms that the original movement cost and byte-equivalent history data are restored. A fail-safe cleanup attempts to restore the original history if live acceptance fails partway through.
 
 For multiplayer acceptance, run the production API from a player who owns the Token:
 
@@ -1066,7 +1064,7 @@ const token = canvas.tokens.controlled[0];
 
 const before = ae5e.movement.getHistoryCost(token);
 const receipt = await ae5e.movement.spend(token, 15, {
-  reason: "v0.4.1.15-player-routing-test"
+  reason: "v0.4.1.14-player-routing-test"
 });
 const after = ae5e.movement.getHistoryCost(token);
 
@@ -1084,4 +1082,4 @@ The focused Node regression is:
 node --test tests/movement-spend.test.mjs
 ```
 
-Expected result: **6/6 PASS**. The complete repository suite is **116/116 PASS**. The regression fixture now mirrors Foundry v14 by stripping ordinary `_movementHistory` writes unless the explicit undo gate is used. Compendium contents must remain byte-identical to the supplied v0.4.1.14 build.
+Expected result: **5/5 PASS**. The complete repository suite is **115/115 PASS**. Compendium contents must remain byte-identical to the supplied v0.4.1.13 build.
