@@ -1,4 +1,5 @@
-2026/08/21-20:15:35.385 8dac Recovering log #41
-2026/08/21-20:15:35.388 8dac Delete type=0 #41
-2026/08/21-20:15:35.388 8dac Delete type=3 #34
-2026/08/21-20:15:35.388 8dac Delete type=3 #38
+2026/08/22-16:15:22.064 264c Recovering log #46
+2026/08/22-16:15:22.064 264c Level-0 table #46: started
+2026/08/22-16:15:22.065 264c Level-0 table #46: 44251 bytes OK
+2026/08/22-16:15:22.068 264c Delete type=0 #46
+2026/08/22-16:15:22.068 264c Delete type=3 #43
