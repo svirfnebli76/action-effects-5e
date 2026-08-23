@@ -1012,6 +1012,125 @@ test("GM relationship movement executes one coordinated Scene.moveTokens operati
   game.scenes.delete(scene.id);
 });
 
+test("grapple leader drag applies a 2x final-cost modifier while the follower remains no-cost", async () => {
+  const scene = {
+    id: "scene-grapple-cost",
+    grid: makeFiveFootSquareGrid(),
+    tokens: new FakeCollection(),
+    moveCalls: [],
+    async moveTokens(instructions, options) {
+      assertGeneratedMovementInstructions(instructions);
+      this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
+      return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({ uuid: "Scene.scene-grapple-cost.Token.leader", id: "leader", scene });
+  Object.assign(leader, { x: 0, y: 0, elevation: 0, width: 1, height: 1, name: "Leader" });
+  const follower = new FakeTokenDocument({ uuid: "Scene.scene-grapple-cost.Token.follower", id: "follower", scene });
+  Object.assign(follower, { x: 100, y: 0, elevation: 0, width: 1, height: 1, name: "Follower", object: null });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+
+  const documents = new Map([[leader.uuid, leader], [follower.uuid, follower]]);
+  const previousFromUuid = globalThis.fromUuid;
+  const previousConfig = globalThis.CONFIG;
+  globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
+  globalThis.CONFIG = { Token: { movement: { defaultAction: "walk" } } };
+
+  const relationship = {
+    id: "relationship-grapple-cost",
+    type: "grapple",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "grappleFollower",
+    followerCanSelfMove: false,
+    followElevation: true,
+    followRotation: false,
+    coordinationDistance: 5,
+    breakDistance: 5,
+    teleportPolicy: "detach",
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const socketHandlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { socketHandlers.set(name, handler); },
+    async executeAsGM(name, request) { return socketHandlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: { generatedBy: "action-effects-5e", ...metadata } }; },
+    registerMovementContext() { return () => {}; }
+  };
+  const modifierRegistrations = [];
+  const modifierUnregistrations = [];
+  const fakeAccounting = {
+    noCostActionId: "action-effects-5e.no-cost",
+    ensureRegistered() {},
+    applyNoCostToInstruction(instruction) {
+      for (const point of instruction.waypoints ?? []) point.action = this.noCostActionId;
+      if (instruction.destination) instruction.destination.action = this.noCostActionId;
+    },
+    registerFinalCostModifier(id, config) {
+      const actionId = `action-effects-5e.final-cost.${modifierRegistrations.length + 1}`;
+      modifierRegistrations.push({ id, actionId, config });
+      return actionId;
+    },
+    unregisterFinalCostModifier(actionId) {
+      modifierUnregistrations.push(actionId);
+      return true;
+    }
+  };
+
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const service = new RelationshipMovementService({
+    socket: fakeSocket,
+    relationships: fakeRelationships,
+    movement: fakeMovement,
+    accounting: fakeAccounting
+  });
+
+  try {
+    const result = await socketHandlers.get("relationships.moveGroup")({
+      requestId: "request-grapple-cost",
+      requestingUserId: gmUser.id,
+      sceneId: scene.id,
+      leaderUuid: leader.uuid,
+      originalMovementId: "original-grapple-cost",
+      origin: { x: 0, y: 0, elevation: 0 },
+      waypoints: [{ x: 100, y: 0, elevation: 0, action: "walk" }],
+      pathType: PATH_TYPES.TRAVERSE,
+      agency: MOVEMENT_AGENCIES.VOLUNTARY,
+      resource: MOVEMENT_RESOURCES.MOVEMENT,
+      movementMode: "walk",
+      method: "dragging"
+    });
+
+    assert.equal(result.completed, true);
+    assert.equal(scene.moveCalls.length, 1);
+    assert.equal(modifierRegistrations.length, 1);
+    assert.equal(modifierRegistrations[0].config.baseAction, "walk");
+    assert.equal(modifierRegistrations[0].config.modifier({ nativeCost: 5 }), 10);
+    assert.equal(scene.moveCalls[0].instructions.leader.waypoints[0].action, modifierRegistrations[0].actionId);
+    assert.equal(scene.moveCalls[0].instructions.follower.waypoints[0].action, fakeAccounting.noCostActionId);
+    assert.deepEqual(modifierUnregistrations, [modifierRegistrations[0].actionId]);
+    assert.equal(service.getStats().grappleDragCostApplications, 1);
+    assert.equal(service.getStats().lastGrappleDragCost?.multiplier, 2);
+  } finally {
+    game.scenes.delete(scene.id);
+    globalThis.fromUuid = previousFromUuid;
+    globalThis.CONFIG = previousConfig;
+  }
+});
+
 test("external API leader movement synchronizes followers after the leader has moved", async () => {
   const scene = {
     id: "scene-external",
@@ -3178,6 +3297,9 @@ function makeOrbitRig({
   const warnings = [];
   const socketCalls = [];
   const moveCalls = [];
+  const spendCalls = [];
+  const rollbackSpendCalls = [];
+  let spendSerial = 0;
 
   globalThis.libWrapper = {
     register(moduleId, target, fn, type) { registrations.push({ moduleId, target, fn, type }); },
@@ -3301,6 +3423,30 @@ function makeOrbitRig({
     noCostActionId: "action-effects-5e.no-cost",
     ensureRegistered() {}
   };
+  const fakeSpending = {
+    async spend(subject, amount, options = {}) {
+      const receipt = {
+        version: 1,
+        id: `orbit-spend-${++spendSerial}`,
+        movementId: `orbit-spend-${spendSerial}`,
+        subjectUuid: subject?.uuid ?? null,
+        tokenUuid: subject?.uuid ?? null,
+        amount,
+        reason: options.reason ?? null
+      };
+      spendCalls.push({
+        subjectUuid: subject?.uuid ?? null,
+        amount,
+        options: structuredClone(options),
+        receipt: structuredClone(receipt)
+      });
+      return receipt;
+    },
+    async rollbackSpend(receipt) {
+      rollbackSpendCalls.push(structuredClone(receipt));
+      return { rolledBack: true, receipt: structuredClone(receipt) };
+    }
+  };
   // Production AE5E always supplies RelationshipRotationService with the
   // grapple-link obstruction service. These orbit tests isolate follower-body
   // and shell behavior, so provide an explicit clear-link test double instead
@@ -3361,11 +3507,14 @@ function makeOrbitRig({
     fakeSocket,
     fakeMovement,
     fakeAccounting,
+    fakeSpending,
     fakeLinkObstructions,
     registrations,
     warnings,
     socketCalls,
     moveCalls,
+    spendCalls,
+    rollbackSpendCalls,
     cleanup
   };
 }
@@ -3377,6 +3526,7 @@ async function makeOrbitService(rig) {
     relationships: rig.fakeRelationships,
     movement: rig.fakeMovement,
     accounting: rig.fakeAccounting,
+    spending: rig.fakeSpending,
     linkObstructions: rig.fakeLinkObstructions
   });
 }
@@ -3479,6 +3629,81 @@ test("relationship orbit planner measures actual signed rotation changes across 
   assert.equal(RelationshipOrbitPlanner.signedRotationDelta(5, 350), -15);
   assert.equal(RelationshipOrbitPlanner.signedRotationDelta(0, 22.5), 22.5);
   assert.equal(RelationshipOrbitPlanner.signedRotationDelta(22.5, 0), -22.5);
+});
+
+test("grapple movement-cost policy doubles only voluntary movement-resource traversal", async () => {
+  const { RelationshipMovementCostPolicy } = await import("../scripts/relationships/relationship-movement-cost-policy.js");
+  const grapple = { type: "grapple", attachmentMode: "grappleFollower" };
+  const ordinary = { type: "mount", attachmentMode: "adjacentFollower" };
+
+  assert.equal(RelationshipMovementCostPolicy.leaderDragMultiplier({
+    relationships: [grapple],
+    pathType: PATH_TYPES.TRAVERSE,
+    agency: MOVEMENT_AGENCIES.VOLUNTARY,
+    resource: MOVEMENT_RESOURCES.MOVEMENT
+  }), 2);
+  assert.equal(RelationshipMovementCostPolicy.leaderDragMultiplier({
+    relationships: [grapple],
+    pathType: PATH_TYPES.TRAVERSE,
+    agency: MOVEMENT_AGENCIES.FORCED,
+    resource: MOVEMENT_RESOURCES.MOVEMENT
+  }), 1);
+  assert.equal(RelationshipMovementCostPolicy.leaderDragMultiplier({
+    relationships: [grapple],
+    pathType: PATH_TYPES.TELEPORT,
+    agency: MOVEMENT_AGENCIES.VOLUNTARY,
+    resource: MOVEMENT_RESOURCES.MOVEMENT
+  }), 1);
+  assert.equal(RelationshipMovementCostPolicy.leaderDragMultiplier({
+    relationships: [grapple],
+    pathType: PATH_TYPES.TRAVERSE,
+    agency: MOVEMENT_AGENCIES.VOLUNTARY,
+    resource: MOVEMENT_RESOURCES.NONE
+  }), 1);
+  assert.equal(RelationshipMovementCostPolicy.leaderDragMultiplier({
+    relationships: [ordinary],
+    pathType: PATH_TYPES.TRAVERSE,
+    agency: MOVEMENT_AGENCIES.VOLUNTARY,
+    resource: MOVEMENT_RESOURCES.MOVEMENT
+  }), 1);
+});
+
+test("grapple orbit movement cost measures one normal shell step", async () => {
+  const { RelationshipMovementCostPolicy } = await import("../scripts/relationships/relationship-movement-cost-policy.js");
+  const scene = { grid: makeFiveFootSquareGrid() };
+  const follower = { x: 300, y: 100, elevation: 0, width: 1, height: 1 };
+  assert.equal(RelationshipMovementCostPolicy.measureOrbitCost({
+    scene,
+    follower,
+    from: { x: 300, y: 100, elevation: 0 },
+    to: { x: 300, y: 200, elevation: 0 }
+  }), 5);
+});
+
+test("grapple orbit spends normal movement on the leader while follower travel remains no-cost", async () => {
+  const rig = makeOrbitRig({
+    sceneId: "scene-orbit-cost-accounting",
+    leaderWidth: 2,
+    followerWidth: 1,
+    leaderPosition: { x: 100, y: 100 },
+    followerPosition: { x: 300, y: 100 },
+    coordinationDistance: 5
+  });
+  const service = await makeOrbitService(rig);
+  service.initialize();
+  try {
+    await performWheelStep(rig, service, { modifier: "shift", nativeDelta: 45 });
+    assert.equal(rig.spendCalls.length, 1);
+    assert.equal(rig.spendCalls[0].subjectUuid, rig.leader.uuid);
+    assert.equal(rig.spendCalls[0].amount, 5);
+    assert.match(rig.spendCalls[0].options.reason, /^grapple-orbit:/);
+    assert.equal(rig.moveCalls[0].follower.waypoints[0].action, rig.fakeAccounting.noCostActionId);
+    assert.equal(service.getStats().grappleOrbitSpends, 1);
+    assert.equal(service.getStats().lastGrappleOrbitSpend?.amount, 5);
+  } finally {
+    service.shutdown();
+    rig.cleanup();
+  }
 });
 
 test("Shift-wheel and Ctrl-wheel each normalize to one identical shell step", async () => {
@@ -3602,6 +3827,9 @@ test("allied occupied shell endpoint starts grace and restores the exact prior o
     await new Promise((resolve) => setTimeout(resolve, 650));
     assert.deepEqual({ x: rig.follower.x, y: rig.follower.y }, { x: 200, y: 100 });
     assert.equal(rig.leader.rotation, 0);
+    assert.equal(rig.spendCalls.length, 1);
+    assert.equal(rig.rollbackSpendCalls.length, 1, "Grace rollback must refund the non-positional grapple orbit spend.");
+    assert.equal(service.getStats().grappleOrbitRollbacks, 1);
   } finally {
     service.shutdown();
     rig.cleanup();

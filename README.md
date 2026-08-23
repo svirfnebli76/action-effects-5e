@@ -1,3 +1,13 @@
+### v0.4.1.17 grapple movement cost accounting
+
+v0.4.1.17 adds relationship-level movement accounting for Grapple gameplay without changing the Grapple Item macro. Real `GRAPPLE` relationships and existing `grappleFollower` fixtures automatically use the grapple movement-cost policy.
+
+When the grappler voluntarily moves while carrying the grappled follower, AE5E wraps Foundry/D&D5e's native movement cost with a temporary **2×** final-cost modifier. The follower's passenger movement remains no-cost, and forced movement, teleportation, and administrative/no-resource movement do not receive the surcharge.
+
+Orbital rotation is handled differently by design: each successful follower shell step spends **normal measured movement** on the grappler through AE5E's socketed `movement.spend()` service. If the orbit is rejected or later reversed by the nonhostile endpoint grace rollback, AE5E refunds the exact spend receipt.
+
+Diagnostics are available through `ae5e.relationships.getMovementStats()` and `ae5e.relationships.getRotationStats()`, and the policy constants are exposed at `ae5e.constants.RELATIONSHIP_MOVEMENT_COST_POLICIES`. No compendium or asset content is changed by this infrastructure release.
+
 ### v0.4.1.16 relationship lifecycle grants
 
 v0.4.1.16 adds the generic lifecycle infrastructure required by persistent actions such as Unarmed Grapple. Relationship ownership is explicit and opt-in, so existing `sourceUuid` callers are unchanged.

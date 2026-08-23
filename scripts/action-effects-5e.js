@@ -125,6 +125,7 @@ const relationshipRotation = new RelationshipRotationService({
   relationships,
   movement,
   accounting: movementAccounting,
+  spending: movementSpending,
   relativeRelationships,
   linkObstructions: relationshipLinkObstructions
 });

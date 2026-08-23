@@ -1,3 +1,14 @@
+## 0.4.1.17 — Grapple movement cost accounting
+
+- Added a reusable relationship movement-cost policy and assigned the `grapple` policy automatically to real `GRAPPLE` relationships and existing grapple-follower fixtures. Existing non-grapple relationships default to `none`.
+- Voluntary positional movement that carries one or more grapple followers now costs the leader **2× the native Foundry/D&D5e movement cost**. AE5E applies the surcharge through temporary hidden final-cost modifier slots, so the multiplier wraps the movement cost Foundry actually measured rather than substituting a flat distance value. Multiple grapple followers do not stack additional multipliers.
+- Grapple follower/passenger translation remains no-cost to the follower. Forced movement, teleportation, administrative/no-resource movement, and other non-voluntary movement do not receive the grapple drag surcharge.
+- Orbital grapple rotation now spends **normal movement** on the grappler using AE5E's existing GM-authoritative non-positional movement ledger. The charge is the follower's measured shell-step travel distance while the follower's generated positional move remains no-cost.
+- Orbit movement spending is rollback-safe. If the follower move fails before completion, or AE5E later reverses the orbit after the nonhostile endpoint grace period, the exact synthetic movement-spend receipt is refunded.
+- Added grapple movement-cost diagnostics to relationship movement/rotation stats and exported `RELATIONSHIP_MOVEMENT_COST_POLICIES` through `ae5e.constants`.
+- Added focused regressions for the 2× drag modifier, forced/teleport/no-resource exclusions, normal-cost orbit spending, follower no-cost accounting, and grace-period spend rollback. The complete repository suite is **125/125 PASS**.
+- No compendium or asset contents were changed, regenerated, migrated, or overwritten in this release.
+
 ## 0.4.1.16 — Relationship lifecycle grants
 
 - Added opt-in relationship lifecycle ownership without changing legacy `sourceUuid` semantics. A relationship can now explicitly bind its `sourceUuid` to an Active Effect using `lifecycle.sourceEffect`; ordinary relationships that use `sourceUuid` for Tokens, Items, or other provenance remain non-owning.

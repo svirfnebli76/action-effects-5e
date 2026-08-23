@@ -19,6 +19,7 @@ import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { RelationshipOrbitPlanner } from "./relationship-orbit-planner.js";
 import { RelationshipGeometryService } from "./relationship-geometry-service.js";
+import { RelationshipMovementCostPolicy } from "./relationship-movement-cost-policy.js";
 import { RelativeTokenRelationshipService } from "./relative-token-relationship-service.js";
 
 const TOKEN_WHEEL_WRAPPER_TARGET = "foundry.canvas.layers.TokenLayer.prototype._onMouseWheel";
@@ -40,6 +41,7 @@ export class RelationshipRotationService {
   #relationships;
   #movement;
   #accounting;
+  #spending;
   #relativeRelationships;
   #linkObstructions;
   #initialized = false;
@@ -51,12 +53,16 @@ export class RelationshipRotationService {
   #rollbackLeaderUuids = new Set();
   #pendingNonhostileOverlaps = new Map();
   #lastDecision = null;
+  #grappleOrbitSpends = 0;
+  #grappleOrbitRollbacks = 0;
+  #lastGrappleOrbitSpend = null;
 
-  constructor({ socket, relationships, movement, accounting = null, relativeRelationships = new RelativeTokenRelationshipService(), linkObstructions = null }) {
+  constructor({ socket, relationships, movement, accounting = null, spending = null, relativeRelationships = new RelativeTokenRelationshipService(), linkObstructions = null }) {
     this.#socket = socket;
     this.#relationships = relationships;
     this.#movement = movement;
     this.#accounting = accounting;
+    this.#spending = spending;
     this.#relativeRelationships = relativeRelationships;
     this.#linkObstructions = linkObstructions;
     this.#socket.register("relationships.orbitFollower", this.#orbitFollowerAsGM.bind(this));
@@ -137,6 +143,9 @@ export class RelationshipRotationService {
       recentRequests: this.#recentRequestIds.size,
       orbitInputMode: "one-shell-position",
       fixedOrbitQuantum: false,
+      grappleOrbitSpends: this.#grappleOrbitSpends,
+      grappleOrbitRollbacks: this.#grappleOrbitRollbacks,
+      lastGrappleOrbitSpend: duplicateSafely(this.#lastGrappleOrbitSpend),
       lastDecision: duplicateSafely(this.#lastDecision)
     };
   }
@@ -771,6 +780,8 @@ export class RelationshipRotationService {
     }
 
     this.#activeRelationshipIds.add(relationship.id);
+    let orbitSpendReceipt = null;
+    let orbitMovementCompleted = false;
     try {
       const plan = RelationshipOrbitPlanner.buildStep({ scene, leader, follower, relationship, direction });
       if (!RelationshipOrbitPlanner.positionsEqual(plan.target, request.targetFollowerPosition)) {
@@ -851,6 +862,50 @@ export class RelationshipRotationService {
         };
       }
 
+      const orbitCost = RelationshipMovementCostPolicy.shouldChargeOrbit(relationship)
+        ? RelationshipMovementCostPolicy.measureOrbitCost({
+            scene,
+            follower,
+            from: request.followerPosition,
+            to: waypoints.at(-1)
+          })
+        : 0;
+      if (orbitCost > 0) {
+        if (!this.#spending?.spend) {
+          const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
+          return {
+            completed: false,
+            rolledBackRotation: true,
+            leaderRotation,
+            message: "Grapple orbit movement cost accounting is unavailable, so the triggering leader rotation was restored."
+          };
+        }
+        try {
+          orbitSpendReceipt = await this.#spending.spend(leader, orbitCost, {
+            reason: `grapple-orbit:${relationship.id}`
+          });
+          this.#grappleOrbitSpends += 1;
+          this.#lastGrappleOrbitSpend = {
+            relationshipId: relationship.id,
+            leaderUuid: leader.uuid,
+            followerUuid: follower.uuid,
+            amount: orbitCost,
+            receiptId: orbitSpendReceipt?.id ?? orbitSpendReceipt?.movementId ?? null,
+            rolledBack: false
+          };
+        } catch (error) {
+          const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
+          Logger.warn("Could not spend grapple orbit movement; restored the triggering leader rotation.", error);
+          return {
+            completed: false,
+            movementCostFailed: true,
+            rolledBackRotation: true,
+            leaderRotation,
+            message: `The grapple could not rotate because its movement cost could not be recorded: ${error.message}`
+          };
+        }
+      }
+
       const movementId = randomId(16);
       const movementMode = globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
       this.#accounting?.ensureRegistered?.();
@@ -907,6 +962,10 @@ export class RelationshipRotationService {
       }
 
       if (results?.[follower.id] !== true) {
+        if (orbitSpendReceipt) {
+          await this.#rollbackOrbitSpend(orbitSpendReceipt, { relationshipId: relationship.id });
+          orbitSpendReceipt = null;
+        }
         if (relationship.collisionPolicy === COLLISION_POLICIES.DETACH) {
           await this.#relationships.removeManyAsGM([relationship.id]);
           return {
@@ -930,6 +989,7 @@ export class RelationshipRotationService {
         };
       }
 
+      orbitMovementCompleted = true;
       await this.#awaitLocalFollowerAnimation(follower.uuid);
       const nonhostileOccupants = this.#nonhostileEndpointOccupants({
         scene,
@@ -962,7 +1022,8 @@ export class RelationshipRotationService {
           anchorLeaderRotation: leaderRotationBefore,
           overlapPosition: followerWaypoints.at(-1),
           occupantUuids: allEndpointConflicts.map((entry) => entry.otherUuid ?? entry.blockerUuid).filter(Boolean),
-          geometryChannels: [...new Set(allEndpointConflicts.map((entry) => entry.geometryChannel).filter(Boolean))]
+          geometryChannels: [...new Set(allEndpointConflicts.map((entry) => entry.geometryChannel).filter(Boolean))],
+          movementSpendReceipts: orbitSpendReceipt ? [orbitSpendReceipt] : []
         });
       } else {
         this.#clearPendingNonhostileOverlap(relationship.id, "orbit-ended-clear");
@@ -984,7 +1045,11 @@ export class RelationshipRotationService {
           preflight: duplicateSafely(grappleLinkPreflight),
           endpoint: duplicateSafely(grappleLinkEndpoint),
           endpointConflicts: duplicateSafely(grappleLinkEndpointConflicts)
-        }
+        },
+        grappleMovementCost: orbitSpendReceipt ? {
+          amount: orbitCost,
+          receiptId: orbitSpendReceipt?.id ?? orbitSpendReceipt?.movementId ?? null
+        } : null
       });
       Logger.debug("Relationship orbital shell step completed", {
         relationshipId: relationship.id,
@@ -1007,9 +1072,19 @@ export class RelationshipRotationService {
         angularDelta,
         currentOrbitIndex: plan.current.index,
         targetOrbitIndex: plan.target.index,
-        shellSize: plan.shellSize
+        shellSize: plan.shellSize,
+        movementCostSpent: orbitSpendReceipt ? orbitCost : 0,
+        movementSpendReceipt: orbitSpendReceipt ? duplicateSafely(orbitSpendReceipt) : null
       };
     } catch (error) {
+      if (typeof orbitSpendReceipt !== "undefined" && orbitSpendReceipt && !orbitMovementCompleted) {
+        try {
+          await this.#rollbackOrbitSpend(orbitSpendReceipt, { relationshipId: relationship.id });
+          orbitSpendReceipt = null;
+        } catch (rollbackError) {
+          Logger.error("Could not roll back a failed grapple orbit movement spend.", rollbackError);
+        }
+      }
       if (/requires a square|not on the relationship|No legal snapped|too large to enumerate|too many legal/i.test(error.message ?? "")) {
         const leaderRotation = await this.#rollbackLeaderRotation(leader, leaderRotationBefore, requestId);
         this.#refreshPendingNonhostileOverlap(relationship.id);
@@ -1285,7 +1360,8 @@ export class RelationshipRotationService {
     anchorLeaderRotation,
     overlapPosition,
     occupantUuids = [],
-    geometryChannels = []
+    geometryChannels = [],
+    movementSpendReceipts = []
   }) {
     const existing = this.#pendingNonhostileOverlaps.get(relationship.id);
     const serial = (existing?.serial ?? 0) + 1;
@@ -1302,6 +1378,10 @@ export class RelationshipRotationService {
       overlapPosition: duplicateSafely(overlapPosition),
       occupantUuids: [...new Set(occupantUuids)],
       geometryChannels: [...new Set(geometryChannels)],
+      movementSpendReceipts: [
+        ...(Array.isArray(existing?.movementSpendReceipts) ? existing.movementSpendReceipts : []),
+        ...(Array.isArray(movementSpendReceipts) ? movementSpendReceipts : [])
+      ].map((receipt) => duplicateSafely(receipt)),
       graceMs: this.#nonhostileEndpointGraceMs(relationship),
       serial,
       timeoutId: null
@@ -1392,6 +1472,13 @@ export class RelationshipRotationService {
     }
 
     this.#clearPendingNonhostileOverlap(relationshipId, "grace-expired");
+    for (const receipt of entry.movementSpendReceipts ?? []) {
+      try {
+        await this.#rollbackOrbitSpend(receipt, { relationshipId });
+      } catch (error) {
+        Logger.error("Could not refund grapple orbit movement after endpoint grace rollback.", error);
+      }
+    }
     const requestId = `${MODULE_ID}-orbit-overlap-rollback-${randomId(20)}`;
     await this.#rollbackFollowerPosition({
       scene,
@@ -1411,6 +1498,23 @@ export class RelationshipRotationService {
       restoredFollowerPosition: entry.anchorFollowerPosition,
       restoredLeaderRotation: entry.anchorLeaderRotation
     });
+  }
+
+  async #rollbackOrbitSpend(receipt, { relationshipId = null } = {}) {
+    if (!receipt || !this.#spending?.rollbackSpend) return null;
+    const result = await this.#spending.rollbackSpend(receipt);
+    if (result?.rolledBack === true) {
+      this.#grappleOrbitRollbacks += 1;
+      this.#lastGrappleOrbitSpend = {
+        relationshipId,
+        leaderUuid: receipt.subjectUuid ?? receipt.tokenUuid ?? null,
+        followerUuid: this.#lastGrappleOrbitSpend?.followerUuid ?? null,
+        amount: receipt.amount ?? this.#lastGrappleOrbitSpend?.amount ?? null,
+        receiptId: receipt.id ?? receipt.movementId ?? null,
+        rolledBack: true
+      };
+    }
+    return result;
   }
 
   async #rollbackFollowerPosition({ scene, leader, follower, relationship, position, requestId }) {

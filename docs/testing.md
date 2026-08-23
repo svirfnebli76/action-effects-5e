@@ -1116,3 +1116,21 @@ node --test tests/relationship-lifecycle.test.mjs
 ```
 
 The complete repository suite is **121/121 PASS**. Compendium and asset contents must remain byte-identical to the supplied v0.4.1.15 build.
+
+## v0.4.1.17 Grapple movement cost accounting
+
+The release gate for Grapple movement cost accounting is the complete deterministic repository suite:
+
+```bash
+npm test
+```
+
+Expected result: **125/125 PASS**. The focused regressions prove that voluntary Grapple translation applies one 2× final-cost wrapper to the Leader's native movement action, the generated Follower path remains on AE5E's hidden no-cost action, forced/teleport/no-resource movement does not receive the surcharge, one orbit shell step spends normal measured movement on the Leader, and a nonhostile endpoint grace rollback refunds the exact orbit-spend receipt.
+
+For live Foundry acceptance, establish a real Grapple (or the existing `grappleFollower` test fixture) on an open square-grid Scene and verify these two accounting outcomes against `ae5e.movement.getHistoryCost(grapplerToken.document)`:
+
+1. move the grappler 5 feet while carrying the target: the grappler's movement-history cost increases by **10 feet**, while the target's generated passenger move remains zero-cost;
+2. from a clean movement-history baseline, rotate/orbit the target by one 5-foot shell step: the grappler's movement-history cost increases by **5 feet**, while the target still spends 0 feet.
+
+Also confirm forced movement and teleport behavior remain unchanged. Relationship diagnostics are available through `ae5e.relationships.getMovementStats()` and `ae5e.relationships.getRotationStats()`. No compendium or asset content is modified by this release.
+

@@ -8,6 +8,7 @@ import {
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
+  RELATIONSHIP_MOVEMENT_COST_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
   SCENE_RELATIONSHIPS_FLAG,
@@ -348,6 +349,11 @@ export class RelationshipService {
       rotationPolicy: Object.values(RELATIONSHIP_ROTATION_POLICIES).includes(data.rotationPolicy)
         ? data.rotationPolicy
         : RELATIONSHIP_ROTATION_POLICIES.NONE,
+      movementCostPolicy: Object.values(RELATIONSHIP_MOVEMENT_COST_POLICIES).includes(data.movementCostPolicy)
+        ? data.movementCostPolicy
+        : ((type === RELATIONSHIP_TYPES.GRAPPLE || attachmentMode === ATTACHMENT_MODES.GRAPPLE_FOLLOWER)
+          ? RELATIONSHIP_MOVEMENT_COST_POLICIES.GRAPPLE
+          : RELATIONSHIP_MOVEMENT_COST_POLICIES.NONE),
       linkObstructionPolicy: Object.values(RELATIONSHIP_LINK_OBSTRUCTION_POLICIES).includes(data.linkObstructionPolicy)
         ? data.linkObstructionPolicy
         : ((type === RELATIONSHIP_TYPES.GRAPPLE || attachmentMode === ATTACHMENT_MODES.GRAPPLE_FOLLOWER)

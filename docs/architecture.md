@@ -101,13 +101,14 @@ AE5E registers a hidden `action-effects-5e.no-cost` Token movement action during
 Accounting ownership rules are:
 
 - **Normal voluntary Leader movement:** preserve Foundry/D&D5e's original movement action and native cost.
+- **Voluntary Grapple Leader drag:** when at least one active carried relationship uses the Grapple movement-cost policy, wrap the Leader's native action in a temporary final-cost modifier that returns `nativeCost * 2`. This is the project's chosen gameplay policy for dragging a grappled target. Multiple grapple followers do not stack the multiplier.
 - **Relationship Follower/passenger movement:** measured, native cost 0. The established trailing/vacated-space route is unchanged.
-- **Forced Push/Pull displacement:** measured, native cost 0; existing forced-movement semantic metadata is preserved.
-- **Orbit Follower movement:** measured, native cost 0.
-- **AE5E rollback/reposition movement:** native cost 0 and semantically administrative.
-- **Teleport:** preserve teleport movement-action semantics rather than converting the path to an ordinary traverse action.
+- **Forced Push/Pull displacement:** measured, native cost 0; existing forced-movement semantic metadata is preserved. Forced Leader movement does not receive the Grapple surcharge.
+- **Orbit Follower movement:** measured, native cost 0 for the Follower. A Grapple orbit additionally spends the measured shell-step distance on the Leader through the non-positional movement-spend service.
+- **AE5E rollback/reposition movement:** native cost 0 and semantically administrative. Any synthetic Grapple orbit spend owned by a reverted orbit is refunded by receipt.
+- **Teleport:** preserve teleport movement-action semantics rather than converting the path to an ordinary traverse action; Grapple drag cost does not apply.
 
-The movement accounting service also exposes a final-cost modifier action API. A modifier wraps the selected base movement action's native cost function and then returns the final segment cost. The future 2024 Grapple drag surcharge should therefore be expressed as `nativeCost + distance`, not `nativeCost * 2`; this preserves whatever D&D5e/Regions already contributed to native cost before Grapple adds one extra foot for each foot moved. v0.3.29 deliberately does not activate that surcharge because the Grapple Activity/rule layer has not been built yet. Stationary orbit charging is likewise deferred rather than represented through fake Leader movement or a parallel AE5E ledger.
+The movement accounting service exposes a final-cost modifier action API. A modifier wraps the selected base movement action's native cost function and then returns the final segment cost. v0.4.1.17 uses that layer for Grapple dragging so terrain, diagonal rules, Regions, and other native Foundry/D&D5e cost contributions are measured first and the final native cost is then doubled. Orbital movement does not fake Leader translation: it uses AE5E's GM-authoritative non-positional movement ledger and an exact rollback receipt.
 
 ## Relationship state
 
@@ -120,6 +121,7 @@ Important geometry fields are:
 - `coordinationDistance`: current planar band preserved by coordinated Grapple-style translation/orbit.
 - `forcedLeaderMovementPolicy`: `follow` or `independent`.
 - `rotationPolicy`: `none` or `orbitFollower`.
+- `movementCostPolicy`: `none` or `grapple`. v0.4.1.17 defaults real `GRAPPLE` relationships and `grappleFollower` attachments to `grapple`; missing policy fields on older persisted Grapple relationships are inferred at runtime for compatibility.
 - `collisionPolicy`: `stopGroup` or `detach`.
 - `nonhostileEndpointPolicy` / `nonhostileEndpointGraceMs`: terminal nonhostile orbit-overlap behavior. The former `alliedEndpointPolicy` / `alliedEndpointGraceMs` names remain persisted compatibility aliases during the v0.3.x migration.
 

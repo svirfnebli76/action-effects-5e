@@ -13,6 +13,7 @@ import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { RelationshipMovementPlanner } from "./relationship-movement-planner.js";
 import { RelationshipDistance } from "./relationship-distance.js";
+import { RelationshipMovementCostPolicy } from "./relationship-movement-cost-policy.js";
 
 const CONSUMER_PREFIX = `${MODULE_ID}.relationship-movement`;
 const MAX_RECENT_REQUESTS = 100;
@@ -38,6 +39,8 @@ export class RelationshipMovementService {
   #activeLeaders = new Set();
   #recentRequestIds = new Set();
   #sceneMoveWrapperRegistered = false;
+  #grappleDragCostApplications = 0;
+  #lastGrappleDragCost = null;
 
   constructor({ socket, relationships, movement, accounting = null }) {
     this.#socket = socket;
@@ -100,7 +103,9 @@ export class RelationshipMovementService {
       queuedSeparationChecks: this.#queuedSeparationChecks.size,
       activeLeaders: this.#activeLeaders.size,
       recentRequests: this.#recentRequestIds.size,
-      sceneMoveWrapperRegistered: this.#sceneMoveWrapperRegistered
+      sceneMoveWrapperRegistered: this.#sceneMoveWrapperRegistered,
+      grappleDragCostApplications: this.#grappleDragCostApplications,
+      lastGrappleDragCost: duplicateSafely(this.#lastGrappleDragCost)
     };
   }
 
@@ -482,6 +487,18 @@ export class RelationshipMovementService {
     });
 
     const origins = this.#captureOrigins(scene, Object.keys(augmentedInstructions));
+    const activeCostRelationships = followerEntries
+      .filter(({ token }) => Boolean(augmentedInstructions[token.id]))
+      .map(({ relationship }) => relationship);
+    const releaseGrappleDragCost = this.#applyGrappleDragCost({
+      instruction: augmentedInstructions[leaderId],
+      relationships: activeCostRelationships,
+      pathType,
+      agency,
+      resource,
+      movementMode: externalMetadata.movementMode ?? this.#instructionMovementMode(leaderInstruction),
+      requestId: groupTransactionId
+    });
     this.#activeLeaders.add(leader.uuid);
     const releaseMovementContexts = this.#registerInstructionMovementContexts(
       augmentedInstructions,
@@ -519,6 +536,7 @@ export class RelationshipMovementService {
       throw error;
     } finally {
       releaseMovementContexts();
+      releaseGrappleDragCost();
       this.#activeLeaders.delete(leader.uuid);
     }
   }
@@ -1054,12 +1072,25 @@ export class RelationshipMovementService {
         })
       };
 
+      const activeCostRelationships = followerEntries
+        .filter(({ token }) => Boolean(instructions[token.id]))
+        .map(({ relationship }) => relationship);
+      const releaseGrappleDragCost = this.#applyGrappleDragCost({
+        instruction: instructions[leader.id],
+        relationships: activeCostRelationships,
+        pathType: normalized.pathType,
+        agency: normalized.agency,
+        resource: normalized.resource,
+        movementMode: normalized.movementMode,
+        requestId: groupTransactionId
+      });
       const releaseMovementContexts = this.#registerInstructionMovementContexts(instructions, operationOptions);
       let results;
       try {
         results = await scene.moveTokens(instructions, operationOptions);
       } finally {
         releaseMovementContexts();
+        releaseGrappleDragCost();
       }
       const failedIds = Object.entries(results).filter(([, completed]) => !completed).map(([id]) => id);
 
@@ -1598,6 +1629,58 @@ export class RelationshipMovementService {
     }
     this.#activeLeaders.add(leaderUuid);
     return null;
+  }
+
+  #applyGrappleDragCost({ instruction, relationships = [], pathType, agency, resource, movementMode = null, requestId = null }) {
+    if (!this.#accounting || !instruction || !RelationshipMovementCostPolicy.shouldDoubleLeaderDrag({ relationships, pathType, agency, resource })) {
+      return () => {};
+    }
+
+    this.#accounting.ensureRegistered();
+    const points = Array.isArray(instruction.waypoints) && instruction.waypoints.length
+      ? instruction.waypoints
+      : [instruction.destination].filter(Boolean);
+    if (!points.length) return () => {};
+
+    const fallbackAction = movementMode ?? globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
+    const registrations = new Map();
+    let inheritedAction = fallbackAction;
+    try {
+      for (const point of points) {
+        const baseAction = point?.action ?? inheritedAction ?? fallbackAction;
+        inheritedAction = baseAction;
+        if (!registrations.has(baseAction)) {
+          const logicalId = `grapple-drag-${String(requestId ?? randomId(12))}-${registrations.size + 1}-${randomId(6)}`;
+          const slotActionId = this.#accounting.registerFinalCostModifier(logicalId, {
+            label: "Action Effects 5E — Grapple Drag (2×)",
+            baseAction,
+            canSelect: false,
+            modifier: ({ nativeCost }) => nativeCost * 2
+          });
+          registrations.set(baseAction, slotActionId);
+        }
+        point.action = registrations.get(baseAction);
+      }
+    } catch (error) {
+      for (const slotActionId of registrations.values()) this.#accounting.unregisterFinalCostModifier(slotActionId);
+      throw error;
+    }
+
+    this.#grappleDragCostApplications += 1;
+    this.#lastGrappleDragCost = {
+      requestId: requestId ?? null,
+      relationshipIds: relationships.filter((relationship) => RelationshipMovementCostPolicy.usesGrappleCosts(relationship)).map((relationship) => relationship.id),
+      multiplier: 2,
+      baseActions: [...registrations.keys()],
+      modifierActions: [...registrations.values()]
+    };
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      for (const slotActionId of registrations.values()) this.#accounting.unregisterFinalCostModifier(slotActionId);
+    };
   }
 
   #applyNativeAccounting({ instructions, leaderId = null, followerEntries = [], pathType, resource }) {
