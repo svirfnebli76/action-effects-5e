@@ -1,3 +1,21 @@
+### v0.4.1.15 non-positional movement write-gate correction
+
+The v0.4.1.14 live acceptance exposed an important Foundry v14 protection: `TokenDocument#preUpdateMovement` strips `_movementHistory` from normal document updates. AE5E's spend verification correctly refused to return a receipt, but the compatibility bridge never reached the authoritative ledger.
+
+v0.4.1.15 keeps the public API unchanged:
+
+```js
+const receipt = await ae5e.movement.spend(token, 15, {
+  reason: "stand-from-prone"
+});
+
+await ae5e.movement.rollbackSpend(receipt);
+```
+
+Internally, the movement-spend service now uses the same explicit history-write gate Foundry uses for its native recorded-movement undo path (`isUndo: true`, `diff: false`, `animate: false`). Only `_movementHistory` is changed; x/y/elevation are not included, so the operation records cost without positional movement. Spend, rollback, cleanup, and live-test restoration all use this centralized bridge.
+
+The Node fixture now mirrors Foundry's protection and strips ordinary movement-history writes, preventing the v0.4.1.14 mock-only false positive from recurring. No compendium content is changed by this correction.
+
 ### v0.4.1.14 non-positional movement spending
 
 AE5E now owns the reusable movement-ledger operation required by rules that consume movement without physically moving a Token. The primary API is intentionally small:
