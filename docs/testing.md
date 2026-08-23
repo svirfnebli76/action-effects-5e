@@ -1028,3 +1028,58 @@ node --test tests/choice-prompt.test.mjs
 ```
 
 Expected result: **4/4 PASS**. The complete repository suite is **110/110 PASS**. Compendium contents must remain byte-identical to the supplied v0.4.1.12 build.
+
+
+## v0.4.1.14 non-positional movement-spend acceptance
+
+Activate a Scene, control exactly one Token as the GM, and run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+
+if (!ae5e) {
+  throw new Error("Action Effects 5E API is unavailable.");
+}
+
+console.log("AE5E Version:", ae5e.version);
+
+const result = await ae5e.tests.runNonPositionalMovementSpendTest({
+  notify: true,
+  amount: 15
+});
+
+console.log("Non-Positional Movement Spending:", result);
+console.log("Movement Spend Stats:", ae5e.movement.getSpendStats());
+
+return result;
+```
+
+Expected result: **9/9 PASS** and the large console banner `AE5E 0.4.1.14 — NON-POSITIONAL MOVEMENT SPENDING — PASS`. The test snapshots the controlled Token's current authoritative movement history, spends 15 movement without changing position, verifies the exact cost delta and receipt entry, rolls that receipt back, and confirms that the original movement cost and byte-equivalent history data are restored. A fail-safe cleanup attempts to restore the original history if live acceptance fails partway through.
+
+For multiplayer acceptance, run the production API from a player who owns the Token:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+const token = canvas.tokens.controlled[0];
+
+const before = ae5e.movement.getHistoryCost(token);
+const receipt = await ae5e.movement.spend(token, 15, {
+  reason: "v0.4.1.14-player-routing-test"
+});
+const after = ae5e.movement.getHistoryCost(token);
+
+console.log({ before, after, delta: after - before, receipt });
+
+// Cleanup the test charge.
+console.log(await ae5e.movement.rollbackSpend(receipt));
+```
+
+Expected behavior: the player's call completes through the GM Socketlib handler, `delta` is exactly `15`, the Token never changes position, and rollback removes the charge. A player who does not own the Token is rejected by the GM authority handler.
+
+The focused Node regression is:
+
+```bash
+node --test tests/movement-spend.test.mjs
+```
+
+Expected result: **5/5 PASS**. The complete repository suite is **115/115 PASS**. Compendium contents must remain byte-identical to the supplied v0.4.1.13 build.

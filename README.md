@@ -1,3 +1,22 @@
+### v0.4.1.14 non-positional movement spending
+
+AE5E now owns the reusable movement-ledger operation required by rules that consume movement without physically moving a Token. The primary API is intentionally small:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+const receipt = await ae5e.movement.spend(token, 15, {
+  reason: "stand-from-prone"
+});
+
+// If the surrounding rule later needs to abort after the spend was committed:
+await ae5e.movement.rollbackSpend(receipt);
+```
+
+`spend()` writes the requested cost into Foundry v14's authoritative `TokenDocument.movementHistory` ledger without changing x/y/elevation and verifies the exact cost delta before returning. The compatibility write is encapsulated inside AE5E; Item, Activity, and Effect macros should never mutate `_movementHistory` directly. `rollbackSpend()` removes only the receipt-owned spend entry, so movement recorded after the spend remains intact.
+
+Player calls are routed through AE5E's Socketlib authority layer. The GM re-resolves the Token by UUID and verifies that the requesting player owns it before committing or rolling back the movement charge. Diagnostics are available through `ae5e.movement.getSpendStats()`. No compendium content is changed by this infrastructure release.
+
 ### v0.4.1.13 remote choice prompt infrastructure
 
 AE5E now exposes a reusable controller-routed choice prompt at `ae5e.prompts.choose()`. It is intended for Item/Activity automations where another creature's controller must make a small rules choice, such as choosing Strength or Dexterity to resist a Shove.

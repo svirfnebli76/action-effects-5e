@@ -37,6 +37,7 @@ export class TestHarness {
   #compatibility;
   #movement;
   #movementAccounting;
+  #movementSpending;
   #catMovement;
   #relationships;
   #relationshipMovement;
@@ -58,11 +59,12 @@ export class TestHarness {
   #catTeleportSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
     this.#movementAccounting = movementAccounting;
+    this.#movementSpending = movementSpending;
     this.#catMovement = catMovement;
     this.#relationships = relationships;
     this.#relationshipMovement = relationshipMovement;
@@ -357,6 +359,126 @@ export class TestHarness {
         passed
           ? "Action Effects 5E movement-accounting test passed. See the console for details."
           : "Action Effects 5E movement-accounting test found a problem. See the console for details."
+      );
+    }
+    return result;
+  }
+
+  async runNonPositionalMovementSpendTest({ notify = true, amount = 15 } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    if (!game.user?.isGM) throw new Error("The non-positional movement-spend test requires a GM user.");
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 1) throw new Error("Control exactly one token for the non-positional movement-spend test.");
+
+    const token = controlled[0];
+    const document = token.document;
+    const spendAmount = Number(amount);
+    if (!Number.isFinite(spendAmount) || spendAmount <= 0) throw new Error("The test amount must be a finite number greater than 0.");
+
+    const checks = [];
+    const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
+    const positionBefore = { x: document.x, y: document.y, elevation: document.elevation };
+    const historyBefore = this.#movementAccounting.getHistorySnapshot(document);
+    const costBefore = this.#movementAccounting.getHistoryCost(document);
+    let receipt = null;
+    let rollback = null;
+
+    try {
+      const spendStats = this.#movementSpending.getStats();
+      record("GM-authority spend socket is registered",
+        spendStats.socketHandlers?.includes("movement.spend")
+          && spendStats.socketHandlers?.includes("movement.rollbackSpend"),
+        spendStats);
+
+      receipt = await this.#movementSpending.spend(document, spendAmount, {
+        reason: "v0.4.1.14-live-acceptance"
+      });
+
+      const historySpent = this.#movementAccounting.getHistorySnapshot(document);
+      const costSpent = this.#movementAccounting.getHistoryCost(document);
+      const spendEntry = historySpent.find((entry) => entry?.movementId === receipt?.movementId);
+      const positionSpent = { x: document.x, y: document.y, elevation: document.elevation };
+
+      record("Spend returns a versioned receipt",
+        receipt?.version === 1
+          && receipt?.subjectUuid === document.uuid
+          && receipt?.amount === spendAmount,
+        receipt);
+      record("Movement history records the exact non-positional cost",
+        Math.abs((costSpent - costBefore) - spendAmount) <= 1e-6,
+        { costBefore, costSpent, delta: costSpent - costBefore, spendAmount });
+      record("Spend entry is present in authoritative history",
+        Boolean(spendEntry)
+          && Math.abs(Number(spendEntry?.cost ?? NaN) - spendAmount) <= 1e-6,
+        spendEntry ?? null);
+      record("Spending movement does not move the token",
+        Number(positionSpent.x) === Number(positionBefore.x)
+          && Number(positionSpent.y) === Number(positionBefore.y)
+          && Number(positionSpent.elevation) === Number(positionBefore.elevation),
+        { before: positionBefore, after: positionSpent });
+
+      rollback = await this.#movementSpending.rollbackSpend(receipt);
+      const historyAfter = this.#movementAccounting.getHistorySnapshot(document);
+      const costAfter = this.#movementAccounting.getHistoryCost(document);
+      const positionAfter = { x: document.x, y: document.y, elevation: document.elevation };
+
+      record("Receipt rollback succeeds", rollback?.rolledBack === true, rollback);
+      record("Rollback restores the original movement cost",
+        Math.abs(costAfter - costBefore) <= 1e-6,
+        { costBefore, costAfter });
+      record("Rollback restores the original movement history",
+        JSON.stringify(historyAfter) === JSON.stringify(historyBefore),
+        { beforeCount: historyBefore.length, afterCount: historyAfter.length });
+      record("Rollback does not move the token",
+        Number(positionAfter.x) === Number(positionBefore.x)
+          && Number(positionAfter.y) === Number(positionBefore.y)
+          && Number(positionAfter.elevation) === Number(positionBefore.elevation),
+        { before: positionBefore, after: positionAfter });
+    } catch (error) {
+      record("Live spend/rollback execution completed without error", false, {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+    } finally {
+      // Fail-safe test cleanup only. Production callers use rollbackSpend(receipt).
+      const current = this.#movementAccounting.getHistorySnapshot(document);
+      if (JSON.stringify(current) !== JSON.stringify(historyBefore)) {
+        try {
+          await document.update({ _movementHistory: historyBefore }, {
+            ae5eNonPositionalMovementTestCleanup: true
+          });
+        } catch (cleanupError) {
+          record("Fail-safe test cleanup restored original history", false, {
+            message: cleanupError?.message ?? String(cleanupError)
+          });
+        }
+      }
+    }
+
+    const passed = checks.every((check) => check.passed);
+    const result = {
+      passed,
+      checks,
+      receipt,
+      rollback,
+      spend: this.#movementSpending.getStats(),
+      accounting: this.#movementAccounting.getStats()
+    };
+    Logger.info("Non-positional movement-spend test", result);
+    console.log(
+      `%cAE5E 0.4.1.14 — NON-POSITIONAL MOVEMENT SPENDING — ${passed ? "PASS" : "FAIL"}`,
+      `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`
+    );
+    console.table(checks.map((check, index) => ({
+      case: index + 1,
+      test: check.name,
+      result: check.passed ? "PASS" : "FAIL"
+    })));
+    if (notify && ui?.notifications) {
+      ui.notifications[passed ? "info" : "warn"](
+        passed
+          ? "Action Effects 5E non-positional movement-spend test passed. See the console for details."
+          : "Action Effects 5E non-positional movement-spend test found a problem. See the console for details."
       );
     }
     return result;

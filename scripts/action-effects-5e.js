@@ -6,6 +6,7 @@ import { CompatibilityService } from "./core/compatibility.js";
 import { SocketService } from "./core/socket-service.js";
 import { MovementRegistry } from "./movement/movement-registry.js";
 import { MovementAccountingService } from "./movement/movement-accounting-service.js";
+import { MovementSpendService } from "./movement/movement-spend-service.js";
 import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
@@ -48,6 +49,7 @@ const compatibility = new CompatibilityService();
 const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const movementAccounting = new MovementAccountingService();
+const movementSpending = new MovementSpendService({ socket, accounting: movementAccounting });
 const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const animationOwnership = new AnimationOwnershipService();
@@ -129,6 +131,7 @@ const tests = new TestHarness({
   compatibility,
   movement,
   movementAccounting,
+  movementSpending,
   catMovement,
   catSpell,
   animationOwnership,
@@ -165,6 +168,7 @@ const api = new ActionEffects5eApi({
   compatibility,
   movement,
   movementAccounting,
+  movementSpending,
   catMovement,
   catSpell,
   animationOwnership,

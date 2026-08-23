@@ -1,3 +1,14 @@
+## 0.4.1.14 — Non-positional movement spending
+
+- Added reusable `ae5e.movement.spend(token, amount, { reason })` infrastructure for rules that consume movement without changing token position, such as standing from Prone. Successful spends return a versioned receipt containing the exact committed movement-history delta.
+- Added `ae5e.movement.rollbackSpend(receipt)`. Rollback removes only the synthetic spend identified by that receipt and preserves later native movement records; repeated rollback is safely idempotent once the receipt is no longer present.
+- Centralized the narrow Foundry v14 compatibility bridge needed to persist a measured same-position cost into the authoritative `TokenDocument.movementHistory` ledger. Item/Activity macros no longer need to read or mutate private movement-history storage themselves. Every spend verifies both the exact requested cost delta and the committed receipt entry before returning; verification failure removes the synthetic entry and throws instead of silently consuming the calling rule effect.
+- Added GM-authoritative Socketlib routing for spend and rollback. Player calls send only the Token UUID, numeric amount, reason, user id, and plain receipt data; the GM re-resolves the live Token and verifies ownership before changing the movement ledger.
+- Added per-token serialization so overlapping AE5E spend/rollback requests cannot overwrite one another, plus spend diagnostics at `ae5e.movement.getSpendStats()`.
+- Added `ae5e.tests.runNonPositionalMovementSpendTest()` for live Foundry acceptance. It verifies the socket surface, exact 15-foot ledger delta, receipt persistence, zero positional movement, successful rollback, and exact history restoration.
+- Added five deterministic Node regressions for exact spend/rollback behavior, preservation of later movement, player-to-GM routing, ownership rejection, and idempotent rollback. The repository development suite is **115/115 PASS**.
+- No compendium contents were changed, regenerated, migrated, or overwritten in this release.
+
 ## 0.4.1.13 — Remote choice prompt infrastructure
 
 - Added generic `ae5e.prompts.choose()` infrastructure for small controller-owned decisions such as a Shove defender choosing Strength or Dexterity. Callers provide Actor/token context plus plain choice descriptors; the API returns only the selected choice id or `null`.
