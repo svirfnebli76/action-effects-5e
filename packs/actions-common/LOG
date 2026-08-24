@@ -1,3 +1,5 @@
-2026/08/23-15:22:15.553 1d28 Recovering log #74
-2026/08/23-15:22:15.556 1d28 Delete type=0 #74
-2026/08/23-15:22:15.556 1d28 Delete type=3 #73
+2026/08/23-22:26:21.308 7efc Recovering log #76
+2026/08/23-22:26:21.308 7efc Level-0 table #78: started
+2026/08/23-22:26:21.310 7efc Level-0 table #78: 64350 bytes OK
+2026/08/23-22:26:21.312 7efc Delete type=0 #76
+2026/08/23-22:26:21.313 7efc Delete type=3 #75
