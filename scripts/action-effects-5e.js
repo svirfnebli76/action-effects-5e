@@ -118,7 +118,8 @@ const relationshipMovement = new RelationshipMovementService({
   socket,
   relationships,
   movement,
-  accounting: movementAccounting
+  accounting: movementAccounting,
+  obstructions: movementObstructions
 });
 const relationshipRotation = new RelationshipRotationService({
   socket,

@@ -1,3 +1,11 @@
+### v0.4.1.18 grapple passenger drag constraints
+
+v0.4.1.18 fixes the relationship-movement layer used when a player drags a grappler while carrying a grappled target. No Unarmed Strike or Grapple Item macro change is required.
+
+Generated Follower movement is now explicitly treated as passenger movement for native D&D5e constraints: it ignores the Follower's own movement-cost budget, so a Grappled creature with Speed 0 can still be carried. AE5E also separates wall/environment preflight from D&D5e 5.3 token blocking, excludes the simultaneously vacating Leader from the Follower's obstruction check, and then applies its own relationship-aware creature collision rules before bypassing native token blocking for that generated Follower instruction.
+
+The Leader keeps normal Foundry/D&D5e movement constraints and the v0.4.1.17 Grapple 2× drag-cost policy. Other hostile creatures can still stop the translated Follower route, and a Follower cannot end in another non-participant creature's occupied space. The repository regression suite is **127/127 PASS**. Compendiums and assets are unchanged.
+
 ### v0.4.1.17 grapple movement cost accounting
 
 v0.4.1.17 adds relationship-level movement accounting for Grapple gameplay without changing the Grapple Item macro. Real `GRAPPLE` relationships and existing `grappleFollower` fixtures automatically use the grapple movement-cost policy.

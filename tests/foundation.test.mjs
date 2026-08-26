@@ -1131,6 +1131,250 @@ test("grapple leader drag applies a 2x final-cost modifier while the follower re
   }
 });
 
+test("grapple passenger drag ignores follower cost and the simultaneously vacating hostile leader token", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const scene = {
+    id: "scene-grapple-passenger-constraints",
+    grid: makeFiveFootSquareGrid(),
+    tokens: new FakeCollection(),
+    moveCalls: [],
+    async moveTokens(instructions, options) {
+      assertGeneratedMovementInstructions(instructions);
+      this.moveCalls.push({ instructions: structuredClone(instructions), options: structuredClone(options) });
+
+      // Reproduce the two live D&D5e constraints which broke player dragging:
+      // a Grappled follower has no usable movement budget, and the leader still
+      // occupies the square which the trailing follower is about to enter when
+      // each Token's movement is constrained. AE5E's generated passenger
+      // instruction must bypass both after its own collision preflight.
+      const followerInstruction = instructions.follower;
+      const followerCompleted = followerInstruction?.constrainOptions?.ignoreCost === true
+        && followerInstruction?.constrainOptions?.ignoreTokens === true;
+      return { leader: true, follower: followerCompleted };
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({
+    uuid: `Scene.${scene.id}.Token.leader`,
+    id: "leader",
+    scene
+  });
+  Object.assign(leader, {
+    x: 0,
+    y: 0,
+    elevation: 0,
+    width: 1,
+    height: 1,
+    name: "Leader",
+    disposition: CONST.TOKEN_DISPOSITIONS.FRIENDLY
+  });
+
+  const follower = new FakeTokenDocument({
+    uuid: `Scene.${scene.id}.Token.follower`,
+    id: "follower",
+    scene
+  });
+  Object.assign(follower, {
+    x: 0,
+    y: 100,
+    elevation: 0,
+    width: 1,
+    height: 1,
+    name: "Follower",
+    disposition: CONST.TOKEN_DISPOSITIONS.HOSTILE,
+    object: {
+      constrainMovementPath(path, options = {}) {
+        // Environment is clear. D&D5e's normal token-aware pass would reject
+        // the hostile leader's occupied square; ignoreTokens isolates the clear
+        // wall/surface result for AE5E's participant-aware preflight.
+        return options.ignoreTokens === true
+          ? [path, false]
+          : [path.slice(0, 1), true];
+      }
+    }
+  });
+
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  const documents = new Map([[leader.uuid, leader], [follower.uuid, follower]]);
+  globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
+
+  const relationship = {
+    id: "relationship-grapple-passenger-constraints",
+    type: "grapple",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "grappleFollower",
+    followerCanSelfMove: false,
+    followElevation: true,
+    followRotation: false,
+    coordinationDistance: 5,
+    breakDistance: 5,
+    teleportPolicy: "detach",
+    collisionPolicy: "stopGroup"
+  };
+
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const handlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { handlers.set(name, handler); },
+    async executeAsGM(name, request) { return handlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: { generatedBy: "action-effects-5e", ...metadata } }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelativeTokenRelationshipService } = await import("../scripts/relationships/relative-token-relationship-service.js");
+  const { MovementObstructionService } = await import("../scripts/displacement/movement-obstruction-service.js");
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const relativeRelationships = new RelativeTokenRelationshipService();
+  const obstructions = new MovementObstructionService({ relativeRelationships });
+  new RelationshipMovementService({
+    socket: fakeSocket,
+    relationships: fakeRelationships,
+    movement: fakeMovement,
+    obstructions
+  });
+
+  try {
+    const result = await handlers.get("relationships.moveGroup")({
+      requestId: "request-grapple-passenger-constraints",
+      requestingUserId: gmUser.id,
+      sceneId: scene.id,
+      leaderUuid: leader.uuid,
+      origin: { x: 0, y: 0, elevation: 0 },
+      waypoints: [{ x: 0, y: -100, elevation: 0, action: "walk" }],
+      pathType: PATH_TYPES.TRAVERSE,
+      agency: MOVEMENT_AGENCIES.VOLUNTARY,
+      resource: MOVEMENT_RESOURCES.MOVEMENT,
+      movementMode: "walk",
+      method: "dragging"
+    });
+
+    assert.equal(result.completed, true);
+    assert.equal(scene.moveCalls.length, 1);
+    assert.equal(scene.moveCalls[0].instructions.leader.constrainOptions?.ignoreTokens, undefined,
+      "The leader must retain native D&D5e token collision rules.");
+    assert.equal(scene.moveCalls[0].instructions.follower.constrainOptions?.ignoreCost, true,
+      "Passenger movement must not be limited by the Grappled follower's Speed 0 movement budget.");
+    assert.equal(scene.moveCalls[0].instructions.follower.constrainOptions?.ignoreTokens, true,
+      "The follower must bypass D&D5e token blocking only after AE5E participant-aware preflight.");
+  } finally {
+    game.scenes.delete(scene.id);
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("grapple passenger drag still blocks a different hostile creature after ignoring the vacating leader", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const scene = {
+    id: "scene-grapple-passenger-hostile-blocker",
+    grid: makeFiveFootSquareGrid(),
+    tokens: new FakeCollection(),
+    moveCalls: [],
+    async moveTokens(instructions, options) {
+      this.moveCalls.push({ instructions, options });
+      return Object.fromEntries(Object.keys(instructions).map((id) => [id, true]));
+    }
+  };
+  game.scenes.set(scene.id, scene);
+
+  const leader = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.leader`, id: "leader", scene });
+  Object.assign(leader, {
+    x: 0, y: 0, elevation: 0, width: 1, height: 1, name: "Leader",
+    disposition: CONST.TOKEN_DISPOSITIONS.FRIENDLY
+  });
+  const follower = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.follower`, id: "follower", scene });
+  Object.assign(follower, {
+    x: 0, y: 100, elevation: 0, width: 1, height: 1, name: "Follower",
+    disposition: CONST.TOKEN_DISPOSITIONS.HOSTILE,
+    object: { constrainMovementPath(path) { return [path, false]; } }
+  });
+  const blocker = new FakeTokenDocument({ uuid: `Scene.${scene.id}.Token.blocker`, id: "blocker", scene });
+  Object.assign(blocker, {
+    x: 0, y: 0, elevation: 0, width: 1, height: 1, name: "Blocker",
+    disposition: CONST.TOKEN_DISPOSITIONS.FRIENDLY
+  });
+  scene.tokens.set(leader.id, leader);
+  scene.tokens.set(follower.id, follower);
+  scene.tokens.set(blocker.id, blocker);
+
+  const documents = new Map([[leader.uuid, leader], [follower.uuid, follower], [blocker.uuid, blocker]]);
+  globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
+
+  const relationship = {
+    id: "relationship-grapple-passenger-hostile-blocker",
+    type: "grapple",
+    sceneId: scene.id,
+    leaderUuid: leader.uuid,
+    followerUuid: follower.uuid,
+    attachmentMode: "grappleFollower",
+    followerCanSelfMove: false,
+    followElevation: true,
+    followRotation: false,
+    coordinationDistance: 5,
+    breakDistance: 5,
+    teleportPolicy: "detach",
+    collisionPolicy: "stopGroup"
+  };
+  const fakeRelationships = {
+    list: () => [relationship],
+    getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
+    getForFollower: (uuid) => uuid === follower.uuid ? [relationship] : [],
+    async removeManyAsGM() { return 0; }
+  };
+  const handlers = new Map();
+  const fakeSocket = {
+    register(name, handler) { handlers.set(name, handler); },
+    async executeAsGM(name, request) { return handlers.get(name)(request); }
+  };
+  const fakeMovement = {
+    registerConsumer() { return () => {}; },
+    createOperationOptions(metadata) { return { actionEffects5e: { generatedBy: "action-effects-5e", ...metadata } }; },
+    registerMovementContext() { return () => {}; }
+  };
+
+  const { RelativeTokenRelationshipService } = await import("../scripts/relationships/relative-token-relationship-service.js");
+  const { MovementObstructionService } = await import("../scripts/displacement/movement-obstruction-service.js");
+  const { RelationshipMovementService } = await import("../scripts/relationships/relationship-movement-service.js");
+  const relativeRelationships = new RelativeTokenRelationshipService();
+  const obstructions = new MovementObstructionService({ relativeRelationships });
+  new RelationshipMovementService({ socket: fakeSocket, relationships: fakeRelationships, movement: fakeMovement, obstructions });
+
+  try {
+    const result = await handlers.get("relationships.moveGroup")({
+      requestId: "request-grapple-passenger-hostile-blocker",
+      requestingUserId: gmUser.id,
+      sceneId: scene.id,
+      leaderUuid: leader.uuid,
+      origin: { x: 0, y: 0, elevation: 0 },
+      waypoints: [{ x: 0, y: -100, elevation: 0, action: "walk" }],
+      pathType: PATH_TYPES.TRAVERSE,
+      agency: MOVEMENT_AGENCIES.VOLUNTARY,
+      resource: MOVEMENT_RESOURCES.MOVEMENT,
+      movementMode: "walk",
+      method: "dragging"
+    });
+
+    assert.equal(result.completed, false);
+    assert.equal(result.collision, true);
+    assert.equal(scene.moveCalls.length, 0,
+      "Ignoring the grappler must not allow a dragged follower through a different hostile creature.");
+  } finally {
+    game.scenes.delete(scene.id);
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
 test("external API leader movement synchronizes followers after the leader has moved", async () => {
   const scene = {
     id: "scene-external",

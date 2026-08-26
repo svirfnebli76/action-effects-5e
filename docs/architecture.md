@@ -110,6 +110,8 @@ Accounting ownership rules are:
 
 The movement accounting service exposes a final-cost modifier action API. A modifier wraps the selected base movement action's native cost function and then returns the final segment cost. v0.4.1.17 uses that layer for Grapple dragging so terrain, diagonal rules, Regions, and other native Foundry/D&D5e cost contributions are measured first and the final native cost is then doubled. Orbital movement does not fake Leader translation: it uses AE5E's GM-authoritative non-positional movement ledger and an exact rollback receipt.
 
+v0.4.1.18 also makes the generated Follower instruction explicitly passenger-safe at the native constraint layer. The Follower bypasses its own movement-cost budget, while creature blocking is preflighted by AE5E rather than delegated blindly to D&D5e's token-aware `constrainMovementPath()`. The relationship Leader is excluded from that Follower-body check because it vacates the trailing square in the same coordinated operation; other hostile bodies and occupied non-participant endpoints remain blocking. These bypasses apply only to the generated Follower instruction, never to the Leader's movement.
+
 ## Relationship state
 
 Relationships are persisted on the Scene under the Action Effects 5E namespace and indexed by leader/follower token UUID. The generic layer stores movement semantics without embedding the D&D Grapple check itself.

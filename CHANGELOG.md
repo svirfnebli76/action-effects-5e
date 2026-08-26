@@ -1,3 +1,13 @@
+## 0.4.1.18 — Grapple passenger drag constraints
+
+- Fixed player-controlled Grapple dragging where the Leader move reached GM authority but the generated Follower move could fail before any Token update, causing the relationship lifecycle to tear down the Grapple and its temporary Items.
+- Generated relationship Follower/passenger instructions now explicitly bypass the Follower's own movement-cost budget with per-instruction `constrainOptions.ignoreCost = true`. This preserves the established rule that passenger translation is spatially real but costs the Follower no movement, including when the Grappled condition leaves the Follower with Speed 0.
+- Updated Grapple Follower collision preflight for D&D5e 5.3 token blocking. AE5E first isolates walls/environment with `ignoreTokens: true`, then applies its own relationship-aware creature-space checks before allowing the generated Follower instruction to bypass native token blocking.
+- The simultaneously vacating relationship Leader is excluded from Follower body obstruction, so an opposed-disposition grappled target may legally trail into the grappler's vacated square during the coordinated `Scene.moveTokens()` transaction.
+- Other hostile creatures still hard-block the translated Follower route, and a Follower may not finish in another non-participant creature's occupied space. The Leader's own movement instruction retains native D&D5e wall, token, and movement-cost constraints.
+- Added focused regressions for a Speed-0/opposed-disposition Grapple passenger and for a genuine third-party hostile obstruction. The complete repository suite is **127/127 PASS**.
+- The Unarmed Strike/Grapple Item macros, compendiums, and assets were not changed, regenerated, migrated, or overwritten in this release.
+
 ## 0.4.1.17 — Grapple movement cost accounting
 
 - Added a reusable relationship movement-cost policy and assigned the `grapple` policy automatically to real `GRAPPLE` relationships and existing grapple-follower fixtures. Existing non-grapple relationships default to `none`.

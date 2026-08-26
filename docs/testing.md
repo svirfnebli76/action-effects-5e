@@ -1,3 +1,17 @@
+## v0.4.1.18 Grapple passenger drag constraints
+
+The deterministic repository release gate is:
+
+```bash
+npm test
+```
+
+Expected result: **127/127 PASS**. The two new regressions cover the multiplayer Grapple failure reproduced by a player-controlled Leader: generated Follower/passenger movement must carry `ignoreCost: true` so a Grappled/Speed-0 Follower can be translated, and after AE5E performs its own environment/body preflight it must carry `ignoreTokens: true` so D&D5e does not reject the simultaneously vacating relationship Leader. A separate regression confirms that excluding the Leader does not permit movement through a different hostile creature.
+
+Live Foundry acceptance should be performed as the non-GM grappler controller. Grapple a Friendly-disposition target and then an opposed-disposition target in an open area; in both cases, moving the Leader one grid space should move the Follower into the trailing/vacated space without removing the relationship, Grapple effects, Escape Grapple, or Release Grapple. Repeat Rotate Target, Escape Grapple, and Release Grapple as a smoke test. A genuine wall or third-party hostile creature in the translated Follower path should still prevent coordinated movement.
+
+No Unarmed Strike/Grapple Item macro, compendium, or asset changes are part of this release.
+
 ## v0.4.1.12 transient Automated Animations ownership acceptance
 
 This release adds client-local runtime arbitration and does not require a new Socketlib path. After installing v0.4.1.12 with Automated Animations 7.0.22+ active, run the existing animation-ownership foundation test in Foundry:

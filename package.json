@@ -1,6 +1,6 @@
 {
   "name": "action-effects-5e",
-  "version": "0.4.1.17",
+  "version": "0.4.1.18",
   "private": true,
   "type": "module",
   "description": "Development utilities for the Action Effects 5E Foundry VTT module.",

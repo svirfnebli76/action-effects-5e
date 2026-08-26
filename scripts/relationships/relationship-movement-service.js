@@ -7,7 +7,9 @@ import {
   OPERATION_METADATA_KEY,
   PATH_TYPES,
   RELATIONSHIP_COORDINATION_POLICIES,
-  RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES
+  RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
+  RELATIONSHIP_GEOMETRY_CHANNELS,
+  RELATIVE_TOKEN_RELATIONSHIPS
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
@@ -27,6 +29,7 @@ export class RelationshipMovementService {
   #relationships;
   #movement;
   #accounting;
+  #obstructions;
   #initialized = false;
   #consumerRemovers = new Map();
   #receiptConsumerRemovers = new Map();
@@ -42,11 +45,12 @@ export class RelationshipMovementService {
   #grappleDragCostApplications = 0;
   #lastGrappleDragCost = null;
 
-  constructor({ socket, relationships, movement, accounting = null }) {
+  constructor({ socket, relationships, movement, accounting = null, obstructions = null }) {
     this.#socket = socket;
     this.#relationships = relationships;
     this.#movement = movement;
     this.#accounting = accounting;
+    this.#obstructions = obstructions;
     this.#socket.register("relationships.moveGroup", this.#moveGroupAsGM.bind(this));
     this.#socket.register("relationships.syncFollowers", this.#syncFollowersAsGM.bind(this));
     this.#socket.register("relationships.detachFollowerTeleport", this.#detachFollowerAfterTeleportAsGM.bind(this));
@@ -422,6 +426,7 @@ export class RelationshipMovementService {
     while (true) {
       const activeFollowers = followerEntries.filter(({ token }) => augmentedInstructions[token.id]);
       const collisionResult = this.#validateFollowerPaths({
+        leader,
         followers: activeFollowers,
         instructions: augmentedInstructions,
         allowIgnoreWalls: (leaderInstruction?.constrainOptions?.ignoreWalls === true || options?.constrainOptions?.ignoreWalls === true),
@@ -1024,6 +1029,7 @@ export class RelationshipMovementService {
       while (true) {
         const activeFollowers = followerEntries.filter(({ token }) => instructions[token.id]);
         const collisionResult = this.#validateFollowerPaths({
+          leader,
           followers: activeFollowers,
           instructions,
           allowIgnoreWalls: requester.isGM && normalized.ignoreWallsRequested,
@@ -1204,6 +1210,7 @@ export class RelationshipMovementService {
       while (true) {
         const activeFollowers = followerEntries.filter(({ token }) => instructions[token.id]);
         const collisionResult = this.#validateFollowerPaths({
+          leader,
           followers: activeFollowers,
           instructions,
           allowIgnoreWalls: false,
@@ -1700,18 +1707,104 @@ export class RelationshipMovementService {
     }
   }
 
-  #validateFollowerPaths({ followers, instructions, allowIgnoreWalls, isTeleport }) {
+  #validateFollowerPaths({ leader, followers, instructions, allowIgnoreWalls, isTeleport }) {
     if (isTeleport) return { valid: true };
 
     for (const { token, relationship } of followers) {
+      const instruction = instructions[token.id];
+      if (!instruction) continue;
+
+      // Relationship followers are passengers. Their translated movement must not
+      // be limited by their own movement budget (a Grappled creature commonly has
+      // Speed 0), and D&D5e v5.3 token blocking must not treat the simultaneously
+      // vacating leader as an obstruction. We therefore preflight environment and
+      // creature occupancy ourselves, then bypass cost/token constraints only for
+      // the generated follower instruction. The leader's own native constraints
+      // remain untouched.
+      instruction.constrainOptions = {
+        ...(instruction.constrainOptions ?? {}),
+        ignoreCost: true
+      };
+
       const placeable = token.object;
       if (!placeable?.constrainMovementPath) {
         Logger.debug(`Skipped preflight collision validation for ${token.uuid}; its Scene is not rendered on the active GM canvas.`);
         continue;
       }
 
-      const waypoints = instructions[token.id]?.waypoints ?? [];
+      const waypoints = instruction.waypoints ?? [];
       const path = [{ x: token.x, y: token.y, elevation: token.elevation }, ...waypoints];
+
+      // First isolate walls/surfaces from D&D5e's creature-space constraints.
+      // `ignoreTokens` is a D&D5e extension used by AE5E's orbit/displacement
+      // services for the same reason.
+      const [, environmentConstrained] = placeable.constrainMovementPath(path, {
+        preview: false,
+        ignoreWalls: allowIgnoreWalls,
+        ignoreCost: true,
+        ignoreTokens: true,
+        maxCost: Infinity,
+        maxDistance: Infinity
+      });
+
+      if (environmentConstrained) {
+        return {
+          valid: false,
+          token,
+          relationship,
+          message: `${token.name ?? "A follower token"} cannot follow that path because its translated route is blocked.`
+        };
+      }
+
+      // When the obstruction service is available, AE5E owns follower-body token
+      // semantics for this generated passenger move. The relationship leader is
+      // deliberately excluded because the follower is entering space the leader
+      // vacates in the same coordinated Scene.moveTokens operation.
+      if (this.#obstructions?.inspectBodyAtPosition) {
+        const conflicts = this.#collectFollowerBodyConflicts({
+          scene: token.parent,
+          follower: token,
+          leader,
+          path
+        });
+        const hostile = conflicts.filter((entry) => entry.relationship === RELATIVE_TOKEN_RELATIONSHIPS.HOSTILE);
+        if (hostile.length) {
+          return {
+            valid: false,
+            token,
+            relationship,
+            message: `${token.name ?? "A follower token"} cannot follow that path because its translated route is blocked.`
+          };
+        }
+
+        // Transit through a nonhostile creature can be legal in D&D5e, but a
+        // follower must not finish in another non-participant creature's space.
+        // The leader is already excluded from this list.
+        const endpoint = this.#collectFollowerEndpointConflicts({
+          scene: token.parent,
+          follower: token,
+          leader,
+          position: path.at(-1)
+        });
+        if (endpoint.length) {
+          return {
+            valid: false,
+            token,
+            relationship,
+            message: `${token.name ?? "A follower token"} cannot follow that path because its destination is occupied.`
+          };
+        }
+
+        instruction.constrainOptions = {
+          ...instruction.constrainOptions,
+          ignoreTokens: true
+        };
+        continue;
+      }
+
+      // Compatibility fallback when no AE5E obstruction classifier was injected.
+      // Preserve the previous public constraint check while still applying the
+      // passenger ignoreCost rule above.
       const [, wasConstrained] = placeable.constrainMovementPath(path, {
         preview: false,
         ignoreWalls: allowIgnoreWalls,
@@ -1731,6 +1824,49 @@ export class RelationshipMovementService {
     }
 
     return { valid: true };
+  }
+
+  #collectFollowerBodyConflicts({ scene, follower, leader, path }) {
+    if (!scene?.tokens || !Array.isArray(path) || path.length < 2) return [];
+
+    let completePath = path;
+    if (typeof follower.getCompleteMovementPath === "function") {
+      try {
+        const expanded = follower.getCompleteMovementPath(path);
+        if (Array.isArray(expanded) && expanded.length) completePath = expanded;
+      } catch (error) {
+        Logger.debug("Could not expand relationship follower path while classifying token obstruction; using supplied waypoints.", {
+          followerUuid: follower.uuid,
+          error: String(error)
+        });
+      }
+    }
+
+    const conflicts = [];
+    for (const position of completePath.slice(1)) {
+      const occupancy = this.#obstructions.inspectBodyAtPosition({
+        scene,
+        subjectToken: follower,
+        position,
+        geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY
+      });
+      for (const entry of occupancy?.conflicts ?? []) {
+        if (entry?.blockerUuid === leader?.uuid) continue;
+        conflicts.push(entry);
+      }
+    }
+    return conflicts;
+  }
+
+  #collectFollowerEndpointConflicts({ scene, follower, leader, position }) {
+    if (!scene?.tokens || !position || !this.#obstructions?.inspectBodyAtPosition) return [];
+    const occupancy = this.#obstructions.inspectBodyAtPosition({
+      scene,
+      subjectToken: follower,
+      position,
+      geometryChannel: RELATIONSHIP_GEOMETRY_CHANNELS.FOLLOWER_BODY
+    });
+    return (occupancy?.conflicts ?? []).filter((entry) => entry?.blockerUuid !== leader?.uuid);
   }
 
   #captureOrigins(scene, tokenIds) {
