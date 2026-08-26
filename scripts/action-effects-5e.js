@@ -56,7 +56,7 @@ const catSpell = new CatSpellAdapter();
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
-const relationships = new RelationshipService({ socket, lifecycle: relationshipLifecycle });
+const relationships = new RelationshipService({ socket, lifecycle: relationshipLifecycle, spending: movementSpending });
 const relativeRelationships = new RelativeTokenRelationshipService();
 const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement });
 const displacementDirections = new DisplacementDirectionService();

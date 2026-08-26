@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 let idCounter = 0;
 
 class FakeTokenDocument {
-  constructor({ uuid = "Scene.scene.Token.token", ownerIds = ["gm"] } = {}) {
+  constructor({ uuid = "Scene.scene.Token.token", ownerIds = ["gm"], shouldRecordMovementHistory = true } = {}) {
     this.uuid = uuid;
     this.id = uuid.split(".").at(-1);
     this.x = 100;
@@ -19,6 +19,19 @@ class FakeTokenDocument {
     this.movementHistory = [];
     this.ownerIds = new Set(ownerIds);
     this.updateCalls = [];
+    this.shouldRecordMovementHistory = shouldRecordMovementHistory;
+    this.clearCalls = 0;
+  }
+
+
+  _shouldRecordMovementHistory() {
+    return this.shouldRecordMovementHistory;
+  }
+
+  async clearMovementHistory() {
+    this.clearCalls += 1;
+    this.movementHistory = [];
+    return this;
   }
 
   getCompleteMovementPath([point]) {
@@ -125,8 +138,8 @@ function makeAccounting() {
   };
 }
 
-function createFixture({ ownerIds = ["gm", "player"] } = {}) {
-  const document = new FakeTokenDocument({ ownerIds });
+function createFixture({ ownerIds = ["gm", "player"], shouldRecordMovementHistory = true } = {}) {
+  const document = new FakeTokenDocument({ ownerIds, shouldRecordMovementHistory });
   const documents = new Map([[document.uuid, document]]);
   const socket = new FakeSocket(gm);
   const service = new MovementSpendService({
@@ -233,4 +246,71 @@ test("Foundry-style ordinary history updates are stripped by the fixture", async
     _movementHistory: [{ cost: 15, movementId: "ordinary00000001" }]
   });
   assert.equal(document.movementHistory.length, 0);
+});
+
+
+test("ledger reconciliation re-anchors stale active-turn history while preserving spent movement", async () => {
+  game.user = gm;
+  const { document, service } = createFixture({ shouldRecordMovementHistory: true });
+  document.x = 300;
+  document.y = 400;
+  document.movementHistory = [{
+    x: 100, y: 200, elevation: 0, width: 1, height: 1, depth: 1, shape: "rectangle", level: "",
+    action: "walk", checkpoint: true, explicit: true, intermediate: false, snapped: true, terrain: null,
+    cost: 20, movementId: "stale00000000001", subpathId: "stale00000000001", userId: "player"
+  }];
+
+  const result = await service.reconcileLedgerAsAuthority(document, {
+    requestedByUserId: "player",
+    reason: "grapple-start"
+  });
+
+  assert.equal(result.reconciled, true);
+  assert.equal(result.reason, "reanchored-preserving-cost");
+  assert.equal(result.preservedCost, 20);
+  assert.equal(document.clearCalls, 1);
+  assert.equal(document.movementHistory.length, 1);
+  assert.deepEqual(
+    { x: document.movementHistory[0].x, y: document.movementHistory[0].y, elevation: document.movementHistory[0].elevation },
+    { x: 300, y: 400, elevation: 0 }
+  );
+  assert.equal(document.movementHistory[0].cost, 20);
+  assert.equal(service.getStats().reconciliationsCommitted, 1);
+});
+
+test("ledger reconciliation clears stale history outside active movement recording without preserving old cost", async () => {
+  game.user = gm;
+  const { document, service } = createFixture({ shouldRecordMovementHistory: false });
+  document.x = 300;
+  document.y = 400;
+  document.movementHistory = [{
+    x: 100, y: 200, elevation: 0, width: 1, height: 1, depth: 1, shape: "rectangle", level: "",
+    action: "walk", checkpoint: true, explicit: true, intermediate: false, snapped: true, terrain: null,
+    cost: 70, movementId: "stale00000000002", subpathId: "stale00000000002", userId: "player"
+  }];
+
+  const result = await service.reconcileLedgerAsAuthority(document, { requestedByUserId: "player" });
+
+  assert.equal(result.reconciled, true);
+  assert.equal(result.reason, "cleared-stale-history");
+  assert.equal(result.preservedCost, 0);
+  assert.equal(document.clearCalls, 1);
+  assert.deepEqual(document.movementHistory, []);
+});
+
+test("ledger reconciliation leaves healthy history untouched", async () => {
+  game.user = gm;
+  const { document, service } = createFixture({ shouldRecordMovementHistory: true });
+  document.movementHistory = [{
+    x: document.x, y: document.y, elevation: document.elevation, width: 1, height: 1, depth: 1, shape: "rectangle", level: "",
+    action: "walk", checkpoint: true, explicit: true, intermediate: false, snapped: true, terrain: null,
+    cost: 10, movementId: "healthy000000001", subpathId: "healthy000000001", userId: "player"
+  }];
+
+  const result = await service.reconcileLedgerAsAuthority(document, { requestedByUserId: "player" });
+
+  assert.equal(result.reconciled, false);
+  assert.equal(result.reason, "already-aligned");
+  assert.equal(document.clearCalls, 0);
+  assert.equal(document.movementHistory[0].cost, 10);
 });

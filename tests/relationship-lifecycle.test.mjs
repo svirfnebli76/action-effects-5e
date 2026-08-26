@@ -211,11 +211,11 @@ async function createSourceEffect(actor, name = "Unarmed Grapple") {
   return effect;
 }
 
-function buildServices() {
+function buildServices({ spending = null } = {}) {
   const socket = new FakeSocket();
   let relationships = null;
   const lifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
-  relationships = new RelationshipService({ socket, lifecycle });
+  relationships = new RelationshipService({ socket, lifecycle, spending });
   return { socket, lifecycle, relationships };
 }
 
@@ -384,6 +384,90 @@ test("player-owned leader can remove a lifecycle relationship through the existi
   }
   assert.equal(relationships.get(relationship.id), null);
   assert.equal(await fromUuid(source.uuid), null);
+
+  lifecycle.shutdown();
+  relationships.shutdown();
+  game.scenes.delete(f.scene.id);
+});
+
+
+test("grapple creation reconciles the leader movement ledger before persisting the relationship", async () => {
+  const f = fixture("grapple-reconcile");
+  const calls = [];
+  const spending = {
+    async reconcileLedgerAsAuthority(token, options) {
+      calls.push({ token, options });
+      return { checked: true, reconciled: true, reason: "reanchored-preserving-cost" };
+    }
+  };
+  const { lifecycle, relationships } = buildServices({ spending });
+  await relationships.initialize();
+  await lifecycle.initialize();
+
+  const relationship = await relationships.create({
+    type: "grapple",
+    attachmentMode: "grappleFollower",
+    leaderUuid: f.leader.uuid,
+    followerUuid: f.follower.uuid
+  });
+
+  assert.ok(relationship);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].token, f.leader);
+  assert.equal(calls[0].options.reason, "grapple-start");
+  assert.equal(calls[0].options.requestedByUserId, gmUser.id);
+
+  lifecycle.shutdown();
+  relationships.shutdown();
+  game.scenes.delete(f.scene.id);
+});
+
+test("failed grapple ledger reconciliation blocks relationship persistence", async () => {
+  const f = fixture("grapple-reconcile-fail");
+  const spending = {
+    async reconcileLedgerAsAuthority() {
+      throw new Error("synthetic reconciliation failure");
+    }
+  };
+  const { lifecycle, relationships } = buildServices({ spending });
+  await relationships.initialize();
+  await lifecycle.initialize();
+
+  await assert.rejects(
+    relationships.create({
+      type: "grapple",
+      attachmentMode: "grappleFollower",
+      leaderUuid: f.leader.uuid,
+      followerUuid: f.follower.uuid
+    }),
+    /Grapple could not begin because the leader's movement history is out of sync/i
+  );
+  assert.equal(relationships.list().length, 0);
+
+  lifecycle.shutdown();
+  relationships.shutdown();
+  game.scenes.delete(f.scene.id);
+});
+
+test("non-grapple relationship creation does not invoke grapple ledger reconciliation", async () => {
+  const f = fixture("nongrapple-no-reconcile");
+  let calls = 0;
+  const spending = {
+    async reconcileLedgerAsAuthority() {
+      calls += 1;
+    }
+  };
+  const { lifecycle, relationships } = buildServices({ spending });
+  await relationships.initialize();
+  await lifecycle.initialize();
+
+  await relationships.create({
+    type: "test",
+    attachmentMode: "adjacentFollower",
+    leaderUuid: f.leader.uuid,
+    followerUuid: f.follower.uuid
+  });
+  assert.equal(calls, 0);
 
   lifecycle.shutdown();
   relationships.shutdown();

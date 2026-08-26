@@ -1,3 +1,18 @@
+## v0.4.1.20 Grapple movement hardening
+
+Repository acceptance baseline: `npm test` must report **135/135 PASS**.
+
+Focused regressions cover:
+
+- stale active-turn movement history re-anchored to the Token's authoritative position while preserving total movement already spent;
+- stale history outside active movement recording cleared without preserving obsolete cost;
+- healthy aligned movement history left untouched;
+- Grapple relationship creation invokes reconciliation before persistence and fails closed when reconciliation fails;
+- rapid second manual movement for an in-flight Grapple Leader is cancelled before a second `relationships.moveGroup` request can be sent;
+- the Grapple-only local lock releases after the complete authoritative request and does not apply to non-Grapple relationships.
+
+Live Foundry acceptance should additionally confirm: (1) intentionally stale Caerwyn movement history is repaired before Grapple becomes active; (2) legitimate active-turn movement expenditure remains spent after repair; (3) a healthy native ledger is unchanged; (4) a real teleport remains a teleport; and (5) rapid arrow-key input while dragging a grappled target no longer produces Socketlib `leader changed position` errors or overlapping movement requests.
+
 ## v0.4.1.18 Grapple passenger drag constraints
 
 The deterministic repository release gate is:

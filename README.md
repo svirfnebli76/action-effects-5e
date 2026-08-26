@@ -1,3 +1,13 @@
+### v0.4.1.20 grapple movement hardening
+
+v0.4.1.20 hardens the working v0.4.1.18 Grapple movement path against two state/timing failures discovered during live multiplayer acceptance. No Unarmed Strike/Grapple Item macro change is required.
+
+At Grapple creation, AE5E now waits for the grappler's active Token animation to settle and validates the native `TokenDocument.movementHistory` endpoint against the Token's actual position. A stale active-turn ledger is re-anchored while preserving the exact movement already spent as verified non-positional cost; stale history outside active movement recording is cleared. Grapple creation is refused if reconciliation cannot be verified, preventing a bad ledger from turning an ordinary first drag into a false teleport/detach.
+
+During player-controlled Grapple translation, AE5E now permits only one coordinated movement request per grappler at a time. Additional rapid manual inputs for that same grappler are silently cancelled until the full GM-authoritative Leader/Follower operation and Token animation settlement finish. Inputs are not queued or replayed. Non-Grapple movement and unrelated Tokens are unaffected. The GM socket boundary also converts unexpected busy/stale-origin races into structured non-throwing results.
+
+The repository regression suite is **135/135 PASS**. v0.4.1.18 compendiums/assets are preserved unchanged; v0.4.1.19 remains withdrawn.
+
 ### v0.4.1.18 grapple passenger drag constraints
 
 v0.4.1.18 fixes the relationship-movement layer used when a player drags a grappler while carrying a grappled target. No Unarmed Strike or Grapple Item macro change is required.

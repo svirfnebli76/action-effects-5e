@@ -1,3 +1,14 @@
+## 0.4.1.20 — Grapple movement hardening
+
+- Added Grapple-start movement-ledger reconciliation. Before a Grapple relationship is persisted, AE5E waits for any active Token movement animation to settle, compares the Leader's authoritative Token position to the endpoint of Foundry/D&D5e `TokenDocument.movementHistory`, and leaves healthy/empty history untouched.
+- If that endpoint is stale while Foundry is actively recording movement, AE5E clears the invalid positional history, re-anchors the ledger at the Leader's actual Token position, and preserves the exact movement already spent as one verified same-position AE5E movement-spend entry. If movement history is not currently being recorded, stale history is cleared without carrying obsolete cost forward.
+- Grapple creation fails closed if a stale ledger cannot be reconciled and verified. AE5E no longer allows a known stale origin to survive into the first linked move where Foundry could misclassify an ordinary walk as teleport-like movement and detach the Grapple. A failed reconciliation attempts to restore the exact pre-check history before returning the error.
+- Added Grapple-only rapid movement serialization (Option A). While a player-originated coordinated Grapple movement is still in flight for a Leader, any additional manual movement input for that same Leader is cancelled silently instead of being queued or sent to the GM with a stale origin. Unrelated Tokens and non-Grapple relationships do not use this local lock.
+- The Grapple leader lock now remains held through the complete GM-authoritative group operation, including Leader/Follower Token animation settlement, movement accounting, and relationship lifecycle work. The next movement input is accepted normally after the authoritative request returns.
+- Hardened the GM relationship movement socket boundary: an unexpected overlapping request now returns a structured `leader-busy` result, and a request whose origin became stale before validation returns `stale-origin`, instead of surfacing the normal timing race as an uncaught Socketlib exception.
+- Added deterministic regressions for active-turn stale-ledger re-anchoring with cost preservation, out-of-turn stale-history clearing, healthy-ledger no-op behavior, Grapple creation reconciliation/fail-closed behavior, Grapple-only rapid-input suppression, and post-completion unlock. The complete repository suite is **135/135 PASS**.
+- The v0.4.1.18 compendiums and assets were preserved unchanged. No Unarmed Strike/Grapple Item macro changes were required. v0.4.1.19 remains withdrawn and is not a release base.
+
 ## 0.4.1.18 — Grapple passenger drag constraints
 
 - Fixed player-controlled Grapple dragging where the Leader move reached GM authority but the generated Follower move could fail before any Token update, causing the relationship lifecycle to tear down the Grapple and its temporary Items.

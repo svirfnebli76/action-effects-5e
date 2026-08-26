@@ -20,6 +20,7 @@ import { Logger } from "../core/logger.js";
 export class RelationshipService {
   #socket;
   #lifecycle;
+  #spending;
   #relationships = new Map();
   #followersByLeader = new Map();
   #relationshipsByFollower = new Map();
@@ -29,9 +30,10 @@ export class RelationshipService {
   #updateSceneHook = null;
   #deleteSceneHook = null;
 
-  constructor({ socket, lifecycle = null }) {
+  constructor({ socket, lifecycle = null, spending = null }) {
     this.#socket = socket;
     this.#lifecycle = lifecycle;
+    this.#spending = spending;
     this.#socket.register("relationships.create", this.#createAsGM.bind(this));
     this.#socket.register("relationships.remove", this.#removeAsGM.bind(this));
     this.#socket.register("relationships.updateGeometry", this.#updateGeometryAsGM.bind(this));
@@ -163,6 +165,13 @@ export class RelationshipService {
       throw new Error("Relationship chains and cycles are not supported by the current Action Effects 5E relationship model.");
     }
 
+    if (this.#isGrappleRelationship(normalized)) {
+      await this.#reconcileGrappleLeaderLedger({
+        leaderUuid: normalized.leaderUuid,
+        requestingUserId
+      });
+    }
+
     let persisted = normalized;
     let provisionedItemUuids = [];
     if (this.#lifecycle) {
@@ -283,6 +292,42 @@ export class RelationshipService {
     }
 
     return removed.length;
+  }
+
+  #isGrappleRelationship(relationship = {}) {
+    return relationship?.type === RELATIONSHIP_TYPES.GRAPPLE
+      || relationship?.attachmentMode === ATTACHMENT_MODES.GRAPPLE_FOLLOWER;
+  }
+
+  async #reconcileGrappleLeaderLedger({ leaderUuid, requestingUserId }) {
+    if (!this.#spending?.reconcileLedgerAsAuthority) return null;
+
+    const leader = await fromUuid(leaderUuid);
+    if (!(leader instanceof foundry.documents.TokenDocument)) {
+      throw new Error("The Grapple leader is not a valid TokenDocument for movement-ledger reconciliation.");
+    }
+
+    // TokenDocument coordinates can interpolate during Foundry movement
+    // animation even after the destination has already entered movementHistory.
+    // Never diagnose or repair that transient state as stale history.
+    const animation = leader.object?.movementAnimationPromise;
+    if (animation && typeof animation.then === "function") {
+      try {
+        await animation;
+      } catch (error) {
+        Logger.debug("Grapple ledger reconciliation waited for a rejected token animation; validating the settled Token state anyway.", error);
+      }
+    }
+
+    try {
+      return await this.#spending.reconcileLedgerAsAuthority(leader, {
+        requestedByUserId: requestingUserId,
+        reason: "grapple-start"
+      });
+    } catch (error) {
+      Logger.error("Could not reconcile the Grapple leader movement ledger before relationship creation.", error);
+      throw new Error(`Grapple could not begin because the leader's movement history is out of sync and could not be safely reconciled: ${error.message}`);
+    }
   }
 
   async #normalizeRelationship(data = {}) {

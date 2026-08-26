@@ -101,6 +101,8 @@ export class MovementSpendService {
   #stats = {
     spendRequests: 0,
     rollbackRequests: 0,
+    reconciliationChecks: 0,
+    reconciliationsCommitted: 0,
     spendsCommitted: 0,
     rollbacksCommitted: 0,
     routedToGm: 0,
@@ -173,6 +175,130 @@ export class MovementSpendService {
       this.#record("rollback-error", { receiptId: normalized.id, subjectUuid: normalized.subjectUuid, message: error?.message ?? String(error) });
       throw error;
     }
+  }
+
+  /**
+   * Reconcile a stale native movement-history endpoint to a Token's current
+   * authoritative position. This authority-only helper exists for relationship
+   * creation, where a stale Foundry ledger can otherwise make the next ordinary
+   * traverse look like a teleport.
+   *
+   * When Foundry is actively recording movement (normally the Token's current
+   * combat turn), the already-spent movement total is preserved as one
+   * same-position AE5E spend at the Token's actual position. Outside active
+   * recording, stale history is simply cleared. Healthy or empty history is
+   * left untouched.
+   */
+  async reconcileLedgerAsAuthority(subject, { requestedByUserId = null, reason = "movement-ledger-reconciliation" } = {}) {
+    this.#stats.reconciliationChecks += 1;
+    this.#assertAuthority();
+
+    const document = tokenDocument(subject);
+    if (!document?.uuid) throw new TypeError("Movement-ledger reconciliation requires a TokenDocument.");
+    this.#assertRequesterMayModify(document, requestedByUserId ?? globalThis.game?.user?.id ?? null);
+
+    return this.#withTokenLock(document.uuid, async () => {
+      const beforeHistory = this.#accounting.getHistorySnapshot(document);
+      const beforeCost = this.#accounting.getHistoryCost(document);
+      const endpoint = beforeHistory.at(-1) ?? null;
+      const stale = Boolean(endpoint) && !samePosition(endpoint, document);
+
+      if (!stale) {
+        return Object.freeze({
+          checked: true,
+          reconciled: false,
+          reason: endpoint ? "already-aligned" : "empty-history",
+          subjectUuid: document.uuid,
+          preservedCost: 0,
+          beforeCost,
+          afterCost: beforeCost
+        });
+      }
+
+      let recording = false;
+      try {
+        recording = typeof document._shouldRecordMovementHistory === "function"
+          ? document._shouldRecordMovementHistory() === true
+          : false;
+      } catch (_error) {
+        recording = false;
+      }
+      const preservedCost = recording ? beforeCost : 0;
+
+      if (typeof document.clearMovementHistory !== "function") {
+        throw new Error("Foundry does not expose TokenDocument.clearMovementHistory() for ledger reconciliation.");
+      }
+
+      try {
+        await document.clearMovementHistory();
+
+        if (preservedCost > EPSILON) {
+          const movementId = this.#uniqueMovementId([], null);
+          const waypoint = this.#buildSpendWaypoint(document, {
+            amount: preservedCost,
+            movementId,
+            userId: requestedByUserId ?? globalThis.game?.user?.id ?? ""
+          });
+          await this.#writeHistory(document, [waypoint], {
+            ae5eMovementLedgerReconciliation: true,
+            ae5eMovementSpendId: movementId,
+            ae5eMovementLedgerReason: cleanReason(reason)
+          });
+        }
+
+        const afterHistory = this.#accounting.getHistorySnapshot(document);
+        const afterCost = this.#accounting.getHistoryCost(document);
+        const afterEndpoint = afterHistory.at(-1) ?? null;
+        const positionVerified = !afterEndpoint || samePosition(afterEndpoint, document);
+        const costVerified = recording
+          ? sameNumber(afterCost, beforeCost)
+          : sameNumber(afterCost, 0);
+
+        if (!positionVerified || !costVerified) {
+          this.#stats.verificationFailures += 1;
+          throw new Error("Foundry movement history could not be re-anchored without changing legitimate movement expenditure.");
+        }
+
+        this.#stats.reconciliationsCommitted += 1;
+        this.#record("ledger-reconciliation", {
+          subjectUuid: document.uuid,
+          recording,
+          beforeCost,
+          afterCost,
+          preservedCost,
+          reason: cleanReason(reason)
+        });
+
+        return Object.freeze({
+          checked: true,
+          reconciled: true,
+          reason: recording ? "reanchored-preserving-cost" : "cleared-stale-history",
+          subjectUuid: document.uuid,
+          preservedCost,
+          beforeCost,
+          afterCost
+        });
+      } catch (error) {
+        // Relationship creation will be refused after a failed reconciliation.
+        // Restore the exact pre-check ledger if possible so a failed repair does
+        // not accidentally refund movement before the caller handles the error.
+        try {
+          await this.#writeHistory(document, beforeHistory, {
+            ae5eMovementLedgerReconciliationRollback: true,
+            ae5eMovementLedgerReason: cleanReason(reason)
+          });
+        } catch (restoreError) {
+          Logger.error("Unable to restore the movement ledger after a failed reconciliation.", restoreError);
+        }
+        this.#stats.errors += 1;
+        this.#record("ledger-reconciliation-error", {
+          subjectUuid: document.uuid,
+          beforeCost,
+          message: error?.message ?? String(error)
+        });
+        throw error;
+      }
+    });
   }
 
   async #spendAsAuthority(payload = {}) {

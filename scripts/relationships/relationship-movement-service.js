@@ -40,6 +40,7 @@ export class RelationshipMovementService {
   #queuedFollowerDetachIds = new Set();
   #queuedSeparationChecks = new Set();
   #activeLeaders = new Set();
+  #activeLocalGrappleLeaders = new Set();
   #recentRequestIds = new Set();
   #sceneMoveWrapperRegistered = false;
   #grappleDragCostApplications = 0;
@@ -89,6 +90,7 @@ export class RelationshipMovementService {
     this.#queuedFollowerDetachIds.clear();
     this.#queuedSeparationChecks.clear();
     this.#activeLeaders.clear();
+    this.#activeLocalGrappleLeaders.clear();
     this.#recentRequestIds.clear();
     this.#unregisterSceneMoveTokensWrapper();
     this.#initialized = false;
@@ -106,6 +108,7 @@ export class RelationshipMovementService {
       queuedFollowerDetaches: this.#queuedFollowerDetachIds.size,
       queuedSeparationChecks: this.#queuedSeparationChecks.size,
       activeLeaders: this.#activeLeaders.size,
+      activeLocalGrappleLeaders: this.#activeLocalGrappleLeaders.size,
       recentRequests: this.#recentRequestIds.size,
       sceneMoveWrapperRegistered: this.#sceneMoveWrapperRegistered,
       grappleDragCostApplications: this.#grappleDragCostApplications,
@@ -205,8 +208,8 @@ export class RelationshipMovementService {
       }
 
       const busy = leaderUuid
-        ? this.#activeLeaders.has(leaderUuid)
-        : this.#activeLeaders.size > 0 || this.#queuedMovementIds.size > 0 || this.#queuedSyncIds.size > 0;
+        ? this.#activeLeaders.has(leaderUuid) || this.#activeLocalGrappleLeaders.has(leaderUuid)
+        : this.#activeLeaders.size > 0 || this.#activeLocalGrappleLeaders.size > 0 || this.#queuedMovementIds.size > 0 || this.#queuedSyncIds.size > 0;
       if (!busy) return true;
       await new Promise((resolve) => setTimeout(resolve, interval));
     }
@@ -756,6 +759,20 @@ export class RelationshipMovementService {
     // synchronizes followers without converting the caller's success to false.
     if (PASSTHROUGH_LEADER_METHODS.has(transaction.method)) return true;
 
+    const hasGrappleRelationship = leaderRelationships.some((relationship) => RelationshipMovementCostPolicy.isGrappleLike(relationship));
+    if (hasGrappleRelationship && this.#activeLocalGrappleLeaders.has(transaction.subjectUuid)) {
+      // Option A: while one player-originated Grapple translation is still
+      // resolving through the GM-authoritative group movement, discard additional
+      // movement inputs for this leader. Do not queue stale absolute origins and
+      // do not surface a notification for ordinary rapid key repeat.
+      Logger.debug("Ignored overlapping Grapple leader movement while a coordinated request is still in flight.", {
+        leaderUuid: transaction.subjectUuid,
+        movementId: transaction.movementId,
+        method: transaction.method
+      });
+      return false;
+    }
+
     if (this.#hasDimensionChange(context.document, context.movement)) {
       ui?.notifications?.warn?.("Action Effects 5E cannot combine token resizing with linked movement yet. Move or resize the leader separately.");
       return false;
@@ -793,17 +810,24 @@ export class RelationshipMovementService {
     };
 
     this.#queuedMovementIds.add(transaction.movementId);
+    if (hasGrappleRelationship) this.#activeLocalGrappleLeaders.add(transaction.subjectUuid);
+
     // Do not begin the replacement Scene.moveTokens() call from a microtask while
     // Foundry is still unwinding the cancelled preMoveToken update. Yield to the
     // next event-loop task so the original movement workflow fully concludes first.
     setTimeout(() => {
-      void this.#socket.executeAsGM("relationships.moveGroup", request)
-        .then((result) => this.#notifyResult(result))
-        .catch((error) => {
+      void (async () => {
+        try {
+          const result = await this.#socket.executeAsGM("relationships.moveGroup", request);
+          this.#notifyResult(result);
+        } catch (error) {
           Logger.error("Coordinated relationship movement failed.", error);
           ui?.notifications?.error?.(`Action Effects 5E relationship movement failed: ${error.message}`);
-        })
-        .finally(() => this.#queuedMovementIds.delete(transaction.movementId));
+        } finally {
+          this.#queuedMovementIds.delete(transaction.movementId);
+          if (hasGrappleRelationship) this.#activeLocalGrappleLeaders.delete(transaction.subjectUuid);
+        }
+      })();
     }, 0);
 
     // Foundry v14 does not permit rewriting final waypoints in preMoveToken.
@@ -969,7 +993,31 @@ export class RelationshipMovementService {
 
   async #moveGroupAsGM(request = {}) {
     this.#assertExecutingAsGM();
-    const normalized = await this.#validateRequest(request, { expectedLeaderPosition: "origin" });
+
+    const requestedLeaderUuid = typeof request?.leaderUuid === "string" ? request.leaderUuid : null;
+    if (requestedLeaderUuid && this.#activeLeaders.has(requestedLeaderUuid)) {
+      return {
+        completed: false,
+        busy: true,
+        reason: "leader-busy",
+        message: null
+      };
+    }
+
+    let normalized;
+    try {
+      normalized = await this.#validateRequest(request, { expectedLeaderPosition: "origin" });
+    } catch (error) {
+      if (error?.message === "The leader changed position before the linked movement request could be validated. Try again.") {
+        return {
+          completed: false,
+          stale: true,
+          reason: "stale-origin",
+          message: null
+        };
+      }
+      throw error;
+    }
     const { requestId, requester, scene, leader, waypoints } = normalized;
 
     const duplicate = this.#beginRequest(requestId, leader.uuid);
@@ -1115,6 +1163,16 @@ export class RelationshipMovementService {
           rolledBack: true,
           message: "Linked movement was stopped, so Action Effects 5E restored the group to its starting positions."
         };
+      }
+
+      if (allRelationships.some((relationship) => RelationshipMovementCostPolicy.isGrappleLike(relationship))) {
+        const movedTokens = [
+          leader,
+          ...followerEntries
+            .filter(({ token }) => Boolean(instructions[token.id]))
+            .map(({ token }) => token)
+        ];
+        await this.#awaitTokenAnimations(movedTokens);
       }
 
       if (detachAfterSuccess.length) await this.#relationships.removeManyAsGM(detachAfterSuccess);
@@ -1627,12 +1685,12 @@ export class RelationshipMovementService {
 
   #beginRequest(requestId, leaderUuid) {
     if (this.#recentRequestIds.has(requestId)) {
-      return { completed: false, duplicate: true, message: "This relationship movement request was already processed." };
+      return { completed: false, duplicate: true, reason: "duplicate-request", message: "This relationship movement request was already processed." };
     }
     this.#rememberRequest(requestId);
 
     if (this.#activeLeaders.has(leaderUuid)) {
-      return { completed: false, message: "This leader token is already resolving linked movement." };
+      return { completed: false, busy: true, reason: "leader-busy", message: null };
     }
     this.#activeLeaders.add(leaderUuid);
     return null;
