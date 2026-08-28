@@ -322,7 +322,8 @@ export class RelationshipService {
     try {
       return await this.#spending.reconcileLedgerAsAuthority(leader, {
         requestedByUserId: requestingUserId,
-        reason: "grapple-start"
+        reason: "grapple-start",
+        clearInactiveHistory: true
       });
     } catch (error) {
       Logger.error("Could not reconcile the Grapple leader movement ledger before relationship creation.", error);

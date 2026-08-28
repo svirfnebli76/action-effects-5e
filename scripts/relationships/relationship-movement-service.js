@@ -29,6 +29,7 @@ export class RelationshipMovementService {
   #relationships;
   #movement;
   #accounting;
+  #spending;
   #obstructions;
   #initialized = false;
   #consumerRemovers = new Map();
@@ -45,12 +46,15 @@ export class RelationshipMovementService {
   #sceneMoveWrapperRegistered = false;
   #grappleDragCostApplications = 0;
   #lastGrappleDragCost = null;
+  #grappleLedgerGuards = 0;
+  #lastGrappleLedgerGuard = null;
 
-  constructor({ socket, relationships, movement, accounting = null, obstructions = null }) {
+  constructor({ socket, relationships, movement, accounting = null, spending = null, obstructions = null }) {
     this.#socket = socket;
     this.#relationships = relationships;
     this.#movement = movement;
     this.#accounting = accounting;
+    this.#spending = spending;
     this.#obstructions = obstructions;
     this.#socket.register("relationships.moveGroup", this.#moveGroupAsGM.bind(this));
     this.#socket.register("relationships.syncFollowers", this.#syncFollowersAsGM.bind(this));
@@ -112,7 +116,9 @@ export class RelationshipMovementService {
       recentRequests: this.#recentRequestIds.size,
       sceneMoveWrapperRegistered: this.#sceneMoveWrapperRegistered,
       grappleDragCostApplications: this.#grappleDragCostApplications,
-      lastGrappleDragCost: duplicateSafely(this.#lastGrappleDragCost)
+      lastGrappleDragCost: duplicateSafely(this.#lastGrappleDragCost),
+      grappleLedgerGuards: this.#grappleLedgerGuards,
+      lastGrappleLedgerGuard: duplicateSafely(this.#lastGrappleLedgerGuard)
     };
   }
 
@@ -397,6 +403,23 @@ export class RelationshipMovementService {
       followerEntries.push({ token, relationship });
     }
 
+    if (RelationshipMovementCostPolicy.leaderDragMultiplier({
+      relationships: followRelationships,
+      pathType,
+      agency,
+      resource
+    }) > 1) {
+      const ledgerGuard = await this.#guardGrappleLeaderLedger({
+        leader,
+        requestingUserId: game.user.id,
+        reason: "grapple-translation"
+      });
+      if (ledgerGuard.failed) {
+        ui?.notifications?.warn?.(ledgerGuard.message);
+        return { [leaderId]: false };
+      }
+    }
+
     const planned = RelationshipMovementPlanner.buildInstructions({
       leader,
       followers: followerEntries,
@@ -546,6 +569,43 @@ export class RelationshipMovementService {
       releaseMovementContexts();
       releaseGrappleDragCost();
       this.#activeLeaders.delete(leader.uuid);
+    }
+  }
+
+  async #guardGrappleLeaderLedger({ leader, requestingUserId, reason }) {
+    if (!this.#spending?.reconcileLedgerAsAuthority) {
+      // Keep the service independently constructible for compatibility/test
+      // harnesses. Production AE5E injects MovementSpendService and therefore
+      // always executes the integrity guard.
+      return { failed: false, skipped: true, result: null };
+    }
+
+    this.#grappleLedgerGuards += 1;
+    try {
+      const result = await this.#spending.reconcileLedgerAsAuthority(leader, {
+        requestedByUserId: requestingUserId,
+        reason,
+        clearInactiveHistory: true
+      });
+      this.#lastGrappleLedgerGuard = {
+        leaderUuid: leader.uuid,
+        reason,
+        failed: false,
+        result: duplicateSafely(result)
+      };
+      return { failed: false, result };
+    } catch (error) {
+      this.#lastGrappleLedgerGuard = {
+        leaderUuid: leader?.uuid ?? null,
+        reason,
+        failed: true,
+        message: error?.message ?? String(error)
+      };
+      Logger.error("Could not verify the Grapple leader movement ledger before coordinated translation.", error);
+      return {
+        failed: true,
+        message: `Grapple movement could not begin because the leader's movement history could not be safely reconciled: ${error.message}`
+      };
     }
   }
 
@@ -1030,6 +1090,26 @@ export class RelationshipMovementService {
       }
 
       const isTeleport = normalized.pathType === PATH_TYPES.TELEPORT;
+      if (RelationshipMovementCostPolicy.leaderDragMultiplier({
+        relationships: allRelationships,
+        pathType: normalized.pathType,
+        agency: normalized.agency,
+        resource: normalized.resource
+      }) > 1) {
+        const ledgerGuard = await this.#guardGrappleLeaderLedger({
+          leader,
+          requestingUserId: requester.id,
+          reason: "grapple-translation"
+        });
+        if (ledgerGuard.failed) {
+          return {
+            completed: false,
+            ledgerIntegrityFailed: true,
+            reason: "grapple-ledger-integrity",
+            message: ledgerGuard.message
+          };
+        }
+      }
       const detachAfterSuccess = [];
       const independentRelationships = [];
       const followerEntries = [];

@@ -186,10 +186,28 @@ export class MovementSpendService {
    * When Foundry is actively recording movement (normally the Token's current
    * combat turn), the already-spent movement total is preserved as one
    * same-position AE5E spend at the Token's actual position. Outside active
-   * recording, stale history is simply cleared. Healthy or empty history is
-   * left untouched.
+   * recording, stale history is simply cleared. Integrity-sensitive callers
+   * may also request that any non-empty history be cleared while Foundry is not
+   * recording movement, even when its endpoint is already aligned. Healthy
+   * active-recording history and empty history remain untouched.
    */
-  async reconcileLedgerAsAuthority(subject, { requestedByUserId = null, reason = "movement-ledger-reconciliation" } = {}) {
+  isMovementHistoryRecording(subject) {
+    const document = tokenDocument(subject);
+    if (!document) return false;
+    try {
+      return typeof document._shouldRecordMovementHistory === "function"
+        ? document._shouldRecordMovementHistory() === true
+        : false;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  async reconcileLedgerAsAuthority(subject, {
+    requestedByUserId = null,
+    reason = "movement-ledger-reconciliation",
+    clearInactiveHistory = false
+  } = {}) {
     this.#stats.reconciliationChecks += 1;
     this.#assertAuthority();
 
@@ -202,8 +220,10 @@ export class MovementSpendService {
       const beforeCost = this.#accounting.getHistoryCost(document);
       const endpoint = beforeHistory.at(-1) ?? null;
       const stale = Boolean(endpoint) && !samePosition(endpoint, document);
+      const recording = this.isMovementHistoryRecording(document);
+      const clearInactive = clearInactiveHistory === true && !recording && beforeHistory.length > 0;
 
-      if (!stale) {
+      if (!stale && !clearInactive) {
         return Object.freeze({
           checked: true,
           reconciled: false,
@@ -215,14 +235,6 @@ export class MovementSpendService {
         });
       }
 
-      let recording = false;
-      try {
-        recording = typeof document._shouldRecordMovementHistory === "function"
-          ? document._shouldRecordMovementHistory() === true
-          : false;
-      } catch (_error) {
-        recording = false;
-      }
       const preservedCost = recording ? beforeCost : 0;
 
       if (typeof document.clearMovementHistory !== "function") {
@@ -272,7 +284,9 @@ export class MovementSpendService {
         return Object.freeze({
           checked: true,
           reconciled: true,
-          reason: recording ? "reanchored-preserving-cost" : "cleared-stale-history",
+          reason: recording
+            ? "reanchored-preserving-cost"
+            : (clearInactive ? "cleared-inactive-history" : "cleared-stale-history"),
           subjectUuid: document.uuid,
           preservedCost,
           beforeCost,

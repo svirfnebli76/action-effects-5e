@@ -1,3 +1,13 @@
+## v0.4.1.21 Grapple orbit / Rotate → Drag acceptance
+
+Repository development gate: `npm test` must report **137/137 PASS**. New/changed coverage verifies strict aligned inactive-ledger cleanup, the pre-translation Grapple ledger guard, out-of-combat orbit with no synthetic Leader spend, active-recording orbit with normal measured spend, and single-in-flight wheel input that ignores rapid additional events but unlocks after settlement.
+
+Live Foundry acceptance remains authoritative. Test the real Unarmed Strike Grapple workflow as the non-GM grappler controller. Outside combat, Grapple a target, use Rotate Target one shell position, then drag the grappler one grid space: the target must follow, the Grapple relationship/effects/grants must remain active, and the rotation must not add movement to the Leader's native movement ledger. Spin the mouse wheel rapidly during one orbit step and confirm only one shell step resolves; a new wheel input after settlement must resolve normally. In combat on the grappler's active movement-recording turn, repeat one orbit step and confirm normal measured movement is charged before the next input unlocks, then drag and confirm the established 2× Grapple drag cost remains intact.
+
+After the live sequence, inspect `ae5e.relationships.getRotationStats()` and `ae5e.relationships.getMovementStats()`. Expected `.21` diagnostics include `orbitInputMode: "single-in-flight-shell-step"`; rapid wheel testing should increment `ignoredOrbitInputs`; out-of-combat orbit should increment `grappleOrbitSpendSkips` without incrementing `grappleOrbitSpends`; and a subsequent Grapple translation should increment `grappleLedgerGuards`.
+
+No compendium, asset, or Unarmed Strike/Grapple Item macro change is part of v0.4.1.21.
+
 ## v0.4.1.20 Grapple movement hardening
 
 Repository acceptance baseline: `npm test` must report **135/135 PASS**.

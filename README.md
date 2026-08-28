@@ -1,3 +1,15 @@
+### v0.4.1.21 Grapple orbit and ledger integrity hardening
+
+v0.4.1.21 fixes the Rotate Target → Drag failure found during live Grapple testing without changing the Unarmed Strike/Grapple Item macro or compendiums.
+
+Grapple orbit now distinguishes active native movement recording from out-of-combat/inactive recording. A successful shell step still moves the Follower as zero-cost passenger movement, but AE5E creates a normal measured Leader movement spend only when Foundry is actively recording that Leader's movement history. This prevents out-of-combat Rotate Target from leaving synthetic movement-history residue that can corrupt the next drag.
+
+Grapple translation also performs a fresh GM-authoritative ledger integrity check immediately before coordinated voluntary Grapple drag movement. Outside active movement recording, strict integrity checks clear any non-empty native history even when the endpoint is already aligned; during active recording, legitimate movement already spent remains preserved. This makes v0.4.1.21 self-healing for aligned synthetic residue left by v0.4.1.20.
+
+Mouse-wheel orbit input is now single-in-flight rather than queued. Once one shell step is accepted, additional Shift/Ctrl-wheel events are ignored until movement, accounting/rollback, and the local Follower animation settle. A fresh input after settlement is accepted normally and replans from live positions.
+
+The repository regression suite is **137/137 PASS**. The authoritative v0.4.1.20 compendium packs and assets are preserved unchanged.
+
 ### v0.4.1.20 grapple movement hardening
 
 v0.4.1.20 hardens the working v0.4.1.18 Grapple movement path against two state/timing failures discovered during live multiplayer acceptance. No Unarmed Strike/Grapple Item macro change is required.
