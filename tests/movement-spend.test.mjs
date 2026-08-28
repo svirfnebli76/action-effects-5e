@@ -298,6 +298,28 @@ test("ledger reconciliation clears stale history outside active movement recordi
   assert.deepEqual(document.movementHistory, []);
 });
 
+test("strict ledger reconciliation clears aligned history while movement recording is inactive", async () => {
+  game.user = gm;
+  const { document, service } = createFixture({ shouldRecordMovementHistory: false });
+  document.movementHistory = [{
+    x: document.x, y: document.y, elevation: document.elevation, width: 1, height: 1, depth: 1, shape: "rectangle", level: "",
+    action: "action-effects-5e.no-cost", checkpoint: true, explicit: true, intermediate: false, snapped: true, terrain: null,
+    cost: 5, movementId: "alignedsynthetic01", subpathId: "alignedsynthetic01", userId: "player"
+  }];
+
+  const result = await service.reconcileLedgerAsAuthority(document, {
+    requestedByUserId: "player",
+    reason: "grapple-translation",
+    clearInactiveHistory: true
+  });
+
+  assert.equal(result.reconciled, true);
+  assert.equal(result.reason, "cleared-inactive-history");
+  assert.equal(result.preservedCost, 0);
+  assert.equal(document.clearCalls, 1);
+  assert.deepEqual(document.movementHistory, []);
+});
+
 test("ledger reconciliation leaves healthy history untouched", async () => {
   game.user = gm;
   const { document, service } = createFixture({ shouldRecordMovementHistory: true });

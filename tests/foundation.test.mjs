@@ -1072,6 +1072,13 @@ test("grapple leader drag applies a 2x final-cost modifier while the follower re
   };
   const modifierRegistrations = [];
   const modifierUnregistrations = [];
+  const ledgerReconciliations = [];
+  const fakeSpending = {
+    async reconcileLedgerAsAuthority(subject, options = {}) {
+      ledgerReconciliations.push({ subjectUuid: subject?.uuid ?? null, options: structuredClone(options) });
+      return { checked: true, reconciled: false, reason: "already-aligned" };
+    }
+  };
   const fakeAccounting = {
     noCostActionId: "action-effects-5e.no-cost",
     ensureRegistered() {},
@@ -1095,7 +1102,8 @@ test("grapple leader drag applies a 2x final-cost modifier while the follower re
     socket: fakeSocket,
     relationships: fakeRelationships,
     movement: fakeMovement,
-    accounting: fakeAccounting
+    accounting: fakeAccounting,
+    spending: fakeSpending
   });
 
   try {
@@ -1115,6 +1123,12 @@ test("grapple leader drag applies a 2x final-cost modifier while the follower re
     });
 
     assert.equal(result.completed, true);
+    assert.equal(ledgerReconciliations.length, 1);
+    assert.equal(ledgerReconciliations[0].subjectUuid, leader.uuid);
+    assert.equal(ledgerReconciliations[0].options.reason, "grapple-translation");
+    assert.equal(ledgerReconciliations[0].options.clearInactiveHistory, true);
+    assert.equal(service.getStats().grappleLedgerGuards, 1);
+    assert.equal(service.getStats().lastGrappleLedgerGuard?.failed, false);
     assert.equal(scene.moveCalls.length, 1);
     assert.equal(modifierRegistrations.length, 1);
     assert.equal(modifierRegistrations[0].config.baseAction, "walk");
@@ -3529,7 +3543,8 @@ function makeOrbitRig({
   collision = false,
   alliedToken = null,
   requestingUser = gmUser,
-  alliedEndpointGraceMs = 50
+  alliedEndpointGraceMs = 50,
+  recordMovementHistory = true
 } = {}) {
   const previousLibWrapper = globalThis.libWrapper;
   const previousUi = globalThis.ui;
@@ -3668,6 +3683,7 @@ function makeOrbitRig({
     ensureRegistered() {}
   };
   const fakeSpending = {
+    isMovementHistoryRecording() { return recordMovementHistory === true; },
     async spend(subject, amount, options = {}) {
       const receipt = {
         version: 1,
@@ -3950,6 +3966,32 @@ test("grapple orbit spends normal movement on the leader while follower travel r
   }
 });
 
+test("grapple orbit outside active movement recording does not create synthetic movement spend", async () => {
+  const rig = makeOrbitRig({
+    sceneId: "scene-orbit-out-of-combat-no-spend",
+    leaderWidth: 2,
+    followerWidth: 1,
+    leaderPosition: { x: 100, y: 100 },
+    followerPosition: { x: 300, y: 100 },
+    coordinationDistance: 5,
+    recordMovementHistory: false
+  });
+  const service = await makeOrbitService(rig);
+  service.initialize();
+  try {
+    await performWheelStep(rig, service, { modifier: "shift", nativeDelta: 45 });
+    assert.deepEqual({ x: rig.follower.x, y: rig.follower.y }, { x: 300, y: 200 });
+    assert.equal(rig.spendCalls.length, 0);
+    assert.equal(service.getStats().grappleOrbitSpends, 0);
+    assert.equal(service.getStats().grappleOrbitSpendSkips, 1);
+    assert.equal(service.getStats().lastGrappleOrbitSpend?.skipped, true);
+    assert.equal(service.getStats().lastGrappleOrbitSpend?.reason, "movement-history-inactive");
+  } finally {
+    service.shutdown();
+    rig.cleanup();
+  }
+});
+
 test("Shift-wheel and Ctrl-wheel each normalize to one identical shell step", async () => {
   const run = async (modifier, nativeDelta) => {
     const rig = makeOrbitRig({
@@ -3990,7 +4032,7 @@ test("Shift-wheel and Ctrl-wheel each normalize to one identical shell step", as
   assert.equal(ctrl.diagnostics.inputNormalized, true);
 });
 
-test("rapid wheel inputs use predicted shell state and serialize multiple one-box steps", async () => {
+test("rapid wheel inputs ignore additional input until the current shell step fully settles", async () => {
   const rig = makeOrbitRig({
     sceneId: "scene-rapid-shell-input",
     leaderWidth: 2,
@@ -4008,17 +4050,28 @@ test("rapid wheel inputs use predicted shell state and serialize multiple one-bo
       const native = () => {
         const changes = { rotation: RelationshipOrbitPlanner.normalizeRotation(rig.leader.rotation + nativeDelta) };
         const options = {};
-        assert.notEqual(Hooks.call("preUpdateToken", rig.leader, changes, options, game.user.id), false);
+        const allowed = Hooks.call("preUpdateToken", rig.leader, changes, options, game.user.id);
+        if (allowed === false) return false;
         Hooks.callAll("updateToken", rig.leader, changes, options, game.user.id);
         rig.leader.rotation = changes.rotation;
+        return true;
       };
-      wheel.fn.call({ controlled: [rig.leaderPlaceable] }, native, event);
+      return wheel.fn.call({ controlled: [rig.leaderPlaceable] }, native, event);
     };
+
     issue(45, "shift");
     issue(15, "ctrl");
     await service.waitForSettled({ leaderUuid: rig.leader.uuid });
+    assert.deepEqual({ x: rig.follower.x, y: rig.follower.y }, { x: 300, y: 200 });
+    assert.equal(rig.socketCalls.filter((call) => call.name === "relationships.orbitFollower").length, 1);
+    assert.equal(service.getStats().ignoredOrbitInputs, 1);
+    assert.equal(service.getStats().orbitInputMode, "single-in-flight-shell-step");
+
+    issue(15, "ctrl");
+    await service.waitForSettled({ leaderUuid: rig.leader.uuid });
     assert.deepEqual({ x: rig.follower.x, y: rig.follower.y }, { x: 300, y: 300 });
-    assert.equal(rig.socketCalls.filter((call) => call.name === "relationships.orbitFollower").length, 2);
+    assert.equal(rig.socketCalls.filter((call) => call.name === "relationships.orbitFollower").length, 2,
+      "A fresh wheel input after settlement must be accepted as the next shell step.");
   } finally {
     service.shutdown();
     rig.cleanup();

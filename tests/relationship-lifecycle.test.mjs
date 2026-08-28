@@ -416,6 +416,7 @@ test("grapple creation reconciles the leader movement ledger before persisting t
   assert.equal(calls[0].token, f.leader);
   assert.equal(calls[0].options.reason, "grapple-start");
   assert.equal(calls[0].options.requestedByUserId, gmUser.id);
+  assert.equal(calls[0].options.clearInactiveHistory, true);
 
   lifecycle.shutdown();
   relationships.shutdown();

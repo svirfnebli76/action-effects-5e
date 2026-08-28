@@ -1,3 +1,14 @@
+## 0.4.1.21 — Grapple orbit and ledger integrity hardening
+
+- Fixed the Rotate Target → Drag movement-ledger failure discovered after v0.4.1.20. Grapple translation now runs a GM-authoritative movement-ledger integrity guard immediately before coordinated voluntary Grapple drag movement, in addition to the existing Grapple-start reconciliation.
+- Strengthened inactive-ledger cleanup for the v0.4.1.20 upgrade boundary. When Foundry is not recording movement, Grapple integrity callers may clear any non-empty native movement history even if its endpoint is already aligned, removing aligned synthetic orbit residue without carrying obsolete movement cost forward. When Foundry is actively recording movement, stale repair still preserves the exact movement already spent.
+- Grapple orbit now spends normal measured movement on the Leader only while Foundry/D&D5e is actively recording that Token's movement history. Outside active movement recording, the Follower still completes its no-cost passenger shell step but AE5E does not create a synthetic Leader movement-spend entry.
+- Replaced speculative mouse-wheel orbit queuing with a strict single-in-flight shell-step lock. Once one Shift/Ctrl-wheel orbit step is accepted, further wheel input for that Grapple relationship is ignored until the GM-authoritative movement, cost accounting or rollback, and local Follower animation have fully settled. The next fresh wheel input is then planned from live positions.
+- Added orbit diagnostics for `ignoredOrbitInputs`, `grappleOrbitSpendSkips`, and `inputLocked`, and movement diagnostics for `grappleLedgerGuards` / `lastGrappleLedgerGuard`.
+- Preserved v0.4.1.20 rapid Grapple-drag locking, v0.4.1.18 Friendly/Hostile passenger following, v0.4.1.17 2× voluntary drag cost, zero-cost Follower movement, nonhostile endpoint grace rollback, Release/Escape lifecycle behavior, and teleport semantics.
+- Added/updated deterministic regressions for strict aligned inactive-ledger cleanup, pre-drag ledger guarding, out-of-combat orbit no-spend behavior, active-recording orbit spending, and rapid wheel input suppression/unlock. The complete repository suite is **137/137 PASS**.
+- Compendium pack contents and assets are preserved unchanged from the authoritative v0.4.1.20 package. No Unarmed Strike/Grapple Item macro changes are included in this release.
+
 ## 0.4.1.20 — Grapple movement hardening
 
 - Added Grapple-start movement-ledger reconciliation. Before a Grapple relationship is persisted, AE5E waits for any active Token movement animation to settle, compares the Leader's authoritative Token position to the endpoint of Foundry/D&D5e `TokenDocument.movementHistory`, and leaves healthy/empty history untouched.

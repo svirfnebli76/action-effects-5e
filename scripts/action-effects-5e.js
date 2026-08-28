@@ -119,6 +119,7 @@ const relationshipMovement = new RelationshipMovementService({
   relationships,
   movement,
   accounting: movementAccounting,
+  spending: movementSpending,
   obstructions: movementObstructions
 });
 const relationshipRotation = new RelationshipRotationService({
