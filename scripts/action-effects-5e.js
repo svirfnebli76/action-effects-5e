@@ -24,6 +24,7 @@ import { DisplacementPlanner } from "./displacement/displacement-planner.js";
 import { DisplacementDestinationOverlay } from "./displacement/displacement-destination-overlay.js";
 import { NonhostileEndpointGraceService } from "./displacement/nonhostile-endpoint-grace-service.js";
 import { DisplacementService } from "./displacement/displacement-service.js";
+import { BatchDisplacementService } from "./displacement/batch-displacement-service.js";
 import { SelectionIndicatorService } from "./ui/selection-indicator-service.js";
 import { ExternalPromptBridgeService } from "./ui/external-prompt-bridge-service.js";
 import { ChoicePromptService } from "./ui/choice-prompt-service.js";
@@ -113,6 +114,12 @@ const displacement = new DisplacementService({
   selectionIndicator,
   movementExecutor: catMovement
 });
+const displacementBatch = new BatchDisplacementService({
+  socket,
+  movement,
+  accounting: movementAccounting,
+  planner: displacementPlanner
+});
 const relationshipLinkObstructions = new RelationshipLinkObstructionService({ relativeRelationships });
 const relationshipMovement = new RelationshipMovementService({
   socket,
@@ -155,6 +162,7 @@ const tests = new TestHarness({
   relativeRelationships,
   relationshipLinkObstructions,
   displacement,
+  displacementBatch,
   displacementOverlay,
   selectionIndicator,
   externalPromptBridge,
@@ -193,6 +201,7 @@ const api = new ActionEffects5eApi({
   relativeRelationships,
   relationshipLinkObstructions,
   displacement,
+  displacementBatch,
   selectionIndicator,
   externalPromptBridge,
   choicePrompts,

@@ -132,3 +132,34 @@ test("Large and Huge-style Shove destinations use separated bright-green edge ha
     }
   }
 });
+
+test("all-token collision policy hard-blocks a nonhostile occupied first step", () => {
+  const { scene, source, target, planner } = makeFixture(1);
+  const blocker = new TokenDocument();
+  Object.assign(blocker, {
+    id: "blocker",
+    uuid: "Scene.scene.Token.blocker",
+    x: target.x,
+    y: target.y - 100,
+    width: 1,
+    height: 1,
+    elevation: 0,
+    parent: scene,
+    name: "blocker"
+  });
+  scene.tokens.push(blocker);
+
+  const plan = planner.buildCandidates({
+    scene,
+    sourceToken: source,
+    targetToken: target,
+    type: DISPLACEMENT_TYPES.PUSH,
+    directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+    distance: 10,
+    tokenCollisionPolicy: "all"
+  });
+  const candidate = plan.candidates.find((entry) => entry.directionKey === "N");
+  assert.equal(candidate.selectable, false);
+  assert.equal(candidate.actualDistance, 0);
+  assert.equal(candidate.obstruction.reasonCode, "occupied-creature");
+});

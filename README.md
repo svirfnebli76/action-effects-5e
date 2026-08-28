@@ -1,3 +1,20 @@
+### v0.4.1.22 Atomic batch forced displacement
+
+AE5E now exposes GM-authoritative simultaneous Push movement through `ae5e.displacement.pushBatch()`. It plans every target against one scene state, treats every token as a hard obstruction regardless of disposition, supports a 5-foot partial stop for a blocked 10-foot push, and commits all legal targets with one `Scene.moveTokens()` operation.
+
+```js
+await ae5e.displacement.pushBatch({
+  sourceUuid: casterToken.document.uuid,
+  targetUuids: failedSaveTokens.map((token) => token.document.uuid),
+  distance: 10,
+  directionConstraint: ae5e.constants.DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY
+});
+```
+
+If one participating target cannot move, it becomes a stationary obstruction and the remaining routes are replanned. If Foundry reports an incomplete group commit, AE5E restores the moved group to its starting positions without charging movement.
+
+For live validation, control the caster first and then at least two targets, and run `await ae5e.tests.runBatchDisplacementTest()` in the browser console. The test restores target positions by default.
+
 ### v0.4.1.21 Grapple orbit and ledger integrity hardening
 
 v0.4.1.21 fixes the Rotate Target → Drag failure found during live Grapple testing without changing the Unarmed Strike/Grapple Item macro or compendiums.

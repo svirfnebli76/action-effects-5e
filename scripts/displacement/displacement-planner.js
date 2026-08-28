@@ -40,7 +40,16 @@ export class DisplacementPlanner {
     this.#obstructions = obstructions;
   }
 
-  buildCandidates({ scene, sourceToken, targetToken, type, directionConstraint, distance }) {
+  buildCandidates({
+    scene,
+    sourceToken,
+    targetToken,
+    type,
+    directionConstraint,
+    distance,
+    tokenCollisionPolicy = "relationship",
+    ignoredTokenUuids = []
+  }) {
     const directionPlan = this.#directions.getAllowedSquareDirections({
       scene,
       sourceToken,
@@ -50,7 +59,7 @@ export class DisplacementPlanner {
     });
 
     const candidates = directionConstraint === DISPLACEMENT_DIRECTION_CONSTRAINTS.AWAY
-      ? this.#buildAwayCandidates({ scene, targetToken, directionPlan, distance })
+      ? this.#buildAwayCandidates({ scene, targetToken, directionPlan, distance, tokenCollisionPolicy, ignoredTokenUuids })
       : directionPlan.directions.map((direction) => {
         const steps = this.#directions.buildStepPositions({
           scene,
@@ -64,7 +73,9 @@ export class DisplacementPlanner {
           route: steps,
           maximumDistance: finiteNumber(distance, steps.requestedDistance),
           key: direction.key,
-          direction
+          direction,
+          tokenCollisionPolicy,
+          ignoredTokenUuids
         });
       });
 
@@ -87,7 +98,7 @@ export class DisplacementPlanner {
     };
   }
 
-  #buildAwayCandidates({ scene, targetToken, directionPlan, distance }) {
+  #buildAwayCandidates({ scene, targetToken, directionPlan, distance, tokenCollisionPolicy, ignoredTokenUuids }) {
     const metrics = this.#directions.getStepMetrics({ scene, distance });
     const allowedDirections = directionPlan.directions.map((direction) => ({ ...direction }));
     if (!allowedDirections.length) return [];
@@ -147,7 +158,9 @@ export class DisplacementPlanner {
           key: group.minimumSteps === 1 ? directionKeys[0] : relative.key,
           direction: repeatedDirectionKey(directionKeys)
             ? allowedDirections.find((entry) => entry.key === repeatedDirectionKey(directionKeys)) ?? null
-            : null
+            : null,
+          tokenCollisionPolicy,
+          ignoredTokenUuids
         });
       });
 
@@ -222,13 +235,24 @@ export class DisplacementPlanner {
     return String(a.pathKey ?? "").localeCompare(String(b.pathKey ?? ""));
   }
 
-  #evaluateRoute({ scene, targetToken, route, maximumDistance, key, direction = null }) {
+  #evaluateRoute({
+    scene,
+    targetToken,
+    route,
+    maximumDistance,
+    key,
+    direction = null,
+    tokenCollisionPolicy = "relationship",
+    ignoredTokenUuids = []
+  }) {
     const obstruction = this.#obstructions.evaluateDiscreteBodyPath({
       scene,
       subjectToken: targetToken,
       positions: route.positions,
       gridDistance: route.gridDistance,
-      geometryChannel: MOVEMENT_GEOMETRY_CHANNELS.DISPLACED_BODY
+      geometryChannel: MOVEMENT_GEOMETRY_CHANNELS.DISPLACED_BODY,
+      tokenCollisionPolicy,
+      ignoredTokenUuids
     });
 
     let state = DISPLACEMENT_DESTINATION_STATES.CLEAR;

@@ -1,3 +1,12 @@
+## 0.4.1.22 — Atomic batch forced displacement
+
+- Added `ae5e.displacement.pushBatch()` for GM-authoritative, single-operation forced Push movement of multiple targets.
+- Batch planning uses one scene snapshot and fixed-point dependency resolution: moving participants may vacate space for one another, while a participant that cannot move becomes a solid obstruction for the remaining plans.
+- Batch Push uses strict all-token collision semantics regardless of disposition, preserves wall/path validation, and retains the existing farthest-legal partial-stop behavior.
+- Legal targets are committed through one `Scene.moveTokens()` operation so their animations begin together. Any incomplete member triggers no-cost administrative rollback of the committed group.
+- Batch transactions remain `traverse` / `forced` / `none`, preserving real path geometry without consuming movement from `TokenDocument.movementHistory`.
+- Added deterministic coverage for one-operation multi-target commits and strict nonhostile-token blocking. The complete repository suite is **139/139 PASS**.
+
 ## 0.4.1.21 — Grapple orbit and ledger integrity hardening
 
 - Fixed the Rotate Target → Drag movement-ledger failure discovered after v0.4.1.20. Grapple translation now runs a GM-authoritative movement-ledger integrity guard immediately before coordinated voluntary Grapple drag movement, in addition to the existing Grapple-start reconciliation.

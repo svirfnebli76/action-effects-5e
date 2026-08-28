@@ -46,6 +46,7 @@ export class TestHarness {
   #relativeRelationships;
   #relationshipLinkObstructions;
   #displacement;
+  #displacementBatch;
   #displacementOverlay;
   #selectionIndicator;
   #externalPromptBridge;
@@ -61,7 +62,7 @@ export class TestHarness {
   #relationshipLifecycleSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -74,6 +75,7 @@ export class TestHarness {
     this.#relativeRelationships = relativeRelationships;
     this.#relationshipLinkObstructions = relationshipLinkObstructions;
     this.#displacement = displacement;
+    this.#displacementBatch = displacementBatch;
     this.#displacementOverlay = displacementOverlay;
     this.#selectionIndicator = selectionIndicator;
     this.#externalPromptBridge = externalPromptBridge;
@@ -2615,6 +2617,61 @@ export class TestHarness {
       directionConstraint: resolvedConstraint,
       distance: Number.isFinite(Number(distance)) && Number(distance) > 0 ? Number(distance) : gridDistance
     });
+  }
+
+  async runBatchDisplacementTest({ distance = 10, restore = true } = {}) {
+    if (!canvas?.ready) throw new Error("A Scene canvas must be active.");
+    if (!game.user?.isGM) throw new Error("The batch displacement test requires a GM user.");
+    const controlled = canvas.tokens.controlled.map((token) => token.document);
+    if (controlled.length < 3) {
+      throw new Error("Control at least three tokens: the Source first, followed by two or more targets.");
+    }
+    const [source, ...targets] = controlled;
+    const origins = targets.map((token) => ({
+      _id: token.id,
+      x: token.x,
+      y: token.y,
+      elevation: token.elevation
+    }));
+    const startedAt = performance.now();
+    let result;
+    try {
+      result = await this.#displacementBatch.push({
+        sourceUuid: source.uuid,
+        targetUuids: targets.map((token) => token.uuid),
+        distance,
+        directionConstraint: DISPLACEMENT_DIRECTION_CONSTRAINTS.STRAIGHT_AWAY,
+        tokenCollisionPolicy: "all"
+      });
+    } finally {
+      if (restore) {
+        await canvas.scene.updateEmbeddedDocuments("Token", origins, {
+          animate: false,
+          actionEffects5eBatchTestRestore: true
+        });
+      }
+    }
+    const checks = {
+      completed: result?.completed === true,
+      oneBatchIdentity: typeof result?.batchId === "string" && result.batchId.length > 0,
+      everyTargetReported: result?.results?.length === targets.length,
+      forcedNoCostContract: result?.results?.every((entry) => Number(entry.actualDistance) >= 0) === true,
+      noRollback: result?.rolledBack === false
+    };
+    const passed = Object.values(checks).every(Boolean);
+    const report = {
+      result: passed ? "PASS" : "FAIL",
+      elapsedMs: Math.round(performance.now() - startedAt),
+      checks,
+      batch: result,
+      restored: restore
+    };
+    console.table(Object.entries(checks).map(([name, value]) => ({ Check: name, Result: value ? "PASS" : "FAIL" })));
+    console.log("AE5E v0.4.1.22 batch displacement full result", report);
+    ui?.notifications?.[passed ? "info" : "error"]?.(
+      passed ? "AE5E | Batch displacement test PASSED." : "AE5E | Batch displacement test FAILED. See console."
+    );
+    return report;
   }
 
   async runDisplacementFoundationTest({ restoreOnPass = true, graceBufferMs = 700 } = {}) {

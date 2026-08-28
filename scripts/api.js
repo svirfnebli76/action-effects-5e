@@ -98,6 +98,7 @@ export class ActionEffects5eApi {
     relativeRelationships,
     relationshipLinkObstructions,
     displacement,
+    displacementBatch,
     selectionIndicator,
     externalPromptBridge,
     choicePrompts,
@@ -303,7 +304,8 @@ export class ActionEffects5eApi {
       clearSelection: () => displacement.clearSelection(),
       clearEndpointGrace: (subjectUuid) => displacement.clearEndpointGrace(subjectUuid),
       getRecentResults: () => displacement.getRecentResults(),
-      getStats: () => displacement.getStats()
+      getStats: () => displacement.getStats(),
+      pushBatch: (options) => displacementBatch.push(options)
     });
 
     this.selection = Object.freeze({
@@ -430,6 +432,7 @@ export class ActionEffects5eApi {
       previewDisplacementFromControlledTokens: (options) => tests.previewDisplacementFromControlledTokens(options),
       runShoveDestinationGeometryTest: (options) => tests.runShoveDestinationGeometryTest(options),
       runDisplacementFoundationTest: (options) => tests.runDisplacementFoundationTest(options),
+      runBatchDisplacementTest: (options) => tests.runBatchDisplacementTest(options),
       runGrappleLinkObstructionTest: (options) => tests.runGrappleLinkObstructionTest(options)
     });
 

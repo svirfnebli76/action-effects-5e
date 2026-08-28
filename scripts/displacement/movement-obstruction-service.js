@@ -32,7 +32,13 @@ export class MovementObstructionService {
       && a.bottom > b.top + 0.01;
   }
 
-  inspectBodyAtPosition({ scene, subjectToken, position, geometryChannel = MOVEMENT_GEOMETRY_CHANNELS.DISPLACED_BODY }) {
+  inspectBodyAtPosition({
+    scene,
+    subjectToken,
+    position,
+    geometryChannel = MOVEMENT_GEOMETRY_CHANNELS.DISPLACED_BODY,
+    ignoredTokenUuids = []
+  }) {
     if (!scene?.tokens || !subjectToken || !position) {
       return { conflicts: [], hostile: [], nonhostile: [] };
     }
@@ -42,10 +48,12 @@ export class MovementObstructionService {
     const subjectBounds = this.tokenBoundsAt(subjectToken, position, gridSize);
     const subjectElevation = finiteNumber(position.elevation, finiteNumber(subjectToken.elevation, 0));
     const conflicts = [];
+    const ignored = new Set(ignoredTokenUuids);
 
     for (const candidate of scene.tokens) {
       if (!(candidate instanceof foundry.documents.TokenDocument)) continue;
       if (candidate.uuid === subjectToken.uuid) continue;
+      if (ignored.has(candidate.uuid)) continue;
       if (Math.abs(finiteNumber(candidate.elevation, 0) - subjectElevation) > 0.01) continue;
       if (!this.boundsOverlap(subjectBounds, this.tokenBoundsAt(candidate, candidate, gridSize))) continue;
 
@@ -81,7 +89,9 @@ export class MovementObstructionService {
     subjectToken,
     positions = [],
     gridDistance,
-    geometryChannel = MOVEMENT_GEOMETRY_CHANNELS.DISPLACED_BODY
+    geometryChannel = MOVEMENT_GEOMETRY_CHANNELS.DISPLACED_BODY,
+    tokenCollisionPolicy = "relationship",
+    ignoredTokenUuids = []
   } = {}) {
     if (!(subjectToken instanceof foundry.documents.TokenDocument)) {
       throw new Error("Body obstruction evaluation requires a TokenDocument subject.");
@@ -156,7 +166,8 @@ export class MovementObstructionService {
         scene,
         subjectToken,
         position,
-        geometryChannel
+        geometryChannel,
+        ignoredTokenUuids
       });
       const stepConflicts = occupancy.conflicts.map((entry) => ({
         ...duplicateSafely(entry),
@@ -164,14 +175,19 @@ export class MovementObstructionService {
       }));
       conflicts.push(...stepConflicts);
 
-      if (occupancy.hostile.length) {
+      const hardCreatureConflicts = tokenCollisionPolicy === "all"
+        ? occupancy.conflicts
+        : occupancy.hostile;
+      if (hardCreatureConflicts.length) {
         hardBlock = {
           type: "creature",
-          reasonCode: "hostile-creature",
+          reasonCode: tokenCollisionPolicy === "all" ? "occupied-creature" : "hostile-creature",
           geometryChannel,
           step: index + 1,
           position: duplicateSafely(position),
-          conflicts: stepConflicts.filter((entry) => entry.relationship === RELATIVE_TOKEN_RELATIONSHIPS.HOSTILE)
+          conflicts: tokenCollisionPolicy === "all"
+            ? stepConflicts
+            : stepConflicts.filter((entry) => entry.relationship === RELATIVE_TOKEN_RELATIONSHIPS.HOSTILE)
         };
         break;
       }
@@ -188,7 +204,8 @@ export class MovementObstructionService {
       scene,
       subjectToken,
       position: lastLegalPosition,
-      geometryChannel
+      geometryChannel,
+      ignoredTokenUuids
     });
     for (const entry of endpoint.nonhostile) {
       if (entry.blockerUuid) allowedNonhostileUuids.add(entry.blockerUuid);
