@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../core/constants.js";
-import { CAT_AUTOMATION_SOURCE_ID } from "../integrations/cat-automation-registry.js";
+
+const CAT_AUTOMATION_SOURCE_ID = MODULE_ID;
 
 export const CAT_AUTOMATION_SOURCE_FLAG = "flags.cat.automation.source";
 export const CAT_AUTOMATION_VERSION_FLAG = "flags.cat.automation.version";

@@ -1,3 +1,24 @@
+## v0.4.2.3 permanent CAT public-registration acceptance
+
+After installing/reloading v0.4.2.3, run as a GM from the Foundry browser console:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+await ae5e.tests.runCatIntegrationFoundationTest({ notify: true });
+```
+
+The gate waits for AE5E's asynchronous `catReady` registration to finish, verifies the required CAT dependency/API boundary, confirms the explicit public-pack allowlist and Administrative exclusion, requires all configured public packs to exist, validates that every published AE5E automation carries a real SemVer rather than CAT's fallback `0`, verifies incomplete packs are deferred fail-closed, and confirms canonical 2014 Misty Step is registered from `action-effects-5e.spells-level-2` at automation version `1.0.0`. Duplicate initialization must not repeat source or pack registration.
+
+Useful diagnostics:
+
+```js
+ae5e.interoperability.cat.registration.getStatus();
+ae5e.interoperability.cat.registration.getStats();
+await ae5e.authoring.cat.auditPublicPacks();
+```
+
+A public pack reported under `deferredPacks` is intentionally unavailable through CAT until every Item in that pack has valid AE5E CAT source/version metadata. This prevents accidental publication at CAT's implicit version `0`.
+
 ## v0.4.2.2 CAT metadata authoring / validation acceptance
 
 This release adds the production authoring and pack-audit API but deliberately leaves canonical compendium Items unchanged. Run as a GM from the Foundry browser console:

@@ -1,3 +1,13 @@
+### v0.4.2.3 Permanent CAT public-compendium registration
+
+AE5E now permanently publishes CAT-ready automation packs after CAT fires `catReady`. Registration is fail-closed and uses the same explicit public-pack allowlist as the authoring/audit service: Cantrips, spell levels 1-9, and Actions - Common are eligible, while **AE5E Administrative remains excluded**.
+
+A non-empty public pack is passed to CAT's public `registerAutomationCompendium()` API only when **every Item in that pack** has valid `system.identifier`, `system.source.rules`, Item `type`, `flags.cat.automation.source = "action-effects-5e"`, and a SemVer `flags.cat.automation.version`. Incomplete packs are reported as deferred rather than being published with CAT's fallback version `0`. Empty packs are skipped cleanly.
+
+The authoritative v0.4.2.2 interim compendium state is preserved, including canonical Misty Step's accepted CAT metadata at automation version `1.0.0`. At startup this makes Level 2 immediately CAT-registered; other non-empty public packs remain deferred until their canonical Items are version-authored. Diagnostics remain at `ae5e.interoperability.cat.registration.getStatus()` / `getStats()`.
+
+Live GM acceptance: `await ae5e.tests.runCatIntegrationFoundationTest({ notify: true })`.
+
 ### v0.4.2.2 CAT metadata authoring and validation
 
 AE5E now exposes a GM-only authoring boundary at `ae5e.authoring.cat` for canonical CAT metadata. `setMetadata(itemOrUuid, { version })` validates the Item identifier, ruleset, type, and SemVer automation version before writing only CAT's source/version flags. Read-only `auditItem()`, `auditPack()`, and `auditPublicPacks()` helpers report missing/invalid metadata without changing compendium content.

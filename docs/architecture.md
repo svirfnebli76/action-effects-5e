@@ -1,3 +1,11 @@
+## v0.4.2.3 CAT public-registration boundary
+
+`CatAutomationRegistry` is now the permanent CAT publication boundary. It still initializes once during AE5E `init` and waits for CAT's `catReady`, but after source registration it evaluates only `CAT_PUBLIC_AUTOMATION_PACK_IDS`. Internal packs never enter this path.
+
+Publication is deliberately **pack-atomic and fail-closed**. Before calling CAT's public `registerAutomationCompendium()` API, AE5E indexes the non-empty candidate pack for identifier, ruleset, Item type, CAT source, and CAT automation version. Every Item must be fully authored and its version must pass AE5E's SemVer validator. If even one Item is incomplete, the entire pack is deferred and CAT is not called for that pack. This avoids CAT's normal missing-version fallback of `"0"` and preserves the accepted canonical-Item-as-version-authority design. Empty public packs are skipped without error.
+
+This makes rollout incremental without weakening metadata discipline: once every Item in a public pack is authored, the next Foundry reload automatically publishes that pack with versions read directly from the canonical Items. The current authoritative Level 2 pack qualifies because Misty Step is stamped as `action-effects-5e` / `1.0.0`; other unfinished public packs remain visible in registration diagnostics as deferred.
+
 # Action Effects 5E architecture
 
 ## v0.4.2.2 CAT metadata authoring boundary

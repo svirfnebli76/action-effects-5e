@@ -1,3 +1,14 @@
+## 0.4.2.3 — Permanent CAT public-compendium registration
+
+- Promoted `CatAutomationRegistry` from source-only registration to permanent public-compendium publication after CAT's `catReady` lifecycle. Registration uses CAT's public `registerAutomationCompendium()` API and the established explicit AE5E public-pack allowlist.
+- Added a fail-closed, pack-atomic readiness gate. A non-empty public pack is registered only when every Item has a valid identifier, 2014/2024 ruleset, Item type, `flags.cat.automation.source = "action-effects-5e"`, and a SemVer CAT automation version. This prevents unfinished Items from being published under CAT's fallback version `0`.
+- Empty public packs are skipped cleanly; incomplete packs are reported as deferred; missing packs and registration failures are surfaced separately in diagnostics. `AE5E Administrative` remains outside the allowlist and is never published.
+- Expanded `ae5e.interoperability.cat.registration.getStatus()` / `getStats()` with permanent-registration stage, allowlist, registered/deferred/empty/missing pack reporting, readiness and registration counters, and registered Item counts.
+- Updated the live CAT acceptance gate to wait for asynchronous public registration, verify all published versions are authored SemVer values, verify deferred packs remain unregistered, verify Administrative exclusion, and verify canonical 2014 Misty Step is permanently registered at automation version `1.0.0`.
+- The authoritative v0.4.2.2 interim package supplied after live acceptance is the compendium/asset baseline for this release. Its accepted canonical Misty Step CAT source/version metadata is retained. No additional compendium Item is stamped or migrated by v0.4.2.3.
+- Added deterministic regressions for ready/deferred/empty/missing public-pack classification, internal-pack exclusion, fail-closed invalid metadata behavior, idempotent registration, source-registration failure, and CAT pack-registration failure handling.
+- The CAT Medkit Configuration-tab width/overflow issue remains tracked separately; AE5E does not apply a production CSS workaround.
+
 ## 0.4.2.2 — CAT metadata authoring and validation foundation
 
 - Added the production CAT metadata authoring service exposed at `ae5e.authoring.cat`. It validates canonical Item identity metadata, writes only `flags.cat.automation.source = "action-effects-5e"` and `flags.cat.automation.version`, and requires strict SemVer-style automation versions such as `1.0.0`.
