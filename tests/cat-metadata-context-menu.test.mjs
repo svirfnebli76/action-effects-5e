@@ -102,7 +102,7 @@ test("first-use editor draft auto-populates Foundry fields and proposes version 
   assert.equal(draft.alreadyPublished, false);
 });
 
-test("editor draft preserves existing automation version and proposes identifier from name when missing", () => {
+test("editor draft preserves existing automation version and proposes a safe first-use identifier", () => {
   const { service } = makeService();
   const existing = service.getDraft(makeItem({ source: "action-effects-5e", version: "2.3.4" }));
   assert.equal(existing.version, "2.3.4");
@@ -110,4 +110,25 @@ test("editor draft preserves existing automation version and proposes identifier
 
   const missingIdentifier = service.getDraft(makeItem({ name: "Thunder Wave!", identifier: "" }));
   assert.equal(missingIdentifier.identifier, "thunder-wave");
+
+  const genericScratchIdentifier = service.getDraft(makeItem({
+    name: "Entangle",
+    type: "spell",
+    identifier: "spell",
+    rules: "2024",
+    source: undefined,
+    version: undefined
+  }));
+  assert.equal(genericScratchIdentifier.identifier, "entangle");
+  assert.equal(genericScratchIdentifier.rules, "2024");
+  assert.equal(genericScratchIdentifier.alreadyPublished, false);
+
+  const publishedGenericIdentifier = service.getDraft(makeItem({
+    name: "Entangle",
+    type: "spell",
+    identifier: "spell",
+    source: "action-effects-5e",
+    version: "1.0.0"
+  }));
+  assert.equal(publishedGenericIdentifier.identifier, "spell");
 });

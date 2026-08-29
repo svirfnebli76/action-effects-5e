@@ -67,6 +67,47 @@ function slugifyIdentifier(name) {
     .replace(/-+/g, "-");
 }
 
+const GENERIC_FIRST_USE_IDENTIFIERS = new Set([
+  "item",
+  "spell",
+  "feat",
+  "feature",
+  "weapon",
+  "equipment",
+  "consumable",
+  "container",
+  "tool",
+  "loot",
+  "background",
+  "class",
+  "subclass",
+  "race",
+  "species",
+  "facility"
+]);
+
+function proposedIdentifier(document, { existingIdentifier, alreadyPublished }) {
+  const current = String(existingIdentifier ?? "").trim();
+  const fromName = slugifyIdentifier(document?.name);
+  if (alreadyPublished) return current || fromName;
+  if (!current) return fromName;
+
+  const normalizedCurrent = slugifyIdentifier(current);
+  const normalizedType = slugifyIdentifier(document?.type);
+  const looksGeneric = (
+    normalizedCurrent === normalizedType
+    || GENERIC_FIRST_USE_IDENTIFIERS.has(normalizedCurrent)
+  );
+
+  // Scratch-created D&D5e Items can carry a type-like placeholder identifier
+  // such as "spell" or "feat". On first publication, prefer a stable
+  // name-derived identifier instead. A real Item whose name itself is the
+  // generic word is left alone, and already-published identifiers are never
+  // silently rewritten by merely opening the editor.
+  if (looksGeneric && fromName && normalizedCurrent !== fromName) return fromName;
+  return current;
+}
+
 /**
  * GM authoring UI for CAT automation metadata on AE5E public compendium Items.
  *
@@ -167,17 +208,18 @@ export class CatMetadataContextMenuService {
     const existingVersion = String(document.flags?.cat?.automation?.version ?? "").trim();
     const existingIdentifier = String(document.system?.identifier ?? "").trim();
     const source = document.flags?.cat?.automation?.source ?? null;
+    const alreadyPublished = source === MODULE_ID && isValidAutomationVersion(existingVersion);
 
     return {
       name: document.name ?? "Unnamed Item",
       type: document.type ?? "",
-      identifier: existingIdentifier || slugifyIdentifier(document.name),
+      identifier: proposedIdentifier(document, { existingIdentifier, alreadyPublished }),
       rules: existingRules === "2014" || existingRules === "2024" ? existingRules : "",
       source,
       sourceLabel: MODULE_TITLE,
       sourceId: MODULE_ID,
       version: isValidAutomationVersion(existingVersion) ? existingVersion : "1.0.0",
-      alreadyPublished: source === MODULE_ID && isValidAutomationVersion(existingVersion),
+      alreadyPublished,
       foreignProvider: Boolean(source && source !== MODULE_ID),
       pack: document.pack ?? null
     };

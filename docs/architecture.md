@@ -1,3 +1,7 @@
+## v0.4.2.6 first-use CAT identifier authoring boundary
+
+Unpublished Items with missing or generic/type-like identifiers are proposed a name-derived slug in the metadata editor; published identifiers remain stable. Entangle with `system.identifier = "spell"` must draft as `entangle`.
+
 ## v0.4.2.5 CAT metadata authoring UI boundary
 
 `CatMetadataContextMenuService` wraps Foundry v14's Compendium entry context-option provider and adds a GM-only `Edit Item Version` action only for the explicit `CAT_PUBLIC_AUTOMATION_PACK_IDS` allowlist. It delegates all writes to `CatMetadataAuthoringService`; the UI does not own validation or CAT metadata semantics. Authoring can update `system.identifier`, `system.source.rules`, `flags.cat.automation.source`, and `flags.cat.automation.version`, while Item name/type remain read-only. Locked compendiums are temporarily unlocked by the authoring service and restored to their prior lock state. After a successful save, `CatAutomationRegistry.refreshPublicCompendiums()` re-evaluates the public pack gate and refreshes CAT registrations without an AE5E module release.

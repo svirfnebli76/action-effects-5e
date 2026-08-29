@@ -1,3 +1,11 @@
+## 0.4.2.6 — First-use identifier proposal hardening
+
+- Fixed **Edit Item Version** first-use identifier population for scratch-created D&D5e Items that carry generic/type-like placeholder identifiers such as `spell`, `feat`, or `item`. An unpublished Item now proposes a stable slug from its Item name instead (for example, Entangle → `entangle`).
+- Existing meaningful identifiers remain unchanged. Already-published AE5E CAT identifiers are also preserved when the editor is reopened, so opening the editor never silently rewrites an established CAT identity.
+- The proposed first-use identifier remains editable before Publish, and the existing ruleset/provider/version workflow is unchanged.
+- Added deterministic regression coverage for missing identifiers, generic scratch identifiers, preservation of published identifiers, and a live acceptance assertion matching the observed Entangle (`spell` → `entangle`) case.
+- Compendium content and assets are unchanged from v0.4.2.5.
+
 ## 0.4.2.4 — AE5E compendium Item version editor
 
 - Added a GM-only **Edit Item Version** right-click context option for Items displayed inside AE5E's approved public compendiums. The option is not offered for World Items, foreign compendiums, or the internal AE5E Administrative pack.

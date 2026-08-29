@@ -28,7 +28,7 @@ export class CatMetadataContextMenuTestSuite {
 
     try {
       const status = this.#contextMenu.getStatus();
-      record("Runtime version is v0.4.2.5", MODULE_VERSION === "0.4.2.5", { moduleVersion: MODULE_VERSION });
+      record("Runtime version is v0.4.2.6", MODULE_VERSION === "0.4.2.6", { moduleVersion: MODULE_VERSION });
       record("Compendium context wrapper initialized", status.initialized === true && status.wrapperRegistered === true && status.lastError === null, status);
       record("Context option label is Edit Item Version", status.contextLabel === CAT_METADATA_CONTEXT_LABEL && CAT_METADATA_CONTEXT_LABEL === "Edit Item Version", status);
       record("Context editor is GM-only", status.gmOnly === true, status);
@@ -55,6 +55,20 @@ export class CatMetadataContextMenuTestSuite {
       record("Editor draft auto-populates ruleset", draft.rules === canonical.system?.source?.rules, draft);
       record("Editor draft auto-populates existing version", draft.version === (canonical.flags?.cat?.automation?.version ?? "1.0.0"), draft);
       record("Automation provider is supplied by AE5E", draft.sourceId === "action-effects-5e" && draft.sourceLabel === "Action Effects 5E", draft);
+
+      const scratchSpellDraft = this.#contextMenu.getDraft({
+        documentName: "Item",
+        name: "Entangle",
+        type: "spell",
+        pack: "action-effects-5e.spells-level-1",
+        system: { identifier: "spell", source: { rules: "2024" } },
+        flags: { cat: { automation: {} } }
+      });
+      record("First-use generic spell identifier is replaced with a name-derived identifier",
+        scratchSpellDraft.identifier === "entangle"
+          && scratchSpellDraft.rules === "2024"
+          && scratchSpellDraft.alreadyPublished === false,
+        scratchSpellDraft);
 
       const base = [{ label: "Core Option" }];
       const publicApp = { collection: pack };

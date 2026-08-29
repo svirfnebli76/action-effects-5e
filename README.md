@@ -1,3 +1,7 @@
+### v0.4.2.6 first-use identifier proposal hardening
+
+The GM-only **Edit Item Version** workflow now detects generic/type-like placeholder identifiers on unpublished scratch-created Items. If a spell such as Entangle arrives with `system.identifier = "spell"`, the editor proposes `entangle` from the Item name while keeping the field editable. Meaningful identifiers and already-published CAT identities are preserved.
+
 ### v0.4.2.5 Compendium Item version editor
 
 AE5E now provides a GM-only **Edit Item Version** context-menu action when right-clicking Items inside approved public AE5E compendiums. The editor pre-fills existing Item/CAT metadata, allows the ruleset and automation version to be authored without rebuilding AE5E, safely handles locked compendiums, and refreshes CAT registration immediately after save. AE5E Administrative and non-AE5E compendiums are excluded.
