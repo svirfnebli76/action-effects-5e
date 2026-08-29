@@ -10,6 +10,7 @@ import { MovementSpendService } from "./movement/movement-spend-service.js";
 import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
+import { CatAutomationRegistry } from "./integrations/cat-automation-registry.js";
 import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
 import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
@@ -54,6 +55,7 @@ const movementAccounting = new MovementAccountingService();
 const movementSpending = new MovementSpendService({ socket, accounting: movementAccounting });
 const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
+const catAutomationRegistry = new CatAutomationRegistry();
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
@@ -146,6 +148,7 @@ const tests = new TestHarness({
   movementSpending,
   catMovement,
   catSpell,
+  catAutomationRegistry,
   animationOwnership,
   automatedAnimations,
   spellModifierRegistry,
@@ -185,6 +188,7 @@ const api = new ActionEffects5eApi({
   movementSpending,
   catMovement,
   catSpell,
+  catAutomationRegistry,
   animationOwnership,
   automatedAnimations,
   spellModifierRegistry,
@@ -223,6 +227,7 @@ socket.initialize();
 Hooks.once("init", () => {
   Logger.log("Initializing module foundation.");
   registerSettings();
+  catAutomationRegistry.initialize();
   movementAccounting.initialize();
 
   const module = game.modules.get(MODULE_ID);

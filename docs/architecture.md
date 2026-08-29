@@ -49,7 +49,7 @@ CAT `rollUtils.getChangedDamageRoll()` is a special case: its `.evaluate()` is i
 
 The per-target Midi hook supplies `{ item, workflow, damageItem }`; the adapter normalizes that canonical `damageItem` into `SpellModifierContext.damageItem` and retains `ditem` only as a backward-compatible alias for CAT/older helper code.
 
-Handlers list required capability names. If CAT is inactive or a required utility is absent, discovery omits that handler rather than partially executing it. Cast-level and save-DC facts retain narrow AE5E fallbacks for diagnostics/eligibility; mutating utilities fail explicitly if a handler calls one without the required capability. AE5E does not rely on CAT 0.0.6 ActiveEffect `getSavedCastData()` resolution; that CAT path has a confirmed Foundry-v14 document-type bug and is expected to be fixed in CAT's next release.
+Handlers list required capability names. Beginning with v0.4.2.1 CAT 0.0.8+ is required, but capability checks remain fail-closed: if a required utility is unexpectedly absent, discovery omits that handler rather than partially executing it. Cast-level and save-DC facts retain narrow AE5E fallbacks for diagnostics/eligibility; mutating utilities fail explicitly if a handler calls one without the required capability. The required CAT 0.0.8 line includes the corrected `documentUtils.getSavedCastData()` behavior; AE5E keeps its narrow fallback for defensive diagnostics rather than depending on a second state model.
 
 ### v0.4.1 scope boundary
 
@@ -83,6 +83,14 @@ This separation is intentional:
 `MovementService` asks the CAT adapter to enrich raw movement operations before constructing `MovementTransaction`. CAT's unique `catForce` action is sufficient evidence to classify the operation as forced/no-resource and to mark `interoperabilityProvider: "cat"`. This lets relationship/reaction consumers distinguish external forced movement from voluntary movement even when the external caller did not know AE5E's metadata schema.
 
 The adapter fails closed on information CAT does not carry. It does **not** infer a Source token, Push versus Pull, displacement direction, requested distance, or an AE5E relationship. Normal `walk` actions are not marked CAT-origin because CAT ultimately delegates them into Foundry's ordinary movement pipeline and no reliable provenance remains.
+
+### v0.4.2.1 CAT automation-provider foundation
+
+CAT is a required AE5E dependency beginning with the v0.4.2 branch. AE5E still owns its runtime semantics and services; CAT is the standardized provider-registration, Item installation/update, and future per-Item configuration layer. `CatAutomationRegistry` owns the startup boundary so individual Items and runtime services never need to manage CAT's `catReady` timing themselves.
+
+The registry is initialized once during AE5E `init`, subscribes once to CAT's `catReady` hook, and registers only the source display name `Action Effects 5E` through CAT's public API. v0.4.2.1 deliberately registers no Item automation and performs no compendium mutation. Public diagnostics are exposed under `ae5e.interoperability.cat.registration`; CAT's internal automation map is consulted only for diagnostics/acceptance verification, not as the registration mechanism.
+
+Future v0.4.2 stages can add explicitly allowlisted public automation Items/compendiums and CAT configuration schemas behind this boundary while keeping administrative/support packs private.
 
 ### v0.4.1.8 CAT teleport lifecycle adapter
 

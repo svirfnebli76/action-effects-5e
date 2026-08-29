@@ -1,12 +1,13 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.1.22";
+export const MODULE_VERSION = "0.4.2.1";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
   "dae",
   "socketlib",
-  "lib-wrapper"
+  "lib-wrapper",
+  "cat"
 ]);
 
 export const COMPATIBILITY_MODULES = Object.freeze({

@@ -1,3 +1,29 @@
+## v0.4.2.1 CAT automation-provider foundation acceptance
+
+This branch makes CAT 0.0.8+ a required AE5E dependency but deliberately registers no Items yet. After installing v0.4.2.1 with CAT active, run the automated Foundry-side gate as GM from the browser console:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+await ae5e.tests.runCatIntegrationFoundationTest({ notify: true });
+```
+
+The gate waits briefly for CAT's delayed `catReady` lifecycle if needed, then verifies the AE5E/CAT required-module relationship, CAT 0.0.8+ manifest floor, runtime dependency validation, CAT public automation-registration API, `catReady` observation, the registered source name `Action Effects 5E`, zero AE5E Item automations, and idempotent duplicate initialization. A complete PASS is the acceptance requirement for the new provider foundation.
+
+Then run the unchanged broad non-destructive smoke gate:
+
+```js
+await ae5e.tests.runFoundationSmokeTest({ notify: true });
+```
+
+For diagnostics without mutating anything:
+
+```js
+console.log(ae5e.interoperability.cat.registration.getStatus());
+console.log(ae5e.interoperability.cat.registration.getStats());
+```
+
+Expected foundation state: source `action-effects-5e` is verified as `Action Effects 5E`, `automationsRegistered` is exactly `0`, and no registration error is recorded. Misty Step registration is intentionally deferred to the next stage. Compendium and asset contents must remain unchanged from the supplied v0.4.1.22 authority package.
+
 ## v0.4.1.21 Grapple orbit / Rotate → Drag acceptance
 
 Repository development gate: `npm test` must report **137/137 PASS**. New/changed coverage verifies strict aligned inactive-ledger cleanup, the pre-translation Grapple ledger guard, out-of-combat orbit with no synthetic Leader spend, active-recording orbit with normal measured spend, and single-in-flight wheel input that ignores rapid additional events but unlocks after settlement.

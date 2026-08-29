@@ -1,3 +1,9 @@
+### v0.4.2.1 CAT automation-provider foundation
+
+AE5E v0.4.2.1 begins the CAT-backed automation-provider branch. CAT 0.0.8+ is now a required module dependency. During Foundry startup AE5E waits for CAT's `catReady` lifecycle and registers the provider name **Action Effects 5E** through CAT's public automation API.
+
+This first branch release intentionally registers **no Item automations**. It establishes and tests only the dependency/startup/source-registration boundary before Misty Step becomes the first CAT-managed AE5E Item in the next stage. Diagnostics are available at `ae5e.interoperability.cat.registration.getStatus()` / `getStats()`, and the live browser-console acceptance gate is `await ae5e.tests.runCatIntegrationFoundationTest({ notify: true })`. Existing compendiums and assets are preserved unchanged from v0.4.1.22.
+
 ### v0.4.1.22 Atomic batch forced displacement
 
 AE5E now exposes GM-authoritative simultaneous Push movement through `ae5e.displacement.pushBatch()`. It plans every target against one scene state, treats every token as a hard obstruction regardless of disposition, supports a 5-foot partial stop for a blocked 10-foot push, and commits all legal targets with one `Scene.moveTokens()` operation.
@@ -291,7 +297,7 @@ Declarations may live on the caster Actor, an embedded Item, or an ActiveEffect.
 
 Every cast receives a `SpellModifierSession`. It records phase visits, decisions, applications, conflicts, errors, and rollback callbacks without writing transient state onto the Actor or spell Item. When CAT's characterized workflow-state helpers are present, AE5E also mirrors the session snapshot at `workflow.cat.sme.actionEffects5e`; that mirror is isolated to the current workflow and is not the authoritative SME state.
 
-CAT is behind `CatSpellAdapter`. Modifier handlers use methods on `SpellModifierContext` for Activity replacement, cast/save facts, synthetic Activities/Items, roll utilities, and per-target damage adjustment. If a handler declares a CAT capability that is unavailable, that handler is not offered. The generic SME registry/session/discovery layer itself does not require CAT.
+CAT is behind `CatSpellAdapter`. Modifier handlers use methods on `SpellModifierContext` for Activity replacement, cast/save facts, synthetic Activities/Items, roll utilities, and per-target damage adjustment. If a required CAT capability is unexpectedly unavailable, that handler is not offered rather than partially executing. Beginning with v0.4.2.1 CAT is a package requirement, while the generic SME registry/session/discovery layer still retains its own semantic ownership instead of delegating modifier policy to CAT.
 
 Damage-roll mutation deliberately distinguishes **re-evaluation** from **preserving an existing result**. CAT 0.0.6 `rollUtils.getChangedDamageRoll()` constructs/evaluates a new DamageRoll, so SME exposes it only under the explicit semantic name `context.rebuildChangedDamageRoll(...)`. For mechanics that already have evaluated dice and only need to change damage-type metadata (the CPR Chaos Bolt pattern), use `context.retagDamageRollsPreservingResults(type, options)`: it keeps the same roll objects/totals/formulas, changes `roll.options.type`, and commits them with Midi `workflow.setDamageRolls()`. Live Foundry validation proved CAT `setActivity()` does not replace the already-running D&D5e Activity instance used by `rollDamage()`, so Transmuted Spell-style mechanics should stage the chosen type before damage is rolled and perform the physical preserve-results retag at `damageRollComplete`.
 
@@ -324,6 +330,12 @@ This is compatibility input only. CAT does not replace AE5E Grapple/relationship
 For multiplayer CAT teleports, a non-GM initiating client sends only the temporary JSON-serializable teleport semantic context to active GMs before CAT continues. CAT still owns its own token-movement permission/GM-query path. AE5E's pre-existing relationship authority socket remains responsible for any GM-authoritative consequence after the movement.
 
 Diagnostics remain under `ae5e.interoperability.cat.getStatus()` / `getStats()`. Live Foundry acceptance is available as `ae5e.tests.runCatTeleportCompatibilityTest({ notify: true })`; it creates and cleans a disposable grappled, movement-restricted creature and verifies that the real CAT semantic lifecycle produces an AE5E teleport transaction, bypasses the voluntary restriction, and detaches the Grapple relationship.
+
+### v0.4.2.1 CAT automation-provider foundation
+
+Beginning with v0.4.2.1, CAT 0.0.8+ is a required module. AE5E registers `Action Effects 5E` as a CAT automation source after CAT fires `catReady`; no Item automations are registered in the foundation release. Provider diagnostics are available at `ae5e.interoperability.cat.registration.getStatus()` / `getStats()`, and live acceptance is available at `ae5e.tests.runCatIntegrationFoundationTest({ notify: true })`.
+
+CAT remains a management/interoperability layer rather than the owner of AE5E runtime semantics. Later v0.4.2 stages will add selected public Items and persistent per-Item configuration through CAT while administrative/support compendiums remain excluded.
 
 ### v0.3.30 CAT movement interoperability
 
@@ -394,10 +406,10 @@ Final Foundry acceptance passed across the foundation, normal/nested interactive
 - Dynamic Active Effects (DAE)
 - Socketlib
 - libWrapper
+- CAT (Coven's Automation Toolkit) 0.0.8+ — required beginning with AE5E v0.4.2.1. CAT supplies the shared automation-provider registration/update/configuration layer and continues to provide the characterized movement/workflow utilities consumed through AE5E adapters. AE5E retains ownership of its runtime rules and services.
 
 ## Recommended modules
 
-- CAT (Coven's Automation Toolkit) — preferred low-level single-token movement executor/permission facade, explicit teleport/forced-movement semantic provider, and characterized utility provider used by CAT-capability-gated SME modifiers. AE5E keeps CAT behind dedicated adapters and does not make it a hard module dependency.
 - Sequencer — used by the v0.3.27 selection/popup activity indicator. AE5E continues to function without it; only the advisory visual is omitted.
 
 Chris's Premades and Gambit's Premades are **not dependencies**, but coexistence with both is a first-class design requirement.

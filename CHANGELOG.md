@@ -1,3 +1,13 @@
+## 0.4.2.1 — CAT automation-provider foundation
+
+- Started the v0.4.2 branch with Coven's Automation Toolkit (CAT) as a required AE5E dependency. `module.json` now requires CAT 0.0.8+ and CAT is included in AE5E runtime dependency validation rather than being treated as a recommended module.
+- Added a dedicated `CatAutomationRegistry` integration boundary. It installs one `catReady` listener during AE5E init and, after CAT finishes its own startup registration, registers the provider display name `Action Effects 5E` through CAT's public `registerSourceName` API.
+- This foundation release intentionally registers **zero Item automations**. Misty Step and the public compendium packs remain untouched until the source/dependency lifecycle is accepted in live Foundry.
+- Added CAT provider diagnostics at `ae5e.interoperability.cat.registration.getStatus()` / `getStats()`, including CAT API capability detection, source-registration verification, stage identity, and the current count of AE5E automations visible in CAT.
+- Added `ae5e.tests.runCatIntegrationFoundationTest()` as a mostly automated Foundry/browser-console acceptance gate. It verifies the required CAT relationship and minimum version metadata, dependency validation, `catReady` observation, the public registration API surface, exact source registration, zero Item registrations, error-free initialization, and duplicate-initialization idempotence.
+- Added deterministic development regressions for source registration timing, idempotent initialization, and fail-closed behavior when CAT's source-registration API is unavailable.
+- Existing movement, CAT teleport semantics, Spell Modifier Engine utilities, relationships, displacement, Socketlib routes, assets, and compendium contents are unchanged. No compendium was regenerated, migrated, or overwritten.
+
 ## 0.4.1.22 — Atomic batch forced displacement
 
 - Added `ae5e.displacement.pushBatch()` for GM-authoritative, single-operation forced Push movement of multiple targets.

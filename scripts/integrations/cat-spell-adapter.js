@@ -44,7 +44,7 @@ function collectionSnapshot(collection) {
 }
 
 /**
- * Narrow facade around the CAT 0.0.6 spell/workflow utilities that AE5E has
+ * Narrow facade around the CAT 0.0.8+ spell/workflow utilities that AE5E has
  * characterized in Foundry. SME handlers consume this facade through their
  * context rather than importing/calling CAT directly.
  *

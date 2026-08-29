@@ -2,7 +2,7 @@
   "id": "action-effects-5e",
   "title": "Action Effects 5E",
   "description": "Reusable D&D5e automation infrastructure and premade effects for Foundry VTT, including the Spell Modifier Engine, Reaction Broker, forced displacement, movement, and coordinated token relationship frameworks.",
-  "version": "0.4.1.22",
+  "version": "0.4.2.1",
   "authors": [
     {
       "name": "Matthew Larrivee"
@@ -35,15 +35,18 @@
       {
         "id": "lib-wrapper",
         "type": "module"
+      },
+      {
+        "id": "cat",
+        "type": "module",
+        "compatibility": {
+          "minimum": "0.0.8"
+        }
       }
     ],
     "recommends": [
       {
         "id": "sequencer",
-        "type": "module"
-      },
-      {
-        "id": "cat",
         "type": "module"
       }
     ]

@@ -82,6 +82,7 @@ export class ActionEffects5eApi {
     movementSpending,
     catMovement,
     catSpell,
+    catAutomationRegistry,
     animationOwnership,
     automatedAnimations,
     spellModifierRegistry,
@@ -206,6 +207,10 @@ export class ActionEffects5eApi {
       cat: Object.freeze({
         getStatus: () => catMovement.getStatus(),
         getStats: () => catMovement.getStats(),
+        registration: Object.freeze({
+          getStatus: () => catAutomationRegistry.getStatus(),
+          getStats: () => catAutomationRegistry.getStats()
+        }),
         spell: Object.freeze({
           getStatus: () => catSpell.getStatus(),
           getStats: () => catSpell.getStats()
@@ -403,6 +408,7 @@ export class ActionEffects5eApi {
       runNonPositionalMovementSpendTest: (options) => tests.runNonPositionalMovementSpendTest(options),
       runCatMovementInteroperabilityTest: (options) => tests.runCatMovementInteroperabilityTest(options),
       runCatTeleportCompatibilityTest: (options) => tests.runCatTeleportCompatibilityTest(options),
+      runCatIntegrationFoundationTest: (options) => tests.runCatIntegrationFoundationTest(options),
       setupReactionBrokerTestScene: (options) => tests.setupReactionBrokerTestScene(options),
       runReactionBrokerFoundationTest: (options) => tests.runReactionBrokerFoundationTest(options),
       runReactionBrokerInteractiveTest: (options) => tests.runReactionBrokerInteractiveTest(options),
