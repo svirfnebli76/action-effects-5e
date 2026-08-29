@@ -153,6 +153,8 @@ export class CatAutomationRegistry {
     sourceRegistrations: 0,
     sourceRegistrationErrors: 0,
     publicRegistrationRuns: 0,
+    publicRegistrationRefreshes: 0,
+    publicRegistrationRefreshErrors: 0,
     packReadinessChecks: 0,
     packRegistrationAttempts: 0,
     packRegistrations: 0,
@@ -253,6 +255,36 @@ export class CatAutomationRegistry {
       ...this.#stats,
       status: this.getStatus()
     };
+  }
+
+  async refreshPublicCompendiums() {
+    if (!this.#catReadyObserved || !this.#sourceRegistered) {
+      throw new Error("CAT public-compendium registration cannot refresh before catReady source registration completes.");
+    }
+
+    this.#stats.publicRegistrationRefreshes += 1;
+    try {
+      const cat = this.#catAccessor();
+      const registry = automationRegistry(cat);
+      if (typeof registry?.unregisterAutomationsBySource === "function") {
+        registry.unregisterAutomationsBySource(CAT_AUTOMATION_SOURCE_ID);
+      }
+
+      this.#publicRegistrationStarted = false;
+      this.#publicRegistrationComplete = false;
+      this.#registeredPacks = [];
+      this.#deferredPacks = [];
+      this.#emptyPacks = [];
+      this.#missingPacks = [];
+      this.#failedPacks = [];
+      this.#lastError = null;
+
+      return await this.#registerPublicCompendiums();
+    } catch (error) {
+      this.#stats.publicRegistrationRefreshErrors += 1;
+      this.#recordError(error);
+      throw error;
+    }
   }
 
   async #handleCatReady() {

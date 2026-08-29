@@ -69,6 +69,11 @@ function makeFixture({ registerResults } = {}) {
     automations,
     getSourceName(id) {
       return sourceNames[id] ?? id;
+    },
+    unregisterAutomationsBySource(source) {
+      for (const [key, automation] of [...automations.entries()]) {
+        if (automation?.source === source) automations.delete(key);
+      }
     }
   };
 
@@ -281,4 +286,39 @@ test("CAT pack registration failure is surfaced without attempting non-ready pac
   assert.equal(status.publicRegistration.failedPacks[0].id, readyId);
   assert.equal(status.lastError?.message.includes(readyId), true);
   assert.equal(status.stage, "public-registration-error");
+});
+
+test("CAT public registration can refresh after authoring metadata changes without a module reload", async () => {
+  const fixture = makeFixture();
+  const readyId = "action-effects-5e.spells-level-2";
+  const deferredId = "action-effects-5e.spells-level-1";
+  const readyEntries = [makeIndexEntry({ id: "misty", identifier: "misty-step" })];
+  const deferredEntry = makeIndexEntry({ id: "entangle", identifier: "entangle", source: null, version: null });
+  const deferredEntries = [deferredEntry];
+  const packs = new Map([
+    [readyId, makePack(readyId, readyEntries)],
+    [deferredId, makePack(deferredId, deferredEntries)]
+  ]);
+
+  const service = new CatAutomationRegistry({
+    catAccessor: () => fixture.cat,
+    hooksAccessor: () => fixture.hooks,
+    packsAccessor: () => packs,
+    publicPackIds: [readyId, deferredId]
+  });
+
+  service.initialize();
+  await fixture.callbacks.get(CAT_READY_HOOK)();
+  assert.deepEqual(service.getStatus().publicRegistration.registeredPacks.map(entry => entry.id), [readyId]);
+  assert.deepEqual(service.getStatus().publicRegistration.deferredPacks.map(entry => entry.id), [deferredId]);
+
+  deferredEntry.flags = { cat: { automation: { source: CAT_AUTOMATION_SOURCE_ID, version: "1.0.0" } } };
+  const refreshed = await service.refreshPublicCompendiums();
+
+  assert.equal(refreshed.publicRegistration.complete, true);
+  assert.deepEqual(refreshed.publicRegistration.registeredPacks.map(entry => entry.id), [readyId, deferredId]);
+  assert.equal(refreshed.publicRegistration.deferredPacks.length, 0);
+  assert.equal(refreshed.automationsRegistered, 2);
+  assert.equal(service.getStats().publicRegistrationRefreshes, 1);
+  assert.equal(service.getStats().publicRegistrationRefreshErrors, 0);
 });

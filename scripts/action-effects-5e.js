@@ -12,6 +12,7 @@ import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { CatAutomationRegistry } from "./integrations/cat-automation-registry.js";
 import { CatMetadataAuthoringService } from "./authoring/cat-metadata-authoring-service.js";
+import { CatMetadataContextMenuService } from "./authoring/cat-metadata-context-menu-service.js";
 import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
 import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
@@ -58,6 +59,7 @@ const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const catAutomationRegistry = new CatAutomationRegistry();
 const catMetadataAuthoring = new CatMetadataAuthoringService();
+const catMetadataContextMenu = new CatMetadataContextMenuService({ authoring: catMetadataAuthoring, registry: catAutomationRegistry });
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
@@ -152,6 +154,7 @@ const tests = new TestHarness({
   catSpell,
   catAutomationRegistry,
   catMetadataAuthoring,
+  catMetadataContextMenu,
   animationOwnership,
   automatedAnimations,
   spellModifierRegistry,
@@ -193,6 +196,7 @@ const api = new ActionEffects5eApi({
   catSpell,
   catAutomationRegistry,
   catMetadataAuthoring,
+  catMetadataContextMenu,
   animationOwnership,
   automatedAnimations,
   spellModifierRegistry,
@@ -232,6 +236,7 @@ Hooks.once("init", () => {
   Logger.log("Initializing module foundation.");
   registerSettings();
   catAutomationRegistry.initialize();
+  catMetadataContextMenu.initialize();
   movementAccounting.initialize();
 
   const module = game.modules.get(MODULE_ID);

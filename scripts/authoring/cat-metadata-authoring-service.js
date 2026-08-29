@@ -69,6 +69,8 @@ export class CatMetadataAuthoringService {
   #stats = {
     metadataWrites: 0,
     metadataWriteErrors: 0,
+    compendiumUnlocks: 0,
+    compendiumRelocks: 0,
     itemAudits: 0,
     packAudits: 0,
     publicPackAudits: 0
@@ -150,15 +152,26 @@ export class CatMetadataAuthoringService {
     return this.auditDocument(document);
   }
 
-  async setMetadata(documentOrUuid, { version } = {}) {
+  async setMetadata(documentOrUuid, { version, identifier = undefined, rules = undefined } = {}) {
     this.#assertGm();
     const document = await this.#resolveItem(documentOrUuid);
-    const core = this.validateItem(document);
+
+    const normalizedIdentifier = String(identifier ?? document?.system?.identifier ?? "").trim();
+    const normalizedRules = String(rules ?? document?.system?.source?.rules ?? "").trim();
+    const normalizedVersion = String(version ?? "").trim();
+    const prospective = {
+      documentName: "Item",
+      type: document?.type ?? null,
+      system: {
+        identifier: normalizedIdentifier,
+        source: { rules: normalizedRules }
+      }
+    };
+    const core = this.validateItem(prospective);
     if (!core.valid) {
       throw new Error(`Item metadata validation failed: ${core.errors.join(" ")}`);
     }
 
-    const normalizedVersion = String(version ?? "").trim();
     if (!isValidAutomationVersion(normalizedVersion)) {
       throw new Error(`Invalid automation version "${normalizedVersion}". Expected SemVer such as 1.0.0.`);
     }
@@ -172,15 +185,42 @@ export class CatMetadataAuthoringService {
       throw new Error("Target Item cannot be updated.");
     }
 
+    const changes = {
+      [CAT_AUTOMATION_SOURCE_FLAG]: CAT_AUTOMATION_SOURCE_ID,
+      [CAT_AUTOMATION_VERSION_FLAG]: normalizedVersion
+    };
+    if (document.system?.identifier !== normalizedIdentifier) changes["system.identifier"] = normalizedIdentifier;
+    if (document.system?.source?.rules !== normalizedRules) changes["system.source.rules"] = normalizedRules;
+
+    const pack = document.pack ? this.#resolvePack(document.pack) : null;
+    const wasLocked = Boolean(pack?.locked);
+    let unlocked = false;
+
     try {
-      await document.update({
-        [CAT_AUTOMATION_SOURCE_FLAG]: CAT_AUTOMATION_SOURCE_ID,
-        [CAT_AUTOMATION_VERSION_FLAG]: normalizedVersion
-      });
+      if (wasLocked) {
+        if (typeof pack?.configure !== "function") {
+          throw new Error(`Compendium pack "${document.pack}" is locked and cannot be temporarily unlocked for metadata authoring.`);
+        }
+        await pack.configure({ locked: false });
+        unlocked = true;
+        this.#stats.compendiumUnlocks += 1;
+      }
+
+      await document.update(changes);
       this.#stats.metadataWrites += 1;
     } catch (error) {
       this.#stats.metadataWriteErrors += 1;
       throw error;
+    } finally {
+      if (wasLocked && unlocked) {
+        try {
+          await pack.configure({ locked: true });
+          this.#stats.compendiumRelocks += 1;
+        } catch (error) {
+          this.#stats.metadataWriteErrors += 1;
+          throw new Error(`CAT metadata was written, but AE5E could not re-lock compendium "${document.pack}": ${error?.message ?? String(error)}`);
+        }
+      }
     }
 
     return {

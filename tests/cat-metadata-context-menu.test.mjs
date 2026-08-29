@@ -1,0 +1,113 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  CatMetadataContextMenuService,
+  CAT_METADATA_CONTEXT_LABEL,
+  CAT_METADATA_CONTEXT_WRAPPER_TARGET
+} from "../scripts/authoring/cat-metadata-context-menu-service.js";
+
+function makeService({ isGM = true } = {}) {
+  const registrations = [];
+  const authoring = {
+    isValidVersion: value => /^\d+\.\d+\.\d+$/.test(value),
+    async setMetadata() { return { audit: { valid: true } }; }
+  };
+  const registry = {
+    async refreshPublicCompendiums() { return { publicRegistration: { registeredPacks: [], deferredPacks: [] } }; },
+    getStatus() { return { publicRegistration: { registeredPacks: [], deferredPacks: [] } }; }
+  };
+  const libWrapper = {
+    register(moduleId, target, fn, type) {
+      registrations.push({ moduleId, target, fn, type });
+      return 42;
+    }
+  };
+  const service = new CatMetadataContextMenuService({
+    authoring,
+    registry,
+    gameAccessor: () => ({ user: { isGM } }),
+    libWrapperAccessor: () => libWrapper,
+    fromUuidAccessor: async () => null
+  });
+  return { service, registrations };
+}
+
+function makePack(id, type = "Item") {
+  return { collection: id, metadata: { id, type } };
+}
+
+function makeItem(overrides = {}) {
+  return {
+    documentName: "Item",
+    name: overrides.name ?? "Misty Step",
+    type: overrides.type ?? "spell",
+    pack: overrides.pack ?? "action-effects-5e.spells-level-2",
+    system: {
+      identifier: overrides.identifier ?? "misty-step",
+      source: { rules: overrides.rules ?? "2014" }
+    },
+    flags: {
+      cat: {
+        automation: {
+          ...(overrides.source !== undefined ? { source: overrides.source } : {}),
+          ...(overrides.version !== undefined ? { version: overrides.version } : {})
+        }
+      }
+    }
+  };
+}
+
+test("CAT metadata context service registers the Foundry v14 Compendium wrapper once", () => {
+  const { service, registrations } = makeService();
+  const first = service.initialize();
+  const second = service.initialize();
+  assert.equal(first.wrapperRegistered, true);
+  assert.equal(second.wrapperRegistered, true);
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].moduleId, "action-effects-5e");
+  assert.equal(registrations[0].target, CAT_METADATA_CONTEXT_WRAPPER_TARGET);
+  assert.equal(registrations[0].type, "WRAPPER");
+});
+
+test("context option appears only for GM in approved AE5E public compendiums", () => {
+  const allowed = makePack("action-effects-5e.spells-level-2");
+  const internal = makePack("action-effects-5e.ae5e-administrative");
+  const foreign = makePack("dnd5e.spells");
+  const { service } = makeService({ isGM: true });
+  const base = [{ label: "Base" }];
+
+  const allowedOptions = service.extendContextOptions({ collection: allowed }, base);
+  assert.equal(allowedOptions.length, 2);
+  assert.equal(allowedOptions[1].label, CAT_METADATA_CONTEXT_LABEL);
+  assert.equal(allowedOptions[1].ae5eCatMetadata, true);
+
+  assert.equal(service.extendContextOptions({ collection: internal }, base).length, 1);
+  assert.equal(service.extendContextOptions({ collection: foreign }, base).length, 1);
+
+  const player = makeService({ isGM: false }).service;
+  assert.equal(player.extendContextOptions({ collection: allowed }, base).length, 1);
+});
+
+test("first-use editor draft auto-populates Foundry fields and proposes version 1.0.0", () => {
+  const { service } = makeService();
+  const item = makeItem({ version: undefined, source: undefined });
+  const draft = service.getDraft(item);
+  assert.equal(draft.name, "Misty Step");
+  assert.equal(draft.type, "spell");
+  assert.equal(draft.identifier, "misty-step");
+  assert.equal(draft.rules, "2014");
+  assert.equal(draft.sourceId, "action-effects-5e");
+  assert.equal(draft.sourceLabel, "Action Effects 5E");
+  assert.equal(draft.version, "1.0.0");
+  assert.equal(draft.alreadyPublished, false);
+});
+
+test("editor draft preserves existing automation version and proposes identifier from name when missing", () => {
+  const { service } = makeService();
+  const existing = service.getDraft(makeItem({ source: "action-effects-5e", version: "2.3.4" }));
+  assert.equal(existing.version, "2.3.4");
+  assert.equal(existing.alreadyPublished, true);
+
+  const missingIdentifier = service.getDraft(makeItem({ name: "Thunder Wave!", identifier: "" }));
+  assert.equal(missingIdentifier.identifier, "thunder-wave");
+});

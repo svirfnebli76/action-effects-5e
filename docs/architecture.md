@@ -1,3 +1,7 @@
+## v0.4.2.4 CAT metadata authoring UI boundary
+
+`CatMetadataContextMenuService` wraps Foundry v14's Compendium entry context-option provider and adds a GM-only `Edit Item Version` action only for the explicit `CAT_PUBLIC_AUTOMATION_PACK_IDS` allowlist. It delegates all writes to `CatMetadataAuthoringService`; the UI does not own validation or CAT metadata semantics. Authoring can update `system.identifier`, `system.source.rules`, `flags.cat.automation.source`, and `flags.cat.automation.version`, while Item name/type remain read-only. Locked compendiums are temporarily unlocked by the authoring service and restored to their prior lock state. After a successful save, `CatAutomationRegistry.refreshPublicCompendiums()` re-evaluates the public pack gate and refreshes CAT registrations without an AE5E module release.
+
 ## v0.4.2.3 CAT public-registration boundary
 
 `CatAutomationRegistry` is now the permanent CAT publication boundary. It still initializes once during AE5E `init` and waits for CAT's `catReady`, but after source registration it evaluates only `CAT_PUBLIC_AUTOMATION_PACK_IDS`. Internal packs never enter this path.

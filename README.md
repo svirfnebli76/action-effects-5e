@@ -1,3 +1,7 @@
+### v0.4.2.4 Compendium Item version editor
+
+AE5E now provides a GM-only **Edit Item Version** context-menu action when right-clicking Items inside approved public AE5E compendiums. The editor pre-fills existing Item/CAT metadata, allows the ruleset and automation version to be authored without rebuilding AE5E, safely handles locked compendiums, and refreshes CAT registration immediately after save. AE5E Administrative and non-AE5E compendiums are excluded.
+
 ### v0.4.2.3 Permanent CAT public-compendium registration
 
 AE5E now permanently publishes CAT-ready automation packs after CAT fires `catReady`. Registration is fail-closed and uses the same explicit public-pack allowlist as the authoring/audit service: Cantrips, spell levels 1-9, and Actions - Common are eligible, while **AE5E Administrative remains excluded**.

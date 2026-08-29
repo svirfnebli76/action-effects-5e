@@ -1,3 +1,15 @@
+## 0.4.2.4 — AE5E compendium Item version editor
+
+- Added a GM-only **Edit Item Version** right-click context option for Items displayed inside AE5E's approved public compendiums. The option is not offered for World Items, foreign compendiums, or the internal AE5E Administrative pack.
+- Added a centered/movable CAT metadata editor. Item Name and Item Type are read-only; Identifier is pre-filled (or proposed from the Item name when missing); Ruleset is selectable between 2014 and 2024; Automation Provider is supplied by AE5E; Automation Version is pre-filled from the Item or defaults to 1.0.0 on first publication.
+- Opening the editor is read-only. Save/Publish writes only the selected identifier/ruleset plus AE5E CAT source/version metadata through the accepted production authoring service.
+- CAT metadata authoring now safely unlocks and re-locks locked compendium packs around the write, so normal module-compendium locking does not block the authoring workflow.
+- Added runtime CAT public-registration refresh after a metadata save. Packs can therefore move from deferred to registered, and automation version changes become visible to CAT, without creating or installing another AE5E module release.
+- Existing protections remain: GM-only writes, strict SemVer, required identifier/rules/type validation, and refusal to overwrite another CAT provider's ownership.
+- Added `ae5e.authoring.cat.openEditor()`, `getEditorDraft()`, `isEligiblePack()`, context-menu diagnostics, and `ae5e.interoperability.cat.registration.refreshPublicCompendiums()`.
+- Added automated coverage for context-menu eligibility, first-use field population, editable identifier/ruleset authoring, compendium lock restoration, and no-reload CAT registration refresh. Repository regression suite: **156/156 PASS**.
+- Compendium pack data and assets are unchanged from v0.4.2.3. Canonical Misty Step remains CAT automation version 1.0.0.
+
 ## 0.4.2.3 — Permanent CAT public-compendium registration
 
 - Promoted `CatAutomationRegistry` from source-only registration to permanent public-compendium publication after CAT's `catReady` lifecycle. Registration uses CAT's public `registerAutomationCompendium()` API and the established explicit AE5E public-pack allowlist.

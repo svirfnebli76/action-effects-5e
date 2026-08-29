@@ -84,6 +84,7 @@ export class ActionEffects5eApi {
     catSpell,
     catAutomationRegistry,
     catMetadataAuthoring,
+    catMetadataContextMenu,
     animationOwnership,
     automatedAnimations,
     spellModifierRegistry,
@@ -209,6 +210,11 @@ export class ActionEffects5eApi {
         auditPack: (packOrId) => catMetadataAuthoring.auditPack(packOrId),
         auditPublicPacks: (options) => catMetadataAuthoring.auditPublicPacks(options),
         setMetadata: (documentOrUuid, options) => catMetadataAuthoring.setMetadata(documentOrUuid, options),
+        openEditor: (documentOrUuid) => catMetadataContextMenu.openEditor(documentOrUuid),
+        getEditorDraft: (document) => catMetadataContextMenu.getDraft(document),
+        isEligiblePack: (packOrId) => catMetadataContextMenu.isEligiblePack(packOrId),
+        getContextMenuStatus: () => catMetadataContextMenu.getStatus(),
+        getContextMenuStats: () => catMetadataContextMenu.getStats(),
         getStatus: () => catMetadataAuthoring.getStatus(),
         getStats: () => catMetadataAuthoring.getStats()
       })
@@ -224,7 +230,8 @@ export class ActionEffects5eApi {
         getStats: () => catMovement.getStats(),
         registration: Object.freeze({
           getStatus: () => catAutomationRegistry.getStatus(),
-          getStats: () => catAutomationRegistry.getStats()
+          getStats: () => catAutomationRegistry.getStats(),
+          refreshPublicCompendiums: () => catAutomationRegistry.refreshPublicCompendiums()
         }),
         spell: Object.freeze({
           getStatus: () => catSpell.getStatus(),

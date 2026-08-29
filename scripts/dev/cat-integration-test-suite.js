@@ -69,7 +69,7 @@ export class CatIntegrationTestSuite {
     const dependencyStatus = this.#dependencies.getStatus();
     const catDependency = dependencyStatus.required.find(entry => entry.id === CAT_AUTOMATION_MODULE_ID) ?? null;
 
-    record("AE5E v0.4.2.3 runtime is loaded", ae5eModule?.version === MODULE_VERSION && MODULE_VERSION === "0.4.2.3", {
+    record("AE5E v0.4.2.4 runtime is loaded", ae5eModule?.version === MODULE_VERSION && MODULE_VERSION === "0.4.2.4", {
       moduleVersion: ae5eModule?.version ?? null,
       runtimeVersion: MODULE_VERSION
     });

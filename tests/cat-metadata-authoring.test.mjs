@@ -139,3 +139,36 @@ test("pack audit reports invalid metadata and public allowlist excludes Administ
   assert.equal(CAT_PUBLIC_AUTOMATION_PACK_IDS.includes("action-effects-5e.ae5e-administrative"), false);
   assert.equal(CAT_INTERNAL_PACK_IDS.includes("action-effects-5e.ae5e-administrative"), true);
 });
+
+test("CAT authoring can edit identifier/rules and temporarily unlock a compendium", async () => {
+  const { item, user } = makeItem({ identifier: "old-id", rules: "2014" });
+  item.pack = "action-effects-5e.spells-level-1";
+  const lockTransitions = [];
+  const pack = {
+    collection: item.pack,
+    metadata: { id: item.pack, label: "Level 1", type: "Item" },
+    locked: true,
+    async configure({ locked }) {
+      this.locked = Boolean(locked);
+      lockTransitions.push(this.locked);
+    }
+  };
+  const packs = new Map([[pack.collection, pack]]);
+  const service = makeService(item, user, packs);
+
+  const result = await service.setMetadata(item, {
+    identifier: "new-id",
+    rules: "2024",
+    version: "1.2.3"
+  });
+
+  assert.equal(result.audit.valid, true);
+  assert.equal(item.system.identifier, "new-id");
+  assert.equal(item.system.source.rules, "2024");
+  assert.equal(item.flags.cat.automation.source, "action-effects-5e");
+  assert.equal(item.flags.cat.automation.version, "1.2.3");
+  assert.deepEqual(lockTransitions, [false, true]);
+  assert.equal(pack.locked, true);
+  assert.equal(service.getStats().compendiumUnlocks, 1);
+  assert.equal(service.getStats().compendiumRelocks, 1);
+});
