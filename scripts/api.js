@@ -83,6 +83,7 @@ export class ActionEffects5eApi {
     catMovement,
     catSpell,
     catAutomationRegistry,
+    catMetadataAuthoring,
     animationOwnership,
     automatedAnimations,
     spellModifierRegistry,
@@ -197,6 +198,20 @@ export class ActionEffects5eApi {
       getStatus: () => compatibility.getStatus(),
       refresh: () => compatibility.refresh(),
       getPreferredController: (options) => compatibility.getPreferredController(options)
+    });
+
+    this.authoring = Object.freeze({
+      cat: Object.freeze({
+        isValidVersion: (value) => catMetadataAuthoring.isValidVersion(value),
+        validateItem: (document) => catMetadataAuthoring.validateItem(document),
+        auditDocument: (document) => catMetadataAuthoring.auditDocument(document),
+        auditItem: (documentOrUuid) => catMetadataAuthoring.auditItem(documentOrUuid),
+        auditPack: (packOrId) => catMetadataAuthoring.auditPack(packOrId),
+        auditPublicPacks: (options) => catMetadataAuthoring.auditPublicPacks(options),
+        setMetadata: (documentOrUuid, options) => catMetadataAuthoring.setMetadata(documentOrUuid, options),
+        getStatus: () => catMetadataAuthoring.getStatus(),
+        getStats: () => catMetadataAuthoring.getStats()
+      })
     });
 
     this.interoperability = Object.freeze({
@@ -409,6 +424,7 @@ export class ActionEffects5eApi {
       runCatMovementInteroperabilityTest: (options) => tests.runCatMovementInteroperabilityTest(options),
       runCatTeleportCompatibilityTest: (options) => tests.runCatTeleportCompatibilityTest(options),
       runCatIntegrationFoundationTest: (options) => tests.runCatIntegrationFoundationTest(options),
+      runCatMetadataAuthoringTest: (options) => tests.runCatMetadataAuthoringTest(options),
       setupReactionBrokerTestScene: (options) => tests.setupReactionBrokerTestScene(options),
       runReactionBrokerFoundationTest: (options) => tests.runReactionBrokerFoundationTest(options),
       runReactionBrokerInteractiveTest: (options) => tests.runReactionBrokerInteractiveTest(options),

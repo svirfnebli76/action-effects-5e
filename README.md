@@ -1,3 +1,11 @@
+### v0.4.2.2 CAT metadata authoring and validation
+
+AE5E now exposes a GM-only authoring boundary at `ae5e.authoring.cat` for canonical CAT metadata. `setMetadata(itemOrUuid, { version })` validates the Item identifier, ruleset, type, and SemVer automation version before writing only CAT's source/version flags. Read-only `auditItem()`, `auditPack()`, and `auditPublicPacks()` helpers report missing/invalid metadata without changing compendium content.
+
+The public automation-pack allowlist contains Cantrips, spell levels 1-9, and Actions - Common. **AE5E Administrative is explicitly excluded.** v0.4.2.2 does not stamp existing compendium Items and still registers zero public Item automations; it only installs the production authoring/validation layer needed before the first canonical CAT-enabled Item is committed.
+
+Live GM acceptance: `await ae5e.tests.runCatMetadataAuthoringTest({ notify: true })`.
+
 ### v0.4.2.1 CAT automation-provider foundation
 
 AE5E v0.4.2.1 begins the CAT-backed automation-provider branch. CAT 0.0.8+ is now a required module dependency. During Foundry startup AE5E waits for CAT's `catReady` lifecycle and registers the provider name **Action Effects 5E** through CAT's public automation API.

@@ -1,3 +1,34 @@
+## v0.4.2.2 CAT metadata authoring / validation acceptance
+
+This release adds the production authoring and pack-audit API but deliberately leaves canonical compendium Items unchanged. Run as a GM from the Foundry browser console:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+await ae5e.tests.runCatMetadataAuthoringTest({ notify: true });
+```
+
+The gate audits the real Level 2 pack read-only, then creates a disposable World Item from Misty Step and exercises the production authoring API. A complete PASS verifies source/version stamping, independent version bumping, strict SemVer rejection, CAT config preservation, AE5E flag preservation, Activity/Active Effect preservation, final metadata validity, and fixture cleanup. The canonical compendium is never written by the test.
+
+Useful non-mutating diagnostics:
+
+```js
+await ae5e.authoring.cat.auditItem("Compendium.action-effects-5e.spells-level-2.Item.pLcoNw3VnVbgzGU8");
+await ae5e.authoring.cat.auditPack("action-effects-5e.spells-level-2");
+await ae5e.authoring.cat.auditPublicPacks();
+ae5e.authoring.cat.getStatus();
+```
+
+When intentionally authoring an unlocked canonical Item, the write API is:
+
+```js
+await ae5e.authoring.cat.setMetadata(
+  "Compendium.action-effects-5e.spells-level-2.Item.pLcoNw3VnVbgzGU8",
+  { version: "1.0.0" }
+);
+```
+
+The writer is GM-only, requires a valid identifier/ruleset/type, rejects malformed versions, and refuses to replace a foreign CAT automation source. Do not stamp production compendium Items until that Item's automation version is intentionally being established or bumped.
+
 ## v0.4.2.1 CAT automation-provider foundation acceptance
 
 This branch makes CAT 0.0.8+ a required AE5E dependency but deliberately registers no Items yet. After installing v0.4.2.1 with CAT active, run the automated Foundry-side gate as GM from the browser console:

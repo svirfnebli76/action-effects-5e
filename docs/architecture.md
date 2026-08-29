@@ -1,5 +1,11 @@
 # Action Effects 5E architecture
 
+## v0.4.2.2 CAT metadata authoring boundary
+
+AE5E treats CAT automation source/version metadata as canonical Item authoring data, not module-version data. The production writer is `ae5e.authoring.cat.setMetadata()`. It is GM-only, requires valid `system.identifier`, `system.source.rules` (`2014` or `2024`), Item `type`, and strict SemVer, writes only `flags.cat.automation.source` plus `flags.cat.automation.version`, and refuses to replace foreign CAT ownership.
+
+The read-only audit layer (`auditItem`, `auditPack`, `auditPublicPacks`) uses an explicit public-pack allowlist. Spell packs and Actions - Common are eligible; AE5E Administrative is explicitly excluded. This separation is intentional so later CAT compendium registration can reuse the same allowlist without accidentally publishing internal helper/template Items. v0.4.2.2 does not yet register those public packs with CAT and does not migrate existing compendium Items.
+
 ## Startup lifecycle
 
 1. `SocketService` is initialized before Foundry `init` so Socketlib readiness cannot be missed.

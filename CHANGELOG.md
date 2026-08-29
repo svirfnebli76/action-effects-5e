@@ -1,3 +1,14 @@
+## 0.4.2.2 — CAT metadata authoring and validation foundation
+
+- Added the production CAT metadata authoring service exposed at `ae5e.authoring.cat`. It validates canonical Item identity metadata, writes only `flags.cat.automation.source = "action-effects-5e"` and `flags.cat.automation.version`, and requires strict SemVer-style automation versions such as `1.0.0`.
+- Added safe version bumping through `ae5e.authoring.cat.setMetadata(itemOrUuid, { version })`. The operation is GM-only, validates `system.identifier`, `system.source.rules` (`2014` or `2024`), and Item `type` before writing, and refuses to overwrite an Item already owned by a different CAT automation source.
+- Added non-mutating Item and compendium auditing through `auditItem()`, `auditPack()`, and `auditPublicPacks()`. The public-pack allowlist contains AE5E's spell packs plus `Actions - Common`; `AE5E Administrative` is explicitly excluded and remains internal.
+- Added authoring diagnostics through `ae5e.authoring.cat.getStatus()` / `getStats()` and `ae5e.authoring.cat.isValidVersion()` / `validateItem()` for build-time validation.
+- Added `ae5e.tests.runCatMetadataAuthoringTest()` as a GM/browser-console acceptance gate. It audits the real canonical Item/pack read-only, creates a disposable World Item, stamps and bumps CAT metadata through the production API, verifies malformed versions are rejected, verifies Item data/config/effects/activities are preserved, then deletes the fixture.
+- Added deterministic Node regressions for SemVer validation, core metadata validation, safe source/version stamping, preservation of CAT configuration and AE5E payload data, foreign-source protection, GM-only writes, pack auditing, and the explicit public/internal pack boundary.
+- This release does **not** stamp or migrate any existing compendium Item and does **not** register public Item automations with CAT yet. All 66 compendium pack files and all assets remain unchanged from v0.4.2.1.
+- The CAT Medkit Configuration-tab width/overflow issue observed during live configuration testing is intentionally not patched by AE5E in this release; CAT's configuration data path itself passed the prior 22/22 live acceptance test.
+
 ## 0.4.2.1 — CAT automation-provider foundation
 
 - Started the v0.4.2 branch with Coven's Automation Toolkit (CAT) as a required AE5E dependency. `module.json` now requires CAT 0.0.8+ and CAT is included in AE5E runtime dependency validation rather than being treated as a recommended module.

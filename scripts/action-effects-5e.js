@@ -11,6 +11,7 @@ import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { CatAutomationRegistry } from "./integrations/cat-automation-registry.js";
+import { CatMetadataAuthoringService } from "./authoring/cat-metadata-authoring-service.js";
 import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
 import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
@@ -56,6 +57,7 @@ const movementSpending = new MovementSpendService({ socket, accounting: movement
 const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const catAutomationRegistry = new CatAutomationRegistry();
+const catMetadataAuthoring = new CatMetadataAuthoringService();
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
@@ -149,6 +151,7 @@ const tests = new TestHarness({
   catMovement,
   catSpell,
   catAutomationRegistry,
+  catMetadataAuthoring,
   animationOwnership,
   automatedAnimations,
   spellModifierRegistry,
@@ -189,6 +192,7 @@ const api = new ActionEffects5eApi({
   catMovement,
   catSpell,
   catAutomationRegistry,
+  catMetadataAuthoring,
   animationOwnership,
   automatedAnimations,
   spellModifierRegistry,
