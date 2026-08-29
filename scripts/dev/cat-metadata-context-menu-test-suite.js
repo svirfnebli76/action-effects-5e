@@ -3,15 +3,17 @@ import {
   CAT_INTERNAL_PACK_IDS,
   CAT_PUBLIC_AUTOMATION_PACK_IDS
 } from "../authoring/cat-metadata-authoring-service.js";
-import { CAT_METADATA_CONTEXT_LABEL } from "../authoring/cat-metadata-context-menu-service.js";
+import { CAT_METADATA_CONTEXT_LABEL, CAT_OPTIONS_CONTEXT_LABEL } from "../authoring/cat-metadata-context-menu-service.js";
 
 export class CatMetadataContextMenuTestSuite {
   #contextMenu;
   #authoring;
+  #configurationAuthoring;
 
-  constructor({ contextMenu, authoring }) {
+  constructor({ contextMenu, authoring, configurationAuthoring }) {
     this.#contextMenu = contextMenu;
     this.#authoring = authoring;
+    this.#configurationAuthoring = configurationAuthoring;
   }
 
   async runLiveTest({
@@ -28,9 +30,10 @@ export class CatMetadataContextMenuTestSuite {
 
     try {
       const status = this.#contextMenu.getStatus();
-      record("Runtime version is v0.4.2.6", MODULE_VERSION === "0.4.2.6", { moduleVersion: MODULE_VERSION });
+      record("Runtime version is v0.4.2.7", MODULE_VERSION === "0.4.2.7", { moduleVersion: MODULE_VERSION });
       record("Compendium context wrapper initialized", status.initialized === true && status.wrapperRegistered === true && status.lastError === null, status);
       record("Context option label is Edit Item Version", status.contextLabel === CAT_METADATA_CONTEXT_LABEL && CAT_METADATA_CONTEXT_LABEL === "Edit Item Version", status);
+      record("Options context label is Edit Item Options", status.optionsContextLabel === CAT_OPTIONS_CONTEXT_LABEL && CAT_OPTIONS_CONTEXT_LABEL === "Edit Item Options", status);
       record("Context editor is GM-only", status.gmOnly === true, status);
       record("Approved public pack is eligible", this.#contextMenu.isEligiblePack(packId) === true, { packId });
       record("AE5E Administrative is not eligible", this.#contextMenu.isEligiblePack("action-effects-5e.ae5e-administrative") === false
@@ -73,14 +76,28 @@ export class CatMetadataContextMenuTestSuite {
       const base = [{ label: "Core Option" }];
       const publicApp = { collection: pack };
       const extended = this.#contextMenu.extendContextOptions(publicApp, base);
-      record("Approved compendium receives exactly one AE5E context option", extended.length === base.length + 1
+      record("Approved compendium receives both AE5E authoring context options", extended.length === base.length + 2
         && extended.filter(option => option?.ae5eCatMetadata === true).length === 1
-        && extended.some(option => option?.label === "Edit Item Version"), extended.map(option => ({ label: option.label, ae5eCatMetadata: option.ae5eCatMetadata ?? false })));
+        && extended.filter(option => option?.ae5eCatOptions === true).length === 1
+        && extended.some(option => option?.label === "Edit Item Version")
+        && extended.some(option => option?.label === "Edit Item Options"), extended.map(option => ({
+          label: option.label,
+          ae5eCatMetadata: option.ae5eCatMetadata ?? false,
+          ae5eCatOptions: option.ae5eCatOptions ?? false
+        })));
+
+      const optionsDraft = this.#contextMenu.getOptionsDraft(canonical);
+      record("Options editor draft is JSON-backed and preserves CAT preference separation",
+        optionsDraft.name === canonical.name
+          && typeof optionsDraft.configurationText === "string"
+          && optionsDraft.valid === true
+          && this.#configurationAuthoring.getStatus().preferenceFlag === "flags.cat.config.*",
+        optionsDraft);
 
       const internalPack = game.packs.get("action-effects-5e.ae5e-administrative");
       const internalOptions = this.#contextMenu.extendContextOptions({ collection: internalPack }, base);
-      record("Administrative compendium receives no AE5E metadata option", internalOptions.length === base.length
-        && internalOptions.every(option => option?.ae5eCatMetadata !== true));
+      record("Administrative compendium receives no AE5E authoring options", internalOptions.length === base.length
+        && internalOptions.every(option => option?.ae5eCatMetadata !== true && option?.ae5eCatOptions !== true));
 
       const authoringStatus = this.#authoring.getStatus();
       record("Editor uses accepted CAT metadata authoring contract", authoringStatus.source === "action-effects-5e"

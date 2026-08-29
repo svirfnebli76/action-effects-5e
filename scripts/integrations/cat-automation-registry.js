@@ -4,6 +4,10 @@ import {
   CAT_PUBLIC_AUTOMATION_PACK_IDS,
   isValidAutomationVersion
 } from "../authoring/cat-metadata-authoring-service.js";
+import {
+  CAT_CONFIGURATION_SCHEMA_FLAG,
+  validateCatConfigurationData
+} from "../authoring/cat-configuration-authoring-service.js";
 
 export const CAT_AUTOMATION_MODULE_ID = "cat";
 export const CAT_AUTOMATION_MINIMUM_VERSION = "0.0.8";
@@ -16,6 +20,7 @@ const CAT_AUTOMATION_INDEX_FIELDS = Object.freeze([
   "system.source.rules",
   "flags.cat.automation.source",
   "flags.cat.automation.version",
+  CAT_CONFIGURATION_SCHEMA_FLAG,
   "type"
 ]);
 
@@ -100,6 +105,14 @@ function indexEntryIssues(document) {
       : "Missing flags.cat.automation.version.");
   }
 
+  const config = document?.flags?.[MODULE_ID]?.cat?.configSchema;
+  const configuration = config === undefined
+    ? { valid: true, optionCount: 0, issues: [] }
+    : validateCatConfigurationData(config);
+  if (!configuration.valid) {
+    issues.push(...configuration.issues.map(issue => `CAT configuration: ${issue}`));
+  }
+
   return {
     id: document?.id ?? document?._id ?? null,
     uuid: document?.uuid ?? null,
@@ -109,6 +122,8 @@ function indexEntryIssues(document) {
     type,
     source,
     version,
+    config: configuration.valid && configuration.optionCount > 0 ? config : {},
+    configOptionCount: configuration.optionCount,
     valid: issues.length === 0,
     issues
   };
@@ -440,9 +455,19 @@ export class CatAutomationRegistry {
           continue;
         }
 
+        const configs2014 = {};
+        const configs2024 = {};
+        for (const entry of audited) {
+          if (!entry.configOptionCount) continue;
+          if (entry.rules === "2014") configs2014[entry.identifier] = entry.config;
+          else if (entry.rules === "2024") configs2024[entry.identifier] = entry.config;
+        }
+
         this.#stats.packRegistrationAttempts += 1;
         const results = await registerAutomationCompendium.call(cat.api, pack, {
-          source: CAT_AUTOMATION_SOURCE_ID
+          source: CAT_AUTOMATION_SOURCE_ID,
+          configs2014,
+          configs2024
         });
         const normalizedResults = Array.isArray(results) ? results : [];
         const success = normalizedResults.length === audited.length && normalizedResults.every((result) => result === true);
@@ -454,7 +479,9 @@ export class CatAutomationRegistry {
           id,
           label: packLabel(pack),
           total: audited.length,
-          registered: normalizedResults.length
+          registered: normalizedResults.length,
+          configurable: audited.filter(entry => entry.configOptionCount > 0).length,
+          configurationOptions: audited.reduce((total, entry) => total + (entry.configOptionCount || 0), 0)
         });
         this.#stats.packRegistrations += 1;
         this.#stats.itemRegistrations += normalizedResults.length;

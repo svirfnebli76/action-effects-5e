@@ -1,3 +1,7 @@
+### v0.4.2.7 CAT configuration-data editor
+
+AE5E public compendium Items now expose **Edit Item Options** beside **Edit Item Version** for GM authoring. The new editor stores JSON CAT option definitions directly on the canonical Item at `flags.action-effects-5e.cat.configSchema`; CAT user choices remain separately owned by `flags.cat.config.*`. Saving validates the JSON, writes only the authoring schema, and refreshes CAT registration immediately so configuration controls can become live without rebuilding AE5E.
+
 ### v0.4.2.6 first-use identifier proposal hardening
 
 The GM-only **Edit Item Version** workflow now detects generic/type-like placeholder identifiers on unpublished scratch-created Items. If a spell such as Entangle arrives with `system.identifier = "spell"`, the editor proposes `entangle` from the Item name while keeping the field editable. Meaningful identifiers and already-published CAT identities are preserved.

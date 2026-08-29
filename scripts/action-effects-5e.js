@@ -12,6 +12,7 @@ import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { CatAutomationRegistry } from "./integrations/cat-automation-registry.js";
 import { CatMetadataAuthoringService, isValidAutomationVersion } from "./authoring/cat-metadata-authoring-service.js";
+import { CatConfigurationAuthoringService } from "./authoring/cat-configuration-authoring-service.js";
 import { CatMetadataContextMenuService } from "./authoring/cat-metadata-context-menu-service.js";
 import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
 import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
@@ -59,7 +60,12 @@ const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const catAutomationRegistry = new CatAutomationRegistry();
 const catMetadataAuthoring = new CatMetadataAuthoringService();
-const catMetadataContextMenu = new CatMetadataContextMenuService({ authoring: catMetadataAuthoring, registry: catAutomationRegistry });
+const catConfigurationAuthoring = new CatConfigurationAuthoringService();
+const catMetadataContextMenu = new CatMetadataContextMenuService({
+  authoring: catMetadataAuthoring,
+  configurationAuthoring: catConfigurationAuthoring,
+  registry: catAutomationRegistry
+});
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
@@ -154,6 +160,7 @@ const tests = new TestHarness({
   catSpell,
   catAutomationRegistry,
   catMetadataAuthoring,
+  catConfigurationAuthoring,
   catMetadataContextMenu,
   animationOwnership,
   automatedAnimations,
@@ -192,6 +199,12 @@ const ACCEPTED_CAT_METADATA_BOOTSTRAP = Object.freeze([
     uuid: "Compendium.action-effects-5e.spells-level-2.Item.pLcoNw3VnVbgzGU8",
     identifier: "misty-step",
     version: "1.0.0"
+  }),
+  Object.freeze({
+    uuid: "Compendium.action-effects-5e.spells-level-1.Item.TW2x3hkgAbWG2HwY",
+    identifier: "entangle",
+    rules: "2024",
+    version: "1.0.0"
   })
 ]);
 
@@ -215,7 +228,11 @@ async function bootstrapAcceptedCatMetadata() {
         continue;
       }
 
-      await catMetadataAuthoring.setMetadata(document, { version: entry.version });
+      await catMetadataAuthoring.setMetadata(document, {
+        version: entry.version,
+        identifier: entry.identifier,
+        ...(entry.rules ? { rules: entry.rules } : {})
+      });
       changed += 1;
       Logger.info(`Restored accepted CAT metadata for '${entry.identifier}' at automation version ${entry.version}.`);
     } catch (error) {
@@ -235,6 +252,7 @@ const api = new ActionEffects5eApi({
   catSpell,
   catAutomationRegistry,
   catMetadataAuthoring,
+  catConfigurationAuthoring,
   catMetadataContextMenu,
   animationOwnership,
   automatedAnimations,
@@ -287,7 +305,17 @@ Hooks.once("setup", () => {
 });
 
 Hooks.once("ready", async () => {
-  await bootstrapAcceptedCatMetadata();
+  const catMetadataBootstrap = await bootstrapAcceptedCatMetadata();
+  if (catMetadataBootstrap.changed > 0) {
+    const registration = catAutomationRegistry.getStatus();
+    if (registration.catReadyObserved && registration.source?.registered) {
+      try {
+        await catAutomationRegistry.refreshPublicCompendiums();
+      } catch (error) {
+        Logger.warn("Accepted CAT metadata was restored, but public-compendium registration could not be refreshed immediately.", error);
+      }
+    }
+  }
 
   const status = dependencies.validate({ notify: true });
   if (!status.healthy) {

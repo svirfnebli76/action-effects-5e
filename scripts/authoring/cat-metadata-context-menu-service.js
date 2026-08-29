@@ -9,6 +9,7 @@ export const CAT_METADATA_CONTEXT_WRAPPER_TARGET =
   "foundry.applications.sidebar.apps.Compendium.prototype._getEntryContextOptions";
 
 export const CAT_METADATA_CONTEXT_LABEL = "Edit Item Version";
+export const CAT_OPTIONS_CONTEXT_LABEL = "Edit Item Options";
 
 function defaultGameAccessor() {
   return globalThis.game ?? null;
@@ -119,6 +120,7 @@ function proposedIdentifier(document, { existingIdentifier, alreadyPublished }) 
  */
 export class CatMetadataContextMenuService {
   #authoring;
+  #configurationAuthoring;
   #registry;
   #gameAccessor;
   #libWrapperAccessor;
@@ -138,12 +140,17 @@ export class CatMetadataContextMenuService {
     saves: 0,
     saveErrors: 0,
     cancels: 0,
+    optionsEditorOpens: 0,
+    optionsSaves: 0,
+    optionsSaveErrors: 0,
+    optionsCancels: 0,
     registryRefreshes: 0,
     registryRefreshErrors: 0
   };
 
   constructor({
     authoring,
+    configurationAuthoring,
     registry = null,
     gameAccessor = defaultGameAccessor,
     libWrapperAccessor = defaultLibWrapperAccessor,
@@ -151,7 +158,9 @@ export class CatMetadataContextMenuService {
     publicPackIds = CAT_PUBLIC_AUTOMATION_PACK_IDS
   } = {}) {
     if (!authoring) throw new Error("CatMetadataContextMenuService requires a CAT metadata authoring service.");
+    if (!configurationAuthoring) throw new Error("CatMetadataContextMenuService requires a CAT configuration authoring service.");
     this.#authoring = authoring;
+    this.#configurationAuthoring = configurationAuthoring;
     this.#registry = registry;
     this.#gameAccessor = typeof gameAccessor === "function" ? gameAccessor : defaultGameAccessor;
     this.#libWrapperAccessor = typeof libWrapperAccessor === "function" ? libWrapperAccessor : defaultLibWrapperAccessor;
@@ -225,41 +234,72 @@ export class CatMetadataContextMenuService {
     };
   }
 
+  getOptionsDraft(document) {
+    if (!document || document.documentName !== "Item") {
+      throw new Error("CAT options editor requires an Item document.");
+    }
+
+    const metadata = this.getDraft(document);
+    const configuration = this.#configurationAuthoring.getConfiguration(document);
+    const validation = this.#configurationAuthoring.validate(configuration);
+
+    return {
+      name: document.name ?? "Unnamed Item",
+      type: document.type ?? "",
+      identifier: metadata.identifier,
+      rules: metadata.rules,
+      source: metadata.source,
+      sourceId: MODULE_ID,
+      sourceLabel: MODULE_TITLE,
+      version: metadata.version,
+      alreadyPublished: metadata.alreadyPublished,
+      foreignProvider: metadata.foreignProvider,
+      pack: document.pack ?? null,
+      configuration,
+      configurationText: JSON.stringify(configuration, null, 2),
+      optionCount: validation.optionCount,
+      valid: validation.valid,
+      issues: [...validation.issues]
+    };
+  }
+
   extendContextOptions(app, baseOptions = []) {
     const options = Array.isArray(baseOptions) ? [...baseOptions] : [];
     if (!this.#canOfferForApp(app)) return options;
-    if (options.some(option => option?.ae5eCatMetadata === true)) return options;
 
-    options.push({
-      ae5eCatMetadata: true,
-      label: CAT_METADATA_CONTEXT_LABEL,
-      icon: "fa-solid fa-code-branch",
-      visible: () => this.#canOfferForApp(app),
-      onClick: async (_event, target) => this.openFromContext(app, target)
-    });
-    this.#stats.contextMenusExtended += 1;
+    let added = false;
+    if (!options.some(option => option?.ae5eCatMetadata === true)) {
+      options.push({
+        ae5eCatMetadata: true,
+        label: CAT_METADATA_CONTEXT_LABEL,
+        icon: "fa-solid fa-code-branch",
+        visible: () => this.#canOfferForApp(app),
+        onClick: async (_event, target) => this.openFromContext(app, target)
+      });
+      added = true;
+    }
+
+    if (!options.some(option => option?.ae5eCatOptions === true)) {
+      options.push({
+        ae5eCatOptions: true,
+        label: CAT_OPTIONS_CONTEXT_LABEL,
+        icon: "fa-solid fa-sliders",
+        visible: () => this.#canOfferForApp(app),
+        onClick: async (_event, target) => this.openOptionsFromContext(app, target)
+      });
+      added = true;
+    }
+
+    if (added) this.#stats.contextMenusExtended += 1;
     return options;
   }
 
   async openFromContext(app, target) {
-    this.#assertGm();
-    const pack = app?.collection ?? null;
-    if (!this.isEligiblePack(pack)) {
-      throw new Error("AE5E CAT metadata editing is only available in approved AE5E public compendiums.");
-    }
+    return this.openEditor(await this.#resolveContextItem(app, target));
+  }
 
-    const element = normalizeElement(target);
-    const entryId = element?.dataset?.entryId
-      ?? element?.dataset?.documentId
-      ?? element?.closest?.("[data-entry-id],[data-document-id]")?.dataset?.entryId
-      ?? element?.closest?.("[data-entry-id],[data-document-id]")?.dataset?.documentId
-      ?? null;
-    if (!entryId) throw new Error("Could not determine the selected compendium Item id.");
-    if (typeof pack?.getDocument !== "function") throw new Error("The selected compendium cannot provide Item documents.");
-
-    const item = await pack.getDocument(entryId);
-    if (!item) throw new Error("The selected compendium Item could not be loaded.");
-    return this.openEditor(item);
+  async openOptionsFromContext(app, target) {
+    return this.openOptionsEditor(await this.#resolveContextItem(app, target));
   }
 
   async openEditor(documentOrUuid) {
@@ -410,6 +450,139 @@ export class CatMetadataContextMenuService {
     return resultPromise;
   }
 
+  async openOptionsEditor(documentOrUuid) {
+    this.#assertGm();
+    const document = typeof documentOrUuid === "string"
+      ? await this.#fromUuid(documentOrUuid)
+      : documentOrUuid;
+    if (!document || document.documentName !== "Item") {
+      throw new Error("CAT options editor requires an Item document.");
+    }
+    if (!this.isEligiblePack(document.pack)) {
+      throw new Error("AE5E CAT options editing is only available for Items in approved AE5E public compendiums.");
+    }
+
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) throw new Error("Foundry DialogV2 is unavailable; AE5E CAT options editor cannot open.");
+
+    this.#stats.optionsEditorOpens += 1;
+    const draft = this.getOptionsDraft(document);
+    let settled = false;
+    let resolveEditor;
+    const resultPromise = new Promise(resolve => { resolveEditor = resolve; });
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      resolveEditor(result);
+    };
+
+    const dialog = new DialogV2({
+      window: { title: `Edit CAT Configuration Data — ${document.name}` },
+      classes: [`${MODULE_ID}-owned-dialog`, "ae5e-cat-options-editor-dialog"],
+      content: '<div class="ae5e-cat-options-editor-host"></div>',
+      buttons: [{
+        action: "ae5e-cat-options-host",
+        label: "AE5E CAT Options Editor Host",
+        type: "button",
+        disabled: true,
+        style: { display: "none" }
+      }],
+      modal: false
+    });
+
+    dialog.addEventListener?.("close", () => {
+      if (!settled) {
+        this.#stats.optionsCancels += 1;
+        finish({ saved: false, cancelled: true, document });
+      }
+    });
+
+    await dialog.render({ force: true });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const root = dialog.element?.querySelector?.(".ae5e-cat-options-editor-host")
+      ?? dialog.element?.[0]?.querySelector?.(".ae5e-cat-options-editor-host")
+      ?? null;
+    if (!root) {
+      try { await dialog.close(); } catch { /* noop */ }
+      throw new Error("AE5E CAT options editor rendered without its host element.");
+    }
+
+    root.innerHTML = this.#optionsEditorHtml(draft);
+    const textarea = root.querySelector('[data-ae5e-cat-options-field="configuration"]');
+    const status = root.querySelector('[data-ae5e-cat-options-status]');
+    const save = root.querySelector('[data-ae5e-cat-options-action="save"]');
+    const cancel = root.querySelector('[data-ae5e-cat-options-action="cancel"]');
+
+    const showStatus = (message, kind = "info") => {
+      if (!status) return;
+      status.textContent = message;
+      status.dataset.kind = kind;
+    };
+
+    const setBusy = busy => {
+      if (save) save.disabled = busy;
+      if (cancel) cancel.disabled = busy;
+      if (textarea) textarea.disabled = busy;
+    };
+
+    cancel?.addEventListener("click", async event => {
+      event.preventDefault();
+      this.#stats.optionsCancels += 1;
+      finish({ saved: false, cancelled: true, document });
+      try { await dialog.close(); } catch { /* noop */ }
+    });
+
+    save?.addEventListener("click", async event => {
+      event.preventDefault();
+      const text = String(textarea?.value ?? "");
+      const parsed = this.#configurationAuthoring.parse(text);
+      if (!parsed.valid) {
+        showStatus(parsed.issues.join(" "), "error");
+        textarea?.focus?.();
+        return;
+      }
+
+      setBusy(true);
+      showStatus("Saving CAT configuration data…", "info");
+      try {
+        const saved = await this.#configurationAuthoring.setConfiguration(document, parsed.data);
+        this.#stats.optionsSaves += 1;
+
+        let registration = null;
+        if (typeof this.#registry?.refreshPublicCompendiums === "function") {
+          try {
+            registration = await this.#registry.refreshPublicCompendiums();
+            this.#stats.registryRefreshes += 1;
+          } catch (error) {
+            this.#stats.registryRefreshErrors += 1;
+            Logger.warn("CAT configuration data was saved, but AE5E could not refresh CAT public-compendium registration immediately.", error);
+          }
+        }
+
+        const packStatus = registration?.publicRegistration ?? this.#registry?.getStatus?.()?.publicRegistration ?? null;
+        const currentPackId = document.pack ?? null;
+        const registered = packStatus?.registeredPacks?.some?.(entry => entry.id === currentPackId) ?? false;
+        const deferred = packStatus?.deferredPacks?.find?.(entry => entry.id === currentPackId) ?? null;
+        const optionCount = saved?.validation?.optionCount ?? Object.keys(parsed.data ?? {}).length;
+        const suffix = registered
+          ? ` The pack is registered with CAT; ${optionCount === 1 ? "the option is" : "the options are"} live.`
+          : deferred
+            ? ` The data is stored, but the pack remains deferred (${deferred.invalid} Item${deferred.invalid === 1 ? "" : "s"} still need valid publication data).`
+            : "";
+        globalThis.ui?.notifications?.info?.(`Saved CAT configuration data for ${document.name}.${suffix}`);
+        finish({ saved: true, cancelled: false, document, result: saved, registration });
+        try { await dialog.close(); } catch { /* noop */ }
+      } catch (error) {
+        this.#stats.optionsSaveErrors += 1;
+        showStatus(error?.message ?? String(error), "error");
+        globalThis.ui?.notifications?.error?.(`CAT configuration data was not saved: ${error?.message ?? String(error)}`);
+        setBusy(false);
+      }
+    });
+
+    return resultPromise;
+  }
+
   getStatus() {
     return {
       initialized: this.#initialized,
@@ -417,7 +590,9 @@ export class CatMetadataContextMenuService {
       wrapperId: this.#wrapperId,
       wrapperTarget: CAT_METADATA_CONTEXT_WRAPPER_TARGET,
       contextLabel: CAT_METADATA_CONTEXT_LABEL,
+      optionsContextLabel: CAT_OPTIONS_CONTEXT_LABEL,
       gmOnly: true,
+      configuration: this.#configurationAuthoring.getStatus(),
       publicPacks: [...this.#publicPackIds],
       lastError: this.#lastError ? { name: this.#lastError.name, message: this.#lastError.message } : null
     };
@@ -436,6 +611,27 @@ export class CatMetadataContextMenuService {
     return true;
   }
 
+  async #resolveContextItem(app, target) {
+    this.#assertGm();
+    const pack = app?.collection ?? null;
+    if (!this.isEligiblePack(pack)) {
+      throw new Error("AE5E CAT authoring is only available in approved AE5E public compendiums.");
+    }
+
+    const element = normalizeElement(target);
+    const entryId = element?.dataset?.entryId
+      ?? element?.dataset?.documentId
+      ?? element?.closest?.("[data-entry-id],[data-document-id]")?.dataset?.entryId
+      ?? element?.closest?.("[data-entry-id],[data-document-id]")?.dataset?.documentId
+      ?? null;
+    if (!entryId) throw new Error("Could not determine the selected compendium Item id.");
+    if (typeof pack?.getDocument !== "function") throw new Error("The selected compendium cannot provide Item documents.");
+
+    const item = await pack.getDocument(entryId);
+    if (!item) throw new Error("The selected compendium Item could not be loaded.");
+    return item;
+  }
+
   #assertGm() {
     const game = this.#gameAccessor();
     if (!game?.user?.isGM) throw new Error("AE5E CAT metadata editing requires a GM user.");
@@ -447,6 +643,52 @@ export class CatMetadataContextMenuService {
     this.#wrapperRegistered = false;
     this.#wrapperId = null;
     Logger.error("Could not register AE5E CAT metadata compendium context menu.", this.#lastError);
+  }
+
+  #optionsEditorHtml(draft) {
+    const statusKind = draft.foreignProvider || !draft.valid
+      ? "error"
+      : draft.alreadyPublished
+        ? "success"
+        : "info";
+    const statusText = draft.foreignProvider
+      ? `Warning: this Item is currently owned by CAT provider “${escapeHtml(draft.source)}”. AE5E will not replace another provider.`
+      : !draft.valid
+        ? `Stored CAT configuration data is invalid: ${escapeHtml(draft.issues.join(" "))}`
+        : draft.alreadyPublished
+          ? draft.optionCount
+            ? `${draft.optionCount} CAT configuration option${draft.optionCount === 1 ? "" : "s"} loaded. Saving refreshes CAT immediately.`
+            : `No CAT configuration options are stored. Paste a JSON object below; current automation version is ${escapeHtml(draft.version)}.`
+          : "This Item is not yet published to CAT. Configuration data can be stored now, but it will not become live until Item Version metadata is published.";
+
+    return `
+      <form class="ae5e-cat-options-editor" autocomplete="off">
+        <div class="ae5e-cat-metadata-summary">
+          <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+          <div>
+            <strong>${escapeHtml(draft.name)}</strong>
+            <div>CAT configuration definition data</div>
+          </div>
+        </div>
+
+        <div class="ae5e-cat-options-context">
+          <span><strong>Identifier:</strong> ${escapeHtml(draft.identifier || "—")}</span>
+          <span><strong>Ruleset:</strong> ${escapeHtml(draft.rules || "—")}</span>
+          <span><strong>Version:</strong> ${escapeHtml(draft.alreadyPublished ? draft.version : "Not published")}</span>
+        </div>
+
+        <label class="ae5e-cat-options-label" for="ae5e-cat-configuration-data">CAT Configuration Data</label>
+        <textarea id="ae5e-cat-configuration-data" data-ae5e-cat-options-field="configuration" spellcheck="false">${escapeHtml(draft.configurationText)}</textarea>
+        <div class="ae5e-cat-options-help">Paste JSON only. This defines CAT controls; user-selected values remain separate under <code>flags.cat.config.*</code>. Use <code>{}</code> for no options.</div>
+
+        <div class="ae5e-cat-metadata-status" data-ae5e-cat-options-status data-kind="${statusKind}">${statusText}</div>
+
+        <div class="ae5e-cat-metadata-actions">
+          <button type="button" data-ae5e-cat-options-action="cancel"><i class="fa-solid fa-xmark"></i> Cancel</button>
+          <button type="button" data-ae5e-cat-options-action="save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+        </div>
+      </form>
+    `;
   }
 
   #editorHtml(draft) {

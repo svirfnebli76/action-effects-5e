@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CatMetadataContextMenuService,
   CAT_METADATA_CONTEXT_LABEL,
+  CAT_OPTIONS_CONTEXT_LABEL,
   CAT_METADATA_CONTEXT_WRAPPER_TARGET
 } from "../scripts/authoring/cat-metadata-context-menu-service.js";
 
@@ -11,6 +12,13 @@ function makeService({ isGM = true } = {}) {
   const authoring = {
     isValidVersion: value => /^\d+\.\d+\.\d+$/.test(value),
     async setMetadata() { return { audit: { valid: true } }; }
+  };
+  const configurationAuthoring = {
+    getConfiguration(document) { return document.flags?.["action-effects-5e"]?.cat?.configSchema ?? {}; },
+    validate(data) { return { valid: true, optionCount: Object.keys(data ?? {}).length, issues: [] }; },
+    parse(text) { try { const data = JSON.parse(text); return { valid: true, data, optionCount: Object.keys(data ?? {}).length, issues: [] }; } catch (error) { return { valid: false, data: null, optionCount: 0, issues: [error.message] }; } },
+    async setConfiguration() { return { validation: { valid: true, optionCount: 0, issues: [] } }; },
+    getStatus() { return { schemaFlag: "flags.action-effects-5e.cat.configSchema", preferenceFlag: "flags.cat.config.*" }; }
   };
   const registry = {
     async refreshPublicCompendiums() { return { publicRegistration: { registeredPacks: [], deferredPacks: [] } }; },
@@ -24,6 +32,7 @@ function makeService({ isGM = true } = {}) {
   };
   const service = new CatMetadataContextMenuService({
     authoring,
+    configurationAuthoring,
     registry,
     gameAccessor: () => ({ user: { isGM } }),
     libWrapperAccessor: () => libWrapper,
@@ -77,9 +86,11 @@ test("context option appears only for GM in approved AE5E public compendiums", (
   const base = [{ label: "Base" }];
 
   const allowedOptions = service.extendContextOptions({ collection: allowed }, base);
-  assert.equal(allowedOptions.length, 2);
+  assert.equal(allowedOptions.length, 3);
   assert.equal(allowedOptions[1].label, CAT_METADATA_CONTEXT_LABEL);
   assert.equal(allowedOptions[1].ae5eCatMetadata, true);
+  assert.equal(allowedOptions[2].label, CAT_OPTIONS_CONTEXT_LABEL);
+  assert.equal(allowedOptions[2].ae5eCatOptions, true);
 
   assert.equal(service.extendContextOptions({ collection: internal }, base).length, 1);
   assert.equal(service.extendContextOptions({ collection: foreign }, base).length, 1);
@@ -131,4 +142,20 @@ test("editor draft preserves existing automation version and proposes a safe fir
     version: "1.0.0"
   }));
   assert.equal(publishedGenericIdentifier.identifier, "spell");
+});
+
+
+test("options editor draft serializes stored configuration data without touching CAT preference flags", () => {
+  const { service } = makeService();
+  const item = makeItem({ source: "action-effects-5e", version: "1.0.0" });
+  item.flags["action-effects-5e"] = { cat: { configSchema: {
+    playAnimation: { label: "Play Animations", type: "checkbox", default: true, category: "animation" }
+  } } };
+  item.flags.cat.config = { playAnimation: false };
+
+  const draft = service.getOptionsDraft(item);
+  assert.equal(draft.optionCount, 1);
+  assert.equal(draft.valid, true);
+  assert.equal(JSON.parse(draft.configurationText).playAnimation.default, true);
+  assert.equal(item.flags.cat.config.playAnimation, false);
 });

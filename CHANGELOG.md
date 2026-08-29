@@ -1,3 +1,15 @@
+## 0.4.2.7 — In-Foundry CAT configuration-data authoring
+
+- Added a second GM-only AE5E public-compendium context command, **Edit Item Options**, alongside the accepted **Edit Item Version** workflow. It is available only on Items in AE5E's explicit public CAT compendium allowlist; World Items, foreign packs, and AE5E Administrative remain excluded.
+- Added the centered/movable **Edit CAT Configuration Data — <Item>** editor. The editor loads the Item's current CAT option definitions as formatted JSON, accepts pasted JSON generated during Item development, validates it before writing, and is non-mutating until Save.
+- CAT option definitions are stored on the canonical Item at `flags.action-effects-5e.cat.configSchema`. This is intentionally separate from CAT's installed/user preference values at `flags.cat.config.*`.
+- Added JSON-safe validation for CAT configuration descriptors, including core CAT field types, type-appropriate defaults, static `select`/`select-many` choices, dangerous key rejection, and clear malformed-JSON errors. `{}` is the supported no-options payload.
+- Extended permanent CAT public-compendium registration to read each authored Item's stored configuration schema and pass it to CAT through `configs2014` / `configs2024`. Invalid stored option data now fails closed and defers the pack instead of registering malformed configuration.
+- Saving configuration data immediately refreshes AE5E's CAT public registration. If the pack is otherwise publication-ready, the options become live in CAT without a Foundry reload or a new AE5E package.
+- Added public authoring APIs for reading, validating, parsing, and writing CAT configuration data plus `ae5e.tests.runCatConfigurationAuthoringTest()` for read-only live acceptance.
+- Extended the accepted CAT metadata bootstrap to preserve the user-confirmed Entangle publication (`entangle`, 2024, automation `1.0.0`) across this package transition; Misty Step remains preserved at `1.0.0`.
+- Repository syntax/regression gate: **166/166 PASS**. Compendium pack files and assets are unchanged from v0.4.2.6.
+
 ## 0.4.2.6 — First-use identifier proposal hardening
 
 - Fixed **Edit Item Version** first-use identifier population for scratch-created D&D5e Items that carry generic/type-like placeholder identifiers such as `spell`, `feat`, or `item`. An unpublished Item now proposes a stable slug from its Item name instead (for example, Entangle → `entangle`).

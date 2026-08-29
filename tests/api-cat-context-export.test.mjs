@@ -17,6 +17,7 @@ test("public AE5E API exposes the CAT metadata context-menu live test", () => {
   const tests = serviceStub();
   const expected = { passed: true, marker: "context-menu" };
   tests.runCatMetadataContextMenuTest = () => expected;
+  tests.runCatConfigurationAuthoringTest = () => ({ passed: true, marker: "config-authoring" });
 
   const api = new ActionEffects5eApi({
     dependencies: service,
@@ -28,6 +29,7 @@ test("public AE5E API exposes the CAT metadata context-menu live test", () => {
     catSpell: service,
     catAutomationRegistry: service,
     catMetadataAuthoring: service,
+    catConfigurationAuthoring: service,
     catMetadataContextMenu: service,
     animationOwnership: service,
     automatedAnimations: service,
@@ -63,4 +65,8 @@ test("public AE5E API exposes the CAT metadata context-menu live test", () => {
 
   assert.equal(typeof api.tests.runCatMetadataContextMenuTest, "function");
   assert.deepEqual(api.tests.runCatMetadataContextMenuTest(), expected);
+  assert.equal(typeof api.tests.runCatConfigurationAuthoringTest, "function");
+  assert.equal(typeof api.authoring.cat.openOptionsEditor, "function");
+  assert.equal(typeof api.authoring.cat.validateConfigurationData, "function");
+  assert.equal(typeof api.authoring.cat.setConfigurationData, "function");
 });

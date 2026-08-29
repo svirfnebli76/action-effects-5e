@@ -1,3 +1,17 @@
+## v0.4.2.7 CAT configuration-data authoring acceptance
+
+After installing/reloading v0.4.2.7 as GM, run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e")?.api;
+await ae5e.tests.runCatMetadataContextMenuTest({ notify: true });
+await ae5e.tests.runCatConfigurationAuthoringTest({ notify: true });
+```
+
+The first gate must show both **Edit Item Version** and **Edit Item Options** on approved AE5E public compendium Items and neither command on AE5E Administrative/foreign packs. The second gate verifies the dedicated schema flag, CAT preference separation, JSON parsing/validation, representative checkbox/select descriptors, canonical Item draft generation, and that CAT's live registered configuration matches the canonical Item's stored schema. Both tests are read-only.
+
+For visual acceptance, right-click a published AE5E Item and choose **Edit Item Options**. The **Edit CAT Configuration Data** window should open with `{}` when no options exist. Paste a validated JSON configuration object, Save, then open CAT Medkit and confirm the Configuration controls are live.
+
 ## v0.4.2.6 first-use identifier acceptance
 
 Unpublished Items with missing or generic/type-like identifiers are proposed a name-derived slug in the metadata editor; published identifiers remain stable. Entangle with `system.identifier = "spell"` must draft as `entangle`.

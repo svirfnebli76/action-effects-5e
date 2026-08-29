@@ -34,6 +34,7 @@ import { CatTeleportTestSuite } from "./cat-teleport-test-suite.js";
 import { CatIntegrationTestSuite } from "./cat-integration-test-suite.js";
 import { CatMetadataAuthoringTestSuite } from "./cat-metadata-authoring-test-suite.js";
 import { CatMetadataContextMenuTestSuite } from "./cat-metadata-context-menu-test-suite.js";
+import { CatConfigurationAuthoringTestSuite } from "./cat-configuration-authoring-test-suite.js";
 import { RelationshipLifecycleTestSuite } from "./relationship-lifecycle-test-suite.js";
 
 export class TestHarness {
@@ -65,10 +66,11 @@ export class TestHarness {
   #catIntegrationSuite;
   #catMetadataAuthoringSuite;
   #catMetadataContextMenuSuite;
+  #catConfigurationAuthoringSuite;
   #relationshipLifecycleSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -112,7 +114,8 @@ export class TestHarness {
     this.#catTeleportSuite = new CatTeleportTestSuite({ movement, catMovement, relationships });
     this.#catIntegrationSuite = new CatIntegrationTestSuite({ registry: catAutomationRegistry, dependencies });
     this.#catMetadataAuthoringSuite = new CatMetadataAuthoringTestSuite({ authoring: catMetadataAuthoring });
-    this.#catMetadataContextMenuSuite = new CatMetadataContextMenuTestSuite({ contextMenu: catMetadataContextMenu, authoring: catMetadataAuthoring });
+    this.#catMetadataContextMenuSuite = new CatMetadataContextMenuTestSuite({ contextMenu: catMetadataContextMenu, authoring: catMetadataAuthoring, configurationAuthoring: catConfigurationAuthoring });
+    this.#catConfigurationAuthoringSuite = new CatConfigurationAuthoringTestSuite({ configurationAuthoring: catConfigurationAuthoring, contextMenu: catMetadataContextMenu, registry: catAutomationRegistry });
     this.#relationshipLifecycleSuite = new RelationshipLifecycleTestSuite({ relationships, lifecycle: relationshipLifecycle });
   }
 
@@ -520,6 +523,10 @@ export class TestHarness {
 
   runCatMetadataContextMenuTest(options) {
     return this.#catMetadataContextMenuSuite.runLiveTest(options);
+  }
+
+  runCatConfigurationAuthoringTest(options) {
+    return this.#catConfigurationAuthoringSuite.runLiveTest(options);
   }
 
   async runCatMovementInteroperabilityTest({ notify = true } = {}) {

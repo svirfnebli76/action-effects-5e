@@ -13,7 +13,8 @@ function makeIndexEntry({
   rules = "2014",
   type = "spell",
   source = CAT_AUTOMATION_SOURCE_ID,
-  version = "1.0.0"
+  version = "1.0.0",
+  configSchema
 }) {
   return {
     _id: id,
@@ -25,16 +26,21 @@ function makeIndexEntry({
       identifier,
       source: { rules }
     },
-    flags: source === undefined && version === undefined
-      ? {}
-      : {
-          cat: {
-            automation: {
-              ...(source !== undefined ? { source } : {}),
-              ...(version !== undefined ? { version } : {})
+    flags: {
+      ...(source === undefined && version === undefined
+        ? {}
+        : {
+            cat: {
+              automation: {
+                ...(source !== undefined ? { source } : {}),
+                ...(version !== undefined ? { version } : {})
+              }
             }
-          }
-        }
+          }),
+      ...(configSchema !== undefined
+        ? { "action-effects-5e": { cat: { configSchema } } }
+        : {})
+    }
   };
 }
 
@@ -82,17 +88,20 @@ function makeFixture({ registerResults } = {}) {
       registerSourceName(id, name) { sourceNames[id] = name; },
       registerAutomation() { return true; },
       registerAutomations() { return []; },
-      async registerAutomationCompendium(pack, { source } = {}) {
+      async registerAutomationCompendium(pack, { source, configs2014 = {}, configs2024 = {} } = {}) {
         const index = await pack.getIndex();
-        compendiumCalls.push({ id: pack.collection, source, count: index.length });
+        compendiumCalls.push({ id: pack.collection, source, count: index.length, configs2014, configs2024 });
         if (typeof registerResults === "function") return registerResults(pack, index);
         for (const document of index) {
+          const identifier = document.system?.identifier;
+          const rules = document.system?.source?.rules;
           automations.set(document.uuid, {
             source,
-            identifier: document.system?.identifier,
-            rules: document.system?.source?.rules,
+            identifier,
+            rules,
             type: document.type,
             version: document.flags?.cat?.automation?.version,
+            config: rules === "2014" ? configs2014[identifier] : configs2024[identifier],
             uuid: document.uuid
           });
         }
@@ -352,4 +361,65 @@ test("CAT public registration reconciliation repairs a cleared live provider reg
   assert.equal(service.getStats().publicRegistrationReconciliations, 1);
   assert.equal(service.getStats().publicRegistrationReconciliationRepairs, 1);
   assert.equal(service.getStats().publicRegistrationReconciliationErrors, 0);
+});
+
+
+test("CAT public registration forwards Item-authored configuration schemas to CAT by ruleset", async () => {
+  const fixture = makeFixture();
+  const packId = "action-effects-5e.spells-level-2";
+  const configSchema = {
+    playAnimation: {
+      label: "Play Animations",
+      type: "checkbox",
+      default: true,
+      category: "animation"
+    }
+  };
+  const pack = makePack(packId, [makeIndexEntry({
+    id: "misty",
+    identifier: "misty-step",
+    rules: "2014",
+    configSchema
+  })]);
+  const service = new CatAutomationRegistry({
+    catAccessor: () => fixture.cat,
+    hooksAccessor: () => fixture.hooks,
+    packsAccessor: () => new Map([[packId, pack]]),
+    publicPackIds: [packId]
+  });
+
+  service.initialize();
+  await fixture.callbacks.get(CAT_READY_HOOK)();
+
+  assert.equal(fixture.compendiumCalls.length, 1);
+  assert.deepEqual(fixture.compendiumCalls[0].configs2014["misty-step"], configSchema);
+  assert.deepEqual(fixture.compendiumCalls[0].configs2024, {});
+  assert.deepEqual(fixture.automations.get("Compendium.test.misty").config, configSchema);
+  const registered = service.getStatus().publicRegistration.registeredPacks[0];
+  assert.equal(registered.configurable, 1);
+  assert.equal(registered.configurationOptions, 1);
+});
+
+test("CAT public registration defers packs with malformed Item-authored configuration data", async () => {
+  const fixture = makeFixture();
+  const packId = "action-effects-5e.spells-level-2";
+  const pack = makePack(packId, [makeIndexEntry({
+    id: "misty",
+    identifier: "misty-step",
+    configSchema: { playAnimation: { type: "checkbox", default: "yes" } }
+  })]);
+  const service = new CatAutomationRegistry({
+    catAccessor: () => fixture.cat,
+    hooksAccessor: () => fixture.hooks,
+    packsAccessor: () => new Map([[packId, pack]]),
+    publicPackIds: [packId]
+  });
+
+  service.initialize();
+  await fixture.callbacks.get(CAT_READY_HOOK)();
+  const status = service.getStatus();
+  assert.equal(status.publicRegistration.registeredPacks.length, 0);
+  assert.equal(status.publicRegistration.deferredPacks.length, 1);
+  assert.equal(status.publicRegistration.deferredPacks[0].invalidItems[0].issues.some(issue => issue.includes("CAT configuration")), true);
+  assert.equal(fixture.compendiumCalls.length, 0);
 });
