@@ -10,6 +10,15 @@
 - Added automated coverage for context-menu eligibility, first-use field population, editable identifier/ruleset authoring, compendium lock restoration, and no-reload CAT registration refresh. Repository regression suite: **156/156 PASS**.
 - Compendium pack data and assets are unchanged from v0.4.2.3. Canonical Misty Step remains CAT automation version 1.0.0.
 
+## 0.4.2.5 — CAT Item Version Editor hardening
+
+- Exposed `ae5e.tests.runCatMetadataContextMenuTest()` through the public AE5E test API.
+- Added a GM startup bootstrap for the already-accepted canonical Misty Step CAT metadata (`action-effects-5e` / `1.0.0`) when a packaged compendium arrives without the live-authored flags. This is a one-item recovery bridge, not the normal authoring path; future Item metadata continues to be managed through **Edit Item Version**.
+- Added CAT public-registration reconciliation so AE5E can repair runtime CAT registry drift without a module reload.
+- Added a delayed post-`catReady` reconciliation check and a public `ae5e.interoperability.cat.registration.reconcilePublicCompendiums()` diagnostic/repair API.
+- CAT public-registration live acceptance now reconciles CAT runtime state before asserting published Item presence.
+- Compendium content and assets remain unchanged from v0.4.2.4.
+
 ## 0.4.2.3 — Permanent CAT public-compendium registration
 
 - Promoted `CatAutomationRegistry` from source-only registration to permanent public-compendium publication after CAT's `catReady` lifecycle. Registration uses CAT's public `registerAutomationCompendium()` API and the established explicit AE5E public-pack allowlist.

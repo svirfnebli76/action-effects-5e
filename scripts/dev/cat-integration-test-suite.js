@@ -64,12 +64,24 @@ export class CatIntegrationTestSuite {
       status = this.#registry.getStatus();
     }
 
+    let reconciliation = null;
+    if (status.catReadyObserved && status.source?.registered && status.publicRegistration?.complete) {
+      try {
+        reconciliation = await this.#registry.reconcilePublicCompendiums();
+        status = this.#registry.getStatus();
+      } catch (error) {
+        reconciliation = {
+          error: error?.message ?? String(error)
+        };
+      }
+    }
+
     const requiredRelationships = manifestRequires(ae5eModule);
     const catRelationship = requiredRelationships.find(entry => (entry?.id ?? entry) === CAT_AUTOMATION_MODULE_ID) ?? null;
     const dependencyStatus = this.#dependencies.getStatus();
     const catDependency = dependencyStatus.required.find(entry => entry.id === CAT_AUTOMATION_MODULE_ID) ?? null;
 
-    record("AE5E v0.4.2.4 runtime is loaded", ae5eModule?.version === MODULE_VERSION && MODULE_VERSION === "0.4.2.4", {
+    record("AE5E v0.4.2.5 runtime is loaded", ae5eModule?.version === MODULE_VERSION && MODULE_VERSION === "0.4.2.5", {
       moduleVersion: ae5eModule?.version ?? null,
       runtimeVersion: MODULE_VERSION
     });
@@ -101,6 +113,7 @@ export class CatIntegrationTestSuite {
 
     const publicRegistration = status.publicRegistration ?? {};
     record("Permanent public-compendium registration completed", publicRegistration.started === true && publicRegistration.complete === true, publicRegistration);
+    record("CAT live registry is reconciled with AE5E's published-pack state", !reconciliation?.error, reconciliation);
     record("Permanent registration uses the explicit public pack allowlist", JSON.stringify(publicRegistration.allowlist ?? []) === JSON.stringify(CAT_PUBLIC_AUTOMATION_PACK_IDS), {
       expected: CAT_PUBLIC_AUTOMATION_PACK_IDS,
       actual: publicRegistration.allowlist ?? []

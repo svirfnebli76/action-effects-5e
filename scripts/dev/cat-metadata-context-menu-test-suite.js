@@ -28,7 +28,7 @@ export class CatMetadataContextMenuTestSuite {
 
     try {
       const status = this.#contextMenu.getStatus();
-      record("Runtime version is v0.4.2.4", MODULE_VERSION === "0.4.2.4", { moduleVersion: MODULE_VERSION });
+      record("Runtime version is v0.4.2.5", MODULE_VERSION === "0.4.2.5", { moduleVersion: MODULE_VERSION });
       record("Compendium context wrapper initialized", status.initialized === true && status.wrapperRegistered === true && status.lastError === null, status);
       record("Context option label is Edit Item Version", status.contextLabel === CAT_METADATA_CONTEXT_LABEL && CAT_METADATA_CONTEXT_LABEL === "Edit Item Version", status);
       record("Context editor is GM-only", status.gmOnly === true, status);

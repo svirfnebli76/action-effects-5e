@@ -11,7 +11,7 @@ import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { CatAutomationRegistry } from "./integrations/cat-automation-registry.js";
-import { CatMetadataAuthoringService } from "./authoring/cat-metadata-authoring-service.js";
+import { CatMetadataAuthoringService, isValidAutomationVersion } from "./authoring/cat-metadata-authoring-service.js";
 import { CatMetadataContextMenuService } from "./authoring/cat-metadata-context-menu-service.js";
 import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
 import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
@@ -186,6 +186,45 @@ const tests = new TestHarness({
   reactionEvents,
   socket
 });
+
+const ACCEPTED_CAT_METADATA_BOOTSTRAP = Object.freeze([
+  Object.freeze({
+    uuid: "Compendium.action-effects-5e.spells-level-2.Item.pLcoNw3VnVbgzGU8",
+    identifier: "misty-step",
+    version: "1.0.0"
+  })
+]);
+
+async function bootstrapAcceptedCatMetadata() {
+  if (!globalThis.game?.user?.isGM) return { skipped: true, reason: "not-gm", changed: 0 };
+
+  let changed = 0;
+  for (const entry of ACCEPTED_CAT_METADATA_BOOTSTRAP) {
+    try {
+      const document = await globalThis.fromUuid?.(entry.uuid);
+      if (!document || document.documentName !== "Item") {
+        Logger.warn(`Could not resolve accepted CAT metadata bootstrap Item '${entry.uuid}'.`);
+        continue;
+      }
+
+      const source = document.flags?.cat?.automation?.source ?? null;
+      const version = document.flags?.cat?.automation?.version ?? null;
+      if (source === MODULE_ID && isValidAutomationVersion(version)) continue;
+      if (source && source !== MODULE_ID) {
+        Logger.warn(`Accepted CAT metadata bootstrap skipped '${entry.identifier}' because it is owned by provider '${source}'.`);
+        continue;
+      }
+
+      await catMetadataAuthoring.setMetadata(document, { version: entry.version });
+      changed += 1;
+      Logger.info(`Restored accepted CAT metadata for '${entry.identifier}' at automation version ${entry.version}.`);
+    } catch (error) {
+      Logger.error(`Could not restore accepted CAT metadata for '${entry.identifier}'.`, error);
+    }
+  }
+
+  return { skipped: false, changed };
+}
 const api = new ActionEffects5eApi({
   dependencies,
   compatibility,
@@ -248,6 +287,8 @@ Hooks.once("setup", () => {
 });
 
 Hooks.once("ready", async () => {
+  await bootstrapAcceptedCatMetadata();
+
   const status = dependencies.validate({ notify: true });
   if (!status.healthy) {
     Logger.error("Foundation services were not started because required dependencies are unavailable.");

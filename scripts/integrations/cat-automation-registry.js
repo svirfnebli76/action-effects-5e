@@ -155,6 +155,9 @@ export class CatAutomationRegistry {
     publicRegistrationRuns: 0,
     publicRegistrationRefreshes: 0,
     publicRegistrationRefreshErrors: 0,
+    publicRegistrationReconciliations: 0,
+    publicRegistrationReconciliationRepairs: 0,
+    publicRegistrationReconciliationErrors: 0,
     packReadinessChecks: 0,
     packRegistrationAttempts: 0,
     packRegistrations: 0,
@@ -282,6 +285,59 @@ export class CatAutomationRegistry {
       return await this.#registerPublicCompendiums();
     } catch (error) {
       this.#stats.publicRegistrationRefreshErrors += 1;
+      this.#recordError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reconcile AE5E's cached publication state with CAT's live automation registry.
+   *
+   * CAT's registry is runtime state. Another CAT lifecycle operation can clear a
+   * provider's registered Automation objects without changing AE5E's cached
+   * pack-readiness result. When that happens, refresh the approved public packs
+   * from their canonical Item metadata rather than requiring a module reload.
+   */
+  async reconcilePublicCompendiums() {
+    if (!this.#catReadyObserved || !this.#sourceRegistered) {
+      throw new Error("CAT public-compendium registration cannot reconcile before catReady source registration completes.");
+    }
+
+    this.#stats.publicRegistrationReconciliations += 1;
+    try {
+      const expected = this.#registeredPacks.reduce(
+        (total, entry) => total + (Number(entry?.registered) || 0),
+        0
+      );
+      const actual = countRegisteredAutomations(this.#catAccessor());
+      const drifted = this.#publicRegistrationComplete
+        && expected > 0
+        && Number.isFinite(actual)
+        && actual < expected;
+
+      if (!drifted) {
+        return {
+          repaired: false,
+          expected,
+          actual,
+          status: this.getStatus()
+        };
+      }
+
+      this.#stats.publicRegistrationReconciliationRepairs += 1;
+      Logger.warn(
+        `CAT automation registry drift detected for AE5E (${actual}/${expected} published automation(s) present); refreshing public compendiums.`
+      );
+      const status = await this.refreshPublicCompendiums();
+      return {
+        repaired: true,
+        expected,
+        actualBefore: actual,
+        actualAfter: countRegisteredAutomations(this.#catAccessor()),
+        status
+      };
+    } catch (error) {
+      this.#stats.publicRegistrationReconciliationErrors += 1;
       this.#recordError(error);
       throw error;
     }

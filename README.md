@@ -1,4 +1,4 @@
-### v0.4.2.4 Compendium Item version editor
+### v0.4.2.5 Compendium Item version editor
 
 AE5E now provides a GM-only **Edit Item Version** context-menu action when right-clicking Items inside approved public AE5E compendiums. The editor pre-fills existing Item/CAT metadata, allows the ruleset and automation version to be authored without rebuilding AE5E, safely handles locked compendiums, and refreshes CAT registration immediately after save. AE5E Administrative and non-AE5E compendiums are excluded.
 

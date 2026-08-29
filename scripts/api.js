@@ -231,7 +231,8 @@ export class ActionEffects5eApi {
         registration: Object.freeze({
           getStatus: () => catAutomationRegistry.getStatus(),
           getStats: () => catAutomationRegistry.getStats(),
-          refreshPublicCompendiums: () => catAutomationRegistry.refreshPublicCompendiums()
+          refreshPublicCompendiums: () => catAutomationRegistry.refreshPublicCompendiums(),
+          reconcilePublicCompendiums: () => catAutomationRegistry.reconcilePublicCompendiums()
         }),
         spell: Object.freeze({
           getStatus: () => catSpell.getStatus(),
@@ -432,6 +433,7 @@ export class ActionEffects5eApi {
       runCatTeleportCompatibilityTest: (options) => tests.runCatTeleportCompatibilityTest(options),
       runCatIntegrationFoundationTest: (options) => tests.runCatIntegrationFoundationTest(options),
       runCatMetadataAuthoringTest: (options) => tests.runCatMetadataAuthoringTest(options),
+      runCatMetadataContextMenuTest: (options) => tests.runCatMetadataContextMenuTest(options),
       setupReactionBrokerTestScene: (options) => tests.setupReactionBrokerTestScene(options),
       runReactionBrokerFoundationTest: (options) => tests.runReactionBrokerFoundationTest(options),
       runReactionBrokerInteractiveTest: (options) => tests.runReactionBrokerInteractiveTest(options),

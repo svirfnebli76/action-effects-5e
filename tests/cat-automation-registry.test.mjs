@@ -322,3 +322,34 @@ test("CAT public registration can refresh after authoring metadata changes witho
   assert.equal(service.getStats().publicRegistrationRefreshes, 1);
   assert.equal(service.getStats().publicRegistrationRefreshErrors, 0);
 });
+
+test("CAT public registration reconciliation repairs a cleared live provider registry", async () => {
+  const fixture = makeFixture();
+  const packId = "action-effects-5e.spells-level-2";
+  const pack = makePack(packId, [makeIndexEntry({ id: "misty", identifier: "misty-step" })]);
+  const service = new CatAutomationRegistry({
+    catAccessor: () => fixture.cat,
+    hooksAccessor: () => fixture.hooks,
+    packsAccessor: () => new Map([[packId, pack]]),
+    publicPackIds: [packId]
+  });
+
+  service.initialize();
+  await fixture.callbacks.get(CAT_READY_HOOK)();
+  assert.equal(service.getStatus().automationsRegistered, 1);
+
+  // Simulate CAT runtime state being cleared after AE5E's successful catReady
+  // registration while AE5E's cached pack state still says the pack is live.
+  fixture.automations.clear();
+  assert.equal(service.getStatus().automationsRegistered, 0);
+
+  const reconciliation = await service.reconcilePublicCompendiums();
+  assert.equal(reconciliation.repaired, true);
+  assert.equal(reconciliation.expected, 1);
+  assert.equal(reconciliation.actualBefore, 0);
+  assert.equal(reconciliation.actualAfter, 1);
+  assert.equal(service.getStatus().automationsRegistered, 1);
+  assert.equal(service.getStats().publicRegistrationReconciliations, 1);
+  assert.equal(service.getStats().publicRegistrationReconciliationRepairs, 1);
+  assert.equal(service.getStats().publicRegistrationReconciliationErrors, 0);
+});

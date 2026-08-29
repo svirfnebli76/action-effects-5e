@@ -1,6 +1,6 @@
-## v0.4.2.4 CAT metadata context-menu acceptance
+## v0.4.2.5 CAT metadata context-menu acceptance
 
-After installing/reloading v0.4.2.4, run `await game.modules.get("action-effects-5e").api.tests.runCatMetadataContextMenuTest({notify:true})` as GM. Then open an approved AE5E public compendium and right-click an Item: `Edit Item Version` should appear. Confirm the editor pre-fills Item Name, Item Type, Identifier, Ruleset, provider, and existing/default version; cancel without saving for the first visual check. The option must not appear in AE5E Administrative or non-AE5E compendiums.
+After installing/reloading v0.4.2.5, run `await game.modules.get("action-effects-5e").api.tests.runCatMetadataContextMenuTest({notify:true})` as GM. Then open an approved AE5E public compendium and right-click an Item: `Edit Item Version` should appear. Confirm the editor pre-fills Item Name, Item Type, Identifier, Ruleset, provider, and existing/default version; cancel without saving for the first visual check. The option must not appear in AE5E Administrative or non-AE5E compendiums.
 
 ## v0.4.2.3 permanent CAT public-registration acceptance
 
