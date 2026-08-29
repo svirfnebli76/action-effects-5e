@@ -677,9 +677,11 @@ export class CatMetadataContextMenuService {
           <span><strong>Version:</strong> ${escapeHtml(draft.alreadyPublished ? draft.version : "Not published")}</span>
         </div>
 
-        <label class="ae5e-cat-options-label" for="ae5e-cat-configuration-data">CAT Configuration Data</label>
-        <textarea id="ae5e-cat-configuration-data" data-ae5e-cat-options-field="configuration" spellcheck="false">${escapeHtml(draft.configurationText)}</textarea>
-        <div class="ae5e-cat-options-help">Paste JSON only. This defines CAT controls; user-selected values remain separate under <code>flags.cat.config.*</code>. Use <code>{}</code> for no options.</div>
+        <div class="ae5e-cat-options-data-block">
+          <label class="ae5e-cat-options-label" for="ae5e-cat-configuration-data">CAT Configuration Data</label>
+          <div class="ae5e-cat-options-help">Paste JSON only. This defines CAT controls; user-selected values remain separate under <code>flags.cat.config.*</code>. Use <code>{}</code> for no options.</div>
+          <textarea id="ae5e-cat-configuration-data" data-ae5e-cat-options-field="configuration" rows="25" spellcheck="false">${escapeHtml(draft.configurationText)}</textarea>
+        </div>
 
         <div class="ae5e-cat-metadata-status" data-ae5e-cat-options-status data-kind="${statusKind}">${statusText}</div>
 

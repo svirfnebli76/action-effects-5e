@@ -1,6 +1,6 @@
-## v0.4.2.7 CAT configuration-data authoring acceptance
+## v0.4.2.8 CAT configuration-data authoring acceptance
 
-After installing/reloading v0.4.2.7 as GM, run:
+After installing/reloading v0.4.2.8 as GM, run:
 
 ```js
 const ae5e = game.modules.get("action-effects-5e")?.api;

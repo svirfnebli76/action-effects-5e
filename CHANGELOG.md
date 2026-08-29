@@ -1,3 +1,11 @@
+## 0.4.2.8 — CAT configuration editor layout correction
+
+- Reworked the **Edit CAT Configuration Data** form layout after live visual acceptance found Foundry v14 form styling constraining the JSON textarea into a narrow field beside its label/help text.
+- The CAT Configuration Data editor now occupies its own full-width row beneath the Item context summary. Its label, help text, and JSON textarea are grouped in a dedicated full-width block, and the textarea explicitly fills the available dialog width.
+- Expanded the JSON editor to a **25-line authoring viewport**. Longer CAT payloads now scroll vertically inside the editor instead of requiring the textarea or dialog to be manually resized. Manual textarea resizing is disabled so the authoring window remains predictable.
+- The editor is capped against the available viewport height so smaller displays can still keep the dialog usable while retaining an internal scrollbar.
+- No CAT schema, authoring, registration, Item metadata, compendium content, or runtime automation behavior changed in this patch.
+
 ## 0.4.2.7 — In-Foundry CAT configuration-data authoring
 
 - Added a second GM-only AE5E public-compendium context command, **Edit Item Options**, alongside the accepted **Edit Item Version** workflow. It is available only on Items in AE5E's explicit public CAT compendium allowlist; World Items, foreign packs, and AE5E Administrative remain excluded.

@@ -1,3 +1,7 @@
+### v0.4.2.8 CAT configuration editor layout correction
+
+The **Edit CAT Configuration Data** window now gives the JSON editor its own full-width row. The label/help text are grouped with the textarea, and the textarea is forced to span the usable dialog width so Foundry v14 form styling cannot compress it into a narrow right-hand field. The JSON editor opens as a **25-line viewport** with its own vertical scrollbar for longer payloads; manual resizing is disabled for a stable authoring layout.
+
 ### v0.4.2.7 CAT configuration-data editor
 
 AE5E public compendium Items now expose **Edit Item Options** beside **Edit Item Version** for GM authoring. The new editor stores JSON CAT option definitions directly on the canonical Item at `flags.action-effects-5e.cat.configSchema`; CAT user choices remain separately owned by `flags.cat.config.*`. Saving validates the JSON, writes only the authoring schema, and refreshes CAT registration immediately so configuration controls can become live without rebuilding AE5E.
