@@ -1,3 +1,7 @@
+### v0.4.2.9 CAT option clearing + editor polish
+
+`Edit Item Options` now treats `{}` as an explicit clear operation for the Item-authored CAT configuration schema. This avoids Foundry's normal object-merge behavior retaining old option keys. The CAT authoring status border is also thicker and the JSON/status/action areas have slightly more vertical breathing room.
+
 ### v0.4.2.8 CAT configuration editor layout correction
 
 The **Edit CAT Configuration Data** window now gives the JSON editor its own full-width row. The label/help text are grouped with the textarea, and the textarea is forced to span the usable dialog width so Foundry v14 form styling cannot compress it into a narrow right-hand field. The JSON editor opens as a **25-line viewport** with its own vertical scrollbar for longer payloads; manual resizing is disabled for a stable authoring layout.

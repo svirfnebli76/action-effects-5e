@@ -1,3 +1,11 @@
+## 0.4.2.9 — CAT option clearing and editor status polish
+
+- Fixed **Edit Item Options → `{}`** so an empty configuration explicitly deletes the existing `flags.action-effects-5e.cat.configSchema` object instead of being swallowed by Foundry object-merge semantics.
+- CAT user preference values under `flags.cat.config.*` remain untouched when authored options are cleared.
+- Increased AE5E CAT authoring status/validation borders from 1 px to **3 px**.
+- Added a small amount of vertical spacing between the JSON editor, status block, and action buttons.
+- Added regression coverage for clearing an existing authored schema with `{}`.
+
 ## 0.4.2.8 — CAT configuration editor layout correction
 
 - Reworked the **Edit CAT Configuration Data** form layout after live visual acceptance found Foundry v14 form styling constraining the JSON textarea into a narrow field beside its label/help text.

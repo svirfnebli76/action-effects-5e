@@ -1,4 +1,4 @@
-## v0.4.2.8 Item-authored CAT configuration boundary
+## v0.4.2.9 Item-authored CAT configuration boundary
 
 CAT configuration definitions are canonical Item authoring data. AE5E stores them at `flags.action-effects-5e.cat.configSchema` as JSON-safe descriptor objects and forwards them to CAT's `registerAutomationCompendium()` `configs2014` / `configs2024` maps during public-pack registration. CAT retains exclusive ownership of installed preference values under `flags.cat.config.*`. The authoring editor is GM-only and restricted to the same explicit public-pack allowlist used by CAT metadata publication. Invalid stored configuration fails the pack-readiness gate closed.
 

@@ -35,7 +35,7 @@ export class CatConfigurationAuthoringTestSuite {
     try {
       const status = this.#configurationAuthoring.getStatus();
       const contextStatus = this.#contextMenu.getStatus();
-      record("Runtime version is v0.4.2.8", MODULE_VERSION === "0.4.2.8", { moduleVersion: MODULE_VERSION });
+      record("Runtime version is v0.4.2.9", MODULE_VERSION === "0.4.2.9", { moduleVersion: MODULE_VERSION });
       record("CAT configuration schema has a dedicated AE5E authoring flag", status.schemaFlag === CAT_CONFIGURATION_SCHEMA_FLAG
         && CAT_CONFIGURATION_SCHEMA_FLAG === "flags.action-effects-5e.cat.configSchema", status);
       record("CAT user preference storage remains separate", status.preferenceFlag === "flags.cat.config.*", status);
@@ -67,6 +67,11 @@ export class CatConfigurationAuthoringTestSuite {
 
       const badJson = this.#configurationAuthoring.parse('{"playAnimation":');
       record("Malformed JSON is rejected safely", badJson.valid === false && badJson.issues.some(issue => issue.includes("Invalid JSON")), badJson);
+
+      const emptySchema = this.#configurationAuthoring.parse("{}");
+      record("Empty JSON object validates as an explicit no-options schema", emptySchema.valid === true
+        && emptySchema.optionCount === 0
+        && Object.keys(emptySchema.data ?? {}).length === 0, emptySchema);
 
       const badType = this.#configurationAuthoring.validate({ probe: { type: "banana", default: true } });
       record("Unsupported CAT configuration types are rejected", badType.valid === false, badType);

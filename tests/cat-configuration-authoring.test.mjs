@@ -33,7 +33,9 @@ function makeItem({ pack = "action-effects-5e.spells-level-2", isGM = true } = {
           target[key] ??= {};
           target = target[key];
         }
-        target[keys[0]] = value;
+        const finalKey = keys[0];
+        if (finalKey.startsWith("-=")) delete target[finalKey.slice(2)];
+        else target[finalKey] = value;
       }
       return this;
     }
@@ -128,4 +130,32 @@ test("configuration authoring is GM-only and public-pack-only", async () => {
   const foreign = makeItem({ pack: "dnd5e.spells" });
   const gmService = makeService(foreign.item, foreign.user);
   await assert.rejects(() => gmService.setConfiguration(foreign.item, SAMPLE), /approved AE5E public compendiums/);
+});
+
+
+test("empty CAT configuration explicitly clears an existing authored schema without touching CAT preferences", async () => {
+  const { item, user } = makeItem();
+  item.flags["action-effects-5e"].cat = { configSchema: structuredClone(SAMPLE) };
+  const preferenceBefore = structuredClone(item.flags.cat.config);
+  const transitions = [];
+  const pack = {
+    collection: item.pack,
+    metadata: { id: item.pack, type: "Item" },
+    locked: true,
+    async configure({ locked }) {
+      this.locked = Boolean(locked);
+      transitions.push(this.locked);
+    }
+  };
+  const service = makeService(item, user, new Map([[item.pack, pack]]));
+
+  const result = await service.setConfiguration(item, {});
+
+  assert.equal(result.validation.valid, true);
+  assert.equal(result.validation.optionCount, 0);
+  assert.deepEqual(service.getConfiguration(item), {});
+  assert.equal(item.flags["action-effects-5e"].cat.configSchema, undefined);
+  assert.deepEqual(item.flags.cat.config, preferenceBefore);
+  assert.deepEqual(transitions, [false, true]);
+  assert.equal(pack.locked, true);
 });

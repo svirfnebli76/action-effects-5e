@@ -320,7 +320,15 @@ export class CatConfigurationAuthoringService {
         this.#stats.compendiumUnlocks += 1;
       }
 
-      await document.update({ [CAT_CONFIGURATION_SCHEMA_FLAG]: cloneData(data) });
+      // Foundry merges object updates. Writing {} over an existing object therefore
+      // leaves its prior child keys intact. Treat an empty schema as an explicit
+      // authoring clear and use Foundry's deletion-key syntax instead.
+      const isClear = Object.keys(data).length === 0;
+      const updateData = isClear
+        ? { [`flags.${MODULE_ID}.cat.-=configSchema`]: null }
+        : { [CAT_CONFIGURATION_SCHEMA_FLAG]: cloneData(data) };
+
+      await document.update(updateData);
       this.#stats.configurationWrites += 1;
     } catch (error) {
       this.#stats.configurationWriteErrors += 1;
