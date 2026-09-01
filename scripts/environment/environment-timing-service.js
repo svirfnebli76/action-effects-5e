@@ -123,7 +123,14 @@ export class EnvironmentTimingService {
       const timerId = key.slice(region.uuid.length + 1).split("|")[0];
       if (!ids.has(timerId)) this.#blocked.delete(key);
     }
-    for (const [timerId, timer] of Object.entries(timers)) this.#armRealTime(region.uuid, timerId, timer);
+    for (const [timerId, timer] of Object.entries(timers)) {
+      const key = `${region.uuid}|${timerId}`;
+      if (this.#firing.has(key)) {
+        this.#clearArm(key);
+        continue;
+      }
+      this.#armRealTime(region.uuid, timerId, timer);
+    }
     void this.processDue({ regionUuids: [region.uuid] });
   }
 

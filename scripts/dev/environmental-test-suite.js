@@ -13,7 +13,7 @@ function now() {
 
 function banner(name, passed) {
   console.log(
-    `%cAE5E 0.4.3.0 — ${name} — ${passed ? "PASS" : "FAIL"}`,
+    `%cAE5E 0.4.3.1 — ${name} — ${passed ? "PASS" : "FAIL"}`,
     `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`
   );
 }

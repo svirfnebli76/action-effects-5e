@@ -31,7 +31,7 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.3.0");
+  assert.equal(manifest.version, "0.4.3.1");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);
   assert.match(apiSource, /runEnvironmentalAcceptanceTest/);
@@ -152,6 +152,134 @@ test("environment mutations batch state and hole changes into one Region update"
   assert.equal(timer.handlerId, "web.burn-away");
   assert.equal(timer.behaviorId, behavior.id);
   assert.equal(timer.payload.cell, "0,0");
+});
+
+
+test("environment timer cancellation uses Foundry v14 forced replacement so removed keys stay removed", async () => {
+  const mutation = new EnvironmentMutationService();
+  const path = `flags.${MODULE_ID}.${ENVIRONMENT_FLAG_KEY}`;
+  const previousGame = globalThis.game;
+  const previousReplace = globalThis._replace;
+  globalThis.game = { user: { isGM: true } };
+  globalThis._replace = value => ({ __ae5eForcedReplacement: true, value });
+
+  const region = {
+    uuid: "Scene.scene-test.Region.timer-replacement",
+    flags: {
+      [MODULE_ID]: {
+        [ENVIRONMENT_FLAG_KEY]: {
+          schemaVersion: 1,
+          states: {},
+          timers: {
+            "burn-away": { id: "burn-away", handlerId: "web.burn-away", due: { realTimeMs: 1 } }
+          }
+        }
+      }
+    },
+    toObject() {
+      return {
+        flags: structuredClone(this.flags),
+        shapes: [{ type: "rectangle", x: 0, y: 0, width: 200, height: 100 }]
+      };
+    },
+    async update(data) {
+      const replacement = data[path];
+      assert.equal(replacement?.__ae5eForcedReplacement, true);
+      this.flags[MODULE_ID][ENVIRONMENT_FLAG_KEY] = structuredClone(replacement.value);
+    }
+  };
+
+  try {
+    const result = await mutation.apply(region, [{
+      behavior: { id: "behavior-1" },
+      capability: { id: "flammable" },
+      profile: { profileId: "web-test" },
+      reaction: { handled: true, cancelTimers: ["burn-away"] }
+    }], { id: "timer-complete" });
+
+    assert.equal(result.updated, true);
+    assert.equal("burn-away" in region.flags[MODULE_ID][ENVIRONMENT_FLAG_KEY].timers, false);
+    assert.equal(mutation.getStats().forcedFlagReplacements, 1);
+  } finally {
+    globalThis.game = previousGame;
+    globalThis._replace = previousReplace;
+  }
+});
+
+test("Foundry-cleaned Region rectangle defaults do not defeat repeated-hole de-duplication", async () => {
+  const mutation = new EnvironmentMutationService();
+  const previousGame = globalThis.game;
+  const previousFoundry = globalThis.foundry;
+  globalThis.game = { user: { isGM: true } };
+
+  const cleanRectangle = source => ({
+    type: "rectangle",
+    hole: Boolean(source.hole),
+    x: Number(source.x ?? 0),
+    y: Number(source.y ?? 0),
+    width: Number(source.width ?? 0),
+    height: Number(source.height ?? 0),
+    rotation: Number(source.rotation ?? 0),
+    anchorX: Number(source.anchorX ?? 0),
+    anchorY: Number(source.anchorY ?? 0),
+    gridBased: Boolean(source.gridBased ?? false)
+  });
+  globalThis.foundry = {
+    ...(previousFoundry ?? {}),
+    data: {
+      ...(previousFoundry?.data ?? {}),
+      RectangleShapeData: {
+        ...(previousFoundry?.data?.RectangleShapeData ?? {}),
+        TYPES: { rectangle: { cleanData: cleanRectangle } }
+      }
+    }
+  };
+
+  let updates = 0;
+  const persistedHole = {
+    type: "rectangle",
+    hole: true,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    rotation: 0,
+    anchorX: 0,
+    anchorY: 0,
+    gridBased: false
+  };
+  const region = {
+    uuid: "Scene.scene-test.Region.shape-dedupe",
+    flags: {},
+    toObject: () => ({
+      flags: {},
+      shapes: [
+        { type: "rectangle", x: 0, y: 0, width: 200, height: 100 },
+        persistedHole
+      ]
+    }),
+    async update() { updates += 1; }
+  };
+
+  try {
+    const result = await mutation.apply(region, [{
+      behavior: { id: "behavior-1" },
+      capability: { id: "flammable" },
+      profile: { profileId: "web-test" },
+      reaction: {
+        handled: true,
+        addHoles: [{ type: "rectangle", x: 0, y: 0, width: 100, height: 100, hole: true }]
+      }
+    }], { id: "repeat-hole" });
+
+    assert.equal(result.updated, false);
+    assert.equal(result.reason, "reaction-noop");
+    assert.equal(updates, 0);
+    assert.equal(mutation.getStats().holeDedupes, 1);
+  } finally {
+    globalThis.game = previousGame;
+    globalThis.foundry = previousFoundry;
+  }
 });
 
 test("environment timing supports persistent real-time, world-time, and combat-position deadlines", () => {

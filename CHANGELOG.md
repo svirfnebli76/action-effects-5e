@@ -1,3 +1,12 @@
+## 0.4.3.1 — Environmental live-lifecycle persistence hardening
+
+- Fixed the v0.4.3.0 live Foundry acceptance failure where completed environmental timers could remain in `flags.action-effects-5e.environment.timers`. Foundry v14 Document updates merge object fields by default, so omitting a consumed timer key did not delete it. Environmental flag writes now use Foundry v14's supported `_replace(...)` forced-replacement operator, ensuring timer cancellation is atomic with the accompanying state mutation and preventing expired timers from repeatedly re-firing.
+- Hardened the timing service so a timer already executing is never re-armed by a Region update hook while its handler is in flight.
+- Fixed repeated Region-hole requests being appended again after Foundry persisted/cleaned the shape. Hole de-duplication now canonicalizes shapes through Foundry v14's native Shape DataModel `cleanData()` path when available, so schema-added rectangle defaults such as anchor/grid fields do not make an existing hole appear different from the concise AE5E source shape.
+- Added deterministic regression coverage for Foundry forced-replacement timer cancellation and for de-duplicating a concise hole request against a Foundry-cleaned persisted rectangle.
+- Repository gate for this patch: **181/181 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or environmental source Item was changed.
+
 ## 0.4.3.0 — Region-native Environmental Interaction foundation
 
 - Added the generic **AE5E Environmental Interaction framework** for Foundry v14 Scene Regions. Persistent environmental state is Region-authoritative; Measured Templates exist only behind a compatibility geometry adapter.

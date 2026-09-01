@@ -35,7 +35,7 @@ export class CatConfigurationAuthoringTestSuite {
     try {
       const status = this.#configurationAuthoring.getStatus();
       const contextStatus = this.#contextMenu.getStatus();
-      record("Runtime version is v0.4.3.0", MODULE_VERSION === "0.4.3.0", { moduleVersion: MODULE_VERSION });
+      record("Runtime version is v0.4.3.1", MODULE_VERSION === "0.4.3.1", { moduleVersion: MODULE_VERSION });
       record("CAT configuration schema has a dedicated AE5E authoring flag", status.schemaFlag === CAT_CONFIGURATION_SCHEMA_FLAG
         && CAT_CONFIGURATION_SCHEMA_FLAG === "flags.action-effects-5e.cat.configSchema", status);
       record("CAT user preference storage remains separate", status.preferenceFlag === "flags.cat.config.*", status);

@@ -1,4 +1,4 @@
-### v0.4.3.0 Region-native Environmental Interaction foundation
+### v0.4.3.1 Region-native Environmental Interaction foundation
 
 AE5E now provides a generic environmental layer built around **Foundry v14 Scene Regions**. Persistent environmental effects are Regions; external sources are interpreted into normalized geometry and delivered only to Regions that advertise a matching environmental capability. The first capability is the native module subtype **AE5E — Flammable**. The framework is intentionally generic so later capabilities such as Meltable, Freezable, Dispersible, and Corrodible can reuse the same machinery.
 
@@ -24,7 +24,7 @@ await ae5e.tests.environment.runLifecycle({ notify: true });
 await ae5e.tests.environment.runPerformance({ notify: true });
 ```
 
-The live lifecycle/performance fixtures must be run from AE5E's current primary GM client. They clean up their test Regions by default. Repository regression gate for v0.4.3.0: **179/179 PASS**. Compendium packs and assets are unchanged from v0.4.2.9.
+The live lifecycle/performance fixtures must be run from AE5E's current primary GM client. They clean up their test Regions by default. Repository regression gate for v0.4.3.1: **181/181 PASS**. Compendium packs and assets are unchanged from v0.4.2.9.
 
 ### v0.4.2.9 CAT option clearing + editor polish
 
