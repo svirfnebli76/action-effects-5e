@@ -29,6 +29,7 @@ import { SpellModifierEngineTestSuite } from "./spell-modifier-engine-test-suite
 import { CrosshairTestSuite } from "./crosshair-test-suite.js";
 import { OngoingEffectTestSuite } from "./ongoing-effect-test-suite.js";
 import { RegionAuthorityTestSuite } from "./region-authority-test-suite.js";
+import { EnvironmentalTestSuite } from "./environmental-test-suite.js";
 import { AnimationOwnershipTestSuite } from "./animation-ownership-test-suite.js";
 import { CatTeleportTestSuite } from "./cat-teleport-test-suite.js";
 import { CatIntegrationTestSuite } from "./cat-integration-test-suite.js";
@@ -61,6 +62,7 @@ export class TestHarness {
   #crosshairSuite;
   #ongoingEffectSuite;
   #regionAuthoritySuite;
+  #environmentalSuite;
   #animationOwnershipSuite;
   #catTeleportSuite;
   #catIntegrationSuite;
@@ -70,7 +72,7 @@ export class TestHarness {
   #relationshipLifecycleSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, environment, environmentGeometry, environmentBehaviors, environmentCapabilities, environmentProfiles, environmentIndex, environmentMutations, environmentTiming, flammability, midiEnvironment, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -110,6 +112,20 @@ export class TestHarness {
     this.#crosshairSuite = new CrosshairTestSuite({ crosshairs });
     this.#ongoingEffectSuite = new OngoingEffectTestSuite({ service: ongoingEffects, catSpell });
     this.#regionAuthoritySuite = new RegionAuthorityTestSuite({ service: regions, socket });
+    this.#environmentalSuite = new EnvironmentalTestSuite({
+      environment,
+      geometry: environmentGeometry,
+      behaviors: environmentBehaviors,
+      capabilities: environmentCapabilities,
+      profiles: environmentProfiles,
+      index: environmentIndex,
+      mutations: environmentMutations,
+      timing: environmentTiming,
+      flammability,
+      midi: midiEnvironment,
+      regions,
+      socket
+    });
     this.#animationOwnershipSuite = new AnimationOwnershipTestSuite({ ownership: animationOwnership, automatedAnimations });
     this.#catTeleportSuite = new CatTeleportTestSuite({ movement, catMovement, relationships });
     this.#catIntegrationSuite = new CatIntegrationTestSuite({ registry: catAutomationRegistry, dependencies });
@@ -135,6 +151,22 @@ export class TestHarness {
 
   runRegionAuthorityLiveLifecycleTest(options) {
     return this.#regionAuthoritySuite.runLiveLifecycleTest(options);
+  }
+
+  runEnvironmentalAcceptanceTest(options) {
+    return this.#environmentalSuite.runAcceptanceTest(options);
+  }
+
+  runEnvironmentalFoundationTest(options) {
+    return this.#environmentalSuite.runFoundationTest(options);
+  }
+
+  runEnvironmentalLiveLifecycleTest(options) {
+    return this.#environmentalSuite.runLiveLifecycleTest(options);
+  }
+
+  runEnvironmentalPerformanceTest(options) {
+    return this.#environmentalSuite.runPerformanceTest(options);
   }
 
   runOngoingEffectFoundationTest(options) {

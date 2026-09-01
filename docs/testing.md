@@ -1,3 +1,22 @@
+## v0.4.3.0 Environmental Interaction acceptance
+
+After installing/reloading v0.4.3.0 on the **primary GM** with an active Scene, run:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+// Preferred: one-command automated acceptance (foundation + live lifecycle + performance).
+await ae5e.tests.environment.runAll({ notify: true });
+
+// Focused runners remain available when isolating a failure.
+await ae5e.tests.environment.runFoundation({ notify: true });
+await ae5e.tests.environment.runLifecycle({ notify: true });
+await ae5e.tests.environment.runPerformance({ notify: true });
+```
+
+Expected: all three return `passed: true`. The live lifecycle fixture proves RegionBehavior persistence, fire dispatch, one batched state/hole mutation, idempotency, hole-aware intersection, persistent one-shot timing, surviving-geometry reaction, and authority cleanup. The performance fixture uses a no-op Flammable profile so it measures cached lookup/intersection/dispatch without Region writes.
+
+Repository gate: `npm test` → **179/179 PASS**, syntax check → **92 JavaScript files PASS**.
+
 ## v0.4.2.9 CAT configuration-data authoring acceptance
 
 After installing/reloading v0.4.2.9 as GM, run:

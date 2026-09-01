@@ -1,3 +1,11 @@
+## v0.4.3.0 Environmental Interaction architecture
+
+The environmental layer is **Region-native**. Persistent world state belongs to Foundry Scene Regions. Source adapters (Midi workflows, functional Eskie crosshairs, and legacy Measured Templates) normalize their geometry at the boundary and then leave the core dispatcher unaware of the original source type. Measured Templates are compatibility inputs only.
+
+The processing path is: source adapter → normalized environmental event → cached interested-Region index → bounding-box rejection → precise positive-minus-hole intersection → capability/profile reaction → one primary-GM Region mutation. Capabilities and profiles are independent registries; `Flammable`/`generic` is the first built-in pair. Region state and environmental timers live under `flags.action-effects-5e.environment`.
+
+The framework does not poll. Region-index invalidation follows Region/RegionBehavior document hooks. Real-time deadlines use one-shot timeouts; world-time/combat deadlines react to Foundry update hooks. Primary-GM changes rehydrate persisted timers.
+
 ## v0.4.2.9 Item-authored CAT configuration boundary
 
 CAT configuration definitions are canonical Item authoring data. AE5E stores them at `flags.action-effects-5e.cat.configSchema` as JSON-safe descriptor objects and forwards them to CAT's `registerAutomationCompendium()` `configs2014` / `configs2024` maps during public-pack registration. CAT retains exclusive ownership of installed preference values under `flags.cat.config.*`. The authoring editor is GM-only and restricted to the same explicit public-pack allowlist used by CAT metadata publication. Invalid stored configuration fails the pack-readiness gate closed.

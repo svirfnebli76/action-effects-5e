@@ -47,6 +47,16 @@ import { SpellModifierEngine } from "./spell-modifiers/spell-modifier-engine.js"
 import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-event-adapter.js";
 import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.js";
 import { RegionAuthorityService } from "./regions/region-authority-service.js";
+import { EnvironmentProfileRegistry } from "./environment/environment-profile-registry.js";
+import { EnvironmentCapabilityRegistry } from "./environment/environment-capability-registry.js";
+import { EnvironmentGeometryService } from "./environment/environment-geometry-service.js";
+import { EnvironmentRegionBehaviorRegistry } from "./environment/environment-region-behavior-registry.js";
+import { EnvironmentRegionIndex } from "./environment/environment-region-index.js";
+import { EnvironmentMutationService } from "./environment/environment-mutation-service.js";
+import { EnvironmentTimingService } from "./environment/environment-timing-service.js";
+import { FlammabilityService } from "./environment/flammability-service.js";
+import { EnvironmentalInteractionService } from "./environment/environmental-interaction-service.js";
+import { MidiEnvironmentAdapter } from "./environment/midi-environment-adapter.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -116,6 +126,30 @@ const spellModifiers = new SpellModifierEngine({
 const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifiers, authority: reactionAuthority });
 const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
 const regions = new RegionAuthorityService({ socket, authority: reactionAuthority });
+const environmentProfiles = new EnvironmentProfileRegistry();
+const environmentCapabilities = new EnvironmentCapabilityRegistry();
+const environmentGeometry = new EnvironmentGeometryService();
+const environmentBehaviors = new EnvironmentRegionBehaviorRegistry();
+const environmentIndex = new EnvironmentRegionIndex({ capabilities: environmentCapabilities, geometry: environmentGeometry });
+const environmentMutations = new EnvironmentMutationService();
+const environmentTiming = new EnvironmentTimingService({ authority: reactionAuthority, mutations: environmentMutations });
+const flammability = new FlammabilityService({ profiles: environmentProfiles, mutations: environmentMutations });
+environmentCapabilities.register({
+  id: "flammable",
+  behaviorType: "action-effects-5e.flammable",
+  eventTypes: ["fire"],
+  handler: context => flammability.handle(context)
+});
+const environment = new EnvironmentalInteractionService({
+  socket,
+  authority: reactionAuthority,
+  capabilities: environmentCapabilities,
+  profiles: environmentProfiles,
+  geometry: environmentGeometry,
+  index: environmentIndex,
+  mutations: environmentMutations
+});
+const midiEnvironment = new MidiEnvironmentAdapter({ environment, geometry: environmentGeometry });
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -171,6 +205,16 @@ const tests = new TestHarness({
   spellModifierEvents,
   ongoingEffects,
   regions,
+  environment,
+  environmentGeometry,
+  environmentBehaviors,
+  environmentCapabilities,
+  environmentProfiles,
+  environmentIndex,
+  environmentMutations,
+  environmentTiming,
+  flammability,
+  midiEnvironment,
   relationships,
   relationshipLifecycle,
   relationshipMovement,
@@ -263,6 +307,16 @@ const api = new ActionEffects5eApi({
   spellModifierEvents,
   ongoingEffects,
   regions,
+  environment,
+  environmentGeometry,
+  environmentBehaviors,
+  environmentCapabilities,
+  environmentProfiles,
+  environmentIndex,
+  environmentMutations,
+  environmentTiming,
+  flammability,
+  midiEnvironment,
   relationships,
   relationshipLifecycle,
   relationshipMovement,
@@ -295,6 +349,7 @@ Hooks.once("init", () => {
   catAutomationRegistry.initialize();
   catMetadataContextMenu.initialize();
   movementAccounting.initialize();
+  environmentBehaviors.initialize();
 
   const module = game.modules.get(MODULE_ID);
   if (module) module.api = api;
@@ -334,6 +389,9 @@ Hooks.once("ready", async () => {
   await selectionIndicator.initialize();
   externalPromptBridge.initialize();
   await reactionAuthority.initialize();
+  environmentTiming.initialize();
+  environment.initialize();
+  midiEnvironment.initialize();
   automatedAnimations.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();

@@ -1,3 +1,31 @@
+### v0.4.3.0 Region-native Environmental Interaction foundation
+
+AE5E now provides a generic environmental layer built around **Foundry v14 Scene Regions**. Persistent environmental effects are Regions; external sources are interpreted into normalized geometry and delivered only to Regions that advertise a matching environmental capability. The first capability is the native module subtype **AE5E — Flammable**. The framework is intentionally generic so later capabilities such as Meltable, Freezable, Dispersible, and Corrodible can reuse the same machinery.
+
+Ordinary fire Items do not need AE5E macros or flags. AE5E observes normal Midi-QOL damage workflows, rejects non-fire workflows before consulting the Region index, and interprets fire spatially from native v14 Region/template geometry or successful attack/target impact locations. A legacy MeasuredTemplate adapter remains at the input boundary only; environmental behaviors and persistent state do not depend on MeasuredTemplate documents.
+
+Environmental state and timers are persisted on the affected Region. Geometry mutations are batched, support Region `hole` shapes, and are primary-GM authoritative. This is the foundation intended for Web's single mutable 20×20 Region, where individual 5-foot portions can later burn and be carved away without creating sixteen Regions. The geometry API also accepts functional Eskie crosshair results, keeping placement/presentation separate from authoritative Region state.
+
+Public diagnostics and live acceptance:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+ae5e.environment.getStats();
+ae5e.environment.getMidiStats();
+ae5e.environment.timing.getStats();
+
+// Preferred: one-command automated acceptance (foundation + live lifecycle + performance).
+await ae5e.tests.environment.runAll({ notify: true });
+
+// Focused runners remain available when isolating a failure.
+await ae5e.tests.environment.runFoundation({ notify: true });
+await ae5e.tests.environment.runLifecycle({ notify: true });
+await ae5e.tests.environment.runPerformance({ notify: true });
+```
+
+The live lifecycle/performance fixtures must be run from AE5E's current primary GM client. They clean up their test Regions by default. Repository regression gate for v0.4.3.0: **179/179 PASS**. Compendium packs and assets are unchanged from v0.4.2.9.
+
 ### v0.4.2.9 CAT option clearing + editor polish
 
 `Edit Item Options` now treats `{}` as an explicit clear operation for the Item-authored CAT configuration schema. This avoids Foundry's normal object-merge behavior retaining old option keys. The CAT authoring status border is also thicker and the JSON/status/action areas have slightly more vertical breathing room.

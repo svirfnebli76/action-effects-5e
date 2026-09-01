@@ -10,5 +10,17 @@
   "ACTION_EFFECTS_5E.Settings.DebugLogging.Name": "Debug Logging",
   "ACTION_EFFECTS_5E.Settings.DebugLogging.Hint": "Writes additional Action Effects 5E diagnostics to the browser console.",
   "ACTION_EFFECTS_5E.Settings.CaptureDiagnostics.Name": "Capture Recent Movement Transactions",
-  "ACTION_EFFECTS_5E.Settings.CaptureDiagnostics.Hint": "Records up to 50 recent movement transactions for development. Leave disabled during normal play for the lowest overhead."
+  "ACTION_EFFECTS_5E.Settings.CaptureDiagnostics.Hint": "Records up to 50 recent movement transactions for development. Leave disabled during normal play for the lowest overhead.",
+  "BEHAVIOR.TYPES.action-effects-5e.flammable.label": "AE5E — Flammable",
+  "BEHAVIOR.TYPES.action-effects-5e.flammable.FIELDS.profileId.label": "Material Profile",
+  "BEHAVIOR.TYPES.action-effects-5e.flammable.FIELDS.profileId.hint": "Selects the AE5E environmental reaction profile used when fire intersects this Region. Generic records ignition state; spell-specific profiles such as Web can define burning, timing, damage, and geometry changes.",
+  "BEHAVIOR.TYPES.action-effects-5e.flammable.FIELDS.priority.label": "Environmental Priority",
+  "BEHAVIOR.TYPES.action-effects-5e.flammable.FIELDS.priority.hint": "Higher-priority environmental behaviors on the same Scene are evaluated first. Most Regions should leave this at 0.",
+  "TYPES": {
+    "RegionBehavior": {
+      "action-effects-5e": {
+        "flammable": "AE5E — Flammable"
+      }
+    }
+  }
 }

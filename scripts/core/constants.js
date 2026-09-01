@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.2.9";
+export const MODULE_VERSION = "0.4.3.0";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -109,6 +109,37 @@ export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator
 
 
 export const REGION_AUTHORITY_FLAG = "authorityRegion";
+
+// Region-native environmental interaction framework. Event producers (Midi,
+// crosshairs, native Regions, compatibility adapters) emit normalized geometry;
+// Region behaviors declare which environmental capabilities consume it.
+export const ENVIRONMENT_SCHEMA_VERSION = 1;
+export const ENVIRONMENT_FLAG_KEY = "environment";
+export const ENVIRONMENT_EVENT_TYPES = Object.freeze({
+  FIRE: "fire",
+  HEAT: "heat",
+  COLD: "cold",
+  WATER: "water",
+  WIND: "wind"
+});
+export const ENVIRONMENT_CAPABILITIES = Object.freeze({
+  FLAMMABLE: "flammable",
+  MELTABLE: "meltable",
+  FREEZABLE: "freezable",
+  DISPERSIBLE: "dispersible",
+  CORRODIBLE: "corrodible"
+});
+export const ENVIRONMENT_BEHAVIOR_TYPES = Object.freeze({
+  FLAMMABLE: `${MODULE_ID}.flammable`
+});
+export const ENVIRONMENT_DELIVERY_MODES = Object.freeze({
+  AREA: "area",
+  IMPACT: "impact",
+  TARGET: "target",
+  MANUAL: "manual"
+});
+export const ENVIRONMENT_MAX_RECENT_EVENTS = 100;
+export const ENVIRONMENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 
 export const ONGOING_ACTION_EFFECT_FLAG = "ongoingAction";
 export const ONGOING_ACTION_ITEM_FLAG = "ongoingActionGrant";
