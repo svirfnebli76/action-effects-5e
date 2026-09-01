@@ -1,3 +1,9 @@
+### v0.4.3.3 semantic Region-hole de-duplication
+
+Environmental Region rectangle mutations are now de-duplicated by their canonical world-space footprint instead of raw Foundry source fields. This hardens repeated Web-style 5-foot carving against Foundry v14 pivot/anchor serialization differences while preserving the Region-first Environmental architecture.
+
+Repository regression gate for v0.4.3.3: **185/185 PASS**; syntax check: **92 JavaScript files PASS**. Compendium packs and assets remain unchanged from v0.4.2.9.
+
 ### v0.4.3.2 Foundry v14 rectangle round-trip hardening
 
 The Environmental Interaction foundation now emits Region rectangles directly in Foundry v14's anchored `RectangleShapeData` schema while preserving AE5E's top-left rectangle helper convention. This removes the final live lifecycle mismatch where Foundry migrated a newly carved hole during persistence and a later identical hole request was treated as new geometry. Hole comparison also runs Foundry's native shape migration before cleaning for compatibility with concise/legacy profile input.

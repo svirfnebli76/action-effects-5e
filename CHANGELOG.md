@@ -1,3 +1,11 @@
+## 0.4.3.3 — semantic Region-hole de-duplication
+
+- Fixed the final live Environmental acceptance failure where Foundry v14 could persist an equivalent rectangle hole using a different pivot/anchor source representation. AE5E now de-duplicates rectangle mutations by canonical world-space corner geometry instead of serialized RectangleShapeData fields.
+- Rectangle semantic comparison is anchor-independent, ignores serialization-only grid flags when the resulting footprint is identical, supports rotation, and uses a small numeric normalization tolerance for Foundry round-trips.
+- Added regression coverage for equivalent pivot/anchor representations and rotated rectangle footprints.
+- Repository gate for this patch: **185/185 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or environmental source Item was changed.
+
 ## 0.4.3.2 — Foundry v14 rectangle round-trip hardening
 
 - Fixed the remaining live Environmental lifecycle failure where a repeated 5-foot Region hole could be appended after the first hole had been persisted by Foundry v14. The root cause was Foundry v14's RectangleShapeData schema: rectangle `(x, y)` is the shape pivot and `anchorX`/`anchorY` locate the rectangle around that pivot, while AE5E's concise rectangle helper was still emitting the older top-left-style source. Foundry migrated that source during persistence, so the same logical hole no longer compared equal on the next interaction.

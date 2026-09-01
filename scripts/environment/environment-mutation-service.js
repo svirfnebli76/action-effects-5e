@@ -30,6 +30,61 @@ function shapeTypes() {
   return null;
 }
 
+function rounded(value, precision = 1000) {
+  return Math.round(number(value) * precision) / precision;
+}
+
+function rotateAround(point, pivot, degrees) {
+  const angle = number(degrees) * Math.PI / 180;
+  if (!angle) return { x: point.x, y: point.y };
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dx = point.x - pivot.x;
+  const dy = point.y - pivot.y;
+  return {
+    x: pivot.x + dx * cos - dy * sin,
+    y: pivot.y + dx * sin + dy * cos
+  };
+}
+
+function canonicalPointCycle(points) {
+  const normalized = points.map(point => `${rounded(point.x)},${rounded(point.y)}`);
+  if (!normalized.length) return "";
+  const candidates = [];
+  for (const sequence of [normalized, [...normalized].reverse()]) {
+    for (let offset = 0; offset < sequence.length; offset += 1) {
+      candidates.push([...sequence.slice(offset), ...sequence.slice(0, offset)].join(";"));
+    }
+  }
+  candidates.sort();
+  return candidates[0];
+}
+
+function rectangleSemanticKey(shape) {
+  const raw = stripIdentity(shape?.toObject?.(false) ?? shape ?? {});
+  if (String(raw?.type ?? "").trim().toLowerCase() !== "rectangle") return null;
+  const width = Math.abs(number(raw.width));
+  const height = Math.abs(number(raw.height));
+  const x = number(raw.x);
+  const y = number(raw.y);
+  const anchorX = Number(raw.anchorX);
+  const anchorY = Number(raw.anchorY);
+  const nativeAnchors = Number.isFinite(anchorX) && Number.isFinite(anchorY);
+  const pivot = nativeAnchors
+    ? { x, y }
+    : { x: x + width / 2, y: y + height / 2 };
+  const left = nativeAnchors ? x - width * anchorX : x;
+  const top = nativeAnchors ? y - height * anchorY : y;
+  const rotation = number(raw.rotation);
+  const corners = [
+    { x: left, y: top },
+    { x: left + width, y: top },
+    { x: left + width, y: top + height },
+    { x: left, y: top + height }
+  ].map(point => rotateAround(point, pivot, rotation));
+  return `rectangle:${Boolean(raw.hole) ? 1 : 0}:${canonicalPointCycle(corners)}`;
+}
+
 function fallbackCanonicalShape(shape) {
   const raw = stripIdentity(shape?.toObject?.(false) ?? shape ?? {});
   const type = String(raw?.type ?? "").trim().toLowerCase();
@@ -100,6 +155,13 @@ function fallbackCanonicalShape(shape) {
 function stableShapeKey(shape) {
   const raw = stripIdentity(shape?.toObject?.(false) ?? shape ?? {});
   const type = String(raw?.type ?? "").trim().toLowerCase();
+
+  // De-duplicate rectangles by their actual world-space footprint rather than
+  // by serialized DataModel source. Foundry v14 can legitimately persist the
+  // same rectangle with a different pivot/anchor representation, so two source
+  // objects may differ even though they carve the identical Region area.
+  if (type === "rectangle") return rectangleSemanticKey(raw);
+
   const ShapeModel = shapeTypes()?.[type] ?? null;
   if (ShapeModel?.cleanData) {
     try {

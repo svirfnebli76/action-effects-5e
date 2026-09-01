@@ -31,7 +31,7 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.3.2");
+  assert.equal(manifest.version, "0.4.3.3");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);
   assert.match(apiSource, /runEnvironmentalAcceptanceTest/);
@@ -304,6 +304,81 @@ test("Foundry-cleaned Region rectangle defaults do not defeat repeated-hole de-d
   } finally {
     globalThis.game = previousGame;
     globalThis.foundry = previousFoundry;
+  }
+});
+
+test("equivalent Foundry v14 rectangle pivot/anchor sources de-duplicate by world-space footprint", async () => {
+  const mutation = new EnvironmentMutationService();
+  const geometry = new EnvironmentGeometryService();
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { isGM: true } };
+
+  let updates = 0;
+  const region = {
+    uuid: "Scene.scene-test.Region.semantic-rectangle-dedupe",
+    flags: {},
+    toObject: () => ({
+      flags: {},
+      shapes: [
+        geometry.createRectangle({ x: 0, y: 0, width: 200, height: 100 }),
+        // Same 0..100 x 0..100 hole as the requested centered-anchor source,
+        // but persisted using a top-left pivot with zero anchors.
+        { type: "rectangle", x: 0, y: 0, width: 100, height: 100, rotation: 0, anchorX: 0, anchorY: 0, gridBased: false, hole: true }
+      ]
+    }),
+    async update() { updates += 1; }
+  };
+
+  try {
+    const result = await mutation.apply(region, [{
+      behavior: { id: "behavior-1" },
+      capability: { id: "flammable" },
+      profile: { profileId: "web-test" },
+      reaction: {
+        handled: true,
+        addHoles: [geometry.createRectangle({ x: 0, y: 0, width: 100, height: 100, hole: true })]
+      }
+    }], { id: "semantic-repeat-hole" });
+
+    assert.equal(result.updated, false);
+    assert.equal(result.reason, "reaction-noop");
+    assert.equal(updates, 0);
+    assert.equal(mutation.getStats().holeDedupes, 1);
+  } finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("rotated equivalent rectangle anchor sources de-duplicate by world-space footprint", async () => {
+  const mutation = new EnvironmentMutationService();
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { isGM: true } };
+
+  let updates = 0;
+  // A 100x50 rectangle centered on 50,25 and rotated 30 degrees. The two
+  // sources use different anchors/pivots but describe the same corner polygon.
+  const requested = { type: "rectangle", x: 50, y: 25, width: 100, height: 50, rotation: 30, anchorX: 0.5, anchorY: 0.5, gridBased: false, hole: true };
+  const persisted = { type: "rectangle", x: 50, y: 25, width: 100, height: 50, rotation: 30, anchorX: 0.5, anchorY: 0.5, gridBased: true, hole: true };
+  const region = {
+    uuid: "Scene.scene-test.Region.rotated-rectangle-dedupe",
+    flags: {},
+    toObject: () => ({ flags: {}, shapes: [persisted] }),
+    async update() { updates += 1; }
+  };
+
+  try {
+    const result = await mutation.apply(region, [{
+      behavior: { id: "behavior-1" },
+      capability: { id: "flammable" },
+      profile: { profileId: "web-test" },
+      reaction: { handled: true, addHoles: [requested] }
+    }], { id: "rotated-repeat-hole" });
+
+    assert.equal(result.updated, false);
+    assert.equal(result.reason, "reaction-noop");
+    assert.equal(updates, 0);
+  } finally {
+    globalThis.game = previousGame;
   }
 });
 

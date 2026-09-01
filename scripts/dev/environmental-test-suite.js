@@ -13,7 +13,7 @@ function now() {
 
 function banner(name, passed) {
   console.log(
-    `%cAE5E 0.4.3.2 — ${name} — ${passed ? "PASS" : "FAIL"}`,
+    `%cAE5E 0.4.3.3 — ${name} — ${passed ? "PASS" : "FAIL"}`,
     `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`
   );
 }
@@ -284,7 +284,15 @@ export class EnvironmentalTestSuite {
       const finalState = this.#mutations.getState(region, finalBehavior);
       const finalShapes = region?.toObject?.(false)?.shapes ?? [];
       record("Surviving Region geometry continues reacting to fire", surviving?.reactions === 1 && finalState?.lifecycleHits === 2, { surviving, finalState });
-      record("Repeated profile hole request is de-duplicated", finalShapes.length === 2, finalShapes);
+      const holeDeduped = finalShapes.length === 2;
+      record("Repeated profile hole request is de-duplicated", holeDeduped, finalShapes);
+      if (!holeDeduped) {
+        console.warn("AE5E environmental hole de-duplication diagnostics", {
+          requestedHole: hole,
+          finalShapes,
+          mutationStats: this.#mutations.getStats()
+        });
+      }
 
       if (!keepFixture) {
         const remove = await this.#regions.delete(regionUuid);
