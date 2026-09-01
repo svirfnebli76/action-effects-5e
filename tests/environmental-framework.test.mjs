@@ -31,7 +31,7 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.3.1");
+  assert.equal(manifest.version, "0.4.3.2");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);
   assert.match(apiSource, /runEnvironmentalAcceptanceTest/);
@@ -155,6 +155,30 @@ test("environment mutations batch state and hole changes into one Region update"
 });
 
 
+test("AE5E rectangle helper emits current Foundry v14 anchor schema while preserving top-left footprint", () => {
+  const geometry = new EnvironmentGeometryService();
+  const rectangle = geometry.createRectangle({ x: 20, y: 40, width: 200, height: 100, rotation: 0 });
+
+  assert.deepEqual(rectangle, {
+    type: "rectangle",
+    x: 120,
+    y: 90,
+    width: 200,
+    height: 100,
+    rotation: 0,
+    anchorX: 0.5,
+    anchorY: 0.5,
+    gridBased: false,
+    hole: false
+  });
+
+  const normalized = geometry.normalize({ source: "v14-rectangle", shapes: [rectangle] });
+  assert.equal(geometry.containsPoint(normalized, { x: 20, y: 40 }), true);
+  assert.equal(geometry.containsPoint(normalized, { x: 220, y: 140 }), true);
+  assert.equal(geometry.containsPoint(normalized, { x: 10, y: 40 }), false);
+  assert.deepEqual(normalized.bounds, { minX: 20, minY: 40, maxX: 220, maxY: 140 });
+});
+
 test("environment timer cancellation uses Foundry v14 forced replacement so removed keys stay removed", async () => {
   const mutation = new EnvironmentMutationService();
   const path = `flags.${MODULE_ID}.${ENVIRONMENT_FLAG_KEY}`;
@@ -208,6 +232,7 @@ test("environment timer cancellation uses Foundry v14 forced replacement so remo
 
 test("Foundry-cleaned Region rectangle defaults do not defeat repeated-hole de-duplication", async () => {
   const mutation = new EnvironmentMutationService();
+  const geometry = new EnvironmentGeometryService();
   const previousGame = globalThis.game;
   const previousFoundry = globalThis.foundry;
   globalThis.game = { user: { isGM: true } };
@@ -239,13 +264,13 @@ test("Foundry-cleaned Region rectangle defaults do not defeat repeated-hole de-d
   const persistedHole = {
     type: "rectangle",
     hole: true,
-    x: 0,
-    y: 0,
+    x: 50,
+    y: 50,
     width: 100,
     height: 100,
     rotation: 0,
-    anchorX: 0,
-    anchorY: 0,
+    anchorX: 0.5,
+    anchorY: 0.5,
     gridBased: false
   };
   const region = {
@@ -268,9 +293,84 @@ test("Foundry-cleaned Region rectangle defaults do not defeat repeated-hole de-d
       profile: { profileId: "web-test" },
       reaction: {
         handled: true,
-        addHoles: [{ type: "rectangle", x: 0, y: 0, width: 100, height: 100, hole: true }]
+        addHoles: [geometry.createRectangle({ x: 0, y: 0, width: 100, height: 100, hole: true })]
       }
     }], { id: "repeat-hole" });
+
+    assert.equal(result.updated, false);
+    assert.equal(result.reason, "reaction-noop");
+    assert.equal(updates, 0);
+    assert.equal(mutation.getStats().holeDedupes, 1);
+  } finally {
+    globalThis.game = previousGame;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
+test("legacy concise rectangle holes migrate to the same v14 anchored geometry before de-duplication", async () => {
+  const mutation = new EnvironmentMutationService();
+  const previousGame = globalThis.game;
+  const previousFoundry = globalThis.foundry;
+  globalThis.game = { user: { isGM: true } };
+
+  const migrateRectangle = source => {
+    const migrated = structuredClone(source);
+    if (migrated.anchorX === undefined || migrated.anchorY === undefined) {
+      migrated.x = Number(migrated.x ?? 0) + Number(migrated.width ?? 0) / 2;
+      migrated.y = Number(migrated.y ?? 0) + Number(migrated.height ?? 0) / 2;
+      migrated.anchorX = 0.5;
+      migrated.anchorY = 0.5;
+      migrated.gridBased = false;
+    }
+    return migrated;
+  };
+  const cleanRectangle = source => ({
+    type: "rectangle",
+    hole: Boolean(source.hole),
+    x: Number(source.x ?? 0),
+    y: Number(source.y ?? 0),
+    width: Number(source.width ?? 0),
+    height: Number(source.height ?? 0),
+    rotation: Number(source.rotation ?? 0),
+    anchorX: Number(source.anchorX ?? 0.5),
+    anchorY: Number(source.anchorY ?? 0.5),
+    gridBased: Boolean(source.gridBased ?? false)
+  });
+  globalThis.foundry = {
+    ...(previousFoundry ?? {}),
+    data: {
+      ...(previousFoundry?.data ?? {}),
+      RectangleShapeData: {
+        ...(previousFoundry?.data?.RectangleShapeData ?? {}),
+        TYPES: { rectangle: { migrateDataSafe: migrateRectangle, cleanData: cleanRectangle } }
+      }
+    }
+  };
+
+  let updates = 0;
+  const region = {
+    uuid: "Scene.scene-test.Region.legacy-shape-dedupe",
+    flags: {},
+    toObject: () => ({
+      flags: {},
+      shapes: [
+        { type: "rectangle", x: 100, y: 50, width: 200, height: 100, rotation: 0, anchorX: 0.5, anchorY: 0.5, gridBased: false, hole: false },
+        { type: "rectangle", x: 50, y: 50, width: 100, height: 100, rotation: 0, anchorX: 0.5, anchorY: 0.5, gridBased: false, hole: true }
+      ]
+    }),
+    async update() { updates += 1; }
+  };
+
+  try {
+    const result = await mutation.apply(region, [{
+      behavior: { id: "behavior-1" },
+      capability: { id: "flammable" },
+      profile: { profileId: "legacy-web-test" },
+      reaction: {
+        handled: true,
+        addHoles: [{ type: "rectangle", x: 0, y: 0, width: 100, height: 100, rotation: 0, hole: true }]
+      }
+    }], { id: "legacy-repeat-hole" });
 
     assert.equal(result.updated, false);
     assert.equal(result.reason, "reaction-noop");

@@ -357,13 +357,23 @@ export class EnvironmentGeometryService {
   }
 
   createRectangle({ x, y, width, height, rotation = 0, hole = false } = {}) {
+    // Public AE5E callers continue to supply top-left x/y. Emit Foundry v14's
+    // current RectangleShapeData schema explicitly: x/y are the pivot and the
+    // 0.5 anchors place that pivot at the rectangle center. This avoids Foundry
+    // migrating the shape after persistence and keeps repeated geometry
+    // mutations byte-stable across document round-trips.
+    const w = Math.max(0, number(width));
+    const h = Math.max(0, number(height));
     return {
       type: "rectangle",
-      x: number(x),
-      y: number(y),
-      width: Math.max(0, number(width)),
-      height: Math.max(0, number(height)),
+      x: number(x) + w / 2,
+      y: number(y) + h / 2,
+      width: w,
+      height: h,
       rotation: number(rotation),
+      anchorX: 0.5,
+      anchorY: 0.5,
+      gridBased: false,
       hole: Boolean(hole)
     };
   }
@@ -407,9 +417,22 @@ export class EnvironmentGeometryService {
     if (type === "ellipse") return {
       type, x: number(shape.x), y: number(shape.y), radiusX: Math.abs(number(shape.radiusX)), radiusY: Math.abs(number(shape.radiusY)), rotation: number(shape.rotation), hole
     };
-    if (type === "rectangle") return {
-      type, x: number(shape.x), y: number(shape.y), width: Math.abs(number(shape.width)), height: Math.abs(number(shape.height)), rotation: number(shape.rotation), hole
-    };
+    if (type === "rectangle") {
+      const anchorX = Number(shape.anchorX);
+      const anchorY = Number(shape.anchorY);
+      return {
+        type,
+        x: number(shape.x),
+        y: number(shape.y),
+        width: Math.abs(number(shape.width)),
+        height: Math.abs(number(shape.height)),
+        rotation: number(shape.rotation),
+        anchorX: Number.isFinite(anchorX) ? anchorX : null,
+        anchorY: Number.isFinite(anchorY) ? anchorY : null,
+        gridBased: Boolean(shape.gridBased),
+        hole
+      };
+    }
     if (type === "circle") return { type, x: number(shape.x), y: number(shape.y), radius: Math.abs(number(shape.radius ?? shape.distance)), hole };
     if (type === "cone") return { type, x: number(shape.x), y: number(shape.y), distance: Math.abs(number(shape.distance ?? shape.radius)), angle: Math.abs(number(shape.angle, 90)), direction: number(shape.direction), hole };
     if (type === "ray") return { type, x: number(shape.x), y: number(shape.y), distance: Math.abs(number(shape.distance)), width: Math.abs(number(shape.width)), direction: number(shape.direction), hole };
@@ -424,14 +447,22 @@ export class EnvironmentGeometryService {
   #shapePolygon(shape, segments = 32) {
     if (shape.type === "polygon") return normalizePoints(shape.points);
     if (shape.type === "rectangle") {
-      const center = { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
+      // Foundry v14 RectangleShapeData uses (x, y) as the pivot and anchorX/Y
+      // to locate the rectangle around that pivot. AE5E also accepts its older
+      // concise top-left form when no anchors are present.
+      const nativeAnchors = Number.isFinite(Number(shape.anchorX)) && Number.isFinite(Number(shape.anchorY));
+      const pivot = nativeAnchors
+        ? { x: shape.x, y: shape.y }
+        : { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
+      const left = nativeAnchors ? shape.x - shape.width * Number(shape.anchorX) : shape.x;
+      const top = nativeAnchors ? shape.y - shape.height * Number(shape.anchorY) : shape.y;
       const corners = [
-        { x: shape.x, y: shape.y },
-        { x: shape.x + shape.width, y: shape.y },
-        { x: shape.x + shape.width, y: shape.y + shape.height },
-        { x: shape.x, y: shape.y + shape.height }
+        { x: left, y: top },
+        { x: left + shape.width, y: top },
+        { x: left + shape.width, y: top + shape.height },
+        { x: left, y: top + shape.height }
       ];
-      return shape.rotation ? corners.map(point => rotatePoint(point, center, shape.rotation)) : corners;
+      return shape.rotation ? corners.map(point => rotatePoint(point, pivot, shape.rotation)) : corners;
     }
     if (["ellipse", "circle"].includes(shape.type)) {
       const rx = shape.type === "circle" ? shape.radius : shape.radiusX;

@@ -1,3 +1,15 @@
+## v0.4.3.2 Environmental Interaction acceptance
+
+After installing/reloading v0.4.3.2 on the **primary GM** with an active Scene, run:
+
+```js
+await game.modules.get("action-effects-5e").api.tests.environment.runAll({ notify: true });
+```
+
+Expected consolidated result: **Foundation PASS + Live lifecycle PASS + Performance PASS**. The v0.4.3.2 lifecycle gate specifically re-checks the completed-timer removal fix and the repeated 5-foot Region-hole de-duplication against Foundry v14's persisted anchored rectangle schema. Fixtures are created and cleaned automatically.
+
+Repository gate: `npm test` → **183/183 PASS**, syntax check → **92 JavaScript files PASS**.
+
 ## v0.4.3.1 Environmental Interaction acceptance
 
 After installing/reloading v0.4.3.1 on the **primary GM** with an active Scene, run:

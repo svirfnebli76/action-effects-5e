@@ -103,7 +103,15 @@ function stableShapeKey(shape) {
   const ShapeModel = shapeTypes()?.[type] ?? null;
   if (ShapeModel?.cleanData) {
     try {
-      const cleaned = stripIdentity(ShapeModel.cleanData(duplicateSafely(raw)));
+      // Foundry v14 rectangle data introduced anchors and moved (x, y) from
+      // the legacy top-left corner to the shape pivot. A concise/legacy shape
+      // can therefore clean differently from the same shape after Foundry has
+      // persisted and migrated it. Run the native migration step before
+      // cleaning so both candidates reach the same current-schema source.
+      const migrated = ShapeModel.migrateDataSafe
+        ? ShapeModel.migrateDataSafe(duplicateSafely(raw))
+        : duplicateSafely(raw);
+      const cleaned = stripIdentity(ShapeModel.cleanData(migrated));
       return JSON.stringify(cleaned);
     } catch {
       // Fall through to AE5E's deterministic representation.

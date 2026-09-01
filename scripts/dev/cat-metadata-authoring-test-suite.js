@@ -28,7 +28,7 @@ export class CatMetadataAuthoringTestSuite {
     let tempItem = null;
 
     try {
-      record("Runtime version is v0.4.3.1", MODULE_VERSION === "0.4.3.1", { moduleVersion: MODULE_VERSION });
+      record("Runtime version is v0.4.3.2", MODULE_VERSION === "0.4.3.2", { moduleVersion: MODULE_VERSION });
       record("SemVer accepts 1.0.0", this.#authoring.isValidVersion("1.0.0"));
       record("SemVer accepts prerelease form", this.#authoring.isValidVersion("2.1.0-beta.1"));
       record("SemVer rejects incomplete 1.0", !this.#authoring.isValidVersion("1.0"));

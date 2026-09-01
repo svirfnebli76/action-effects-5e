@@ -1,4 +1,4 @@
-## v0.4.3.1 Environmental Interaction architecture
+## v0.4.3.2 Environmental Interaction architecture
 
 The environmental layer is **Region-native**. Persistent world state belongs to Foundry Scene Regions. Source adapters (Midi workflows, functional Eskie crosshairs, and legacy Measured Templates) normalize their geometry at the boundary and then leave the core dispatcher unaware of the original source type. Measured Templates are compatibility inputs only.
 

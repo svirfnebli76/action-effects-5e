@@ -1,3 +1,15 @@
+### v0.4.3.2 Foundry v14 rectangle round-trip hardening
+
+The Environmental Interaction foundation now emits Region rectangles directly in Foundry v14's anchored `RectangleShapeData` schema while preserving AE5E's top-left rectangle helper convention. This removes the final live lifecycle mismatch where Foundry migrated a newly carved hole during persistence and a later identical hole request was treated as new geometry. Hole comparison also runs Foundry's native shape migration before cleaning for compatibility with concise/legacy profile input.
+
+Primary GM acceptance remains one command:
+
+```js
+await game.modules.get("action-effects-5e").api.tests.environment.runAll({ notify: true });
+```
+
+Repository regression gate for v0.4.3.2: **183/183 PASS**; syntax check: **92 JavaScript files PASS**. Compendium packs and assets remain unchanged from v0.4.2.9.
+
 ### v0.4.3.1 Region-native Environmental Interaction foundation
 
 AE5E now provides a generic environmental layer built around **Foundry v14 Scene Regions**. Persistent environmental effects are Regions; external sources are interpreted into normalized geometry and delivered only to Regions that advertise a matching environmental capability. The first capability is the native module subtype **AE5E — Flammable**. The framework is intentionally generic so later capabilities such as Meltable, Freezable, Dispersible, and Corrodible can reuse the same machinery.

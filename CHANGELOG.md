@@ -1,3 +1,12 @@
+## 0.4.3.2 — Foundry v14 rectangle round-trip hardening
+
+- Fixed the remaining live Environmental lifecycle failure where a repeated 5-foot Region hole could be appended after the first hole had been persisted by Foundry v14. The root cause was Foundry v14's RectangleShapeData schema: rectangle `(x, y)` is the shape pivot and `anchorX`/`anchorY` locate the rectangle around that pivot, while AE5E's concise rectangle helper was still emitting the older top-left-style source. Foundry migrated that source during persistence, so the same logical hole no longer compared equal on the next interaction.
+- `EnvironmentGeometryService.createRectangle()` now preserves AE5E's public top-left `x/y` calling convention while emitting the current Foundry v14 rectangle source explicitly: centered pivot, `anchorX: 0.5`, `anchorY: 0.5`, and `gridBased: false`. Rectangle normalization now understands native v14 anchors and rotates around the native pivot.
+- Hole de-duplication now runs Foundry's native Shape DataModel migration step (`migrateDataSafe`) before `cleanData()` when available. This also protects future environmental profiles which submit concise/legacy rectangle source instead of using AE5E's helper.
+- Added regression coverage for current-schema v14 rectangle emission/footprint and for de-duplicating a legacy concise rectangle against its persisted v14 anchored equivalent.
+- Repository gate for this patch: **183/183 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or environmental source Item was changed.
+
 ## 0.4.3.1 — Environmental live-lifecycle persistence hardening
 
 - Fixed the v0.4.3.0 live Foundry acceptance failure where completed environmental timers could remain in `flags.action-effects-5e.environment.timers`. Foundry v14 Document updates merge object fields by default, so omitting a consumed timer key did not delete it. Environmental flag writes now use Foundry v14's supported `_replace(...)` forced-replacement operator, ensuring timer cancellation is atomic with the accompanying state mutation and preventing expired timers from repeatedly re-firing.
