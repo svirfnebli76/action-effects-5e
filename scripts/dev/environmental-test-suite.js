@@ -26,6 +26,18 @@ function notifyResult(label, passed, notify) {
   ui.notifications[passed ? "info" : "error"](`AE5E ${label} ${passed ? "PASSED" : "FAILED"}. See console.`);
 }
 
+async function waitFor(predicate, { timeoutMs = 1000, intervalMs = 10 } = {}) {
+  const started = Date.now();
+  while (Date.now() - started <= timeoutMs) {
+    try {
+      const value = await predicate();
+      if (value) return value;
+    } catch { /* retry until timeout */ }
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  return null;
+}
+
 export class EnvironmentalTestSuite {
   #environment;
   #geometry;
@@ -492,6 +504,7 @@ export class EnvironmentalTestSuite {
         sourceItemUuid: fixtureItem?.uuid ?? `Item.AE5EWebTestSource${stamp.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
         casterActorUuid: fixtureActor?.uuid ?? `Actor.AE5EWebTestCaster${stamp.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
         instanceId: `ae5e-web-test-${stamp}`,
+        visualMode: "none",
         name: "AE5E TEST — Web"
       });
       regionUuid = create?.regionUuid ?? null;
@@ -522,12 +535,23 @@ export class EnvironmentalTestSuite {
       const terrainTypes = difficult?.system?.types;
       const hasWebTerrain = terrainTypes?.has?.("web") === true || Array.from(terrainTypes ?? []).includes("web");
       const difficulties = difficult?.system?.difficulties ?? {};
-      const hasDoubleCoreCost = Object.keys(difficulties).length > 0 && Object.values(difficulties).every(value => Number(value) === 2);
+      // Core Foundry/D&D5e can prepare derived movement actions (for example
+      // Jump) onto the runtime behavior at a value other than 2. Only the
+      // non-derived actions belong to Web's stored 2x difficult-terrain source.
+      const nonDerivedActions = Object.entries(globalThis.CONFIG?.Token?.movement?.actions ?? {})
+        .filter(([, config]) => typeof config?.deriveTerrainDifficulty !== "function")
+        .map(([action]) => action);
+      const testedCoreActions = nonDerivedActions.filter(action => action in difficulties);
+      const hasDoubleCoreCost = testedCoreActions.length > 0
+        && testedCoreActions.every(action => Number(difficulties[action]) === 2);
       const terrainValid = difficult?.type === expectedTerrainType
         && (expectedTerrainType === "difficultTerrain" ? hasWebTerrain : hasDoubleCoreCost);
       record("Web uses the compatible native difficult-terrain behavior for this D&D5e generation", terrainValid, {
         expectedTerrainType,
         actualType: difficult?.type ?? null,
+        nonDerivedActions,
+        testedCoreActions,
+        difficulties: Object.fromEntries(Object.keys(difficulties).map(key => [key, difficulties[key]])),
         system: difficult?.system ?? null
       });
       record("Web Region has the AE5E — Web behavior", Boolean(webBehavior), webBehavior?.toObject?.(false) ?? webBehavior);
@@ -569,13 +593,35 @@ export class EnvironmentalTestSuite {
       if (timerId) env.timers[timerId].due = { realTimeMs: Date.now() - 1 };
       const environmentPath = `flags.${MODULE_ID}.${ENVIRONMENT_FLAG_KEY}`;
       await region.update({ [environmentPath]: typeof globalThis._replace === "function" ? globalThis._replace(env) : env }, { ae5eWebTest: true });
+      const firedBefore = Number(this.#timing.getStats()?.fired ?? 0);
+      // updateRegion itself causes the event-driven timing service to resync.
+      // That can legitimately fire the newly-due timer before this explicit
+      // processDue call reaches it, so wait for the authoritative Region state
+      // rather than racing two processors and requiring this one call to own it.
       const timerRun = await this.#timing.processDue({ regionUuids: [regionUuid] });
-      region = await globalThis.fromUuid(regionUuid);
-      const afterFlammable = [...(region?.behaviors ?? [])].find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? liveFlammable;
-      const afterState = this.#mutations.getState(region, afterFlammable) ?? {};
-      const afterSource = region?.toObject?.(false) ?? region ?? {};
-      const afterTimers = region?.flags?.[MODULE_ID]?.[ENVIRONMENT_FLAG_KEY]?.timers ?? {};
-      record("One-round Web timer burns the ignited cell away", timerRun?.fired === 1 && Object.keys(afterState.burningCells ?? {}).length === 0 && Object.keys(afterState.burnedCells ?? {}).length === 1, { timerRun, afterState });
+      const settled = await waitFor(async () => {
+        const candidate = await globalThis.fromUuid(regionUuid);
+        if (!candidate) return null;
+        const candidateFlammable = [...(candidate.behaviors ?? [])].find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? liveFlammable;
+        const candidateState = this.#mutations.getState(candidate, candidateFlammable) ?? {};
+        const candidateTimers = candidate?.flags?.[MODULE_ID]?.[ENVIRONMENT_FLAG_KEY]?.timers ?? {};
+        const candidateSource = candidate?.toObject?.(false) ?? candidate ?? {};
+        const burned = Object.keys(candidateState.burningCells ?? {}).length === 0
+          && Object.keys(candidateState.burnedCells ?? {}).length === 1;
+        const hole = Array.isArray(candidateSource.shapes)
+          && candidateSource.shapes.length === 2
+          && candidateSource.shapes.some(shape => shape.hole === true);
+        if (!burned || !hole || Object.keys(candidateTimers).length !== 0) return null;
+        return { region: candidate, flammable: candidateFlammable, state: candidateState, timers: candidateTimers, source: candidateSource };
+      });
+      region = settled?.region ?? await globalThis.fromUuid(regionUuid);
+      const afterFlammable = settled?.flammable ?? [...(region?.behaviors ?? [])].find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? liveFlammable;
+      const afterState = settled?.state ?? this.#mutations.getState(region, afterFlammable) ?? {};
+      const afterSource = settled?.source ?? region?.toObject?.(false) ?? region ?? {};
+      const afterTimers = settled?.timers ?? region?.flags?.[MODULE_ID]?.[ENVIRONMENT_FLAG_KEY]?.timers ?? {};
+      const firedAfter = Number(this.#timing.getStats()?.fired ?? 0);
+      const timerFired = timerRun?.fired === 1 || firedAfter > firedBefore;
+      record("One-round Web timer burns the ignited cell away", timerFired && Object.keys(afterState.burningCells ?? {}).length === 0 && Object.keys(afterState.burnedCells ?? {}).length === 1, { timerRun, firedBefore, firedAfter, afterState });
       record("Burn-away mutates the same Region by adding one hole", Array.isArray(afterSource.shapes) && afterSource.shapes.length === 2 && afterSource.shapes.some(shape => shape.hole === true), afterSource.shapes);
       record("Consumed Web burn timer is removed persistently", Object.keys(afterTimers).length === 0, afterTimers);
 

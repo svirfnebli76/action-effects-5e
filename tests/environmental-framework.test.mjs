@@ -31,7 +31,7 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.3.6");
+  assert.equal(manifest.version, "0.4.3.7");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.web, {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);
@@ -93,6 +93,19 @@ test("Region-native geometry respects carved hole shapes", () => {
   assert.equal(geometry.containsPoint(regionGeometry, { x: 150, y: 50 }), true);
   assert.equal(geometry.intersects(geometry.fromPoint({ x: 25, y: 50 }), regionGeometry), true);
   assert.equal(geometry.intersects(geometry.fromPoint({ x: 75, y: 50 }), regionGeometry), false);
+});
+
+test("tagged AE5E geometry without cached bounds is fully normalized", () => {
+  const geometry = new EnvironmentGeometryService();
+  const normalized = geometry.normalize({
+    ae5eEnvironmentGeometry: 1,
+    source: "token-footprint",
+    sceneUuid: "Scene.scene-test",
+    shapes: [geometry.createRectangle({ x: 100, y: 200, width: 200, height: 200 })]
+  });
+
+  assert.deepEqual(normalized.bounds, { minX: 100, minY: 200, maxX: 300, maxY: 400 });
+  assert.equal(geometry.containsPoint(normalized, { x: 150, y: 250 }), true);
 });
 
 test("MeasuredTemplate geometry is isolated behind a compatibility adapter", () => {

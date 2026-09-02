@@ -1,3 +1,7 @@
+### v0.4.3.7 Web 2024 — live acceptance hardening
+
+This patch hardens the Web live acceptance suite on Foundry v14 / D&D5e 5.3.x. It fixes tagged token-footprint bounds, validates only non-derived core movement-cost actions, removes a timer-test race, and keeps off-scene Web mechanics fixtures visual-free.
+
 ### v0.4.3.6 Web 2024 — D&D5e 5.3.x terrain compatibility
 
 Live Foundry acceptance on D&D5e 5.3.3 exposed that the system-specific `difficultTerrain` RegionBehavior subtype is not registered there. Web now resolves its native terrain behavior at runtime: D&D5e generations that register semantic `difficultTerrain` receive the Web-tagged system behavior, while D&D5e 5.3.x uses Foundry v14 core `modifyMovementCost` with a 2x difficulty for every non-derived movement action. The same one-Region Web architecture is retained.

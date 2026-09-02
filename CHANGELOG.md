@@ -1,3 +1,11 @@
+## 0.4.3.7 — Web live acceptance hardening
+
+- Fixes AE5E tagged geometry normalization so token footprints always include canonical broad-phase bounds.
+- Makes the D&D5e 5.3.x Web terrain acceptance check ignore system-derived movement actions such as Jump when validating the stored 2x core movement cost.
+- Makes the live Web burn-away test deterministic against the event-driven timer service instead of racing the update hook against an explicit `processDue()` call.
+- Disables Premium Sequencer rendering for off-scene mechanics fixtures so infrastructure tests do not attempt to render BLFX assets.
+- Adds regression coverage for tagged geometry without precomputed bounds.
+
 ## 0.4.3.6 — D&D5e 5.3.x Web terrain compatibility
 
 - Fixed the first live Web acceptance failure on D&D5e 5.3.3: that system version does not register the later system-specific `difficultTerrain` RegionBehavior subtype, so Foundry rejected the Web Region before creation.

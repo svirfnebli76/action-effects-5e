@@ -159,7 +159,23 @@ function centerOfBounds(bounds) {
 export class EnvironmentGeometryService {
   normalize(input, options = {}) {
     if (!input) return null;
-    if (input.ae5eEnvironmentGeometry === 1 && Array.isArray(input.shapes)) return clone(input);
+    if (input.ae5eEnvironmentGeometry === 1 && Array.isArray(input.shapes)) {
+      // Treat the AE5E marker as a normalized-geometry contract only when the
+      // cached bounds are actually present. Some callers intentionally build a
+      // tagged geometry object from native shapes; re-normalize those objects
+      // so they still receive canonical shapes and the broad-phase bounds used
+      // by the intersection fast path.
+      if (input.bounds && [input.bounds.minX, input.bounds.minY, input.bounds.maxX, input.bounds.maxY].every(Number.isFinite)) {
+        return clone(input);
+      }
+      return this.#createGeometry({
+        source: options.source ?? input.source ?? "normalized",
+        documentUuid: input.documentUuid ?? null,
+        sceneUuid: input.sceneUuid ?? options.scene?.uuid ?? null,
+        elevation: input.elevation ?? null,
+        shapes: input.shapes
+      });
+    }
     if (input.document && input.document !== input) return this.normalize(input.document, options);
     if (input.documentName === "Region" || (Array.isArray(input.shapes) && input.parent?.documentName === "Scene")) {
       return this.fromRegion(input, options);
