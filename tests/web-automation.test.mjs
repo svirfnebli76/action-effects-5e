@@ -43,6 +43,32 @@ globalThis.foundry = {
   applications: { api: {} }
 };
 globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 } };
+class FakeModifyMovementCostModel {
+  static defineSchema() {
+    return {
+      difficulties: {
+        fields: { walk: {}, fly: {}, swim: {}, climb: {}, burrow: {}, crawl: {} }
+      }
+    };
+  }
+}
+globalThis.CONFIG = {
+  RegionBehavior: {
+    dataModels: {
+      difficultTerrain: class FakeDifficultTerrainModel {},
+      modifyMovementCost: FakeModifyMovementCostModel
+    }
+  },
+  Token: {
+    movement: {
+      defaultAction: "walk",
+      actions: {
+        walk: {}, fly: {}, swim: {}, climb: {}, burrow: {}, crawl: {},
+        jump: { deriveTerrainDifficulty: () => 1 }
+      }
+    }
+  }
+};
 globalThis.canvas = { ready: false };
 globalThis.ui = { notifications: { info() {}, error() {} } };
 
@@ -344,6 +370,56 @@ test("WebService creates one Region and Web fire profile quantizes ignition into
     globalThis.game = previousGame;
     globalThis.canvas = previousCanvas;
   }
+});
+
+test("WebService falls back to Foundry core modifyMovementCost on D&D5e 5.3.x", async () => {
+  const previousModels = globalThis.CONFIG.RegionBehavior.dataModels;
+  globalThis.CONFIG.RegionBehavior.dataModels = { modifyMovementCost: FakeModifyMovementCostModel };
+  const socket = new FakeSocket();
+  const web = new WebService({
+    socket,
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    regions: { create: async () => ({ created: false }), delete: async () => ({ deleted: true }) },
+    geometry: new EnvironmentGeometryService(),
+    profiles: { register: () => () => true },
+    mutations: { getState: () => ({}) },
+    timing: { registerHandler: () => () => true },
+    activities: { execute: async () => ({ executed: true }) },
+    ongoingEffects: null,
+    selectionIndicator: null
+  });
+
+  try {
+    const behavior = web.buildDifficultTerrainBehavior();
+    assert.equal(behavior.type, "modifyMovementCost");
+    assert.deepEqual(behavior.system.difficulties, {
+      walk: 2, fly: 2, swim: 2, climb: 2, burrow: 2, crawl: 2
+    });
+    assert.equal("jump" in behavior.system.difficulties, false, "derived movement actions are not stored in core difficulty source data");
+  } finally {
+    globalThis.CONFIG.RegionBehavior.dataModels = previousModels;
+  }
+});
+
+test("WebService prefers D&D5e semantic difficultTerrain when the system registers it", async () => {
+  const socket = new FakeSocket();
+  const web = new WebService({
+    socket,
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    regions: { create: async () => ({ created: false }), delete: async () => ({ deleted: true }) },
+    geometry: new EnvironmentGeometryService(),
+    profiles: { register: () => () => true },
+    mutations: { getState: () => ({}) },
+    timing: { registerHandler: () => () => true },
+    activities: { execute: async () => ({ executed: true }) },
+    ongoingEffects: null,
+    selectionIndicator: null
+  });
+
+  const behavior = web.buildDifficultTerrainBehavior();
+  assert.equal(behavior.type, "difficultTerrain");
+  assert.deepEqual(behavior.system.types, ["web"]);
+  assert.equal(behavior.system.magical, true);
 });
 
 test("WebService binds a Web Region to Midi concentration using the public dependent-document API", async () => {

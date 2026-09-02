@@ -73,6 +73,26 @@ function activityOutcomeFailed(result, tokenUuid) {
   return null;
 }
 
+function coreMovementDifficulties(multiplier = 2) {
+  const models = globalThis.CONFIG?.RegionBehavior?.dataModels ?? {};
+  const model = models.modifyMovementCost ?? null;
+  let fields = null;
+  try { fields = model?.defineSchema?.()?.difficulties?.fields ?? null; } catch { fields = null; }
+  let actions = Object.keys(fields ?? {});
+  if (!actions.length) {
+    actions = Object.entries(globalThis.CONFIG?.Token?.movement?.actions ?? {})
+      .filter(([, config]) => typeof config?.deriveTerrainDifficulty !== "function")
+      .map(([action]) => action);
+  }
+  // D&D5e always exposes walk, but retain a conservative last-resort source
+  // so a partially initialized test/client does not generate an empty schema.
+  if (!actions.length && globalThis.CONFIG?.Token?.movement?.defaultAction) {
+    actions = [String(globalThis.CONFIG.Token.movement.defaultAction)];
+  }
+  const difficulty = Math.max(0, Math.min(5, Number(multiplier) || 2));
+  return Object.fromEntries(actions.map(action => [action, difficulty]));
+}
+
 /**
  * Production controller for the 2024 Web spell.
  *
@@ -172,6 +192,33 @@ export class WebService {
     return data ? clone(data) : null;
   }
 
+  /**
+   * Build Web's movement-cost behavior for the active D&D5e generation.
+   * D&D5e 6.0+ supplies its semantic `difficultTerrain` subtype, which can be
+   * tagged as `web`. D&D5e 5.3.x does not register that subtype, so AE5E
+   * falls back to Foundry v14 core `modifyMovementCost` at 2x.
+   */
+  buildDifficultTerrainBehavior({ multiplier = 2 } = {}) {
+    const models = globalThis.CONFIG?.RegionBehavior?.dataModels ?? {};
+    if (models.difficultTerrain) {
+      return {
+        name: "Web — Difficult Terrain",
+        type: "difficultTerrain",
+        system: { magical: true, types: ["web"], ignoredDispositions: [] }
+      };
+    }
+    if (models.modifyMovementCost) {
+      const difficulties = coreMovementDifficulties(multiplier);
+      if (!Object.keys(difficulties).length) return null;
+      return {
+        name: "Web — Difficult Terrain",
+        type: "modifyMovementCost",
+        system: { difficulties }
+      };
+    }
+    return null;
+  }
+
   async create({
     scene = null,
     center,
@@ -216,17 +263,16 @@ export class WebService {
       }
     };
 
+    const terrainBehavior = this.buildDifficultTerrainBehavior();
+    if (!terrainBehavior) return { created: false, reason: "difficult-terrain-behavior-unavailable" };
+
     const regionData = {
       name,
       color: "#d8d1b0",
       locked: true,
       shapes: [this.#geometry.createRectangle({ x: topLeft.x, y: topLeft.y, width: sizePx, height: sizePx })],
       behaviors: [
-        {
-          name: "Web — Difficult Terrain",
-          type: "difficultTerrain",
-          system: { magical: true, types: ["web"], ignoredDispositions: [] }
-        },
+        terrainBehavior,
         {
           name: "AE5E — Web",
           type: ENVIRONMENT_BEHAVIOR_TYPES.WEB,

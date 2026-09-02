@@ -158,6 +158,15 @@ export class EnvironmentalTestSuite {
     const webProfile = this.#profiles.get(ENVIRONMENT_CAPABILITIES.FLAMMABLE, WEB_PROFILE_ID);
     record("Web flammability profile is registered", webProfile?.profileId === WEB_PROFILE_ID && typeof webProfile?.react === "function", webProfile);
 
+    const terrainBehavior = this.#web.buildDifficultTerrainBehavior();
+    const terrainModels = globalThis.CONFIG?.RegionBehavior?.dataModels ?? {};
+    record("Web resolves a valid native terrain behavior for this D&D5e generation",
+      Boolean(terrainBehavior?.type && terrainModels[terrainBehavior.type]), {
+        dnd5eVersion: globalThis.game?.system?.version ?? null,
+        behavior: terrainBehavior,
+        availableTypes: Object.keys(terrainModels)
+      });
+
     const stats = this.#environment.getStats();
     record("Environmental service is event-driven and initialized", stats.initialized === true && typeof stats.localEarlyExits === "number", stats);
 
@@ -490,6 +499,11 @@ export class EnvironmentalTestSuite {
 
       let region = regionUuid ? await globalThis.fromUuid(regionUuid) : null;
       record("Web Region carries persistent AE5E Web provenance", this.#web.isWebRegion(region) === true, this.#web.getRegionData(region));
+      if (!region) {
+        record("Web Region is available for lifecycle testing", false, { create });
+        return this.#finishWebTest({ checks, scene, notify });
+      }
+      record("Web Region is available for lifecycle testing", true, { regionUuid: region.uuid });
       const dependentOn = region?.getFlag?.("dnd5e", "dependentOn") ?? region?.flags?.dnd5e?.dependentOn ?? null;
       record("Web Region binds to the caster's real concentration ActiveEffect through Midi", create?.concentration?.bound === true && dependentOn === concentration?.uuid, {
         concentration: create?.concentration ?? null,
@@ -500,12 +514,22 @@ export class EnvironmentalTestSuite {
       record("Web Region begins as one 20-foot square shape", Array.isArray(source.shapes) && source.shapes.length === 1, source.shapes);
 
       const behaviors = [...(region?.behaviors ?? [])];
-      const difficult = behaviors.find(entry => entry.type === "difficultTerrain") ?? null;
+      const difficult = behaviors.find(entry => ["difficultTerrain", "modifyMovementCost"].includes(entry.type)) ?? null;
       const webBehavior = behaviors.find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.WEB) ?? null;
       const flammable = behaviors.find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? null;
+      const terrainModels = globalThis.CONFIG?.RegionBehavior?.dataModels ?? {};
+      const expectedTerrainType = terrainModels.difficultTerrain ? "difficultTerrain" : "modifyMovementCost";
       const terrainTypes = difficult?.system?.types;
       const hasWebTerrain = terrainTypes?.has?.("web") === true || Array.from(terrainTypes ?? []).includes("web");
-      record("Web uses native D&D5e difficult terrain tagged as web", Boolean(difficult) && hasWebTerrain, difficult?.system ?? null);
+      const difficulties = difficult?.system?.difficulties ?? {};
+      const hasDoubleCoreCost = Object.keys(difficulties).length > 0 && Object.values(difficulties).every(value => Number(value) === 2);
+      const terrainValid = difficult?.type === expectedTerrainType
+        && (expectedTerrainType === "difficultTerrain" ? hasWebTerrain : hasDoubleCoreCost);
+      record("Web uses the compatible native difficult-terrain behavior for this D&D5e generation", terrainValid, {
+        expectedTerrainType,
+        actualType: difficult?.type ?? null,
+        system: difficult?.system ?? null
+      });
       record("Web Region has the AE5E — Web behavior", Boolean(webBehavior), webBehavior?.toObject?.(false) ?? webBehavior);
       record("Web Region has the Web Flammable profile", flammable?.system?.profileId === WEB_PROFILE_ID, flammable?.system ?? null);
 
@@ -583,11 +607,15 @@ export class EnvironmentalTestSuite {
       }
     }
 
+    return this.#finishWebTest({ checks, scene, notify });
+  }
+
+  #finishWebTest({ checks, scene, notify }) {
     const passed = checks.every(check => check.passed);
     const result = {
       passed,
       checks,
-      sceneUuid: scene.uuid,
+      sceneUuid: scene?.uuid ?? null,
       web: this.#web.getStats(),
       activities: this.#activities?.getStats?.() ?? null,
       environment: this.#environment.getStats(),

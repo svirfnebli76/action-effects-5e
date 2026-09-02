@@ -1,3 +1,8 @@
+### v0.4.3.6 Web 2024 — D&D5e 5.3.x terrain compatibility
+
+Live Foundry acceptance on D&D5e 5.3.3 exposed that the system-specific `difficultTerrain` RegionBehavior subtype is not registered there. Web now resolves its native terrain behavior at runtime: D&D5e generations that register semantic `difficultTerrain` receive the Web-tagged system behavior, while D&D5e 5.3.x uses Foundry v14 core `modifyMovementCost` with a 2x difficulty for every non-derived movement action. The same one-Region Web architecture is retained.
+
+The automated Web gate now verifies that the selected terrain subtype actually exists in `CONFIG.RegionBehavior.dataModels` on the running client and validates the 2x core fallback. A failed Web Region creation also reports cleanly instead of cascading into a null-Region test error. Repository gate: **212/212 PASS**; syntax check: **95 JavaScript files PASS**.
 
 ### v0.4.3.5 Web 2024 final integration — Stage 4
 

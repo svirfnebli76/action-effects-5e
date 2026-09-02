@@ -1,4 +1,4 @@
-# Web (2024) — AE5E v0.4.3.5 setup
+# Web (2024) — AE5E v0.4.3.6 setup
 
 This is the source-Item authoring contract expected by `WebService.validateSourceItem()`.
 

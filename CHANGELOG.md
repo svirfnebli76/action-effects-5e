@@ -1,3 +1,14 @@
+## 0.4.3.6 — D&D5e 5.3.x Web terrain compatibility
+
+- Fixed the first live Web acceptance failure on D&D5e 5.3.3: that system version does not register the later system-specific `difficultTerrain` RegionBehavior subtype, so Foundry rejected the Web Region before creation.
+- Web now chooses its native movement-cost behavior from the active runtime configuration. When D&D5e provides semantic `difficultTerrain`, AE5E uses it with `types: ["web"]`; otherwise AE5E uses Foundry v14 core `modifyMovementCost`.
+- The core fallback reads the active `ModifyMovementCostRegionBehaviorType` schema / `CONFIG.Token.movement.actions`, assigns a 2x difficulty to each non-derived movement action, and leaves derived actions for Foundry to calculate. This preserves normal difficult-terrain stacking such as crawling.
+- Expanded deterministic regression coverage for the D&D5e 5.3.x core fallback and the later semantic D&D5e path.
+- Expanded live Foundation/Web acceptance to verify that the chosen terrain behavior subtype is actually registered on the running client and that the persisted terrain data represents a 2x movement cost.
+- Hardened the live Web suite so a Region-creation failure reports the creation error directly rather than cascading into a null-document `update` exception.
+- Repository gate: **212/212 PASS**; syntax check: **95 JavaScript files PASS**.
+- Existing assets, compendium packs, source Web ItemMacro, and CAT Item automation versions are unchanged.
+
 ## 0.4.3.5 — Web 2024 automation (development checkpoint)
 
 - Added the first production **Web 2024** Region automation layer on top of the accepted v0.4.3.4 Environmental framework. Each cast is represented by one authoritative 20-foot Foundry Region with native D&D5e Web difficult terrain, AE5E Web lifecycle behavior, and the Web Flammable profile.
