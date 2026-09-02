@@ -1,3 +1,12 @@
+## 0.4.3.4 — automated Midi fire-bridge acceptance
+
+- Added a focused **Midi fire bridge** live acceptance suite and folded it into the preferred one-command Environmental gate. The suite creates temporary native v14 Region fixtures, runs representative untouched Midi workflow data through the exact runtime adapter processing path, verifies Region reactions/state, and cleans all fixtures automatically.
+- Automated bridge coverage now verifies native Region area fire, raw fire exposure when final target damage is zero, mixed slashing+fire weapon impacts, attack misses, multi-target/multi-impact fire, non-attack targeted fire, spatially ambiguous fail-closed behavior, unresolved declared-area fail-closed behavior, and the isolated MeasuredTemplate compatibility boundary.
+- `MidiEnvironmentAdapter.processWorkflow()` now exposes the exact interpret-and-emit path used by the global `midi-qol.DamageRollComplete` observer. The observer itself still runs asynchronously and source Items remain untouched; the public method exists so AE5E can test the full bridge without synthetically broadcasting a Midi hook to unrelated third-party listeners.
+- Added focused console runner `api.tests.environment.runMidiFire()` / `runEnvironmentalMidiFireTest()`. `api.tests.environment.runAll()` now executes **Foundation + Midi fire bridge + Live lifecycle + Performance**.
+- Repository gate for this patch: **186/186 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or monster action was changed.
+
 ## 0.4.3.3 — semantic Region-hole de-duplication
 
 - Fixed the final live Environmental acceptance failure where Foundry v14 could persist an equivalent rectangle hole using a different pivot/anchor source representation. AE5E now de-duplicates rectangle mutations by canonical world-space corner geometry instead of serialized RectangleShapeData fields.

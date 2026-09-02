@@ -1,3 +1,21 @@
+### v0.4.3.4 automated Midi fire-bridge acceptance
+
+The Region-native Environmental foundation now includes an automated **Midi fire bridge** acceptance layer. The preferred one-command console gate verifies that representative untouched Midi fire workflows are interpreted into environmental events and reach Flammable Regions without adding AE5E macros or flags to the source Item. Native v14 Region area geometry is preferred; attack hits use localized impact delivery; misses and unresolved/ambiguous geometry fail closed; raw fire remains environmental fire even when final target damage is zero; MeasuredTemplate handling remains compatibility-only.
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+
+// Preferred complete Environmental acceptance.
+await ae5e.tests.environment.runAll({ notify: true });
+
+// Focused Midi-only bridge gate.
+await ae5e.tests.environment.runMidiFire({ notify: true });
+```
+
+`runAll()` now reports **Foundation + Midi fire bridge + Live lifecycle + Performance**. Test Regions are temporary and cleaned automatically. The Midi acceptance runner calls the same adapter `processWorkflow()` path used by the registered `midi-qol.DamageRollComplete` observer, without rebroadcasting a synthetic global Midi hook to unrelated modules.
+
+Repository regression gate for v0.4.3.4: **186/186 PASS**; syntax check: **92 JavaScript files PASS**. Compendium packs and assets remain unchanged from the accepted Environmental foundation.
+
 ### v0.4.3.3 semantic Region-hole de-duplication
 
 Environmental Region rectangle mutations are now de-duplicated by their canonical world-space footprint instead of raw Foundry source fields. This hardens repeated Web-style 5-foot carving against Foundry v14 pivot/anchor serialization differences while preserving the Region-first Environmental architecture.

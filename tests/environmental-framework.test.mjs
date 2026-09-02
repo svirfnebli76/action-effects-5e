@@ -31,13 +31,15 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.3.3");
+  assert.equal(manifest.version, "0.4.3.4");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);
   assert.match(apiSource, /runEnvironmentalAcceptanceTest/);
   assert.match(apiSource, /environment:\s*Object\.freeze/);
   assert.match(apiSource, /runAll:\s*\(options\)\s*=>\s*tests\.runEnvironmentalAcceptanceTest/);
   assert.match(apiSource, /runEnvironmentalFoundationTest/);
+  assert.match(apiSource, /runEnvironmentalMidiFireTest/);
+  assert.match(apiSource, /runMidiFire:\s*\(options\)\s*=>\s*tests\.runEnvironmentalMidiFireTest/);
   assert.match(apiSource, /runEnvironmentalLiveLifecycleTest/);
   assert.match(apiSource, /runEnvironmentalPerformanceTest/);
   assert.match(mainSource, /environmentBehaviors\.initialize\(\)/);
@@ -526,6 +528,44 @@ test("Midi fire attacks are interpreted without Item modification and misses do 
 
   const missEvents = adapter.interpretWorkflow({ ...baseWorkflow, id: "workflow-miss", hitTargets: new Set() });
   assert.equal(missEvents.length, 0);
+});
+
+test("Midi processWorkflow uses the same interpretation-to-emission path as the runtime hook", async () => {
+  const geometry = new EnvironmentGeometryService();
+  const emitted = [];
+  const environment = {
+    hasConsumers: () => true,
+    async emit(event) {
+      emitted.push(event);
+      return { processed: true, eventId: event.id, reactions: 1 };
+    }
+  };
+  const adapter = new MidiEnvironmentAdapter({ environment, geometry });
+  const scene = makeScene();
+  const target = {
+    uuid: "Scene.scene-test.Token.target-process",
+    center: { x: 250, y: 350 },
+    document: { uuid: "Scene.scene-test.Token.target-process", x: 200, y: 300, width: 1, height: 1, elevation: 0, parent: scene }
+  };
+  const item = { uuid: "Actor.a.Item.flame-process", flags: {}, system: { actionType: "rwak" } };
+
+  const result = await adapter.processWorkflow({
+    id: "workflow-process-fire",
+    rawDamageDetail: [{ type: "piercing", value: 4 }, { type: "fire", value: 2 }],
+    item,
+    activity: { hasAttack: true },
+    token: { document: { parent: scene, uuid: "Scene.scene-test.Token.attacker" } },
+    hitTargets: new Set([target]),
+    targets: new Set([target])
+  });
+
+  assert.equal(result.processed, true);
+  assert.equal(result.events.length, 1);
+  assert.equal(result.results.length, 1);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].delivery, ENVIRONMENT_DELIVERY_MODES.IMPACT);
+  assert.equal(item.flags[MODULE_ID], undefined);
+  assert.equal(adapter.getStats().emitted, 1);
 });
 
 test("Midi area fire prefers native Region geometry and uses raw fire even when final damage could be zero", () => {

@@ -1,14 +1,20 @@
-## v0.4.3.3 Environmental Interaction acceptance
+## v0.4.3.4 Environmental Interaction acceptance
 
-After installing/reloading v0.4.3.3 on the **primary GM** with an active Scene, run:
+After installing/reloading v0.4.3.4 on the **primary GM** with an active Scene, run:
 
 ```js
 await game.modules.get("action-effects-5e").api.tests.environment.runAll({ notify: true });
 ```
 
-Expected consolidated result: **Foundation PASS + Live lifecycle PASS + Performance PASS**. The v0.4.3.3 lifecycle gate specifically re-checks the completed-timer removal fix and the repeated 5-foot Region-hole de-duplication against Foundry v14's persisted anchored rectangle schema. Fixtures are created and cleaned automatically.
+Expected consolidated result: **Foundation PASS + Midi fire bridge PASS + Live lifecycle PASS + Performance PASS**. The Midi bridge fixture verifies native Region area fire, raw-fire handling despite zero final damage, mixed-damage weapon impacts, misses, multiple impacts, targeted fire, fail-closed ambiguous/unresolved geometry, and the isolated MeasuredTemplate compatibility boundary. The lifecycle gate re-checks timer consumption and Region-hole de-duplication. Fixtures are created and cleaned automatically.
 
-Repository gate: `npm test` → **185/185 PASS**, syntax check → **92 JavaScript files PASS**.
+Focused bridge runner:
+
+```js
+await game.modules.get("action-effects-5e").api.tests.environment.runMidiFire({ notify: true });
+```
+
+Repository gate: `npm test` → **186/186 PASS**, syntax check → **92 JavaScript files PASS**.
 
 ## v0.4.3.1 Environmental Interaction acceptance
 

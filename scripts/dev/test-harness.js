@@ -161,6 +161,10 @@ export class TestHarness {
     return this.#environmentalSuite.runFoundationTest(options);
   }
 
+  runEnvironmentalMidiFireTest(options) {
+    return this.#environmentalSuite.runMidiFireTest(options);
+  }
+
   runEnvironmentalLiveLifecycleTest(options) {
     return this.#environmentalSuite.runLiveLifecycleTest(options);
   }

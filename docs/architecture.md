@@ -1,4 +1,10 @@
-## v0.4.3.3 Environmental Interaction architecture
+## v0.4.3.4 Midi fire bridge acceptance boundary
+
+The runtime Midi adapter exposes one `processWorkflow()` path which performs synchronous workflow interpretation followed by asynchronous Environmental event emission. The registered `midi-qol.DamageRollComplete` hook delegates to this same path. AE5E's automated live acceptance calls `processWorkflow()` directly rather than rebroadcasting a synthetic global Midi hook, because other installed modules may also subscribe to that hook and should not receive test-only workflow objects. Foundation acceptance separately verifies that the actual Midi hook observer is registered.
+
+The bridge remains an **input adapter**, not environmental state. Native v14 Region template UUIDs normalize directly to Region geometry; attack/target impacts normalize to points; unresolved declared areas and ambiguous fire have no event; MeasuredTemplate is accepted only at the compatibility boundary. Source Items are never stamped or mutated.
+
+## v0.4.3.4 Environmental Interaction architecture
 
 The environmental layer is **Region-native**. Persistent world state belongs to Foundry Scene Regions. Source adapters (Midi workflows, functional Eskie crosshairs, and legacy Measured Templates) normalize their geometry at the boundary and then leave the core dispatcher unaware of the original source type. Measured Templates are compatibility inputs only.
 

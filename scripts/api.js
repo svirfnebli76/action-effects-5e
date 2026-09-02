@@ -496,11 +496,13 @@ export class ActionEffects5eApi {
       environment: Object.freeze({
         runAll: (options) => tests.runEnvironmentalAcceptanceTest(options),
         runFoundation: (options) => tests.runEnvironmentalFoundationTest(options),
+        runMidiFire: (options) => tests.runEnvironmentalMidiFireTest(options),
         runLifecycle: (options) => tests.runEnvironmentalLiveLifecycleTest(options),
         runPerformance: (options) => tests.runEnvironmentalPerformanceTest(options)
       }),
       runEnvironmentalAcceptanceTest: (options) => tests.runEnvironmentalAcceptanceTest(options),
       runEnvironmentalFoundationTest: (options) => tests.runEnvironmentalFoundationTest(options),
+      runEnvironmentalMidiFireTest: (options) => tests.runEnvironmentalMidiFireTest(options),
       runEnvironmentalLiveLifecycleTest: (options) => tests.runEnvironmentalLiveLifecycleTest(options),
       runEnvironmentalPerformanceTest: (options) => tests.runEnvironmentalPerformanceTest(options),
       runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),

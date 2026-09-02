@@ -59,18 +59,27 @@ export class MidiEnvironmentAdapter {
     this.#hookId = globalThis.Hooks?.on?.("midi-qol.DamageRollComplete", workflow => {
       // Snapshot the transient workflow geometry synchronously, then allow Midi
       // to continue without waiting for Region mutations or socket traffic.
-      try {
-        const events = this.interpretWorkflow(workflow);
-        if (!events.length) return;
-        void this.#emitEvents(events).catch(error => {
-          this.#stats.errors += 1;
-          Logger.error("Midi environmental event emission failed", error);
-        });
-      } catch (error) {
+      void this.processWorkflow(workflow).catch(error => {
         this.#stats.errors += 1;
-        Logger.error("Midi environmental workflow interpretation failed", error);
-      }
+        Logger.error("Midi environmental workflow processing failed", error);
+      });
     });
+  }
+
+
+  /**
+   * Interpret and emit one completed Midi-QOL damage workflow.
+   *
+   * The global DamageRollComplete hook uses this exact path. It is deliberately
+   * public on the adapter so AE5E's automated acceptance suite can exercise the
+   * full Midi -> Environmental Event -> Region reaction bridge without firing a
+   * synthetic global Midi hook that could wake unrelated third-party listeners.
+   */
+  async processWorkflow(workflow) {
+    const events = this.interpretWorkflow(workflow);
+    if (!events.length) return { processed: false, events: [], results: [] };
+    const results = await this.#emitEvents(events);
+    return { processed: true, events, results };
   }
 
   interpretWorkflow(workflow) {
@@ -152,10 +161,12 @@ export class MidiEnvironmentAdapter {
   }
 
   async #emitEvents(events) {
+    const results = [];
     for (const event of events) {
-      await this.#environment.emit(event);
+      results.push(await this.#environment.emit(event));
       this.#stats.emitted += 1;
     }
+    return results;
   }
 
   getStats() {

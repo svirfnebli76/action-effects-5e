@@ -13,7 +13,7 @@ function now() {
 
 function banner(name, passed) {
   console.log(
-    `%cAE5E 0.4.3.3 — ${name} — ${passed ? "PASS" : "FAIL"}`,
+    `%cAE5E 0.4.3.4 — ${name} — ${passed ? "PASS" : "FAIL"}`,
     `font-size:24px;font-weight:bold;color:${passed ? "#5cff8d" : "#ff5c5c"};`
   );
 }
@@ -76,6 +76,7 @@ export class EnvironmentalTestSuite {
     };
 
     await run("Foundation", () => this.runFoundationTest({ notify: false }));
+    await run("Midi fire bridge", () => this.runMidiFireTest({ notify: false, scene }));
     await run("Live lifecycle", () => this.runLiveLifecycleTest({ notify: false, scene, keepFixture }));
     await run("Performance", () => this.runPerformanceTest({ notify: false, scene, iterations }));
 
@@ -160,6 +161,247 @@ export class EnvironmentalTestSuite {
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     notifyResult("environmental foundation", passed, notify);
+    return result;
+  }
+
+  async runMidiFireTest({ notify = true, scene = null } = {}) {
+    if (!globalThis.game?.user?.isGM) throw new Error("Run the Midi fire bridge test as a GM.");
+    if (!this.#timing.getStats().primary) throw new Error("Run the Midi fire bridge test on AE5E's current primary GM client.");
+    scene ??= globalThis.canvas?.scene ?? null;
+    if (!scene) throw new Error("Activate a Scene before running the Midi fire bridge test.");
+
+    const checks = [];
+    const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
+    const gridSize = Number(scene.grid?.size ?? scene.dimensions?.size ?? globalThis.canvas?.grid?.size ?? 100) || 100;
+    const sceneX = Number(scene.dimensions?.sceneX ?? 0) || 0;
+    const sceneY = Number(scene.dimensions?.sceneY ?? 0) || 0;
+    const sceneWidth = Number(scene.dimensions?.sceneWidth ?? scene.width ?? gridSize * 20) || gridSize * 20;
+    // Keep the synthetic fire impacts well beyond ordinary authored Scene
+    // content. This minimizes the chance that a future real Flammable Region
+    // on the user's test Scene is touched by this acceptance fixture.
+    const x = sceneX + sceneWidth + gridSize * 8;
+    const y = sceneY + gridSize * 8;
+    const profileId = `ae5e-test-midi-${Date.now()}`.toLowerCase();
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let targetRegionUuid = null;
+    let sourceRegionUuid = null;
+
+    const unregisterProfile = this.#environment.registerProfile(ENVIRONMENT_CAPABILITIES.FLAMMABLE, profileId, {
+      label: "AE5E Midi Fire Bridge Test",
+      metadata: { testFixture: true },
+      react: ({ currentState, event }) => {
+        const deliveries = { ...(currentState?.deliveries ?? {}) };
+        const delivery = String(event?.delivery ?? "unknown");
+        deliveries[delivery] = Number(deliveries[delivery] ?? 0) + 1;
+        return {
+          handled: true,
+          state: {
+            midiHits: Number(currentState?.midiHits ?? 0) + 1,
+            deliveries,
+            lastWorkflowId: event?.source?.workflowId ?? null,
+            lastDamageTypes: [...(event?.source?.damageTypes ?? [])],
+            lastAdapter: event?.source?.adapter ?? null
+          }
+        };
+      }
+    });
+
+    const makeTarget = (id, centerX, centerY) => ({
+      uuid: `${scene.uuid}.Token.${id}`,
+      center: { x: centerX, y: centerY },
+      document: {
+        uuid: `${scene.uuid}.Token.${id}`,
+        x: centerX - gridSize / 2,
+        y: centerY - gridSize / 2,
+        width: 1,
+        height: 1,
+        elevation: 0,
+        parent: scene
+      }
+    });
+
+    const readFixtureState = async () => {
+      const region = targetRegionUuid ? await globalThis.fromUuid(targetRegionUuid) : null;
+      const behavior = [...(region?.behaviors ?? [])].find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? null;
+      return { region, behavior, state: region && behavior ? this.#mutations.getState(region, behavior) : null };
+    };
+
+    try {
+      const targetCreate = await this.#regions.create({
+        name: "AE5E TEST — Midi Fire Consumer",
+        color: "#ff6b35",
+        locked: true,
+        shapes: [this.#geometry.createRectangle({ x, y, width: gridSize * 4, height: gridSize * 3 })],
+        behaviors: [{ type: ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE, system: { profileId, priority: 0 } }]
+      }, { scene, metadata: { testFixture: true, suite: "midi-fire-bridge", role: "consumer" } });
+      targetRegionUuid = targetCreate?.regionUuid ?? null;
+      record("Midi bridge Flammable consumer Region is created", targetCreate?.created === true && Boolean(targetRegionUuid), targetCreate);
+
+      const sourceCreate = await this.#regions.create({
+        name: "AE5E TEST — Midi Native Region Source",
+        color: "#ffb347",
+        locked: true,
+        shapes: [this.#geometry.createRectangle({ x: x + gridSize / 2, y: y + gridSize / 2, width: gridSize * 2, height: gridSize * 2 })],
+        behaviors: []
+      }, { scene, metadata: { testFixture: true, suite: "midi-fire-bridge", role: "source" } });
+      sourceRegionUuid = sourceCreate?.regionUuid ?? null;
+      record("Native v14 Region fire-source fixture is created", sourceCreate?.created === true && Boolean(sourceRegionUuid), sourceCreate);
+
+      const areaItem = { uuid: `Actor.a.Item.ae5e-fire-area-${stamp}`, flags: {}, system: {} };
+      const areaWorkflow = {
+        id: `ae5e-midi-area-${stamp}`,
+        rawDamageDetail: [{ type: "fire", value: 0 }],
+        damageDetail: [{ type: "fire", value: 0, active: { immunity: true } }],
+        item: areaItem,
+        activity: { uuid: `${areaItem.uuid}.Activity.cast`, hasAttack: false },
+        actor: { uuid: "Actor.ae5e-test" },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.caster` } },
+        templateUuid: sourceRegionUuid,
+        templateUuids: [sourceRegionUuid],
+        targets: new Set()
+      };
+      const area = await this.#midi.processWorkflow(areaWorkflow);
+      let fixture = await readFixtureState();
+      record("Untouched area fire workflow emits through the full Midi bridge", area?.processed === true && area.events?.length === 1 && area.results?.[0]?.reactions === 1, area);
+      record("Native v14 Region geometry is preferred for area fire", area?.events?.[0]?.delivery === ENVIRONMENT_DELIVERY_MODES.AREA && area?.events?.[0]?.geometry?.source === "region" && area?.events?.[0]?.geometry?.documentUuid === sourceRegionUuid, area?.events?.[0]);
+      record("Raw fire exposure survives zero final target damage", fixture.state?.midiHits === 1 && fixture.state?.lastDamageTypes?.includes("fire") && fixture.state?.lastWorkflowId === areaWorkflow.id, fixture.state);
+      record("Area source Item remains completely untouched", areaItem.flags?.[MODULE_ID] === undefined, areaItem.flags);
+
+      const impactTargetA = makeTarget(`impact-a-${stamp}`, x + gridSize * 0.75, y + gridSize * 0.75);
+      const weaponItem = { uuid: `Actor.a.Item.ae5e-flaming-weapon-${stamp}`, flags: {}, system: { actionType: "mwak" } };
+      const weaponHit = await this.#midi.processWorkflow({
+        id: `ae5e-midi-weapon-hit-${stamp}`,
+        rawDamageDetail: [{ type: "slashing", value: 7 }, { type: "fire", value: 3 }],
+        item: weaponItem,
+        activity: { uuid: `${weaponItem.uuid}.Activity.attack`, hasAttack: true },
+        actor: { uuid: "Actor.ae5e-test" },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.attacker` } },
+        hitTargets: new Set([impactTargetA]),
+        targets: new Set([impactTargetA])
+      });
+      fixture = await readFixtureState();
+      record("Mixed-damage weapon hit becomes localized fire impact", weaponHit?.processed === true && weaponHit.events?.length === 1 && weaponHit.events?.[0]?.delivery === ENVIRONMENT_DELIVERY_MODES.IMPACT && fixture.state?.midiHits === 2, { weaponHit, state: fixture.state });
+      record("Fire weapon Item needs no AE5E flags or macro mutation", weaponItem.flags?.[MODULE_ID] === undefined, weaponItem.flags);
+
+      const miss = await this.#midi.processWorkflow({
+        id: `ae5e-midi-weapon-miss-${stamp}`,
+        rawDamageDetail: [{ type: "fire", value: 3 }],
+        item: weaponItem,
+        activity: { uuid: `${weaponItem.uuid}.Activity.attack`, hasAttack: true },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.attacker` } },
+        hitTargets: new Set(),
+        targets: new Set([impactTargetA])
+      });
+      fixture = await readFixtureState();
+      record("Missed fire attack does not ignite beneath the intended target", miss?.processed === false && miss?.events?.length === 0 && fixture.state?.midiHits === 2, { miss, state: fixture.state });
+
+      const impactTargetB = makeTarget(`impact-b-${stamp}`, x + gridSize * 1.75, y + gridSize * 0.75);
+      const rays = await this.#midi.processWorkflow({
+        id: `ae5e-midi-multi-impact-${stamp}`,
+        rawDamageDetail: [{ type: "fire", value: 6 }],
+        item: { uuid: `Actor.a.Item.ae5e-scorching-rays-${stamp}`, flags: {}, system: { actionType: "rsak" } },
+        activity: { uuid: `Actor.a.Item.ae5e-scorching-rays-${stamp}.Activity.attack`, hasAttack: true },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.caster` } },
+        hitTargets: new Set([impactTargetA, impactTargetB]),
+        targets: new Set([impactTargetA, impactTargetB])
+      });
+      fixture = await readFixtureState();
+      record("Multi-impact fire workflow emits one idempotent event per hit target", rays?.events?.length === 2 && rays?.results?.every(result => result?.reactions === 1) && fixture.state?.midiHits === 4, { rays, state: fixture.state });
+
+      const targeted = await this.#midi.processWorkflow({
+        id: `ae5e-midi-targeted-${stamp}`,
+        rawDamageDetail: [{ type: "fire", value: 2 }],
+        item: { uuid: `Actor.a.Item.ae5e-targeted-fire-${stamp}`, flags: {}, system: {} },
+        activity: { uuid: `Actor.a.Item.ae5e-targeted-fire-${stamp}.Activity.damage`, hasAttack: false },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.caster` } },
+        targets: new Set([impactTargetA])
+      });
+      fixture = await readFixtureState();
+      record("Non-attack targeted fire uses target-location delivery", targeted?.events?.length === 1 && targeted.events[0]?.delivery === ENVIRONMENT_DELIVERY_MODES.TARGET && fixture.state?.midiHits === 5, { targeted, state: fixture.state });
+
+      const ambiguous = await this.#midi.processWorkflow({
+        id: `ae5e-midi-ambiguous-${stamp}`,
+        rawDamageDetail: [{ type: "fire", value: 2 }],
+        item: { uuid: `Actor.a.Item.ae5e-ambiguous-fire-${stamp}`, flags: {}, system: {} },
+        activity: { hasAttack: false },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.caster` } },
+        targets: new Set()
+      });
+      fixture = await readFixtureState();
+      record("Spatially ambiguous fire fails closed instead of guessing", ambiguous?.processed === false && ambiguous?.events?.length === 0 && fixture.state?.midiHits === 5, { ambiguous, state: fixture.state });
+
+      const unresolvedArea = await this.#midi.processWorkflow({
+        id: `ae5e-midi-unresolved-area-${stamp}`,
+        rawDamageDetail: [{ type: "fire", value: 4 }],
+        item: { uuid: `Actor.a.Item.ae5e-unresolved-area-${stamp}`, flags: {}, system: {} },
+        activity: { hasAttack: false },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.caster` } },
+        templateUuid: `${scene.uuid}.Region.does-not-exist-${stamp}`,
+        templateUuids: [`${scene.uuid}.Region.does-not-exist-${stamp}`],
+        targets: new Set([impactTargetA])
+      });
+      fixture = await readFixtureState();
+      record("Unresolved declared area does not fall back to target ignition", unresolvedArea?.processed === false && unresolvedArea?.events?.length === 0 && fixture.state?.midiHits === 5, { unresolvedArea, state: fixture.state });
+
+      const measuredUuid = `${scene.uuid}.MeasuredTemplate.ae5e-compat-${stamp}`;
+      const measuredTemplate = {
+        documentName: "MeasuredTemplate",
+        uuid: measuredUuid,
+        parent: scene,
+        t: "rect",
+        x,
+        y,
+        distance: 10,
+        direction: 0,
+        elevation: 0,
+        toObject: () => ({ t: "rect", x, y, distance: 10, direction: 0, elevation: 0 })
+      };
+      const measured = await this.#midi.processWorkflow({
+        id: `ae5e-midi-template-compat-${stamp}`,
+        rawDamageDetail: [{ type: "fire", value: 4 }],
+        item: { uuid: `Actor.a.Item.ae5e-template-compat-${stamp}`, flags: {}, system: {} },
+        activity: { hasAttack: false },
+        token: { document: { parent: scene, uuid: `${scene.uuid}.Token.caster` } },
+        templateUuid: measuredUuid,
+        templateUuids: [measuredUuid],
+        template: measuredTemplate,
+        targets: new Set()
+      });
+      fixture = await readFixtureState();
+      record("MeasuredTemplate remains a boundary-only compatibility input", measured?.events?.length === 1 && measured.events[0]?.geometry?.source === "measured-template-compatibility" && fixture.state?.midiHits === 6, { measured, state: fixture.state });
+
+      const midiStats = this.#midi.getStats();
+      record("Runtime Midi observer remains registered on DamageRollComplete", midiStats.initialized === true && midiStats.hookRegistered === true, midiStats);
+
+      const sourceRemove = await this.#regions.delete(sourceRegionUuid);
+      record("Midi native source Region cleans up", sourceRemove?.deleted === true, sourceRemove);
+      sourceRegionUuid = null;
+      const targetRemove = await this.#regions.delete(targetRegionUuid);
+      record("Midi Flammable consumer Region cleans up", targetRemove?.deleted === true, targetRemove);
+      targetRegionUuid = null;
+    } finally {
+      try { unregisterProfile?.(); } catch { /* best effort */ }
+      if (sourceRegionUuid) {
+        try { await this.#regions.delete(sourceRegionUuid); } catch { /* best effort */ }
+      }
+      if (targetRegionUuid) {
+        try { await this.#regions.delete(targetRegionUuid); } catch { /* best effort */ }
+      }
+    }
+
+    const passed = checks.every(check => check.passed);
+    const result = {
+      passed,
+      checks,
+      sceneUuid: scene.uuid,
+      environment: this.#environment.getStats(),
+      midi: this.#midi.getStats(),
+      mutations: this.#mutations.getStats()
+    };
+    banner("ENVIRONMENTAL MIDI FIRE BRIDGE", passed);
+    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
+    console.log(result);
+    notifyResult("environmental Midi fire bridge", passed, notify);
     return result;
   }
 
