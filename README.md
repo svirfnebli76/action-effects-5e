@@ -1,3 +1,47 @@
+
+### v0.4.3.5 Web 2024 final integration — Stage 4
+
+The v0.4.3.5 Web implementation is packaged for live Foundry acceptance. The final hardening stores presentation mode on the authoritative Region, refreshes the Region-masked Premium visual from the primary GM when Region geometry changes, fails closed and removes an orphan Region if concentration dependency binding cannot be established, suppresses the native Cast Web template prompt, and gates the shared ItemMacro so the Web Save/Escape/Burning Damage Activities never reopen placement.
+
+The recoverable source-Item setup contract is in `docs/web-2024-setup.md`; the complete Premium ItemMacro is in `docs/item-macros/web-2024-premium.txt`. Final deterministic repository gate: **210/210 PASS** with **95 JavaScript files** passing syntax validation.
+
+Preferred live acceptance after installation:
+
+```js
+await game.modules.get("action-effects-5e").api.tests.environment.runAll({ notify: true });
+```
+
+After authoring the source Item:
+
+```js
+await game.modules.get("action-effects-5e").api.tests.environment.validateWebItem({
+  itemUuid: "PASTE-WEB-ITEM-UUID-HERE",
+  notify: true
+});
+```
+
+### v0.4.3.5 Web 2024 development checkpoint — Stage 3
+
+Web now has its complete Premium placement/casting presentation layer on top of the accepted Stage 1/2 mechanics. Placement uses an invisible functional Sequencer anchor for cursor movement, snapping, 60-foot range enforcement, and confirmation while rendering Eskie's **Fantasy 01 White 20×20** rectangle independently at a fixed 20-foot size. Sequencer native target collection remains disabled; AE5E manually live-targets visible token centers against the same fixed square, recomputes the authoritative target set on confirmation, and restores the user's original targets on cancellation or immediately after the Utility cast placement is recorded.
+
+The Premium casting sequence preserves Eskie's yellow arcane caster/destination loops, conjuration-circle buildup, orb/web-shield buildup, yellow impact, and layered BLFX Web presentation. Persistent BLFX layers are tied to and **masked by the authoritative Foundry Region**, so gameplay geometry remains Region-owned and carved Region holes can be reflected by presentation rather than by separate gameplay Regions. Effect names are unique per Web instance.
+
+The source ItemMacro remains intentionally thin. It runs on **Before Item Roll** and **After Active Effects**, delegates placement and commit work to `ae5e.web.placeCast()` / `ae5e.web.commitCast()`, and contains no custom save, damage, Region-document, or Sequencer implementation. The exact macro source is stored in `docs/item-macros/web-2024-premium.txt` for development/recovery and will be posted in full with the final Item setup instructions.
+
+The source Item can still be checked automatically after it is authored in Foundry:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.environment.validateWebItem({
+  itemUuid: "PASTE-WEB-ITEM-UUID-HERE",
+  notify: true
+});
+```
+
+The validator checks the 2024 Web Item contract: 2nd-level Conjuration, Action, 1 hour Concentration, V/S/M, 60-foot range, 20-foot cube, Utility **Cast Web**, Dexterity **Web Save** against spellcasting DC, Action **Escape Web** using Strength (Athletics), exactly 2d4 Fire **Burning Web Damage**, no secondary spell-slot/resource consumption on automation Activities, no direct effect application from those Activities, a Transfer-disabled Restrained source effect, and AE5E Automated Animations suppression.
+
+Stage 3 repository gate: **208/208 PASS**; syntax check: **95 JavaScript files PASS**. This remains a recoverable development checkpoint; final live Foundry integration/acceptance and Item authoring are completed in Stage 4.
+
 ### v0.4.3.4 automated Midi fire-bridge acceptance
 
 The Region-native Environmental foundation now includes an automated **Midi fire bridge** acceptance layer. The preferred one-command console gate verifies that representative untouched Midi fire workflows are interpreted into environmental events and reach Flammable Regions without adding AE5E macros or flags to the source Item. Native v14 Region area geometry is preferred; attack hits use localized impact delivery; misses and unresolved/ambiguous geometry fail closed; raw fire remains environmental fire even when final target damage is zero; MeasuredTemplate handling remains compatibility-only.

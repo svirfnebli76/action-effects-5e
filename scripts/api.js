@@ -68,6 +68,14 @@ import {
   SELECTION_INDICATOR_SOUND_VOLUME,
   SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
   SELECTION_INDICATOR_SCALE,
+  WEB_ACTIVITY_REFERENCES,
+  WEB_BURN_SECONDS,
+  WEB_CELL_SIZE_FEET,
+  WEB_EFFECT_ROLE,
+  WEB_FLAG_KEY,
+  WEB_PROFILE_ID,
+  WEB_SCHEMA_VERSION,
+  WEB_SIZE_FEET,
   TELEPORT_POLICIES
 } from "./core/constants.js";
 import {
@@ -102,6 +110,7 @@ export class ActionEffects5eApi {
     spellModifiers,
     spellModifierEvents,
     ongoingEffects,
+    activities,
     regions,
     environment,
     environmentGeometry,
@@ -113,6 +122,7 @@ export class ActionEffects5eApi {
     environmentTiming,
     flammability,
     midiEnvironment,
+    web,
     relationships,
     relationshipLifecycle,
     relationshipMovement,
@@ -187,6 +197,14 @@ export class ActionEffects5eApi {
       ONGOING_ACTION_TIMINGS,
       REGION_AUTHORITY_FLAG,
       ENVIRONMENT_SCHEMA_VERSION,
+      WEB_SCHEMA_VERSION,
+      WEB_FLAG_KEY,
+      WEB_PROFILE_ID,
+      WEB_SIZE_FEET,
+      WEB_CELL_SIZE_FEET,
+      WEB_BURN_SECONDS,
+      WEB_EFFECT_ROLE,
+      WEB_ACTIVITY_REFERENCES,
       ENVIRONMENT_FLAG_KEY,
       ENVIRONMENT_EVENT_TYPES,
       ENVIRONMENT_CAPABILITIES,
@@ -315,6 +333,27 @@ export class ActionEffects5eApi {
     });
     this.sme = smeApi;
     this.spellModifiers = smeApi;
+
+    this.activities = Object.freeze({
+      execute: (request) => activities.execute(request),
+      getStats: () => activities.getStats()
+    });
+
+    this.web = Object.freeze({
+      placeCast: (options) => web.placeCast(options),
+      restorePlacementTargets: (placementOrIds) => web.restorePlacementTargets(placementOrIds),
+      commitCast: (options) => web.commitCast(options),
+      playCastAnimation: (options) => web.playCastAnimation(options),
+      create: (options) => web.create(options),
+      bindConcentration: (options) => web.bindConcentration(options),
+      isWebRegion: (region) => web.isWebRegion(region),
+      getRegionData: (region) => web.getRegionData(region),
+      tokenFootprint: (token) => web.tokenFootprint(token),
+      renderPersistentVisual: (regionOrUuid, options) => web.renderPersistentVisual(regionOrUuid, options),
+      validateSourceItem: (itemOrUuid) => web.validateSourceItem(itemOrUuid),
+      cleanupVisual: (regionOrUuid) => web.cleanupVisual(regionOrUuid),
+      getStats: () => web.getStats()
+    });
 
     this.ongoingEffects = Object.freeze({
       getEffectConfig: (effect) => ongoingEffects.getEffectConfig(effect),
@@ -497,12 +536,16 @@ export class ActionEffects5eApi {
         runAll: (options) => tests.runEnvironmentalAcceptanceTest(options),
         runFoundation: (options) => tests.runEnvironmentalFoundationTest(options),
         runMidiFire: (options) => tests.runEnvironmentalMidiFireTest(options),
+        runWeb: (options) => tests.runEnvironmentalWebTest(options),
+        validateWebItem: (options) => tests.validateWebItem(options),
         runLifecycle: (options) => tests.runEnvironmentalLiveLifecycleTest(options),
         runPerformance: (options) => tests.runEnvironmentalPerformanceTest(options)
       }),
       runEnvironmentalAcceptanceTest: (options) => tests.runEnvironmentalAcceptanceTest(options),
       runEnvironmentalFoundationTest: (options) => tests.runEnvironmentalFoundationTest(options),
       runEnvironmentalMidiFireTest: (options) => tests.runEnvironmentalMidiFireTest(options),
+      runEnvironmentalWebTest: (options) => tests.runEnvironmentalWebTest(options),
+      validateWebItem: (options) => tests.validateWebItem(options),
       runEnvironmentalLiveLifecycleTest: (options) => tests.runEnvironmentalLiveLifecycleTest(options),
       runEnvironmentalPerformanceTest: (options) => tests.runEnvironmentalPerformanceTest(options),
       runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),

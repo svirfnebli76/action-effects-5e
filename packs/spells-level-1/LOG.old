@@ -1,3 +1,7 @@
-2026/08/31-15:38:24.911 aba4 Recovering log #129
-2026/08/31-15:38:24.914 aba4 Delete type=0 #129
-2026/08/31-15:38:24.914 aba4 Delete type=3 #127
+2026/08/31-15:29:10.912 2520 Recovering log #126
+2026/08/31-15:29:10.915 2520 Delete type=0 #126
+2026/08/31-15:29:10.915 2520 Delete type=3 #125
+2026/08/31-15:29:29.488 8b18 Level-0 table #130: started
+2026/08/31-15:29:29.488 8b18 Level-0 table #130: 0 bytes OK
+2026/08/31-15:29:29.489 8b18 Delete type=0 #128
+2026/08/31-15:29:29.490 8b18 Manual compaction at level-0 from '!items!TW2x3hkgAbWG2HwY' @ 72057594037927935 : 1 .. '!items.effects!TW2x3hkgAbWG2HwY.Divu5XzaBySk7Y3J' @ 0 : 0; will stop at (end)

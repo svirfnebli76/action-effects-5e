@@ -46,6 +46,7 @@ import { SpellModifierChoiceService } from "./spell-modifiers/spell-modifier-cho
 import { SpellModifierEngine } from "./spell-modifiers/spell-modifier-engine.js";
 import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-event-adapter.js";
 import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.js";
+import { ActivityExecutionService } from "./activities/activity-execution-service.js";
 import { RegionAuthorityService } from "./regions/region-authority-service.js";
 import { EnvironmentProfileRegistry } from "./environment/environment-profile-registry.js";
 import { EnvironmentCapabilityRegistry } from "./environment/environment-capability-registry.js";
@@ -57,6 +58,8 @@ import { EnvironmentTimingService } from "./environment/environment-timing-servi
 import { FlammabilityService } from "./environment/flammability-service.js";
 import { EnvironmentalInteractionService } from "./environment/environmental-interaction-service.js";
 import { MidiEnvironmentAdapter } from "./environment/midi-environment-adapter.js";
+import { WebService } from "./environment/web-service.js";
+import { WebRegionBehaviorType } from "./environment/web-region-behavior-type.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -125,6 +128,7 @@ const spellModifiers = new SpellModifierEngine({
 });
 const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifiers, authority: reactionAuthority });
 const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
+const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const regions = new RegionAuthorityService({ socket, authority: reactionAuthority });
 const environmentProfiles = new EnvironmentProfileRegistry();
 const environmentCapabilities = new EnvironmentCapabilityRegistry();
@@ -150,6 +154,20 @@ const environment = new EnvironmentalInteractionService({
   mutations: environmentMutations
 });
 const midiEnvironment = new MidiEnvironmentAdapter({ environment, geometry: environmentGeometry });
+const web = new WebService({
+  socket,
+  authority: reactionAuthority,
+  regions,
+  geometry: environmentGeometry,
+  profiles: environmentProfiles,
+  mutations: environmentMutations,
+  timing: environmentTiming,
+  activities,
+  ongoingEffects,
+  selectionIndicator,
+  crosshairs
+});
+WebRegionBehaviorType.configure(web);
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -204,6 +222,7 @@ const tests = new TestHarness({
   spellModifiers,
   spellModifierEvents,
   ongoingEffects,
+  activities,
   regions,
   environment,
   environmentGeometry,
@@ -215,6 +234,7 @@ const tests = new TestHarness({
   environmentTiming,
   flammability,
   midiEnvironment,
+  web,
   relationships,
   relationshipLifecycle,
   relationshipMovement,
@@ -306,6 +326,7 @@ const api = new ActionEffects5eApi({
   spellModifiers,
   spellModifierEvents,
   ongoingEffects,
+  activities,
   regions,
   environment,
   environmentGeometry,
@@ -317,6 +338,7 @@ const api = new ActionEffects5eApi({
   environmentTiming,
   flammability,
   midiEnvironment,
+  web,
   relationships,
   relationshipLifecycle,
   relationshipMovement,
@@ -392,6 +414,7 @@ Hooks.once("ready", async () => {
   environmentTiming.initialize();
   environment.initialize();
   midiEnvironment.initialize();
+  web.initialize();
   automatedAnimations.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();

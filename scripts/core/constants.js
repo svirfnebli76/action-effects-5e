@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.3.4";
+export const MODULE_VERSION = "0.4.3.5";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -130,7 +130,8 @@ export const ENVIRONMENT_CAPABILITIES = Object.freeze({
   CORRODIBLE: "corrodible"
 });
 export const ENVIRONMENT_BEHAVIOR_TYPES = Object.freeze({
-  FLAMMABLE: `${MODULE_ID}.flammable`
+  FLAMMABLE: `${MODULE_ID}.flammable`,
+  WEB: `${MODULE_ID}.web`
 });
 export const ENVIRONMENT_DELIVERY_MODES = Object.freeze({
   AREA: "area",
@@ -138,6 +139,25 @@ export const ENVIRONMENT_DELIVERY_MODES = Object.freeze({
   TARGET: "target",
   MANUAL: "manual"
 });
+
+// Web (2024) Region automation. The gameplay object is one persistent Region;
+// 5-foot burning sections are state within that Region and become hole shapes
+// only when their one-round burn timer expires.
+export const WEB_SCHEMA_VERSION = 1;
+export const WEB_FLAG_KEY = "web";
+export const WEB_PROFILE_ID = "web";
+export const WEB_SIZE_FEET = 20;
+export const WEB_CELL_SIZE_FEET = 5;
+export const WEB_BURN_SECONDS = 6;
+export const WEB_BURN_TIMER_HANDLER = `${MODULE_ID}.web.burn-away`;
+export const WEB_EFFECT_ROLE = "restrained-template";
+export const WEB_ACTIVITY_REFERENCES = Object.freeze({
+  CAST: "Cast Web",
+  SAVE: "Web Save",
+  ESCAPE: "Escape Web",
+  BURN_DAMAGE: "Burning Web Damage"
+});
+
 export const ENVIRONMENT_MAX_RECENT_EVENTS = 100;
 export const ENVIRONMENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 

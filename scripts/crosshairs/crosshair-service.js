@@ -549,7 +549,13 @@ export class CrosshairService {
         section = section.attachTo(source).stretchTo(crosshair, { attachTo: true });
       } else {
         section = section.attachTo(crosshair);
-        if (visual?.scaleToObject !== false && typeof section.scaleToObject === "function") {
+        const fixedGridSize = Number(visual?.sizeGridUnits);
+        if (Number.isFinite(fixedGridSize) && fixedGridSize > 0 && typeof section.size === "function") {
+          // Fixed presentation size: the functional crosshair only supplies the
+          // live anchor/direction. This prevents placement/range geometry from
+          // stretching Eskie artwork into rectangles while the cursor moves.
+          section = section.size(fixedGridSize, { gridUnits: true });
+        } else if (visual?.scaleToObject !== false && typeof section.scaleToObject === "function") {
           section = section.scaleToObject(Number(visual?.scale ?? 1));
         }
       }

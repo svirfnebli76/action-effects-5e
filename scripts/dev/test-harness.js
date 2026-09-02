@@ -72,7 +72,7 @@ export class TestHarness {
   #relationshipLifecycleSuite;
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, regions, environment, environmentGeometry, environmentBehaviors, environmentCapabilities, environmentProfiles, environmentIndex, environmentMutations, environmentTiming, flammability, midiEnvironment, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, activities, regions, environment, environmentGeometry, environmentBehaviors, environmentCapabilities, environmentProfiles, environmentIndex, environmentMutations, environmentTiming, flammability, midiEnvironment, web, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -123,6 +123,8 @@ export class TestHarness {
       timing: environmentTiming,
       flammability,
       midi: midiEnvironment,
+      activities,
+      web,
       regions,
       socket
     });
@@ -163,6 +165,14 @@ export class TestHarness {
 
   runEnvironmentalMidiFireTest(options) {
     return this.#environmentalSuite.runMidiFireTest(options);
+  }
+
+  runEnvironmentalWebTest(options) {
+    return this.#environmentalSuite.runWebTest(options);
+  }
+
+  validateWebItem(options) {
+    return this.#environmentalSuite.validateWebItem(options);
   }
 
   runEnvironmentalLiveLifecycleTest(options) {

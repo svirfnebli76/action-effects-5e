@@ -129,8 +129,18 @@ export class OngoingEffectService {
 
   validateConfig(config) {
     if (!config || typeof config !== "object") return { valid: false, reason: "missing-config" };
-    if (typeof config.templateUuid !== "string" || !config.templateUuid.startsWith("Compendium.")) {
-      return { valid: false, reason: "invalid-template-uuid" };
+    const templateValid = typeof config.templateUuid === "string" && config.templateUuid.startsWith("Compendium.");
+    const sourceActivity = config.sourceActivity;
+    const sourceActivityValid = Boolean(
+      sourceActivity
+      && typeof sourceActivity === "object"
+      && typeof sourceActivity.activityReference === "string"
+      && sourceActivity.activityReference.trim().length
+    );
+    if (!templateValid && !sourceActivityValid) return { valid: false, reason: "missing-grant-source" };
+    if (sourceActivity !== undefined && !sourceActivityValid) return { valid: false, reason: "invalid-source-activity" };
+    if (sourceActivity?.activityPatch !== undefined && (!sourceActivity.activityPatch || typeof sourceActivity.activityPatch !== "object" || Array.isArray(sourceActivity.activityPatch))) {
+      return { valid: false, reason: "invalid-source-activity-patch" };
     }
     const timing = config.timing ?? null;
     if (timing !== null && !Object.values(ONGOING_ACTION_TIMINGS).includes(timing)) {
@@ -162,18 +172,16 @@ export class OngoingEffectService {
       if (existing?.parent?.uuid === actor.uuid) return { created: false, reason: "already-granted", item: existing };
     }
 
-    const template = await fromUuid(config.templateUuid);
-    if (!template || template.documentName !== "Item") {
-      throw new Error(`AE5E ongoing-action template '${config.templateUuid}' could not be resolved to an Item.`);
-    }
-
-    const itemData = template.toObject();
-    delete itemData._id;
+    const source = await this.#buildGrantItemData(effect, config);
+    if (!source?.itemData) return { created: false, reason: source?.reason ?? "grant-source-unavailable" };
+    const itemData = source.itemData;
     const savedCastData = this.#getSavedCastData(effect);
     setProperty(itemData, `flags.${MODULE_ID}.${ONGOING_ACTION_ITEM_FLAG}`, {
       sourceEffectUuid: effect.uuid,
-      templateUuid: config.templateUuid,
-      activityIdentifier: config.activityIdentifier ?? null,
+      templateUuid: source.templateUuid ?? null,
+      sourceItemUuid: source.sourceItemUuid ?? null,
+      sourceActivity: source.sourceActivity ?? null,
+      activityIdentifier: source.activityIdentifier ?? config.activityIdentifier ?? null,
       removeEffectOnSuccess: config.removeEffectOnSuccess !== false,
       savedCastData: savedCastData ?? null
     });
@@ -184,7 +192,13 @@ export class OngoingEffectService {
     const nextConfig = { ...config, grantedItemUuid: created.uuid };
     await effect.update({ [`flags.${MODULE_ID}.${ONGOING_ACTION_EFFECT_FLAG}`]: nextConfig }, { ae5eOngoingGrantLink: true });
     this.#stats.grantsCreated += 1;
-    this.#record("grant-created", { effectUuid: effect.uuid, itemUuid: created.uuid, templateUuid: config.templateUuid });
+    this.#record("grant-created", {
+      effectUuid: effect.uuid,
+      itemUuid: created.uuid,
+      templateUuid: source.templateUuid ?? null,
+      sourceItemUuid: source.sourceItemUuid ?? null,
+      sourceActivity: source.sourceActivity ?? null
+    });
     return { created: true, effect, item: created };
   }
 
@@ -715,7 +729,90 @@ export class OngoingEffectService {
       const direct = activities.get(identifier);
       if (direct) return direct;
     }
-    return asArray(activities)[0] ?? (typeof activities.values === "function" ? activities.values().next().value : null);
+    const entries = asArray(activities).length
+      ? asArray(activities)
+      : (typeof activities.values === "function" ? [...activities.values()] : Object.values(activities ?? {}));
+    if (identifier) {
+      const normalized = String(identifier).trim().toLowerCase();
+      const match = entries.find(activity => {
+        const id = String(activity?.id ?? activity?._id ?? "").toLowerCase();
+        const activityIdentifier = String(activity?.identifier ?? activity?.system?.identifier ?? "").toLowerCase();
+        const name = String(activity?.name ?? "").trim().toLowerCase();
+        return id === normalized || activityIdentifier === normalized || name === normalized;
+      });
+      if (match) return match;
+    }
+    return entries[0] ?? null;
+  }
+
+  async #buildGrantItemData(effect, config) {
+    if (typeof config.templateUuid === "string" && config.templateUuid.startsWith("Compendium.")) {
+      const template = await fromUuid(config.templateUuid);
+      if (!template || template.documentName !== "Item") {
+        throw new Error(`AE5E ongoing-action template '${config.templateUuid}' could not be resolved to an Item.`);
+      }
+      const itemData = template.toObject();
+      delete itemData._id;
+      return {
+        itemData,
+        templateUuid: config.templateUuid,
+        sourceItemUuid: null,
+        sourceActivity: null,
+        activityIdentifier: config.activityIdentifier ?? null
+      };
+    }
+
+    const sourceConfig = config.sourceActivity ?? {};
+    let sourceItem = null;
+    const explicitSourceUuid = String(sourceConfig.itemUuid ?? "").trim();
+    const originUuid = String(effect?.origin ?? "").trim();
+    for (const uuid of [explicitSourceUuid, originUuid]) {
+      if (!uuid) continue;
+      try { sourceItem = await fromUuid(uuid); } catch { sourceItem = null; }
+      if (sourceItem?.documentName === "Item") break;
+      sourceItem = null;
+    }
+    if (!sourceItem) return { itemData: null, reason: "source-item-unavailable" };
+
+    const activity = this.#resolveActivity(sourceItem, sourceConfig.activityReference);
+    if (!activity) return { itemData: null, reason: "source-activity-unavailable" };
+    const activityData = duplicate(activity.toObject?.(false) ?? activity.toObject?.() ?? activity);
+    delete activityData._id;
+    const activityId = String(activity.id ?? activity._id ?? sourceConfig.activityReference).trim() || "ae5e-ongoing-action";
+    activityData._id = activityId;
+    for (const [path, value] of Object.entries(sourceConfig.activityPatch ?? {})) {
+      setProperty(activityData, path, duplicate(value));
+    }
+
+    const sourceObject = sourceItem.toObject?.(false) ?? sourceItem.toObject?.() ?? {};
+    const sourceSystem = sourceObject.system ?? {};
+    const identifier = String(sourceConfig.itemIdentifier ?? sourceSystem.identifier ?? sourceItem.name ?? "ongoing-action")
+      .trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "ongoing-action";
+    const itemData = {
+      name: String(sourceConfig.itemName ?? `${sourceItem.name ?? "Ongoing Effect"} — Action`),
+      type: "feat",
+      img: sourceConfig.itemImg ?? sourceItem.img ?? effect?.img ?? null,
+      system: {
+        description: duplicate(sourceSystem.description ?? { value: "", chat: "" }),
+        source: duplicate(sourceSystem.source ?? { custom: "Action Effects 5E" }),
+        activation: { type: "action", value: 1, condition: "" },
+        duration: { value: null, units: "inst" },
+        target: { affects: { choice: false, count: "", type: "self" }, template: { units: "ft", contiguous: false, type: "", size: "", count: "" } },
+        range: { value: null, units: "self", special: "" },
+        uses: { max: "", recovery: [], spent: 0 },
+        activities: { [activityId]: activityData },
+        identifier
+      },
+      effects: [],
+      flags: {}
+    };
+    return {
+      itemData,
+      templateUuid: null,
+      sourceItemUuid: sourceItem.uuid ?? explicitSourceUuid ?? originUuid,
+      sourceActivity: String(sourceConfig.activityReference),
+      activityIdentifier: activityId
+    };
   }
 
   #workflowSucceeded(workflow, actor) {
@@ -729,6 +826,21 @@ export class OngoingEffectService {
     if (saves.some(matches)) return true;
     if (failedSaves.some(matches)) return false;
     if (typeof workflow?.ae5eOngoingSuccess === "boolean") return workflow.ae5eOngoingSuccess;
+
+    // Ongoing actions can be ordinary D&D5e Check Activities rather than saves.
+    // Preserve the normal Midi/D&D5e roll pipeline, then interpret its prepared
+    // roll total against the Activity's prepared DC when no save sets exist.
+    const roll = this.#firstWorkflowRoll(workflow);
+    const total = Number(roll?.total);
+    const activity = workflow?.activity ?? null;
+    const dc = Number(
+      workflow?.dc
+      ?? activity?.check?.dc?.value
+      ?? activity?.system?.check?.dc?.value
+      ?? activity?.check?.dc
+      ?? NaN
+    );
+    if (Number.isFinite(total) && Number.isFinite(dc)) return total >= dc;
     return null;
   }
 

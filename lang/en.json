@@ -19,8 +19,19 @@
   "TYPES": {
     "RegionBehavior": {
       "action-effects-5e": {
-        "flammable": "AE5E — Flammable"
+        "flammable": "AE5E — Flammable",
+        "web": "AE5E — Web"
       }
     }
-  }
+  },
+  "BEHAVIOR.TYPES.action-effects-5e.web.label": "AE5E — Web",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.instanceId.label": "Web Instance ID",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.sourceItemUuid.label": "Source Item UUID",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.casterActorUuid.label": "Caster Actor UUID",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.casterTokenUuid.label": "Caster Token UUID",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.saveActivity.label": "Save Activity",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.burnDamageActivity.label": "Burning Damage Activity",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.restrainedEffectRole.label": "Restrained Effect Role",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.sizeFeet.label": "Web Size (ft)",
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.cellSizeFeet.label": "Burn Cell Size (ft)"
 }

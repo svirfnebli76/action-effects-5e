@@ -1,0 +1,90 @@
+// Web (2024) — Action Effects 5E Premium ItemMacro
+// Configure this same ItemMacro on the user-facing passes:
+//   • Before Item Roll
+//   • After Active Effects
+
+const AE5E_MODULE_ID = "action-effects-5e";
+const ae5e = game.modules.get(AE5E_MODULE_ID)?.api;
+if (!ae5e?.web) {
+  ui.notifications.error("Web | Action Effects 5E Web infrastructure is unavailable.");
+  return false;
+}
+
+const macroData = args?.[0] ?? {};
+const webWorkflow = (typeof workflow !== "undefined" ? workflow : null) ?? macroData.workflow ?? null;
+const webItem = (typeof item !== "undefined" ? item : null) ?? webWorkflow?.item ?? macroData.item ?? null;
+const webActor = (typeof actor !== "undefined" ? actor : null) ?? webItem?.actor ?? webWorkflow?.actor ?? null;
+const webToken = (typeof token !== "undefined" ? token : null)
+  ?? webWorkflow?.token
+  ?? canvas.tokens?.get?.(webWorkflow?.tokenId)
+  ?? null;
+const webActivity = webWorkflow?.activity ?? macroData.activity ?? null;
+const macroPass = macroData.macroPass ?? webWorkflow?.macroPass ?? null;
+const WEB_STATE = "__ae5eWeb2024";
+
+// This Item also contains Web Save, Escape Web, and Burning Web Damage. They
+// intentionally use the same source Item but must never run the placement macro.
+if (String(webActivity?.name ?? "").trim().toLowerCase() !== "cast web") return true;
+
+if (!webWorkflow || !webItem || !webActor || !webToken) {
+  ui.notifications.error("Web | The caster, token, Item, or Midi-QOL workflow could not be resolved.");
+  return false;
+}
+
+if (macroPass === "preItemRoll") {
+  const placement = await ae5e.web.placeCast({
+    casterToken: webToken,
+    sourceItem: webItem,
+    rangeFeet: 60,
+    sizeFeet: 20,
+    visualMode: "premium",
+    label: "Web | Select the center of the 20-foot cube. Press Esc to cancel."
+  });
+
+  if (!placement?.placed) {
+    if (!placement?.cancelled) {
+      ui.notifications.error(`Web | Placement failed${placement?.reason ? `: ${placement.reason}` : "."}`);
+    }
+    return false;
+  }
+
+  // Web has no cast-time save. Keep the authoritative confirmation result on
+  // the workflow, but restore the user's pre-cast targets immediately so the
+  // Utility Activity cannot accidentally inherit temporary placement targets.
+  ae5e.web.restorePlacementTargets(placement);
+
+  webWorkflow[WEB_STATE] = {
+    placement,
+    sourceItemUuid: webItem.uuid,
+    casterActorUuid: webActor.uuid,
+    casterTokenUuid: webToken.document?.uuid ?? webToken.uuid ?? null
+  };
+  return true;
+}
+
+if (macroPass === "postActiveEffects") {
+  const state = webWorkflow[WEB_STATE] ?? null;
+  if (!state?.placement?.placed) {
+    ui.notifications.error("Web | Confirmed placement state was not available after the spell resolved.");
+    return false;
+  }
+
+  try {
+    const result = await ae5e.web.commitCast({
+      placement: state.placement,
+      sourceItemUuid: state.sourceItemUuid,
+      casterActorUuid: state.casterActorUuid,
+      casterTokenUuid: state.casterTokenUuid,
+      visualMode: "premium",
+      name: "Web"
+    });
+
+    if (!result?.created) {
+      ui.notifications.error(`Web | The Web Region could not be created${result?.reason ? `: ${result.reason}` : "."}`);
+      return false;
+    }
+    return result;
+  } finally {
+    delete webWorkflow[WEB_STATE];
+  }
+}
