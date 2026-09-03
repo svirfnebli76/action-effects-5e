@@ -1,3 +1,7 @@
+### v0.4.3.11 Authority-safe environmental Activity execution
+
+Region-triggered Web Save/Burning Web Damage execution now preserves TokenDocuments when passing explicit targets into CAT/Midi and pins CAT execution to AE5E's already-authoritative primary GM by default. This prevents environmental Activities from losing target UUIDs or being implicitly routed to the caster actor's first owner before Midi returns the workflow AE5E needs. The recoverable Web ItemMacro source is also synchronized to the accepted fixed-square Entangle-style targeting implementation: the Item owns its 20-foot placement presentation/live target preview through generic AE5E crosshair infrastructure, while `ae5e.web.commitCast()` continues to own Region/runtime mechanics. Compendium packs and assets are untouched.
+
 ### v0.4.3.10 Web Region layer visibility
 
 Authoritative Web Regions are now explicitly visible whenever the Foundry Regions layer is active while remaining locked against accidental manual editing. The normal Token layer remains uncluttered; the persistent Web animation continues to provide the in-play presentation. This patch changes Region creation infrastructure only and does not modify Item macros, compendium packs, or assets.

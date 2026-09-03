@@ -115,7 +115,11 @@ export class ActivityExecutionService {
         missingTargetUuids.push(uuid);
         continue;
       }
-      targets.push(token?.object ?? token);
+      // CAT's characterized workflowUtils.completeActivityUse() expects
+      // document-style targets and derives Midi targetUuids from target.uuid.
+      // Keep the resolved TokenDocument instead of converting it to the
+      // canvas Token placeable, whose UUID is only available on .document.
+      targets.push(token?.document ?? token);
     }
     if (missingTargetUuids.length) {
       return {
@@ -154,7 +158,16 @@ export class ActivityExecutionService {
     try {
       let workflow = null;
       if (canUseCat) {
-        workflow = await this.#catSpell.completeActivityUse(activity, targets, payload?.options ?? {});
+        // This bridge executes only on the authoritative primary GM. Pin CAT's
+        // completeActivityUse() to that same user unless the caller explicitly
+        // supplied a userId. Otherwise CAT defaults to the first owner of the
+        // source actor, which can route an environmental Activity away from the
+        // authority client and cause Midi to return no local workflow.
+        const executionOptions = payload?.options && typeof payload.options === "object"
+          ? clone(payload.options)
+          : {};
+        executionOptions.userId ??= globalThis.game?.user?.id ?? undefined;
+        workflow = await this.#catSpell.completeActivityUse(activity, targets, executionOptions);
       } else {
         this.#stats.nativeFallbacks += 1;
         workflow = await activity.use(payload?.options ?? {});

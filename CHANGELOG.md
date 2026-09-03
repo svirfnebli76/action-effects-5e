@@ -1,3 +1,12 @@
+## 0.4.3.11 — Authority-safe environmental Activity execution
+
+- Fixed the Web Region Activity bridge to preserve resolved TokenDocuments when calling CAT `workflowUtils.completeActivityUse()`. CAT derives Midi target UUIDs from `target.uuid`; converting targets to canvas Token placeables could leave that UUID unavailable and prevent the Web Save workflow from resolving.
+- Activity execution is now pinned to the already-authoritative primary GM by default when AE5E calls CAT. An explicitly supplied `userId` is still preserved. This prevents CAT from implicitly choosing the caster actor's first owner and routing a Region-triggered environmental workflow away from the authority client.
+- Added regression coverage for real TokenDocument/placeable target shapes, authority-GM CAT execution, explicit `userId` preservation, and the existing idempotency/fail-closed contracts.
+- Synchronized the recoverable `docs/item-macros/web-2024-premium.txt` source and setup documentation to the accepted fixed-square Entangle-style Web targeting implementation. This is documentation/recovery source only; no compendium Item is written by the release.
+- Repository gate: **220/220 PASS**; syntax check: **95 JavaScript files PASS**.
+- No Item, compendium, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.10.
+
 ## 0.4.3.10 — Web Region layer visibility
 
 - Web Regions now explicitly use Foundry v14 `CONST.REGION_VISIBILITY.LAYER`, making the authoritative 20-foot Region visible whenever a GM activates the Regions layer while keeping the Region outline out of normal Token-layer play.

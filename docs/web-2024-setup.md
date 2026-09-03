@@ -1,4 +1,4 @@
-# Web (2024) — AE5E v0.4.3.10 setup
+# Web (2024) — AE5E v0.4.3.11 setup
 
 This document describes the source-Item authoring contract expected by the Web infrastructure. AE5E supplies infrastructure only; the Web spell and any helper Items are authored manually in Foundry and added to compendiums manually.
 
@@ -16,7 +16,7 @@ Create or duplicate the 2024 **Web** spell and keep the normal D&D5e spell data:
 - Components: Verbal, Somatic, Material, Concentration
 - Target/template description: 20-foot Cube
 
-The Item's descriptive cube is retained for rules/UI data. The **Cast Web** Activity must not prompt for a native D&D5e template because AE5E's functional/Eskie placement owns placement.
+The Item's descriptive cube is retained for rules/UI data. The **Cast Web** Activity must not prompt for a native D&D5e template. The ItemMacro owns the spell-specific fixed 20-foot Eskie placement presentation and manual live target preview through AE5E's generic crosshair infrastructure; AE5E owns the committed Region/runtime mechanics.
 
 ## Web spell Activities
 
@@ -31,7 +31,8 @@ Create these three Activities on the Web spell.
 - Do not attach Active Effects to this Activity.
 - Item DIME passes: **Called before the item is rolled** and **After Active Effects**.
 - Both passes use the complete ItemMacro in `docs/item-macros/web-2024-premium.txt`.
-- The ItemMacro supplies the authoritative external Escape Web helper UUID to `ae5e.web.commitCast()`.
+- The ItemMacro uses an invisible generic AE5E functional crosshair plus an independently fixed 20-foot Eskie square, `collectTargets: false`, manual token-center targeting, idempotent target-set updates, authoritative confirmation targeting, and cancel restoration.
+- The ItemMacro supplies the confirmed placement and authoritative external Escape Web helper UUID to `ae5e.web.commitCast()`; it does not create or mutate the Web Region directly.
 
 ### Web Save
 

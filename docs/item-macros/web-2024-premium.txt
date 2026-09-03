@@ -1,126 +1,1331 @@
-// Web (2024) — Action Effects 5E Premium ItemMacro
-// Configure this same Item DIME macro on the user-facing passes:
+// ============================================================================
+// WEB (2024) — ACTION EFFECTS 5E PREMIUM ITEMMACRO
+//
+// Cast Web Activity
+//
+// Item DIME passes:
 //   • Called before the item is rolled
 //   • After Active Effects
 //
-// AE5E remains infrastructure only. Item-specific configuration, including the
-// authoritative Escape Web helper UUID, lives here on the Web Item automation.
+// AE5E remains infrastructure only.
+//
+// Web Item owns:
+//   • item-specific placement presentation and live target preview
+//   • Escape Web helper UUID/configuration
+//
+// AE5E owns:
+//   • generic crosshair infrastructure
+//   • authoritative Web Region creation
+//   • difficult terrain
+//   • entry/start-turn Web saves
+//   • Web restraint lifecycle
+//   • flammability / 5-foot burn-away cells
+//   • concentration dependency
+//   • persistent visual lifecycle
+// ============================================================================
 
 const AE5E_MODULE_ID = "action-effects-5e";
+
 const ESCAPE_WEB_TEMPLATE_UUID =
-  "Compendium.action-effects-5e.ae5e-administrative.Item.qero20MZvXoYOdKz";
+  "Compendium.action-effects-5e.ae5e-administrative.Item.36cAR3fDAAhRHqgy";
+
+const WEB = {
+  rangeFeet: 60,
+  sizeFeet: 20,
+  functionalCrosshairRadius: 2.5,
+  crosshairColor: "#FFFFFF",
+  workflowStateKey: "__ae5eWeb2024"
+};
 
 const ae5e = game.modules.get(AE5E_MODULE_ID)?.api;
-if (!ae5e?.web) {
-  ui.notifications.error("Web | Action Effects 5E Web infrastructure is unavailable.");
+
+if (
+  !ae5e?.web?.commitCast ||
+  !ae5e?.crosshairs?.show ||
+  !ae5e?.crosshairs?.resolveAsset
+) {
+  ui.notifications.error(
+    "Web | Action Effects 5E Web/crosshair infrastructure is unavailable."
+  );
   return false;
 }
 
 const macroData = args?.[0] ?? {};
-const webWorkflow = (typeof workflow !== "undefined" ? workflow : null) ?? macroData.workflow ?? null;
-const webItem = (typeof item !== "undefined" ? item : null) ?? webWorkflow?.item ?? macroData.item ?? null;
-const webActor = (typeof actor !== "undefined" ? actor : null) ?? webItem?.actor ?? webWorkflow?.actor ?? null;
-const webToken = (typeof token !== "undefined" ? token : null)
-  ?? webWorkflow?.token
-  ?? canvas.tokens?.get?.(webWorkflow?.tokenId)
+
+const webWorkflow =
+  (typeof workflow !== "undefined" ? workflow : null)
+  ?? macroData.workflow
   ?? null;
-const webActivity = webWorkflow?.activity ?? macroData.activity ?? null;
-const macroPass = macroData.macroPass ?? webWorkflow?.macroPass ?? null;
-const WEB_STATE = "__ae5eWeb2024";
 
-// This Item also contains Web Save and Burning Web Damage. They intentionally
-// use the same source Item but must never run the placement macro.
-if (String(webActivity?.name ?? "").trim().toLowerCase() !== "cast web") return true;
+const webItem =
+  (typeof item !== "undefined" ? item : null)
+  ?? webWorkflow?.item
+  ?? macroData.item
+  ?? null;
 
-if (!webWorkflow || !webItem || !webActor || !webToken) {
-  ui.notifications.error("Web | The caster, token, Item, or Midi-QOL workflow could not be resolved.");
-  return false;
-}
+const webActor =
+  (typeof actor !== "undefined" ? actor : null)
+  ?? webItem?.actor
+  ?? webWorkflow?.actor
+  ?? null;
 
-if (macroPass === "preItemRoll") {
-  // Fail closed before slot consumption if the authoritative helper Item or
-  // editable restraint template is missing.
-  let escapeTemplate = null;
-  try { escapeTemplate = await fromUuid(ESCAPE_WEB_TEMPLATE_UUID); } catch { escapeTemplate = null; }
-  if (!escapeTemplate || escapeTemplate.documentName !== "Item") {
-    ui.notifications.error("Web | The authoritative Escape Web helper Item could not be resolved.");
-    return false;
-  }
-
-  const restrainedTemplate = [...(webItem.effects ?? [])].find(
-    effect => String(effect?.name ?? "").trim().toLowerCase() === "restrained by web"
+const webToken =
+  resolveSourceToken(
+    (typeof token !== "undefined" ? token : null)
+      ?? webWorkflow?.token
+      ?? canvas.tokens?.get?.(webWorkflow?.tokenId)
+      ?? null,
+    webActor
   );
-  if (!restrainedTemplate) {
-    ui.notifications.error("Web | The source Active Effect 'Restrained by Web' could not be found.");
-    return false;
-  }
 
-  const placement = await ae5e.web.placeCast({
-    casterToken: webToken,
-    sourceItem: webItem,
-    rangeFeet: 60,
-    sizeFeet: 20,
-    visualMode: "premium",
-    label: "Web | Select the center of the 20-foot Web. Press Esc to cancel."
-  });
+const webActivity =
+  webWorkflow?.activity
+  ?? macroData.activity
+  ?? null;
 
-  if (!placement?.placed) {
-    if (!placement?.cancelled) {
-      ui.notifications.error(`Web | Placement failed${placement?.reason ? `: ${placement.reason}` : "."}`);
-    }
-    return false;
-  }
+const macroPass =
+  macroData.macroPass
+  ?? webWorkflow?.macroPass
+  ?? null;
 
-  // Web has no cast-time save. Keep the confirmed occupants only as placement
-  // diagnostics and restore the user's original targets before Midi continues.
-  ae5e.web.restorePlacementTargets(placement);
 
-  webWorkflow[WEB_STATE] = {
-    placement,
-    sourceItemUuid: webItem.uuid,
-    casterActorUuid: webActor.uuid,
-    casterTokenUuid: webToken.document?.uuid ?? webToken.uuid ?? null,
-    restraintOngoingAction: {
-      enabled: true,
-      templateUuid: ESCAPE_WEB_TEMPLATE_UUID,
-      activityIdentifier: "escape-web",
-      timing: "turnStart",
-      mandatory: false,
-      removeEffectOnSuccess: true,
-      suppressPromptWhenUnusable: true,
-      promptText: "Use your action to attempt to break free from the Web?",
-      indicatorRole: "responder"
-    }
-  };
+// ============================================================================
+// ACTIVITY GATE
+// ============================================================================
+
+// This Item also contains Web Save and Burning Web Damage.
+// They intentionally use the same source Item but must never run the
+// placement macro.
+
+if (
+  String(webActivity?.name ?? "")
+    .trim()
+    .toLowerCase()
+  !== "cast web"
+) {
   return true;
 }
 
-if (macroPass === "postActiveEffects") {
-  const state = webWorkflow[WEB_STATE] ?? null;
-  if (!state?.placement?.placed) {
-    ui.notifications.error("Web | Confirmed placement state was not available after the spell resolved.");
+if (
+  !webWorkflow ||
+  !webItem ||
+  !webActor ||
+  !webToken
+) {
+  ui.notifications.error(
+    "Web | The caster, token, Item, or Midi-QOL workflow could not be resolved."
+  );
+  return false;
+}
+
+
+// ============================================================================
+// BEFORE ITEM ROLL
+// ============================================================================
+
+if (macroPass === "preItemRoll") {
+
+  const originalTargetIds =
+    currentTargetIds();
+
+  let placementEffectName =
+    null;
+
+  try {
+
+    // ------------------------------------------------------------------------
+    // SOURCE ITEM CONTRACT
+    // ------------------------------------------------------------------------
+
+    let escapeTemplate =
+      null;
+
+    try {
+      escapeTemplate =
+        await fromUuid(
+          ESCAPE_WEB_TEMPLATE_UUID
+        );
+    } catch {
+      escapeTemplate =
+        null;
+    }
+
+    if (
+      !escapeTemplate ||
+      escapeTemplate.documentName !== "Item"
+    ) {
+      throw new Error(
+        "The authoritative Escape Web helper Item could not be resolved."
+      );
+    }
+
+    const restrainedTemplate =
+      [...(webItem.effects ?? [])].find(
+        effect =>
+          String(effect?.name ?? "")
+            .trim()
+            .toLowerCase()
+          === "restrained by web"
+      );
+
+    if (!restrainedTemplate) {
+      throw new Error(
+        "The source Active Effect 'Restrained by Web' could not be found."
+      );
+    }
+
+    if (
+      !game.modules.get("sequencer")?.active ||
+      !globalThis.Sequencer?.Crosshair ||
+      !globalThis.Sequence ||
+      !globalThis.Sequencer?.EffectManager
+    ) {
+      throw new Error(
+        "Sequencer is required for Web placement."
+      );
+    }
+
+    if (
+      !canvas?.ready ||
+      !canvas.scene
+    ) {
+      throw new Error(
+        "An active Scene is required for Web placement."
+      );
+    }
+
+
+    // ------------------------------------------------------------------------
+    // FIXED 20-FOOT GEOMETRY
+    // ------------------------------------------------------------------------
+
+    const gridMetrics =
+      getGridMetrics(
+        canvas.scene
+      );
+
+    const webGridUnits =
+      WEB.sizeFeet /
+      gridMetrics.distance;
+
+    const webSizePx =
+      WEB.sizeFeet *
+      (
+        gridMetrics.size /
+        gridMetrics.distance
+      );
+
+    if (
+      !Number.isFinite(webGridUnits) ||
+      webGridUnits <= 0 ||
+      !Number.isFinite(webSizePx) ||
+      webSizePx <= 0
+    ) {
+      throw new Error(
+        "The active Scene's grid scale could not be resolved."
+      );
+    }
+
+
+    // ------------------------------------------------------------------------
+    // ESKIE PLACEMENT VISUAL
+    // ------------------------------------------------------------------------
+    //
+    // This follows the accepted Entangle design:
+    //
+    //   invisible tiny circle
+    //       -> cursor position
+    //       -> vertex snapping
+    //       -> hard range enforcement
+    //
+    //   separate fixed Eskie rectangle
+    //       -> visible 20-foot footprint
+    //
+    //   manual token-center collection
+    //       -> live Foundry targeting
+    //
+    // Sequencer native collection is deliberately disabled.
+
+    const rectangleResolution =
+      ae5e.crosshairs.resolveAsset({
+        shape: "rectangle",
+        style: "fantasy_01",
+        size: "20x20ft",
+        color: WEB.crosshairColor
+      });
+
+    if (
+      !rectangleResolution?.file ||
+      rectangleResolution.nativeFallback
+    ) {
+      throw new Error(
+        "The Eskie Rectangle asset required for Web could not be resolved."
+      );
+    }
+
+    placementEffectName =
+      `web-placement-${foundry.utils.randomID(12)}`;
+
+    let placementVisualStarted =
+      false;
+
+    const callbacks =
+      {};
+
+    const showKey =
+      Sequencer.Crosshair
+        .CALLBACKS
+        ?.SHOW;
+
+    const moveKey =
+      Sequencer.Crosshair
+        .CALLBACKS
+        ?.MOVE;
+
+    const invalidKey =
+      Sequencer.Crosshair
+        .CALLBACKS
+        ?.INVALID_PLACEMENT;
+
+
+    // ------------------------------------------------------------------------
+    // LIVE TARGET REFRESH
+    // ------------------------------------------------------------------------
+
+    const refreshPreview =
+      (crosshair) => {
+
+        const preview =
+          collectWebSquareTargets(
+            crosshair,
+            webSizePx
+          );
+
+        setUserTargets(
+          preview
+        );
+      };
+
+
+    // ------------------------------------------------------------------------
+    // SHOW CALLBACK
+    // ------------------------------------------------------------------------
+
+    if (showKey) {
+
+      callbacks[showKey] =
+        async (crosshair) => {
+
+          if (
+            !placementVisualStarted
+          ) {
+
+            placementVisualStarted =
+              true;
+
+            const sequence =
+              new Sequence();
+
+            let rectangle =
+              sequence
+                .effect()
+                .name(
+                  placementEffectName
+                )
+                .file(
+                  rectangleResolution.file
+                )
+                .attachTo(
+                  crosshair,
+                  {
+                    bindScale: false,
+                    bindRotation: false
+                  }
+                )
+                .size(
+                  {
+                    width:
+                      webGridUnits,
+
+                    height:
+                      webGridUnits
+                  },
+                  {
+                    gridUnits:
+                      true
+                  }
+                )
+                .opacity(
+                  0.8
+                )
+                .locally()
+                .persist();
+
+            if (
+              rectangleResolution.tint &&
+              typeof rectangle.tint === "function"
+            ) {
+              rectangle =
+                rectangle.tint(
+                  rectangleResolution.tint
+                );
+            }
+
+            if (
+              typeof rectangle.belowTokens === "function"
+            ) {
+              rectangle =
+                rectangle.belowTokens();
+            }
+
+            await sequence.play();
+          }
+
+          refreshPreview(
+            crosshair
+          );
+        };
+    }
+
+
+    // ------------------------------------------------------------------------
+    // MOVE CALLBACK
+    // ------------------------------------------------------------------------
+
+    if (moveKey) {
+
+      callbacks[moveKey] =
+        async (crosshair) => {
+
+          refreshPreview(
+            crosshair
+          );
+        };
+    }
+
+
+    // ------------------------------------------------------------------------
+    // INVALID RANGE CALLBACK
+    // ------------------------------------------------------------------------
+
+    if (invalidKey) {
+
+      callbacks[invalidKey] =
+        () => {
+
+          ui.notifications.warn(
+            `Web | The Web must be placed within ${WEB.rangeFeet} feet of the caster.`
+          );
+        };
+    }
+
+
+    // ------------------------------------------------------------------------
+    // FUNCTIONAL CROSSHAIR
+    // ------------------------------------------------------------------------
+
+    let result =
+      null;
+
+    try {
+
+      result =
+        await ae5e.crosshairs.show({
+
+          source:
+            webToken,
+
+          type:
+            "circle",
+
+          distance:
+            WEB.functionalCrosshairRadius,
+
+          limitMaxRange:
+            WEB.rangeFeet,
+
+          placement: {
+
+            lockDrag:
+              true,
+
+            lockManualRotation:
+              true,
+
+            snap: {
+
+              position:
+                CONST
+                  .GRID_SNAPPING_MODES
+                  ?.VERTEX
+                ?? 1,
+
+              resolution:
+                1
+            },
+
+            label: {
+
+              text:
+                "Web | Select the center of the 20-foot Web. Press Esc to cancel."
+            }
+          },
+
+          // Completely hide the functional crosshair.
+          appearance: {
+
+            borderAlpha:
+              0,
+
+            fillAlpha:
+              0,
+
+            gridHighlight:
+              false
+          },
+
+          // The Eskie rectangle above owns presentation.
+          visual:
+            null,
+
+          tracer:
+            null,
+
+          callbacks,
+
+          // Never collect against the tiny functional circle.
+          collectTargets:
+            false,
+
+          nativeFallback:
+            true
+        });
+
+    } finally {
+
+      // Placement visual only exists while the destination is being chosen.
+
+      if (
+        placementEffectName
+      ) {
+
+        try {
+
+          await Sequencer
+            .EffectManager
+            .endEffects({
+              name:
+                placementEffectName
+            });
+
+        } catch (
+          cleanupError
+        ) {
+
+          console.debug(
+            "Web | Placement visual cleanup failed.",
+            cleanupError
+          );
+        }
+      }
+    }
+
+
+    // ------------------------------------------------------------------------
+    // CANCEL
+    // ------------------------------------------------------------------------
+
+    if (
+      result?.cancelled ||
+      !result?.position
+    ) {
+
+      restoreTargets(
+        originalTargetIds
+      );
+
+      return false;
+    }
+
+
+    // ------------------------------------------------------------------------
+    // AUTHORITATIVE FINAL TARGET SNAPSHOT
+    // ------------------------------------------------------------------------
+    //
+    // Recalculate from the confirmed center instead of trusting any live
+    // callback state.
+
+    const finalTargets =
+      collectWebSquareTargets(
+        result.position,
+        webSizePx
+      );
+
+    setUserTargets(
+      finalTargets
+    );
+
+    const point =
+      getCrosshairPoint(
+        result.position
+      );
+
+    if (!point) {
+      throw new Error(
+        "The final Web placement point could not be resolved."
+      );
+    }
+
+    const finalTargetIds =
+      finalTargets
+        .map(
+          target =>
+            target?.id
+        )
+        .filter(
+          Boolean
+        );
+
+
+    // ------------------------------------------------------------------------
+    // WEB PLACEMENT SNAPSHOT
+    // ------------------------------------------------------------------------
+    //
+    // center + sizeFeet are the authoritative spell geometry.
+    //
+    // Explicit pixel bounds and compatibility aliases are retained so
+    // commitCast receives a complete deterministic placement snapshot.
+
+    const placement = {
+
+      placed:
+        true,
+
+      cancelled:
+        false,
+
+      reason:
+        null,
+
+      sceneUuid:
+        canvas.scene.uuid,
+
+      sceneId:
+        canvas.scene.id,
+
+      center: {
+
+        x:
+          point.x,
+
+        y:
+          point.y,
+
+        elevation:
+          point.elevation
+      },
+
+      position: {
+
+        x:
+          point.x,
+
+        y:
+          point.y,
+
+        elevation:
+          point.elevation
+      },
+
+      x:
+        point.x -
+        (
+          webSizePx /
+          2
+        ),
+
+      y:
+        point.y -
+        (
+          webSizePx /
+          2
+        ),
+
+      width:
+        webSizePx,
+
+      height:
+        webSizePx,
+
+      widthPx:
+        webSizePx,
+
+      heightPx:
+        webSizePx,
+
+      sizePx:
+        webSizePx,
+
+      centerX:
+        point.x,
+
+      centerY:
+        point.y,
+
+      elevation:
+        point.elevation,
+
+      rangeFeet:
+        WEB.rangeFeet,
+
+      sizeFeet:
+        WEB.sizeFeet,
+
+      originalTargetIds:
+        [
+          ...originalTargetIds
+        ],
+
+      targetIds:
+        [
+          ...finalTargetIds
+        ],
+
+      confirmedTargetIds:
+        [
+          ...finalTargetIds
+        ],
+
+      source:
+        "fixed-20ft-point-crosshair"
+    };
+
+
+    // ------------------------------------------------------------------------
+    // RESTORE NORMAL CAST TARGETS
+    // ------------------------------------------------------------------------
+    //
+    // Web has no cast-time save.
+    //
+    // The live targets were purely placement feedback and must not become
+    // normal targets of the Cast Web Utility Activity.
+
+    restoreTargets(
+      originalTargetIds
+    );
+
+
+    // ------------------------------------------------------------------------
+    // WORKFLOW STATE FOR AFTER ACTIVE EFFECTS
+    // ------------------------------------------------------------------------
+
+    webWorkflow[
+      WEB.workflowStateKey
+    ] = {
+
+      placement,
+
+      sourceItemUuid:
+        webItem.uuid,
+
+      casterActorUuid:
+        webActor.uuid,
+
+      casterTokenUuid:
+        webToken.document?.uuid
+        ?? webToken.uuid
+        ?? null,
+
+      restraintOngoingAction: {
+
+        enabled:
+          true,
+
+        templateUuid:
+          ESCAPE_WEB_TEMPLATE_UUID,
+
+        activityIdentifier:
+          "escape-web",
+
+        timing:
+          "turnStart",
+
+        mandatory:
+          false,
+
+        removeEffectOnSuccess:
+          true,
+
+        suppressPromptWhenUnusable:
+          true,
+
+        promptText:
+          "Use your action to attempt to break free from the Web?",
+
+        indicatorRole:
+          "responder"
+      }
+    };
+
+    return true;
+
+  } catch (
+    error
+  ) {
+
+    restoreTargets(
+      originalTargetIds
+    );
+
+    console.error(
+      "Web | Before Item Roll placement failed.",
+      error
+    );
+
+    ui.notifications.error(
+      `Web | ${
+        error?.message
+        ?? "Placement failed."
+      }`
+    );
+
+    return false;
+  }
+}
+
+
+// ============================================================================
+// AFTER ACTIVE EFFECTS
+// ============================================================================
+
+if (
+  macroPass ===
+  "postActiveEffects"
+) {
+
+  const state =
+    webWorkflow[
+      WEB.workflowStateKey
+    ]
+    ?? null;
+
+  if (
+    !state
+      ?.placement
+      ?.placed
+  ) {
+
+    ui.notifications.error(
+      "Web | Confirmed placement state was not available after the spell resolved."
+    );
+
     return false;
   }
 
   try {
-    const result = await ae5e.web.commitCast({
-      placement: state.placement,
-      sourceItemUuid: state.sourceItemUuid,
-      casterActorUuid: state.casterActorUuid,
-      casterTokenUuid: state.casterTokenUuid,
-      restraintOngoingAction: state.restraintOngoingAction,
-      visualMode: "premium",
-      name: "Web"
-    });
 
-    if (!result?.created) {
-      ui.notifications.error(`Web | The Web Region could not be created${result?.reason ? `: ${result.reason}` : "."}`);
+    const result =
+      await ae5e.web.commitCast({
+
+        placement:
+          state.placement,
+
+        sourceItemUuid:
+          state.sourceItemUuid,
+
+        casterActorUuid:
+          state.casterActorUuid,
+
+        casterTokenUuid:
+          state.casterTokenUuid,
+
+        restraintOngoingAction:
+          state.restraintOngoingAction,
+
+        visualMode:
+          "premium",
+
+        name:
+          "Web"
+      });
+
+    if (
+      !result?.created
+    ) {
+
+      ui.notifications.error(
+        `Web | The Web Region could not be created${
+          result?.reason
+            ? `: ${result.reason}`
+            : "."
+        }`
+      );
+
       return false;
     }
+
     return result;
+
   } finally {
-    delete webWorkflow[WEB_STATE];
+
+    delete webWorkflow[
+      WEB.workflowStateKey
+    ];
   }
 }
 
+
 return true;
+
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+
+function getGridMetrics(
+  scene
+) {
+
+  const size =
+    finiteNumber(
+      scene?.grid?.size,
+      scene?.dimensions?.size,
+      canvas.grid?.size,
+      100
+    );
+
+  const distance =
+    finiteNumber(
+      scene?.grid?.distance,
+      scene?.dimensions?.distance,
+      5
+    );
+
+  if (
+    !Number.isFinite(size) ||
+    size <= 0 ||
+    !Number.isFinite(distance) ||
+    distance <= 0
+  ) {
+
+    throw new Error(
+      "The active Scene's grid scale could not be resolved."
+    );
+  }
+
+  return {
+    size,
+    distance
+  };
+}
+
+
+function getCrosshairPoint(
+  value
+) {
+
+  const document =
+    value?.document
+    ?? value;
+
+  const x =
+    finiteNumber(
+      document?.x,
+      value?.x,
+      value?.center?.x
+    );
+
+  const y =
+    finiteNumber(
+      document?.y,
+      value?.y,
+      value?.center?.y
+    );
+
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y)
+  ) {
+    return null;
+  }
+
+  return {
+
+    x,
+    y,
+
+    elevation:
+      finiteNumber(
+        document?.elevation,
+        value?.elevation,
+        webToken?.document?.elevation,
+        0
+      )
+      ?? 0
+  };
+}
+
+
+// ============================================================================
+// MANUAL WEB TARGET COLLECTION
+// ============================================================================
+//
+// A creature is in the preview if its token CENTER lies within the exact
+// fixed 20-foot square shown by the Eskie rectangle.
+//
+// Unlike Entangle, Web does not automatically exclude the caster. If the
+// caster's token center is physically inside the selected Web footprint,
+// showing that token as part of the preview is correct.
+//
+// Hidden tokens remain private from non-GM users.
+
+function collectWebSquareTargets(
+  crosshair,
+  sizePx
+) {
+
+  const point =
+    getCrosshairPoint(
+      crosshair
+    );
+
+  if (!point) {
+    return [];
+  }
+
+  const halfSize =
+    sizePx /
+    2;
+
+  const left =
+    point.x -
+    halfSize;
+
+  const right =
+    point.x +
+    halfSize;
+
+  const top =
+    point.y -
+    halfSize;
+
+  const bottom =
+    point.y +
+    halfSize;
+
+  return (
+    canvas.tokens?.placeables
+    ?? []
+  ).filter(
+    target => {
+
+      if (
+        !target?.actor
+      ) {
+        return false;
+      }
+
+      // Do not expose hidden creatures to ordinary players through
+      // placement targeting.
+
+      if (
+        !game.user.isGM &&
+        target.document?.hidden
+      ) {
+        return false;
+      }
+
+      const center =
+        target.center;
+
+      if (!center) {
+        return false;
+      }
+
+      return (
+        center.x >= left &&
+        center.x <= right &&
+        center.y >= top &&
+        center.y <= bottom
+      );
+    }
+  );
+}
+
+
+// ============================================================================
+// FOUNDRY TARGET MANAGEMENT
+// ============================================================================
+
+function currentTargetIds() {
+
+  return [
+    ...(
+      game.user?.targets
+      ?? []
+    )
+  ]
+    .map(
+      target =>
+        target?.id
+    )
+    .filter(
+      Boolean
+    );
+}
+
+
+function setUserTargets(
+  values
+) {
+
+  const ids =
+    asArray(
+      values
+    )
+      .map(
+        value =>
+          typeof value === "string"
+            ? value
+            : (
+                value?.document?.id
+                ?? value?.id
+              )
+      )
+      .filter(
+        Boolean
+      );
+
+  // Important difference from the current Web implementation:
+  //
+  // Do not rewrite the target Set when nothing actually changed.
+  // This prevents a token that remains inside the Web square from being
+  // repeatedly cleared/re-added on every crosshair MOVE callback.
+
+  if (
+    sameTargetSet(
+      ids,
+      currentTargetIds()
+    )
+  ) {
+    return false;
+  }
+
+  canvas.tokens.setTargets(
+    ids,
+    {
+      mode:
+        "replace"
+    }
+  );
+
+  return true;
+}
+
+
+function restoreTargets(
+  ids
+) {
+
+  const restoreIds =
+    asArray(
+      ids
+    )
+      .filter(
+        Boolean
+      );
+
+  if (
+    sameTargetSet(
+      restoreIds,
+      currentTargetIds()
+    )
+  ) {
+    return false;
+  }
+
+  canvas.tokens.setTargets(
+    restoreIds,
+    {
+      mode:
+        "replace"
+    }
+  );
+
+  return true;
+}
+
+
+function sameTargetSet(
+  a,
+  b
+) {
+
+  const left =
+    new Set(
+      asArray(a)
+    );
+
+  const right =
+    new Set(
+      asArray(b)
+    );
+
+  if (
+    left.size !==
+    right.size
+  ) {
+    return false;
+  }
+
+  for (
+    const id
+    of left
+  ) {
+
+    if (
+      !right.has(id)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+function asArray(
+  value
+) {
+
+  if (!value) {
+    return [];
+  }
+
+  if (
+    Array.isArray(value)
+  ) {
+    return value;
+  }
+
+  if (
+    value instanceof Set
+  ) {
+    return [
+      ...value
+    ];
+  }
+
+  if (
+    typeof value.values ===
+    "function"
+  ) {
+    return [
+      ...value.values()
+    ];
+  }
+
+  return [];
+}
+
+
+function finiteNumber(
+  ...values
+) {
+
+  for (
+    const value
+    of values
+  ) {
+
+    const number =
+      Number(
+        value
+      );
+
+    if (
+      Number.isFinite(number)
+    ) {
+      return number;
+    }
+  }
+
+  return null;
+}
+
+
+function resolveSourceToken(
+  candidate,
+  actorDocument
+) {
+
+  if (
+    candidate?.object
+  ) {
+
+    candidate =
+      candidate.object;
+  }
+
+  if (
+    candidate?.documentName ===
+    "Token"
+  ) {
+
+    candidate =
+      candidate.object
+      ?? canvas.tokens?.get(
+        candidate.id
+      )
+      ?? candidate;
+  }
+
+  if (
+    candidate
+      ?.document
+      ?.documentName ===
+    "Token"
+  ) {
+
+    return candidate;
+  }
+
+  const active =
+    actorDocument
+      ?.getActiveTokens
+      ?.(true, true)
+      ?.find?.(
+        candidateToken =>
+          (
+            candidateToken.scene?.id
+            ?? candidateToken
+              .document
+              ?.parent
+              ?.id
+          )
+          ===
+          canvas.scene?.id
+      );
+
+  if (
+    active
+  ) {
+
+    return (
+      active.object
+      ?? active
+    );
+  }
+
+  return (
+    canvas.tokens
+      ?.placeables
+      ?.find(
+        candidateToken =>
+          candidateToken.actor?.uuid ===
+          actorDocument?.uuid
+      )
+    ?? null
+  );
+}

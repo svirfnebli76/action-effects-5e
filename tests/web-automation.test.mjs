@@ -1027,6 +1027,121 @@ test("ActivityExecutionService fails closed on an unresolved explicit target wit
   }
 });
 
+test("ActivityExecutionService preserves TokenDocument targets and pins CAT execution to the authority GM", async () => {
+  const previousGame = globalThis.game;
+  const socket = new FakeSocket();
+  const authority = { getPrimaryGm: () => ({ id: "gm" }) };
+  const activity = {
+    id: "web-save",
+    uuid: "Item.web.Activity.web-save",
+    name: "Web Save",
+    type: "save",
+    actor: { uuid: "Actor.caster" }
+  };
+  const item = {
+    documentName: "Item",
+    uuid: "Item.web",
+    system: { activities: new Map([[activity.id, activity]]) }
+  };
+  const tokenObject = {
+    id: "target",
+    document: null
+  };
+  const tokenDocument = {
+    documentName: "Token",
+    id: "target",
+    uuid: "Scene.test.Token.target",
+    actor: { uuid: "Actor.target" },
+    object: tokenObject
+  };
+  tokenObject.document = tokenDocument;
+
+  let receivedTargets = null;
+  let receivedOptions = null;
+  const catSpell = {
+    getStatus: () => ({ active: true, capabilities: { completeActivityUse: true } }),
+    getActivityByIdentifier: () => null,
+    completeActivityUse: async (_activity, targets, options) => {
+      receivedTargets = targets;
+      receivedOptions = structuredClone(options);
+      return {
+        id: "Workflow.web-save-authority",
+        failedSaves: new Set(targets)
+      };
+    }
+  };
+
+  const service = new ActivityExecutionService({ socket, authority, catSpell });
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: [
+      { id: "gm", isGM: true, active: true },
+      { id: "caster-player", isGM: false, active: true }
+    ]
+  };
+  documents.set(item.uuid, item);
+  documents.set(tokenDocument.uuid, tokenDocument);
+
+  try {
+    const result = await service.execute({
+      itemUuid: item.uuid,
+      activityReference: "Web Save",
+      targetTokenUuids: [tokenDocument.uuid],
+      idempotencyKey: "web-save-authority-contract",
+      options: { configureDialog: false }
+    });
+
+    assert.equal(result.executed, true);
+    assert.equal(receivedTargets.length, 1);
+    assert.equal(receivedTargets[0], tokenDocument);
+    assert.notEqual(receivedTargets[0], tokenObject);
+    assert.equal(receivedTargets[0].uuid, tokenDocument.uuid);
+    assert.equal(receivedOptions.userId, "gm");
+    assert.equal(receivedOptions.configureDialog, false);
+    assert.deepEqual(result.failedSaves, [tokenDocument.uuid]);
+  } finally {
+    documents.clear();
+    globalThis.game = previousGame;
+  }
+});
+
+test("ActivityExecutionService preserves an explicit CAT execution userId override", async () => {
+  const previousGame = globalThis.game;
+  const socket = new FakeSocket();
+  const authority = { getPrimaryGm: () => ({ id: "gm" }) };
+  const activity = { id: "web-save", uuid: "Item.web.Activity.web-save", name: "Web Save", type: "save" };
+  const item = { documentName: "Item", uuid: "Item.web", system: { activities: new Map([[activity.id, activity]]) } };
+  const token = { documentName: "Token", uuid: "Scene.test.Token.target", actor: { uuid: "Actor.target" } };
+  let receivedOptions = null;
+  const catSpell = {
+    getStatus: () => ({ active: true, capabilities: { completeActivityUse: true } }),
+    getActivityByIdentifier: () => null,
+    completeActivityUse: async (_activity, targets, options) => {
+      receivedOptions = structuredClone(options);
+      return { id: "Workflow.explicit-user", saves: new Set(targets) };
+    }
+  };
+  const service = new ActivityExecutionService({ socket, authority, catSpell });
+  globalThis.game = { user: { id: "gm", isGM: true }, users: [{ id: "gm", isGM: true, active: true }] };
+  documents.set(item.uuid, item);
+  documents.set(token.uuid, token);
+
+  try {
+    const result = await service.execute({
+      itemUuid: item.uuid,
+      activityReference: "Web Save",
+      targetTokenUuids: [token.uuid],
+      idempotencyKey: "web-save-explicit-user",
+      options: { userId: "explicit-user" }
+    });
+    assert.equal(result.executed, true);
+    assert.equal(receivedOptions.userId, "explicit-user");
+  } finally {
+    documents.clear();
+    globalThis.game = previousGame;
+  }
+});
+
 test("ActivityExecutionService releases an idempotency claim when CAT/Midi execution throws", async () => {
   const previousGame = globalThis.game;
   const socket = new FakeSocket();
