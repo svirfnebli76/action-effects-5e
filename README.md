@@ -1,3 +1,7 @@
+### v0.4.3.10 Web Region layer visibility
+
+Authoritative Web Regions are now explicitly visible whenever the Foundry Regions layer is active while remaining locked against accidental manual editing. The normal Token layer remains uncluttered; the persistent Web animation continues to provide the in-play presentation. This patch changes Region creation infrastructure only and does not modify Item macros, compendium packs, or assets.
+
 ### v0.4.3.9 Web external-helper validator correction
 
 `validateWebItem()` now evaluates external Escape Web helper consumption using the owning Item type, matching D&D5e runtime semantics: an inert `consumption.spellSlot` schema value on a non-spell Feature is not treated as actual slot consumption. Real resource targets and spell helpers that can consume slots remain invalid. No compendium content is changed.

@@ -276,6 +276,9 @@ export class WebService {
     const regionData = {
       name,
       color: "#d8d1b0",
+      // Runtime Web Regions stay protected from accidental editing while
+      // remaining visible to a GM whenever the Foundry Regions layer is active.
+      visibility: globalThis.CONST?.REGION_VISIBILITY?.LAYER ?? 0,
       locked: true,
       shapes: [this.#geometry.createRectangle({ x: topLeft.x, y: topLeft.y, width: sizePx, height: sizePx })],
       behaviors: [

@@ -1,3 +1,10 @@
+## 0.4.3.10 — Web Region layer visibility
+
+- Web Regions now explicitly use Foundry v14 `CONST.REGION_VISIBILITY.LAYER`, making the authoritative 20-foot Region visible whenever a GM activates the Regions layer while keeping the Region outline out of normal Token-layer play.
+- Web Regions remain `locked: true`, preserving protection from accidental drag/resize/edit operations while AE5E continues to mutate geometry and delete the Region programmatically.
+- Added regression coverage for the persisted Region visibility and lock contract. Repository gate: **218/218 PASS**; syntax check: **95 JavaScript files PASS**.
+- No Item, compendium, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from the supplied v0.4.3.9 baseline.
+
 ## 0.4.3.9 — Web external-helper validator correction
 
 - Corrected `validateWebItem()` / `WebService.validateSourceItem()` so a non-spell authoritative Escape Web helper is judged by **effective D&D5e consumption**, not by the inert `consumption.spellSlot` schema boolean retained on non-spell Activities. Real consumption targets still fail validation, and spell-based helper Activities that can actually consume a slot still fail closed.

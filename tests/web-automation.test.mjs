@@ -42,7 +42,7 @@ globalThis.foundry = {
   },
   applications: { api: {} }
 };
-globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 } };
+globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 }, REGION_VISIBILITY: { LAYER: 0 } };
 class FakeModifyMovementCostModel {
   static defineSchema() {
     return {
@@ -339,6 +339,8 @@ test("WebService creates one Region and Web fire profile quantizes ignition into
       instanceId: "web-test"
     });
     assert.equal(result.created, true);
+    assert.equal(createdRegionData.visibility, globalThis.CONST.REGION_VISIBILITY.LAYER);
+    assert.equal(createdRegionData.locked, true);
     assert.equal(createdRegionData.shapes.length, 1);
     assert.equal(createdRegionData.behaviors.length, 3);
     assert.equal(createdRegionData.behaviors.some(entry => entry.type === "difficultTerrain"), true);

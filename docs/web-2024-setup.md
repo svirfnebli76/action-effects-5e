@@ -1,4 +1,4 @@
-# Web (2024) — AE5E v0.4.3.9 setup
+# Web (2024) — AE5E v0.4.3.10 setup
 
 This document describes the source-Item authoring contract expected by the Web infrastructure. AE5E supplies infrastructure only; the Web spell and any helper Items are authored manually in Foundry and added to compendiums manually.
 
