@@ -730,11 +730,7 @@ test("Web Region entry failure restrains and stops voluntary movement, then exit
       "Escape Web",
       "pre-v0.4.3.8 source-Activity fallback remains available"
     );
-    assert.equal(
-      fixture.counters.grants,
-      0,
-      "WebService must leave Escape Web helper provisioning to OngoingEffectService's createActiveEffect hook"
-    );
+    assert.equal(fixture.counters.grants, 1);
 
     fixture.actor.effects.push({
       id: "other-web-restraint",

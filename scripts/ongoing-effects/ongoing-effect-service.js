@@ -46,7 +46,6 @@ export class OngoingEffectService {
   #hooks = [];
   #combatState = new Map();
   #claims = new Set();
-  #grantPromises = new Map();
   #workflowResultPromises = new Map();
   #stats = {
     effectsObserved: 0,
@@ -105,7 +104,6 @@ export class OngoingEffectService {
     }
     this.#hooks.length = 0;
     this.#combatState.clear();
-    this.#grantPromises.clear();
     this.#workflowResultPromises.clear();
     this.#initialized = false;
   }
@@ -161,21 +159,6 @@ export class OngoingEffectService {
   async ensureGrant(effectOrUuid) {
     const effect = typeof effectOrUuid === "string" ? await fromUuid(effectOrUuid) : effectOrUuid;
     if (!effect) return { created: false, reason: "effect-unavailable" };
-
-    const effectUuid = effect.uuid ?? null;
-    const pending = effectUuid ? this.#grantPromises.get(effectUuid) : null;
-    if (pending) return pending;
-
-    const task = this.#ensureGrantForEffect(effect);
-    if (effectUuid) this.#grantPromises.set(effectUuid, task);
-    try {
-      return await task;
-    } finally {
-      if (effectUuid && this.#grantPromises.get(effectUuid) === task) this.#grantPromises.delete(effectUuid);
-    }
-  }
-
-  async #ensureGrantForEffect(effect) {
     const config = this.getEffectConfig(effect);
     const validation = this.validateConfig(config);
     if (!validation.valid) return { created: false, reason: validation.reason };
@@ -185,23 +168,8 @@ export class OngoingEffectService {
     const existingUuid = config.grantedItemUuid ?? null;
     if (existingUuid) {
       let existing = null;
-      try { existing = await fromUuid(existingUuid); } catch { /* recover by source-effect linkage below */ }
+      try { existing = await fromUuid(existingUuid); } catch { /* recreate below */ }
       if (existing?.parent?.uuid === actor.uuid) return { created: false, reason: "already-granted", item: existing };
-    }
-
-    // The exact parent Active Effect UUID is the ownership key. This permits two
-    // overlapping Webs (or any two independent ongoing effects) to grant their
-    // own helpers while making repeated provisioning for one effect idempotent.
-    const linkedExisting = asArray(actor.items).find(item => {
-      const grant = this.getGrantConfig(item);
-      return grant?.sourceEffectUuid === effect.uuid;
-    }) ?? null;
-    if (linkedExisting) {
-      if (config.grantedItemUuid !== linkedExisting.uuid) {
-        const nextConfig = { ...config, grantedItemUuid: linkedExisting.uuid };
-        await effect.update({ [`flags.${MODULE_ID}.${ONGOING_ACTION_EFFECT_FLAG}`]: nextConfig }, { ae5eOngoingGrantLink: true });
-      }
-      return { created: false, reason: "already-granted", effect, item: linkedExisting };
     }
 
     const source = await this.#buildGrantItemData(effect, config);
@@ -235,63 +203,25 @@ export class OngoingEffectService {
   }
 
   async removeGrant(effectOrUuid, grantedItemUuid = null) {
-    const requestedEffectUuid = typeof effectOrUuid === "string" ? effectOrUuid : effectOrUuid?.uuid ?? null;
     const effect = typeof effectOrUuid === "string" ? await fromUuid(effectOrUuid) : effectOrUuid;
     const config = effect ? this.getEffectConfig(effect) : null;
-    const effectUuid = effect?.uuid ?? requestedEffectUuid ?? null;
-    const actor = effect?.parent ?? null;
-    const requestedItemUuid = grantedItemUuid ?? config?.grantedItemUuid ?? null;
-
-    const items = new Map();
-    const addItem = item => {
-      if (!item?.id || !item?.parent?.deleteEmbeddedDocuments) return;
-      const key = item.uuid ?? item.id;
-      if (key && !items.has(key)) items.set(key, item);
-    };
-
-    // Delete every helper owned by this exact Active Effect UUID. Normally there
-    // is one; removing all matches self-heals duplicates created by an older race
-    // without touching helpers belonging to another Web/effect on the same Actor.
-    if (actor && effectUuid) {
-      for (const item of asArray(actor.items)) {
-        const grant = this.getGrantConfig(item);
-        if (grant?.sourceEffectUuid === effectUuid) addItem(item);
-      }
+    const itemUuid = grantedItemUuid ?? config?.grantedItemUuid ?? null;
+    if (!itemUuid) return { removed: false, reason: "no-grant" };
+    let item = null;
+    try { item = await fromUuid(itemUuid); } catch { /* already absent */ }
+    if (!item?.parent?.deleteEmbeddedDocuments) return { removed: false, reason: "already-absent", itemUuid };
+    if (!item.parent.items?.get?.(item.id)) return { removed: false, reason: "already-absent", itemUuid };
+    try {
+      await item.parent.deleteEmbeddedDocuments("Item", [item.id], { ae5eOngoingGrantCleanup: true });
+    } catch (error) {
+      // Document deletion is socketed; a concurrent cleanup may win the race after
+      // the existence check. Treat a now-missing child as a successful no-op.
+      if (!item.parent.items?.get?.(item.id)) return { removed: false, reason: "already-absent", itemUuid };
+      throw error;
     }
-
-    if (requestedItemUuid) {
-      let requested = null;
-      try { requested = await fromUuid(requestedItemUuid); } catch { /* already absent */ }
-      if (requested && (!effectUuid || this.getGrantConfig(requested)?.sourceEffectUuid === effectUuid)) addItem(requested);
-    }
-
-    if (!items.size) return { removed: false, reason: requestedItemUuid || effectUuid ? "already-absent" : "no-grant", itemUuid: requestedItemUuid };
-
-    let removed = 0;
-    const removedItemUuids = [];
-    for (const item of items.values()) {
-      if (!item.parent.items?.get?.(item.id)) continue;
-      try {
-        await item.parent.deleteEmbeddedDocuments("Item", [item.id], { ae5eOngoingGrantCleanup: true });
-      } catch (error) {
-        // Document deletion is socketed; a concurrent cleanup may win the race
-        // after the existence check. Treat a now-missing child as a successful
-        // no-op and continue cleaning any other duplicate grants.
-        if (!item.parent.items?.get?.(item.id)) continue;
-        throw error;
-      }
-      removed += 1;
-      removedItemUuids.push(item.uuid ?? null);
-      this.#record("grant-removed", { effectUuid, itemUuid: item.uuid ?? null });
-    }
-
-    this.#stats.grantsRemoved += removed;
-    return {
-      removed: removed > 0,
-      removedCount: removed,
-      itemUuid: removedItemUuids[0] ?? requestedItemUuid ?? null,
-      itemUuids: removedItemUuids
-    };
+    this.#stats.grantsRemoved += 1;
+    this.#record("grant-removed", { effectUuid: effect?.uuid ?? null, itemUuid });
+    return { removed: true, itemUuid };
   }
 
   async reconcileActor(actor) {
@@ -595,8 +525,8 @@ export class OngoingEffectService {
 
   async #onEffectDeleted(effect) {
     const config = this.getEffectConfig(effect);
-    if (!config || !this.#isAuthority()) return;
-    try { await this.removeGrant(effect, config.grantedItemUuid ?? null); } catch (error) { this.#stats.errors += 1; Logger.warn("Failed to clean up ongoing-effect Item.", error); }
+    if (!config?.grantedItemUuid || !this.#isAuthority()) return;
+    try { await this.removeGrant(effect, config.grantedItemUuid); } catch (error) { this.#stats.errors += 1; Logger.warn("Failed to clean up ongoing-effect Item.", error); }
   }
 
   async #onCombatStarted(combat) {

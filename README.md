@@ -1,7 +1,3 @@
-### v0.4.3.13 Web restraint/helper lifecycle hardening
-
-Web concentration/Region teardown now removes Region-owned restraints from both world Actors and unlinked synthetic Token Actors. Escape Web helper provisioning is single-owner and idempotent by the exact parent Active Effect UUID, concurrent grant requests are serialized, and parent-effect teardown removes every helper linked to that effect without touching a simultaneous overlapping Web. Repository gate: **225/225 PASS**; syntax check: **95 JavaScript files PASS**. Compendium packs, Item macros, and assets are unchanged.
-
 ### v0.4.3.12 Web runtime restraint duration sanitation
 
 Failed Web saves now clone `Restrained by Web` safely on D&D5e 5.3.x/Midi-QOL. D&D5e can serialize an indefinite Active Effect as `duration.value = Infinity`; AE5E now omits that serialized duration from the runtime clone so Midi accepts the effect and Web itself remains responsible for the restraint lifecycle. No ItemMacro, compendium, or asset content is changed by this patch. Repository gate: **221/221 PASS**; syntax check: **95 JavaScript files PASS**.

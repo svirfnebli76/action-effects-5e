@@ -1,13 +1,3 @@
-## 0.4.3.13 — Web restraint/helper lifecycle hardening
-
-- Fixed Web Region teardown for unlinked/synthetic Token Actors. Region-specific restraint cleanup now scans both world Actors and Token Actors across scenes, deduplicated by Actor UUID, so ending concentration removes `Restrained by Web` from the actual live Actor that owns it.
-- Removed WebService's redundant direct `ensureGrant()` call after creating a runtime restraint. Generic `OngoingEffectService` `createActiveEffect` lifecycle handling is now the single owner of Escape Web helper provisioning, eliminating the observed double-provisioning race.
-- Hardened ongoing-action grant idempotency by the exact parent Active Effect UUID. Concurrent `ensureGrant()` requests for one effect are serialized, and an already-present helper carrying the same `sourceEffectUuid` is reused and relinked instead of duplicated. Separate overlapping Web restraints retain separate helper Items because their runtime Active Effect UUIDs differ.
-- Hardened parent-effect teardown so every helper Item whose `ongoingActionGrant.sourceEffectUuid` matches the deleted effect is removed. This safely cleans duplicate/orphan helper Items produced by older races without touching helpers owned by another simultaneous Web.
-- Added regression coverage for synthetic Token Actor Region cleanup, concurrent helper provisioning, source-effect grant reuse, duplicate-helper teardown, and overlapping-Web isolation.
-- Repository gate: **225/225 PASS**; syntax check: **95 JavaScript files PASS**.
-- No Item, compendium, macro, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.12.
-
 ## 0.4.3.12 — Web runtime restraint duration sanitation
 
 - Fixed failed Web saves that reached `Restrained by Web` creation but were rejected by MidiActiveEffect validation. D&D5e 5.3.x can serialize an indefinite source Active Effect through `toObject(false)` as `duration.value = Infinity`; Midi requires an explicit duration value to be an integer.
