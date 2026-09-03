@@ -1,3 +1,7 @@
+### v0.4.3.12 Web runtime restraint duration sanitation
+
+Failed Web saves now clone `Restrained by Web` safely on D&D5e 5.3.x/Midi-QOL. D&D5e can serialize an indefinite Active Effect as `duration.value = Infinity`; AE5E now omits that serialized duration from the runtime clone so Midi accepts the effect and Web itself remains responsible for the restraint lifecycle. No ItemMacro, compendium, or asset content is changed by this patch. Repository gate: **221/221 PASS**; syntax check: **95 JavaScript files PASS**.
+
 ### v0.4.3.11 Authority-safe environmental Activity execution
 
 Region-triggered Web Save/Burning Web Damage execution now preserves TokenDocuments when passing explicit targets into CAT/Midi and pins CAT execution to AE5E's already-authoritative primary GM by default. This prevents environmental Activities from losing target UUIDs or being implicitly routed to the caster actor's first owner before Midi returns the workflow AE5E needs. The recoverable Web ItemMacro source is also synchronized to the accepted fixed-square Entangle-style targeting implementation: the Item owns its 20-foot placement presentation/live target preview through generic AE5E crosshair infrastructure, while `ae5e.web.commitCast()` continues to own Region/runtime mechanics. Compendium packs and assets are untouched.

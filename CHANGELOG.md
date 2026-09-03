@@ -1,3 +1,11 @@
+## 0.4.3.12 — Web runtime restraint duration sanitation
+
+- Fixed failed Web saves that reached `Restrained by Web` creation but were rejected by MidiActiveEffect validation. D&D5e 5.3.x can serialize an indefinite source Active Effect through `toObject(false)` as `duration.value = Infinity`; Midi requires an explicit duration value to be an integer.
+- Web runtime restraint cloning now removes serialized duration metadata before embedding the effect on the target Actor. The restraint remains indefinite and is owned entirely by the authoritative Web Region/concentration/escape/burn lifecycle rather than a fixed timer.
+- Added regression coverage that reproduces the observed `duration.value = Infinity` payload and verifies the embedded runtime restraint carries no duration payload while preserving its normal Web flags and behavior.
+- Repository gate: **221/221 PASS**; syntax check: **95 JavaScript files PASS**.
+- No Item, compendium, macro, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.11.
+
 ## 0.4.3.11 — Authority-safe environmental Activity execution
 
 - Fixed the Web Region Activity bridge to preserve resolved TokenDocuments when calling CAT `workflowUtils.completeActivityUse()`. CAT derives Midi target UUIDs from `target.uuid`; converting targets to canvas Token placeables could leave that UUID unavailable and prevent the Web Save workflow from resolving.

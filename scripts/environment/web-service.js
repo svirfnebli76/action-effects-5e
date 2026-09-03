@@ -1065,6 +1065,15 @@ export class WebService {
 
     const data = template.toObject?.(false) ?? clone(template);
     delete data._id;
+
+    // Web restraint lifetime is owned by the authoritative Web Region and its
+    // concentration dependency, not by a fixed Active Effect duration. D&D5e
+    // resolves an indefinite source-effect duration to Infinity when serialized
+    // with toObject(false); MidiActiveEffect rejects that explicit non-integer
+    // value when the clone is embedded on an Actor. Omit duration entirely so
+    // the runtime effect remains indefinite until AE5E removes it by lifecycle.
+    delete data.duration;
+
     data.disabled = false;
     data.transfer = false;
     data.origin = sourceItem.uuid;

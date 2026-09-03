@@ -481,7 +481,7 @@ test("WebService binds a Web Region to Midi concentration using the public depen
   }
 });
 
-function makeWebRegionEventFixture({ saveFailed = true, burning = false, restraintOngoingAction = null } = {}) {
+function makeWebRegionEventFixture({ saveFailed = true, burning = false, restraintOngoingAction = null, serializedRestraintDuration = undefined } = {}) {
   const scene = {
     documentName: "Scene",
     id: "test",
@@ -502,13 +502,19 @@ function makeWebRegionEventFixture({ saveFailed = true, burning = false, restrai
       disabled: true,
       statuses: new Set(["restrained"]),
       flags: { [MODULE_ID]: { [WEB_FLAG_KEY]: { role: "restrained-template" } } },
-      toObject: () => ({
-        name: "Restrained by Web",
-        transfer: false,
-        disabled: true,
-        statuses: ["restrained"],
-        flags: { [MODULE_ID]: { [WEB_FLAG_KEY]: { role: "restrained-template" } } }
-      })
+      toObject: () => {
+        const data = {
+          name: "Restrained by Web",
+          transfer: false,
+          disabled: true,
+          statuses: ["restrained"],
+          flags: { [MODULE_ID]: { [WEB_FLAG_KEY]: { role: "restrained-template" } } }
+        };
+        if (serializedRestraintDuration !== undefined) {
+          data.duration = structuredClone(serializedRestraintDuration);
+        }
+        return data;
+      }
     }],
     system: {
       activities: new Map([
@@ -748,6 +754,39 @@ test("Web Region entry failure restrains and stops voluntary movement, then exit
   }
 });
 
+
+
+test("Web strips D&D5e Infinity duration serialization before embedding runtime restraint", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const fixture = makeWebRegionEventFixture({
+    saveFailed: true,
+    serializedRestraintDuration: { value: Infinity, units: "seconds", expiry: null, expired: false }
+  });
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: [{ id: "gm", isGM: true, active: true }],
+    combat: { started: true, uuid: "Combat.test", round: 1, turn: 0 }
+  };
+  globalThis.canvas = { scene: fixture.scene, grid: { size: 100 } };
+
+  try {
+    const result = await fixture.web.handleRegionEvent(fixture.behavior, movementEvent(fixture.token));
+    assert.equal(result.save?.failed, true);
+    assert.equal(fixture.actor.effects.length, 1);
+    assert.equal(
+      Object.hasOwn(fixture.actor.effects[0], "duration"),
+      false,
+      "runtime Web restraint must not carry serialized indefinite duration metadata"
+    );
+    assert.equal(fixture.actor.effects[0].disabled, false);
+    assert.equal(fixture.actor.effects[0].transfer, false);
+  } finally {
+    documents.clear();
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+  }
+});
 
 
 test("Web stamps Item-supplied external Escape helper configuration onto delayed runtime restraints", async () => {

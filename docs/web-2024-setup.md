@@ -1,4 +1,4 @@
-# Web (2024) — AE5E v0.4.3.11 setup
+# Web (2024) — AE5E v0.4.3.12 setup
 
 This document describes the source-Item authoring contract expected by the Web infrastructure. AE5E supplies infrastructure only; the Web spell and any helper Items are authored manually in Foundry and added to compendiums manually.
 
@@ -27,7 +27,7 @@ Create these three Activities on the Web spell.
 - Type: Use / Utility
 - This is the only player-facing casting Activity.
 - Use the normal spell-slot consumption for the cast.
-- Disable the Activity target/template prompt.
+- Enable Activity target override and disable the Activity target/template prompt (`target.override = true`, `target.prompt = false`).
 - Do not attach Active Effects to this Activity.
 - Item DIME passes: **Called before the item is rolled** and **After Active Effects**.
 - Both passes use the complete ItemMacro in `docs/item-macros/web-2024-premium.txt`.
@@ -35,6 +35,8 @@ Create these three Activities on the Web spell.
 - The ItemMacro supplies the confirmed placement and authoritative external Escape Web helper UUID to `ae5e.web.commitCast()`; it does not create or mutate the Web Region directly.
 
 ### Web Save
+
+- Enable Activity target override and disable its template prompt (`target.override = true`, `target.prompt = false`) so Region-triggered saves resolve against AE5E's explicit creature target instead of inheriting the spell's descriptive 20-foot cube.
 
 - Type: Save
 - Ability: Dexterity
@@ -46,6 +48,8 @@ Create these three Activities on the Web spell.
 - AE5E invokes it through CAT/Midi when a creature first enters Web on a turn or starts its turn there.
 
 ### Burning Web Damage
+
+- Enable Activity target override and disable its template prompt (`target.override = true`, `target.prompt = false`) so Region-triggered fire damage resolves against AE5E's explicit creature target instead of inheriting the spell's descriptive 20-foot cube.
 
 - Type: Damage
 - Exactly one damage part: `2d4` Fire
