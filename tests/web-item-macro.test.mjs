@@ -27,5 +27,10 @@ test("Web Premium ItemMacro stays thin and delegates reusable mechanics to AE5E"
   assert.doesNotMatch(text, /createEmbeddedDocuments\s*\(\s*["']Region["']/);
   assert.doesNotMatch(text, /new\s+Roll\s*\(/);
   assert.doesNotMatch(text, /MidiQOL\./);
-  assert.match(text, /Web Save, Escape Web, and Burning Web Damage/);
+  assert.match(text, /Web Save and Burning Web Damage/);
+  assert.match(text, /ESCAPE_WEB_TEMPLATE_UUID/);
+  assert.match(text, /restraintOngoingAction/);
+  assert.match(text, /templateUuid:\s*ESCAPE_WEB_TEMPLATE_UUID/);
+  assert.match(text, /activityIdentifier:\s*"escape-web"/);
+  assert.match(text, /indicatorRole:\s*"responder"/);
 });

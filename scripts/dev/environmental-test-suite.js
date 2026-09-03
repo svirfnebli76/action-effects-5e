@@ -440,8 +440,8 @@ export class EnvironmentalTestSuite {
     return result;
   }
 
-  async validateWebItem({ item = null, itemUuid = null, notify = true } = {}) {
-    const result = await this.#web.validateSourceItem(item ?? itemUuid);
+  async validateWebItem({ item = null, itemUuid = null, escapeTemplateUuid = null, notify = true } = {}) {
+    const result = await this.#web.validateSourceItem(item ?? itemUuid, { escapeTemplateUuid });
     banner("WEB SOURCE ITEM", result.passed);
     console.table((result.checks ?? []).map(check => ({
       Check: check.name,

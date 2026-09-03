@@ -229,6 +229,7 @@ export class WebService {
     saveActivity = WEB_ACTIVITY_REFERENCES.SAVE,
     burnDamageActivity = WEB_ACTIVITY_REFERENCES.BURN_DAMAGE,
     restrainedEffectRole = WEB_EFFECT_ROLE,
+    restraintOngoingAction = null,
     sizeFeet = WEB_SIZE_FEET,
     cellSizeFeet = WEB_CELL_SIZE_FEET,
     visualMode = "premium",
@@ -242,6 +243,11 @@ export class WebService {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return { created: false, reason: "invalid-center" };
     if (!String(sourceItemUuid ?? "").trim()) return { created: false, reason: "missing-source-item" };
     if (!String(casterActorUuid ?? "").trim()) return { created: false, reason: "missing-caster-actor" };
+
+    const ongoingValidation = await this.#normalizeRestraintOngoingAction(restraintOngoingAction);
+    if (!ongoingValidation.valid) {
+      return { created: false, reason: "invalid-restraint-ongoing-action", details: ongoingValidation.reason };
+    }
 
     const resolvedInstanceId = String(instanceId ?? randomId()).trim();
     const sizePx = gridPixelsForFeet(scene, sizeFeet);
@@ -262,6 +268,7 @@ export class WebService {
         mode: String(visualMode ?? "premium").trim().toLowerCase()
       }
     };
+    if (ongoingValidation.config) webData.restraintOngoingAction = ongoingValidation.config;
 
     const terrainBehavior = this.buildDifficultTerrainBehavior();
     if (!terrainBehavior) return { created: false, reason: "difficult-terrain-behavior-unavailable" };
@@ -457,6 +464,7 @@ export class WebService {
     sourceItemUuid,
     casterActorUuid,
     casterTokenUuid = null,
+    restraintOngoingAction = null,
     visualMode = null,
     name = "Web"
   } = {}) {
@@ -467,6 +475,7 @@ export class WebService {
         sourceItemUuid,
         casterActorUuid,
         casterTokenUuid,
+        restraintOngoingAction,
         sizeFeet: placement.sizeFeet ?? WEB_SIZE_FEET,
         visualMode: visualMode ?? placement.visualMode ?? "premium",
         name
@@ -791,7 +800,7 @@ export class WebService {
     }
   }
 
-  async validateSourceItem(itemOrUuid) {
+  async validateSourceItem(itemOrUuid, { escapeTemplateUuid = null } = {}) {
     let item = typeof itemOrUuid === "string" ? null : itemOrUuid;
     if (!item && typeof itemOrUuid === "string") {
       try { item = await globalThis.fromUuid?.(itemOrUuid); } catch { item = null; }
@@ -804,10 +813,18 @@ export class WebService {
       const nested = getProperty(activity, `system.${path}`);
       return nested !== undefined ? nested : fallback;
     };
-    const noConsumption = activity => {
+    const noConsumption = (activity, { owningItem = item } = {}) => {
       const targets = asArray(activityField(activity, "consumption.targets", []));
       const spellSlot = activityField(activity, "consumption.spellSlot", false);
-      return targets.length === 0 && spellSlot !== true;
+
+      // D&D5e's Activity consumption model retains a spellSlot boolean even on
+      // non-spell Items where spell-slot consumption is not applicable. The
+      // runtime only consumes a slot when the Activity actually requires one.
+      // For source validation, treat that inert schema value as non-consumption
+      // while still rejecting real resource targets and spell Activities that
+      // would consume another slot.
+      const canConsumeSpellSlot = owningItem?.type === "spell";
+      return targets.length === 0 && !(canConsumeSpellSlot && spellSlot === true);
     };
     const noAppliedEffects = activity => asArray(activityField(activity, "effects", [])).length === 0;
 
@@ -832,8 +849,16 @@ export class WebService {
 
     const cast = this.#findActivity(item, WEB_ACTIVITY_REFERENCES.CAST);
     const save = this.#findActivity(item, WEB_ACTIVITY_REFERENCES.SAVE);
-    const escape = this.#findActivity(item, WEB_ACTIVITY_REFERENCES.ESCAPE);
+    const legacyEscape = this.#findActivity(item, WEB_ACTIVITY_REFERENCES.ESCAPE);
     const burn = this.#findActivity(item, WEB_ACTIVITY_REFERENCES.BURN_DAMAGE);
+
+    let escapeTemplate = null;
+    if (String(escapeTemplateUuid ?? "").trim()) {
+      try { escapeTemplate = await globalThis.fromUuid?.(String(escapeTemplateUuid).trim()); } catch { escapeTemplate = null; }
+    }
+    const escape = escapeTemplate?.documentName === "Item"
+      ? this.#findActivity(escapeTemplate, "escape-web") ?? this.#findActivity(escapeTemplate, WEB_ACTIVITY_REFERENCES.ESCAPE)
+      : legacyEscape;
 
     record("Cast Web Activity exists and is Utility", cast?.type === "utility", cast?.type ?? null);
     record("Cast Web suppresses the native target/template prompt", Boolean(cast) && activityField(cast, "target.prompt", false) !== true, activityField(cast, "target", null));
@@ -852,7 +877,12 @@ export class WebService {
     });
     record("Web Save does not consume another spell slot or resource", Boolean(save) && noConsumption(save), activityField(save, "consumption", null));
 
-    record("Escape Web Activity exists and is a Check", escape?.type === "check", escape?.type ?? null);
+    if (escapeTemplateUuid) {
+      record("Authoritative Escape Web helper Item resolves", escapeTemplate?.documentName === "Item", escapeTemplate?.uuid ?? escapeTemplateUuid);
+      record("Escape Web helper contains a Check Activity", escape?.type === "check", escape?.type ?? null);
+    } else {
+      record("Legacy Escape Web Activity exists and is a Check", escape?.type === "check", escape?.type ?? null);
+    }
     const escapeAbility = String(activityField(escape, "check.ability", "") ?? "");
     const escapeAssociated = new Set(asArray(activityField(escape, "check.associated", [])));
     record("Escape Web uses Strength (Athletics)", escapeAbility === "str" && escapeAssociated.has("ath"), { ability: escapeAbility, associated: [...escapeAssociated] });
@@ -861,7 +891,11 @@ export class WebService {
       damageParts: asArray(activityField(escape, "damage.parts", [])).length,
       effects: asArray(activityField(escape, "effects", [])).length
     });
-    record("Escape Web does not consume a spell slot or resource", Boolean(escape) && noConsumption(escape), activityField(escape, "consumption", null));
+    record(
+      "Escape Web does not consume a spell slot or resource",
+      Boolean(escape) && noConsumption(escape, { owningItem: escapeTemplate?.documentName === "Item" ? escapeTemplate : item }),
+      activityField(escape, "consumption", null)
+    );
 
     record("Burning Web Damage Activity exists and is Damage", burn?.type === "damage", burn?.type ?? null);
     const damageParts = asArray(activityField(burn, "damage.parts", []));
@@ -894,6 +928,7 @@ export class WebService {
         cast: cast?.uuid ?? cast?.id ?? null,
         save: save?.uuid ?? save?.id ?? null,
         escape: escape?.uuid ?? escape?.id ?? null,
+        escapeTemplate: escapeTemplate?.uuid ?? null,
         burnDamage: burn?.uuid ?? burn?.id ?? null
       }
     };
@@ -901,6 +936,35 @@ export class WebService {
 
   getStats() {
     return Object.freeze({ ...this.#stats, initialized: this.#initialized });
+  }
+
+  async #normalizeRestraintOngoingAction(config) {
+    if (config == null) return { valid: true, config: null };
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      return { valid: false, reason: "config-must-be-object" };
+    }
+
+    const normalized = clone(config);
+    delete normalized.grantedItemUuid;
+    if (normalized.enabled === undefined) normalized.enabled = true;
+
+    const validation = this.#ongoingEffects?.validateConfig?.(normalized) ?? (() => {
+      const templateUuid = String(normalized.templateUuid ?? "");
+      const sourceActivity = normalized.sourceActivity;
+      const hasTemplate = templateUuid.startsWith("Compendium.");
+      const hasSourceActivity = Boolean(sourceActivity && typeof sourceActivity === "object"
+        && String(sourceActivity.activityReference ?? "").trim());
+      return hasTemplate || hasSourceActivity ? { valid: true } : { valid: false, reason: "missing-grant-source" };
+    })();
+    if (!validation?.valid) return { valid: false, reason: validation?.reason ?? "invalid-config" };
+
+    if (typeof normalized.templateUuid === "string" && normalized.templateUuid.startsWith("Compendium.")) {
+      let template = null;
+      try { template = await globalThis.fromUuid?.(normalized.templateUuid); } catch { template = null; }
+      if (!template || template.documentName !== "Item") return { valid: false, reason: "template-item-unavailable" };
+    }
+
+    return { valid: true, config: normalized };
   }
 
   async #routeRegionEvent(payload) {
@@ -1030,11 +1094,19 @@ export class WebService {
       });
     }
 
-    // The editable source template can already contain ongoingAction settings.
-    // If the user left them absent, derive an Escape Web grant from the source
-    // Item's Escape Web Activity using AE5E's generic activity-derived grant.
+    // Item-specific ongoing-action configuration belongs to the Item automation,
+    // not to AE5E or the editable source Active Effect template. For delayed Web
+    // failures, commitCast() persists that configuration on the authoritative
+    // Region so it can be stamped onto a runtime restraint several turns later.
+    //
+    // Backward compatibility remains: an explicitly authored source-effect
+    // configuration is honored next, and the original source-Activity-derived
+    // grant remains a final legacy fallback for pre-v0.4.3.8 Web Items.
     const ongoingPath = `flags.${MODULE_ID}.${ONGOING_ACTION_EFFECT_FLAG}`;
-    if (!getProperty(data, ongoingPath)) {
+    const regionOngoingAction = this.getRegionData(region)?.restraintOngoingAction ?? null;
+    if (regionOngoingAction) {
+      setProperty(data, ongoingPath, clone(regionOngoingAction));
+    } else if (!getProperty(data, ongoingPath)) {
       setProperty(data, ongoingPath, {
         enabled: true,
         sourceActivity: {

@@ -1,9 +1,15 @@
 // Web (2024) — Action Effects 5E Premium ItemMacro
-// Configure this same ItemMacro on the user-facing passes:
-//   • Before Item Roll
+// Configure this same Item DIME macro on the user-facing passes:
+//   • Called before the item is rolled
 //   • After Active Effects
+//
+// AE5E remains infrastructure only. Item-specific configuration, including the
+// authoritative Escape Web helper UUID, lives here on the Web Item automation.
 
 const AE5E_MODULE_ID = "action-effects-5e";
+const ESCAPE_WEB_TEMPLATE_UUID =
+  "Compendium.action-effects-5e.ae5e-administrative.Item.qero20MZvXoYOdKz";
+
 const ae5e = game.modules.get(AE5E_MODULE_ID)?.api;
 if (!ae5e?.web) {
   ui.notifications.error("Web | Action Effects 5E Web infrastructure is unavailable.");
@@ -22,8 +28,8 @@ const webActivity = webWorkflow?.activity ?? macroData.activity ?? null;
 const macroPass = macroData.macroPass ?? webWorkflow?.macroPass ?? null;
 const WEB_STATE = "__ae5eWeb2024";
 
-// This Item also contains Web Save, Escape Web, and Burning Web Damage. They
-// intentionally use the same source Item but must never run the placement macro.
+// This Item also contains Web Save and Burning Web Damage. They intentionally
+// use the same source Item but must never run the placement macro.
 if (String(webActivity?.name ?? "").trim().toLowerCase() !== "cast web") return true;
 
 if (!webWorkflow || !webItem || !webActor || !webToken) {
@@ -32,13 +38,30 @@ if (!webWorkflow || !webItem || !webActor || !webToken) {
 }
 
 if (macroPass === "preItemRoll") {
+  // Fail closed before slot consumption if the authoritative helper Item or
+  // editable restraint template is missing.
+  let escapeTemplate = null;
+  try { escapeTemplate = await fromUuid(ESCAPE_WEB_TEMPLATE_UUID); } catch { escapeTemplate = null; }
+  if (!escapeTemplate || escapeTemplate.documentName !== "Item") {
+    ui.notifications.error("Web | The authoritative Escape Web helper Item could not be resolved.");
+    return false;
+  }
+
+  const restrainedTemplate = [...(webItem.effects ?? [])].find(
+    effect => String(effect?.name ?? "").trim().toLowerCase() === "restrained by web"
+  );
+  if (!restrainedTemplate) {
+    ui.notifications.error("Web | The source Active Effect 'Restrained by Web' could not be found.");
+    return false;
+  }
+
   const placement = await ae5e.web.placeCast({
     casterToken: webToken,
     sourceItem: webItem,
     rangeFeet: 60,
     sizeFeet: 20,
     visualMode: "premium",
-    label: "Web | Select the center of the 20-foot cube. Press Esc to cancel."
+    label: "Web | Select the center of the 20-foot Web. Press Esc to cancel."
   });
 
   if (!placement?.placed) {
@@ -48,16 +71,26 @@ if (macroPass === "preItemRoll") {
     return false;
   }
 
-  // Web has no cast-time save. Keep the authoritative confirmation result on
-  // the workflow, but restore the user's pre-cast targets immediately so the
-  // Utility Activity cannot accidentally inherit temporary placement targets.
+  // Web has no cast-time save. Keep the confirmed occupants only as placement
+  // diagnostics and restore the user's original targets before Midi continues.
   ae5e.web.restorePlacementTargets(placement);
 
   webWorkflow[WEB_STATE] = {
     placement,
     sourceItemUuid: webItem.uuid,
     casterActorUuid: webActor.uuid,
-    casterTokenUuid: webToken.document?.uuid ?? webToken.uuid ?? null
+    casterTokenUuid: webToken.document?.uuid ?? webToken.uuid ?? null,
+    restraintOngoingAction: {
+      enabled: true,
+      templateUuid: ESCAPE_WEB_TEMPLATE_UUID,
+      activityIdentifier: "escape-web",
+      timing: "turnStart",
+      mandatory: false,
+      removeEffectOnSuccess: true,
+      suppressPromptWhenUnusable: true,
+      promptText: "Use your action to attempt to break free from the Web?",
+      indicatorRole: "responder"
+    }
   };
   return true;
 }
@@ -75,6 +108,7 @@ if (macroPass === "postActiveEffects") {
       sourceItemUuid: state.sourceItemUuid,
       casterActorUuid: state.casterActorUuid,
       casterTokenUuid: state.casterTokenUuid,
+      restraintOngoingAction: state.restraintOngoingAction,
       visualMode: "premium",
       name: "Web"
     });
@@ -88,3 +122,5 @@ if (macroPass === "postActiveEffects") {
     delete webWorkflow[WEB_STATE];
   }
 }
+
+return true;

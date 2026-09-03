@@ -350,7 +350,7 @@ export class ActionEffects5eApi {
       getRegionData: (region) => web.getRegionData(region),
       tokenFootprint: (token) => web.tokenFootprint(token),
       renderPersistentVisual: (regionOrUuid, options) => web.renderPersistentVisual(regionOrUuid, options),
-      validateSourceItem: (itemOrUuid) => web.validateSourceItem(itemOrUuid),
+      validateSourceItem: (itemOrUuid, options) => web.validateSourceItem(itemOrUuid, options),
       cleanupVisual: (regionOrUuid) => web.cleanupVisual(regionOrUuid),
       getStats: () => web.getStats()
     });

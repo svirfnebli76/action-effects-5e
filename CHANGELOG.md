@@ -1,3 +1,21 @@
+## 0.4.3.9 — Web external-helper validator correction
+
+- Corrected `validateWebItem()` / `WebService.validateSourceItem()` so a non-spell authoritative Escape Web helper is judged by **effective D&D5e consumption**, not by the inert `consumption.spellSlot` schema boolean retained on non-spell Activities. Real consumption targets still fail validation, and spell-based helper Activities that can actually consume a slot still fail closed.
+- Added regression coverage for the real hidden-compendium Feature-helper shape (`spellSlot: true` but no effective spell-slot consumption) plus a negative spell-helper case.
+- No Item or compendium content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.8.
+
+## 0.4.3.8 — Item-supplied delayed ongoing-action infrastructure
+
+- Aligns Web's delayed restraint/escape lifecycle with the established Grapple ownership model: the Item automation supplies the authoritative helper-Item configuration while AE5E remains lifecycle infrastructure.
+- `WebService.create()` / `commitCast()` now accept optional `restraintOngoingAction` configuration, validate it through the generic ongoing-effect service, and persist it on the authoritative Web Region so it survives the delay between casting and a later failed Web save.
+- Runtime `Restrained by Web` effects receive the Region-carried ongoing-action configuration before AE5E's generic grant service creates the helper Item. The editable source Active Effect no longer needs hidden AE5E authoring flags for the preferred v0.4.3.8 path.
+- External compendium helper configuration takes precedence over legacy source-effect metadata. Pre-v0.4.3.8 source-effect and source-Activity-derived Escape Web fallbacks remain supported for backward compatibility.
+- `validateWebItem()` now accepts `escapeTemplateUuid` so the preferred source-Item contract can validate an authoritative hidden-compendium Escape Web helper without requiring a redundant Escape Web Activity on the spell.
+- Updated the recoverable Web setup/macro documentation to keep the helper UUID in Item automation rather than AE5E runtime constants.
+- Added regression coverage for Region configuration persistence, delayed runtime-effect stamping, invalid-config fail-closed behavior, commit pass-through, legacy fallback preservation, and external-helper Item validation.
+- Repository gate: **217/217 PASS**; syntax check: **95 JavaScript files PASS**.
+- No compendium or asset content is modified by this patch.
+
 ## 0.4.3.7 — Web live acceptance hardening
 
 - Fixes AE5E tagged geometry normalization so token footprints always include canonical broad-phase bounds.

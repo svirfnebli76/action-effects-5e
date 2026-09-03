@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.3.7";
+export const MODULE_VERSION = "0.4.3.9";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -143,7 +143,7 @@ export const ENVIRONMENT_DELIVERY_MODES = Object.freeze({
 // Web (2024) Region automation. The gameplay object is one persistent Region;
 // 5-foot burning sections are state within that Region and become hole shapes
 // only when their one-round burn timer expires.
-export const WEB_SCHEMA_VERSION = 1;
+export const WEB_SCHEMA_VERSION = 2;
 export const WEB_FLAG_KEY = "web";
 export const WEB_PROFILE_ID = "web";
 export const WEB_SIZE_FEET = 20;

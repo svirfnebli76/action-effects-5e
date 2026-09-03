@@ -1,3 +1,13 @@
+### v0.4.3.9 Web external-helper validator correction
+
+`validateWebItem()` now evaluates external Escape Web helper consumption using the owning Item type, matching D&D5e runtime semantics: an inert `consumption.spellSlot` schema value on a non-spell Feature is not treated as actual slot consumption. Real resource targets and spell helpers that can consume slots remain invalid. No compendium content is changed.
+
+### v0.4.3.8 Item-supplied delayed ongoing actions
+
+Web now follows the same ownership model as Grapple: Item automation chooses the authoritative Escape helper Item, while AE5E supplies generic Region, runtime-effect, grant, and cleanup infrastructure. `ae5e.web.commitCast()` accepts `restraintOngoingAction`, validates it, stores it on the persistent Web Region, and stamps it onto a later runtime `Restrained by Web` effect when needed. Source Active Effect templates can remain clean and editable. Legacy Web escape paths remain supported.
+
+The Web source validator can now validate an external helper Item by passing `escapeTemplateUuid`. Repository gate: **217/217 PASS** with **95 JavaScript files** passing syntax validation. Compendium packs and assets are intentionally untouched.
+
 ### v0.4.3.7 Web 2024 — live acceptance hardening
 
 This patch hardens the Web live acceptance suite on Foundry v14 / D&D5e 5.3.x. It fixes tagged token-footprint bounds, validates only non-derived core movement-cost actions, removes a timer-test race, and keeps off-scene Web mechanics fixtures visual-free.

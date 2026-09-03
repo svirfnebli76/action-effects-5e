@@ -479,7 +479,7 @@ test("WebService binds a Web Region to Midi concentration using the public depen
   }
 });
 
-function makeWebRegionEventFixture({ saveFailed = true, burning = false } = {}) {
+function makeWebRegionEventFixture({ saveFailed = true, burning = false, restraintOngoingAction = null } = {}) {
   const scene = {
     documentName: "Scene",
     id: "test",
@@ -572,7 +572,8 @@ function makeWebRegionEventFixture({ saveFailed = true, burning = false } = {}) 
     center: { x: 200, y: 200, elevation: 0 },
     sizeFeet: 20,
     cellSizeFeet: 5,
-    state: { turnGates: {} }
+    state: { turnGates: {} },
+    restraintOngoingAction: restraintOngoingAction ? structuredClone(restraintOngoingAction) : null
   };
   const behavior = {
     documentName: "RegionBehavior",
@@ -716,6 +717,11 @@ test("Web Region entry failure restrains and stops voluntary movement, then exit
     assert.equal(fixture.actor.effects.length, 1);
     assert.equal(fixture.actor.effects[0].flags[MODULE_ID][WEB_FLAG_KEY].regionUuid, fixture.region.uuid);
     assert.equal(fixture.actor.effects[0].flags[MODULE_ID].movement.voluntaryRestriction.enabled, true);
+    assert.equal(
+      fixture.actor.effects[0].flags[MODULE_ID][ONGOING_ACTION_EFFECT_FLAG].sourceActivity.activityReference,
+      "Escape Web",
+      "pre-v0.4.3.8 source-Activity fallback remains available"
+    );
     assert.equal(fixture.counters.grants, 1);
 
     fixture.actor.effects.push({
@@ -741,6 +747,119 @@ test("Web Region entry failure restrains and stops voluntary movement, then exit
 });
 
 
+
+test("Web stamps Item-supplied external Escape helper configuration onto delayed runtime restraints", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const ongoingAction = {
+    enabled: true,
+    templateUuid: "Compendium.action-effects-5e.ae5e-administrative.Item.escape-web",
+    activityIdentifier: "escape-web",
+    timing: "turnStart",
+    mandatory: false,
+    removeEffectOnSuccess: true,
+    suppressPromptWhenUnusable: true,
+    promptText: "Use your action to attempt to break free from the Web?",
+    indicatorRole: "responder"
+  };
+  const fixture = makeWebRegionEventFixture({ saveFailed: true, restraintOngoingAction: ongoingAction });
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: [{ id: "gm", isGM: true, active: true }],
+    combat: { started: true, uuid: "Combat.test", round: 1, turn: 0 }
+  };
+  globalThis.canvas = { scene: fixture.scene, grid: { size: 100 } };
+
+  try {
+    const result = await fixture.web.handleRegionEvent(fixture.behavior, movementEvent(fixture.token));
+    assert.equal(result.save?.failed, true);
+    assert.equal(fixture.actor.effects.length, 1);
+    const runtimeConfig = fixture.actor.effects[0].flags[MODULE_ID][ONGOING_ACTION_EFFECT_FLAG];
+    assert.deepEqual(runtimeConfig, ongoingAction);
+    assert.equal(runtimeConfig.templateUuid, ongoingAction.templateUuid);
+    assert.equal(runtimeConfig.activityIdentifier, "escape-web");
+    assert.equal(runtimeConfig.indicatorRole, "responder");
+    assert.equal(
+      fixture.sourceItem.effects[0].flags[MODULE_ID][ONGOING_ACTION_EFFECT_FLAG],
+      undefined,
+      "Item-supplied grant configuration never mutates the editable source Active Effect"
+    );
+  } finally {
+    documents.clear();
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+  }
+});
+
+test("Web create persists validated Item-supplied ongoing-action configuration on the authoritative Region", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const previousRandomId = globalThis.foundry?.utils?.randomID;
+  globalThis.foundry.utils.randomID = () => "web-config-instance";
+  const helper = { documentName: "Item", uuid: "Compendium.test.Item.escape-web" };
+  documents.set(helper.uuid, helper);
+  const scene = { documentName: "Scene", uuid: "Scene.web-config", grid: { size: 100, distance: 5 }, dimensions: { size: 100, distance: 5 } };
+  globalThis.canvas = { scene, grid: { size: 100 } };
+  globalThis.game = { user: { id: "gm", isGM: true }, users: [{ id: "gm", isGM: true, active: true }] };
+  let regionData = null;
+  const config = {
+    enabled: true,
+    templateUuid: helper.uuid,
+    activityIdentifier: "escape-web",
+    timing: "turnStart",
+    mandatory: false,
+    removeEffectOnSuccess: true,
+    indicatorRole: "responder"
+  };
+  const web = new WebService({
+    socket: new FakeSocket(),
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    regions: { async create(data) { regionData = structuredClone(data); return { created: false, reason: "fixture-only" }; } },
+    geometry: new EnvironmentGeometryService(), profiles: {}, mutations: {}, timing: {}, activities: {},
+    ongoingEffects: { validateConfig: value => value?.templateUuid ? { valid: true } : { valid: false, reason: "missing-grant-source" } },
+    selectionIndicator: null, crosshairs: null
+  });
+  try {
+    const result = await web.create({
+      scene, center: { x: 500, y: 500 }, sourceItemUuid: "Item.web", casterActorUuid: "Actor.caster",
+      restraintOngoingAction: config, visualMode: "none"
+    });
+    assert.equal(result.created, false);
+    assert.deepEqual(regionData.flags[MODULE_ID][WEB_FLAG_KEY].restraintOngoingAction, config);
+    assert.equal(regionData.flags[MODULE_ID][WEB_FLAG_KEY].schemaVersion, 2);
+  } finally {
+    documents.clear();
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+    globalThis.foundry.utils.randomID = previousRandomId;
+  }
+});
+
+test("Web create fails closed when Item-supplied ongoing-action configuration is invalid", async () => {
+  const previousCanvas = globalThis.canvas;
+  const scene = { documentName: "Scene", uuid: "Scene.web-invalid", grid: { size: 100, distance: 5 }, dimensions: { size: 100, distance: 5 } };
+  globalThis.canvas = { scene, grid: { size: 100 } };
+  let createCalls = 0;
+  const web = new WebService({
+    socket: new FakeSocket(), authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    regions: { async create() { createCalls += 1; return { created: true }; } },
+    geometry: new EnvironmentGeometryService(), profiles: {}, mutations: {}, timing: {}, activities: {},
+    ongoingEffects: { validateConfig: () => ({ valid: false, reason: "missing-grant-source" }) },
+    selectionIndicator: null, crosshairs: null
+  });
+  try {
+    const result = await web.create({
+      scene, center: { x: 500, y: 500 }, sourceItemUuid: "Item.web", casterActorUuid: "Actor.caster",
+      restraintOngoingAction: { enabled: true }, visualMode: "none"
+    });
+    assert.equal(result.created, false);
+    assert.equal(result.reason, "invalid-restraint-ongoing-action");
+    assert.equal(result.details, "missing-grant-source");
+    assert.equal(createCalls, 0);
+  } finally {
+    globalThis.canvas = previousCanvas;
+  }
+});
 
 test("Web ignores nonmovement TOKEN_ENTER events so Region creation does not cause an immediate cast-time save", async () => {
   const previousGame = globalThis.game;
@@ -1086,6 +1205,100 @@ test("Web source Item validator accepts the complete automation contract", async
   assert.equal(result.activities.burnDamage, "Item.web.Activity.burning-web-damage");
 });
 
+test("Web source Item validator accepts an authoritative external Escape Web helper with no Escape Activity on the spell", async () => {
+  const socket = new FakeSocket();
+  const web = new WebService({
+    socket,
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    regions: {},
+    geometry: new EnvironmentGeometryService(),
+    profiles: { register: () => () => true },
+    mutations: {},
+    timing: { registerHandler: () => () => true },
+    activities: {},
+    ongoingEffects: {},
+    selectionIndicator: null
+  });
+  const item = makeValidWebSourceItem();
+  item.system.activities.delete("escape-web");
+  const helperActivity = {
+    id: "escape-web",
+    uuid: "Compendium.test.Item.escape-web.Activity.escape-web",
+    identifier: "escape-web",
+    name: "Escape Web",
+    type: "check",
+    effects: [],
+    activation: { type: "action", value: 1 },
+    consumption: { targets: [], spellSlot: true },
+    check: { ability: "str", associated: new Set(["ath"]), dc: { calculation: "", formula: "" } },
+    damage: { parts: [] }
+  };
+  const helper = {
+    documentName: "Item",
+    uuid: "Compendium.test.Item.escape-web",
+    name: "Escape Web",
+    type: "feat",
+    system: { activities: new Map([[helperActivity.id, helperActivity]]) }
+  };
+  documents.set(helper.uuid, helper);
+  try {
+    const result = await web.validateSourceItem(item, { escapeTemplateUuid: helper.uuid });
+    assert.equal(result.passed, true, result.checks.filter(check => !check.passed).map(check => check.name).join("; "));
+    assert.equal(result.activities.escapeTemplate, helper.uuid);
+    assert.equal(result.activities.escape, helperActivity.uuid);
+    assert.equal(result.activities.cast, "Item.web.Activity.cast-web");
+  } finally {
+    documents.clear();
+  }
+});
+
+
+test("Web source Item validator rejects an external spell Escape helper that would consume a spell slot", async () => {
+  const socket = new FakeSocket();
+  const web = new WebService({
+    socket,
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    regions: {},
+    geometry: new EnvironmentGeometryService(),
+    profiles: { register: () => () => true },
+    mutations: {},
+    timing: { registerHandler: () => () => true },
+    activities: {},
+    ongoingEffects: {},
+    selectionIndicator: null
+  });
+  const item = makeValidWebSourceItem();
+  item.system.activities.delete("escape-web");
+  const helperActivity = {
+    id: "escape-web",
+    uuid: "Compendium.test.Item.escape-spell.Activity.escape-web",
+    identifier: "escape-web",
+    name: "Escape Web",
+    type: "check",
+    effects: [],
+    activation: { type: "action", value: 1 },
+    consumption: { targets: [], spellSlot: true },
+    check: { ability: "str", associated: new Set(["ath"]), dc: { calculation: "", formula: "" } },
+    damage: { parts: [] }
+  };
+  const helper = {
+    documentName: "Item",
+    uuid: "Compendium.test.Item.escape-spell",
+    name: "Escape Web",
+    type: "spell",
+    system: { activities: new Map([[helperActivity.id, helperActivity]]) }
+  };
+  documents.set(helper.uuid, helper);
+  try {
+    const result = await web.validateSourceItem(item, { escapeTemplateUuid: helper.uuid });
+    assert.equal(result.passed, false);
+    const failed = new Set(result.checks.filter(check => !check.passed).map(check => check.name));
+    assert.equal(failed.has("Escape Web does not consume a spell slot or resource"), true);
+  } finally {
+    documents.clear();
+  }
+});
+
 test("Web source Item validator rejects automation Activities that would re-consume a spell slot or apply effects directly", async () => {
   const socket = new FakeSocket();
   const web = new WebService({
@@ -1294,11 +1507,13 @@ test("Web commit creates the authoritative Region, binds concentration, plays Pr
   const scene = { documentName: "Scene", id: "commit", uuid: "Scene.commit", grid: { size: 100, distance: 5 }, dimensions: { size: 100, distance: 5 } };
   const actor = { documentName: "Actor", uuid: "Actor.caster" };
   const item = { documentName: "Item", id: "web-item", uuid: "Actor.caster.Item.web-item" };
+  const helper = { documentName: "Item", id: "escape-web", uuid: "Compendium.test.Item.escape-web" };
   const casterDocument = { documentName: "Token", id: "caster", uuid: "Scene.commit.Token.caster", parent: scene };
   const caster = { id: "caster", document: casterDocument };
   casterDocument.object = caster;
   documents.set(actor.uuid, actor);
   documents.set(item.uuid, item);
+  documents.set(helper.uuid, helper);
   documents.set(casterDocument.uuid, casterDocument);
 
   const targetHistory = [];
@@ -1346,7 +1561,9 @@ test("Web commit creates the authoritative Region, binds concentration, plays Pr
     authority: { getPrimaryGm: () => ({ id: "gm" }) },
     regions,
     geometry: new EnvironmentGeometryService(),
-    profiles: {}, mutations: {}, timing: {}, activities: {}, ongoingEffects: null, selectionIndicator: null, crosshairs: null
+    profiles: {}, mutations: {}, timing: {}, activities: {},
+    ongoingEffects: { validateConfig: value => value?.templateUuid ? { valid: true } : { valid: false, reason: "missing-grant-source" } },
+    selectionIndicator: null, crosshairs: null
   });
   const placement = {
     placed: true,
@@ -1360,13 +1577,23 @@ test("Web commit creates the authoritative Region, binds concentration, plays Pr
       placement,
       sourceItemUuid: item.uuid,
       casterActorUuid: actor.uuid,
-      casterTokenUuid: casterDocument.uuid
+      casterTokenUuid: casterDocument.uuid,
+      restraintOngoingAction: {
+        enabled: true,
+        templateUuid: helper.uuid,
+        activityIdentifier: "escape-web",
+        timing: "turnStart",
+        removeEffectOnSuccess: true,
+        indicatorRole: "responder"
+      }
     });
     assert.equal(result.created, true);
     assert.equal(result.concentration.bound, true);
     assert.equal(result.animation.played, true);
     assert.equal(region.shapes.length, 1);
     assert.equal(region.behaviors.length, 3);
+    assert.equal(region.flags[MODULE_ID][WEB_FLAG_KEY].restraintOngoingAction.templateUuid, helper.uuid);
+    assert.equal(region.flags[MODULE_ID][WEB_FLAG_KEY].restraintOngoingAction.indicatorRole, "responder");
     assert.deepEqual(targetHistory.at(-1), ["pre-a", "pre-b"]);
     assert.equal(calls.filter(call => call[0] === "mask" && call[1] === region).length, 2);
   } finally {
