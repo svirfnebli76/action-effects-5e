@@ -24,3 +24,6 @@
 *.zip binary
 *.woff binary
 *.woff2 binary
+
+# Foundry compendium databases are opaque binary data. Never normalize them.
+packs/** -text

@@ -84,3 +84,6 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+
+# Foundry LevelDB compendium WAL files are database data.
+!packs/**/*.log
