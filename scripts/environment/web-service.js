@@ -1138,7 +1138,10 @@ export class WebService {
     const [created] = await actor.createEmbeddedDocuments("ActiveEffect", [data], { ae5eWebRestraint: true });
     if (created) {
       this.#stats.restraintsApplied += 1;
-      try { await this.#ongoingEffects?.ensureGrant?.(created); } catch (error) { Logger.warn("Web restraint applied, but Escape Web grant creation failed.", error); }
+      // OngoingEffectService owns helper-Item provisioning through its
+      // createActiveEffect lifecycle hook. Do not also call ensureGrant() here:
+      // two independent callers can race before grantedItemUuid is persisted and
+      // create duplicate Escape Web Items for the same runtime restraint.
       return true;
     }
     return false;
@@ -1449,13 +1452,31 @@ export class WebService {
 
   async #removeRegionRestraintsAsAuthority(regionUuid) {
     if (!this.#isPrimary()) return { removed: 0, reason: "not-primary-gm" };
+
+    // Web restraints can live on ordinary world Actors or on synthetic Actors
+    // owned by unlinked TokenDocuments. game.actors contains only the former,
+    // so Region teardown must also inspect Token Actors across scenes. Use the
+    // Actor UUID as the identity key so linked tokens do not cause duplicate
+    // deletion attempts while separate synthetic actors remain independent.
+    const actors = new Map();
+    const addActor = actor => {
+      if (!actor?.deleteEmbeddedDocuments) return;
+      const key = actor.uuid ?? actor.id ?? null;
+      if (key && !actors.has(key)) actors.set(key, actor);
+    };
+
+    for (const actor of asArray(globalThis.game?.actors)) addActor(actor);
+    for (const scene of asArray(globalThis.game?.scenes)) {
+      for (const token of asArray(scene?.tokens)) addActor(token?.actor ?? token?.object?.actor ?? null);
+    }
+
     let removed = 0;
-    for (const actor of [...(globalThis.game?.actors ?? [])]) {
+    for (const actor of actors.values()) {
       const ids = [...(actor?.effects ?? [])]
         .filter(effect => getProperty(effect, `flags.${MODULE_ID}.${WEB_FLAG_KEY}.regionUuid`) === regionUuid)
         .map(effect => effect.id)
         .filter(Boolean);
-      if (!ids.length || !actor?.deleteEmbeddedDocuments) continue;
+      if (!ids.length) continue;
       await actor.deleteEmbeddedDocuments("ActiveEffect", ids, { ae5eWebRegionCleanup: true });
       removed += ids.length;
     }
