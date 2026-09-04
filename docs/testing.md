@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.3.20
+# Current infrastructure acceptance — v0.4.3.21
 
 The final persistent-area infrastructure cleanup must be accepted inside Foundry before Web is re-authored. Run on AE5E's primary GM client:
 

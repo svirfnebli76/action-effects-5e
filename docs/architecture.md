@@ -1,4 +1,4 @@
-# Current Item / AE5E architecture boundary — v0.4.3.20
+# Current Item / AE5E architecture boundary — v0.4.3.21
 
 AE5E production runtime owns reusable infrastructure only. Item automation owns Item-specific rules. Persistent Items may submit declarative Region-event/lifecycle recipes; AE5E persists and executes those generic instructions without knowing the spell or feature semantics.
 

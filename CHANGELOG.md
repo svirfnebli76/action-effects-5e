@@ -1,3 +1,10 @@
+# 0.4.3.21 — Startup wiring correction
+
+- Fixed a startup-blocking `TestHarness` constructor wiring regression introduced during the persistent-area infrastructure cleanup.
+- `persistentAreaEvents` and `persistentAreaLifecycle` are now explicitly accepted by `TestHarness` before being forwarded to the environmental test suite.
+- Added a startup-wiring regression test so this class of top-level module-evaluation failure is caught before packaging.
+- No Web rules, persistent-area behavior, compendium content, packs, or assets changed.
+
 # 0.4.3.20 — Persistent-area infrastructure cleanup — Checkpoint 5
 
 - Finalized the generic persistent-area infrastructure audit after removing Web-specific production runtime in Checkpoint 4.
