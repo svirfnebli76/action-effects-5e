@@ -6,8 +6,6 @@ import {
   ENVIRONMENT_FLAG_KEY,
   MODULE_ID,
   MODULE_VERSION,
-  WEB_FLAG_KEY,
-  WEB_PROFILE_ID
 } from "../core/constants.js";
 
 function now() {
@@ -50,11 +48,12 @@ export class EnvironmentalTestSuite {
   #flammability;
   #midi;
   #activities;
-  #web;
   #regions;
+  #persistentAreaEvents;
+  #persistentAreaLifecycle;
   #socket;
 
-  constructor({ environment, geometry, behaviors, capabilities, profiles, index, mutations, timing, flammability, midi, activities, web, regions, socket }) {
+  constructor({ environment, geometry, behaviors, capabilities, profiles, index, mutations, timing, flammability, midi, activities, regions, persistentAreaEvents, persistentAreaLifecycle, socket }) {
     this.#environment = environment;
     this.#geometry = geometry;
     this.#behaviors = behaviors;
@@ -66,8 +65,9 @@ export class EnvironmentalTestSuite {
     this.#flammability = flammability;
     this.#midi = midi;
     this.#activities = activities;
-    this.#web = web;
     this.#regions = regions;
+    this.#persistentAreaEvents = persistentAreaEvents;
+    this.#persistentAreaLifecycle = persistentAreaLifecycle;
     this.#socket = socket;
   }
 
@@ -96,7 +96,6 @@ export class EnvironmentalTestSuite {
 
     await run("Foundation", () => this.runFoundationTest({ notify: false }));
     await run("Midi fire bridge", () => this.runMidiFireTest({ notify: false, scene }));
-    await run("Web", () => this.runWebTest({ notify: false, scene }));
     await run("Live lifecycle", () => this.runLiveLifecycleTest({ notify: false, scene, keepFixture }));
     await run("Performance", () => this.runPerformanceTest({ notify: false, scene, iterations }));
 
@@ -137,14 +136,27 @@ export class EnvironmentalTestSuite {
     const socketNames = this.#socket.getRegisteredNames?.() ?? [];
 
     record("AE5E — Flammable RegionBehavior subtype is registered", behavior.flammableRegistered === true, behavior);
-    record("AE5E — Web RegionBehavior subtype is registered", behavior.webRegistered === true, behavior);
+    record("AE5E — Persistent Area RegionBehavior subtype is registered", behavior.persistentAreaRegistered === true, behavior);
     record("Flammable capability consumes fire events", capability?.eventTypes?.includes(ENVIRONMENT_EVENT_TYPES.FIRE) === true, capability);
     record("Generic Flammable material profile is registered", genericProfile?.profileId === "generic" && typeof genericProfile?.react === "function", genericProfile);
     record("Environmental authority socket handler is registered", socketNames.includes("environment.emit"), socketNames);
     record("Activity execution authority socket handler is registered", socketNames.includes("activities.execute"), socketNames);
-    record("Web Region-event authority socket handler is registered", socketNames.includes("web.regionEvent"), socketNames);
+    record("Persistent-area event authority socket handler is registered", socketNames.includes("persistentArea.regionEvent"), socketNames);
+    record("Persistent-area effect authority socket handlers are registered", ["persistentAreaLifecycle.applyEffect", "persistentAreaLifecycle.removeEffects", "persistentAreaLifecycle.bindConcentration"].every(name => socketNames.includes(name)), socketNames);
     record("Midi fire observer is initialized", this.#midi.getStats().initialized === true, this.#midi.getStats());
     record("Persistent environmental timing service is initialized without polling", this.#timing.getStats().initialized === true, this.#timing.getStats());
+    record("Persistent-area lifecycle service is initialized", this.#persistentAreaLifecycle?.getStats?.().initialized === true, this.#persistentAreaLifecycle?.getStats?.() ?? null);
+    const genericRecipe = this.#persistentAreaEvents?.validateRecipe?.({
+      schemaVersion: 1,
+      gates: { once: { combat: "turn", outsideCombat: "occupancy" } },
+      handlers: {
+        [globalThis.CONST?.REGION_EVENTS?.TOKEN_MOVE_IN ?? "tokenMoveIn"]: {
+          gateId: "once",
+          activity: { itemUuid: "Item.ae5e-foundation", activityReference: "activity" }
+        }
+      }
+    });
+    record("Generic persistent-area recipe validation is available", genericRecipe?.valid === true, genericRecipe);
 
     const outer = this.#geometry.normalize({
       ae5eEnvironmentGeometry: 1,
@@ -166,18 +178,6 @@ export class EnvironmentalTestSuite {
       ENVIRONMENT_CAPABILITIES.CORRODIBLE
     ];
     record("Environmental capability namespace reserves future reaction types", futureCapabilities.every(Boolean), futureCapabilities);
-
-    const webProfile = this.#profiles.get(ENVIRONMENT_CAPABILITIES.FLAMMABLE, WEB_PROFILE_ID);
-    record("Web flammability profile is registered", webProfile?.profileId === WEB_PROFILE_ID && typeof webProfile?.react === "function", webProfile);
-
-    const terrainBehavior = this.#web.buildDifficultTerrainBehavior();
-    const terrainModels = globalThis.CONFIG?.RegionBehavior?.dataModels ?? {};
-    record("Web resolves a valid native terrain behavior for this D&D5e generation",
-      Boolean(terrainBehavior?.type && terrainModels[terrainBehavior.type]), {
-        dnd5eVersion: globalThis.game?.system?.version ?? null,
-        behavior: terrainBehavior,
-        availableTypes: Object.keys(terrainModels)
-      });
 
     const stats = this.#environment.getStats();
     record("Environmental service is event-driven and initialized", stats.initialized === true && typeof stats.localEarlyExits === "number", stats);
@@ -437,241 +437,6 @@ export class EnvironmentalTestSuite {
     console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
     console.log(result);
     notifyResult("environmental Midi fire bridge", passed, notify);
-    return result;
-  }
-
-  async validateWebItem({ item = null, itemUuid = null, escapeTemplateUuid = null, notify = true } = {}) {
-    const result = await this.#web.validateSourceItem(item ?? itemUuid, { escapeTemplateUuid });
-    banner("WEB SOURCE ITEM", result.passed);
-    console.table((result.checks ?? []).map(check => ({
-      Check: check.name,
-      Result: check.passed ? "PASS" : "FAIL",
-      Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details))
-    })));
-    console.log(result);
-    notifyResult("Web source Item validation", result.passed, notify);
-    return result;
-  }
-
-  async runWebTest({ notify = true, scene = null } = {}) {
-    if (!globalThis.game?.user?.isGM) throw new Error("Run the Web automated test as a GM.");
-    if (!this.#timing.getStats().primary) throw new Error("Run the Web automated test on AE5E's current primary GM client.");
-    scene ??= globalThis.canvas?.scene ?? null;
-    if (!scene) throw new Error("Activate a Scene before running the Web automated test.");
-
-    const checks = [];
-    const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
-    const gridSize = Number(scene.grid?.size ?? scene.dimensions?.size ?? globalThis.canvas?.grid?.size ?? 100) || 100;
-    const sceneDistance = Number(scene.grid?.distance ?? scene.dimensions?.distance ?? 5) || 5;
-    const sceneX = Number(scene.dimensions?.sceneX ?? 0) || 0;
-    const sceneY = Number(scene.dimensions?.sceneY ?? 0) || 0;
-    const sceneWidth = Number(scene.dimensions?.sceneWidth ?? scene.width ?? gridSize * 20) || gridSize * 20;
-    const sizePx = 20 * gridSize / sceneDistance;
-    const center = {
-      x: sceneX + sceneWidth + gridSize * 14 + sizePx / 2,
-      y: sceneY + gridSize * 14 + sizePx / 2,
-      elevation: 0
-    };
-    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    let regionUuid = null;
-    let fixtureActor = null;
-    let fixtureItem = null;
-    let concentration = null;
-
-    try {
-      fixtureActor = await globalThis.Actor?.create?.({
-        name: `AE5E TEST — Web Caster ${stamp}`,
-        type: "npc"
-      }, { ae5eTestFixture: true });
-      if (fixtureActor) {
-        [fixtureItem] = await fixtureActor.createEmbeddedDocuments("Item", [{ name: "AE5E TEST — Web", type: "spell", system: { level: 2 } }], { ae5eTestFixture: true });
-        const concentrationId = globalThis.CONFIG?.specialStatusEffects?.CONCENTRATING ?? "concentrating";
-        [concentration] = await fixtureActor.createEmbeddedDocuments("ActiveEffect", [{
-          name: "AE5E TEST — Concentrating on Web",
-          statuses: [concentrationId],
-          flags: { dnd5e: { item: { id: fixtureItem?.id ?? null } } }
-        }], { ae5eTestFixture: true });
-      }
-      record("Web concentration test Actor/Item/Effect fixture is created", Boolean(fixtureActor && fixtureItem && concentration), {
-        actorUuid: fixtureActor?.uuid ?? null,
-        itemUuid: fixtureItem?.uuid ?? null,
-        effectUuid: concentration?.uuid ?? null
-      });
-
-      const create = await this.#web.create({
-        scene,
-        center,
-        sourceItemUuid: fixtureItem?.uuid ?? `Item.AE5EWebTestSource${stamp.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
-        casterActorUuid: fixtureActor?.uuid ?? `Actor.AE5EWebTestCaster${stamp.replace(/[^a-z0-9]/gi, "").slice(-8)}`,
-        instanceId: `ae5e-web-test-${stamp}`,
-        visualMode: "none",
-        name: "AE5E TEST — Web"
-      });
-      regionUuid = create?.regionUuid ?? null;
-      record("Web creates one GM-authoritative Region", create?.created === true && Boolean(regionUuid), create);
-
-      let region = regionUuid ? await globalThis.fromUuid(regionUuid) : null;
-      record("Web Region carries persistent AE5E Web provenance", this.#web.isWebRegion(region) === true, this.#web.getRegionData(region));
-      if (!region) {
-        record("Web Region is available for lifecycle testing", false, { create });
-        return this.#finishWebTest({ checks, scene, notify });
-      }
-      record("Web Region is available for lifecycle testing", true, { regionUuid: region.uuid });
-      const dependentOn = region?.getFlag?.("dnd5e", "dependentOn") ?? region?.flags?.dnd5e?.dependentOn ?? null;
-      record("Web Region binds to the caster's real concentration ActiveEffect through Midi", create?.concentration?.bound === true && dependentOn === concentration?.uuid, {
-        concentration: create?.concentration ?? null,
-        dependentOn,
-        concentrationEffectUuid: concentration?.uuid ?? null
-      });
-      const source = region?.toObject?.(false) ?? region ?? {};
-      record("Web Region begins as one 20-foot square shape", Array.isArray(source.shapes) && source.shapes.length === 1, source.shapes);
-
-      const behaviors = [...(region?.behaviors ?? [])];
-      const difficult = behaviors.find(entry => ["difficultTerrain", "modifyMovementCost"].includes(entry.type)) ?? null;
-      const webBehavior = behaviors.find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.WEB) ?? null;
-      const flammable = behaviors.find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? null;
-      const terrainModels = globalThis.CONFIG?.RegionBehavior?.dataModels ?? {};
-      const expectedTerrainType = terrainModels.difficultTerrain ? "difficultTerrain" : "modifyMovementCost";
-      const terrainTypes = difficult?.system?.types;
-      const hasWebTerrain = terrainTypes?.has?.("web") === true || Array.from(terrainTypes ?? []).includes("web");
-      const difficulties = difficult?.system?.difficulties ?? {};
-      // Core Foundry/D&D5e can prepare derived movement actions (for example
-      // Jump) onto the runtime behavior at a value other than 2. Only the
-      // non-derived actions belong to Web's stored 2x difficult-terrain source.
-      const nonDerivedActions = Object.entries(globalThis.CONFIG?.Token?.movement?.actions ?? {})
-        .filter(([, config]) => typeof config?.deriveTerrainDifficulty !== "function")
-        .map(([action]) => action);
-      const testedCoreActions = nonDerivedActions.filter(action => action in difficulties);
-      const hasDoubleCoreCost = testedCoreActions.length > 0
-        && testedCoreActions.every(action => Number(difficulties[action]) === 2);
-      const terrainValid = difficult?.type === expectedTerrainType
-        && (expectedTerrainType === "difficultTerrain" ? hasWebTerrain : hasDoubleCoreCost);
-      record("Web uses the compatible native difficult-terrain behavior for this D&D5e generation", terrainValid, {
-        expectedTerrainType,
-        actualType: difficult?.type ?? null,
-        nonDerivedActions,
-        testedCoreActions,
-        difficulties: Object.fromEntries(Object.keys(difficulties).map(key => [key, difficulties[key]])),
-        system: difficult?.system ?? null
-      });
-      record("Web Region has the AE5E — Web behavior", Boolean(webBehavior), webBehavior?.toObject?.(false) ?? webBehavior);
-      record("Web Region has the Web Flammable profile", flammable?.system?.profileId === WEB_PROFILE_ID, flammable?.system ?? null);
-
-      const webData = this.#web.getRegionData(region);
-      const topLeft = { x: center.x - sizePx / 2, y: center.y - sizePx / 2 };
-      const cellPx = 5 * gridSize / sceneDistance;
-      const firePoint = { x: topLeft.x + cellPx / 2, y: topLeft.y + cellPx / 2 };
-      const fire = await this.#environment.emitFire({
-        geometry: this.#geometry.fromPoint(firePoint, { scene }),
-        delivery: ENVIRONMENT_DELIVERY_MODES.MANUAL,
-        scene,
-        idempotencyKey: `ae5e-web-test-fire:${stamp}`,
-        source: { testFixture: true, suite: "web", sourceItemUuid: webData?.sourceItemUuid ?? null }
-      });
-      region = await globalThis.fromUuid(regionUuid);
-      const liveFlammable = [...(region?.behaviors ?? [])].find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? flammable;
-      const burningState = this.#mutations.getState(region, liveFlammable) ?? {};
-      const burningCells = Object.values(burningState.burningCells ?? {});
-      const timers = region?.flags?.[MODULE_ID]?.[ENVIRONMENT_FLAG_KEY]?.timers ?? {};
-      record("Fire exposure ignites exactly one 5-foot Web cell", fire?.reactions === 1 && burningCells.length === 1, { fire, burningState });
-      record("Ignited Web cell persists one burn-away timer", Object.keys(timers).length === 1 && Boolean(Object.values(timers)[0]?.payload?.cellId), timers);
-
-      const tokenFootprint = this.#web.tokenFootprint({
-        uuid: "Scene.test.Token.large",
-        x: topLeft.x,
-        y: topLeft.y,
-        width: 2,
-        height: 2,
-        elevation: 0,
-        parent: scene
-      });
-      record("Web token-footprint geometry supports multi-square creatures", tokenFootprint?.bounds?.maxX - tokenFootprint?.bounds?.minX === gridSize * 2 && tokenFootprint?.bounds?.maxY - tokenFootprint?.bounds?.minY === gridSize * 2, tokenFootprint);
-
-      // Make the persistent timer due immediately; no six-second test sleep.
-      const env = structuredClone(region?.flags?.[MODULE_ID]?.[ENVIRONMENT_FLAG_KEY] ?? {});
-      const timerId = Object.keys(env.timers ?? {})[0] ?? null;
-      if (timerId) env.timers[timerId].due = { realTimeMs: Date.now() - 1 };
-      const environmentPath = `flags.${MODULE_ID}.${ENVIRONMENT_FLAG_KEY}`;
-      await region.update({ [environmentPath]: typeof globalThis._replace === "function" ? globalThis._replace(env) : env }, { ae5eWebTest: true });
-      const firedBefore = Number(this.#timing.getStats()?.fired ?? 0);
-      // updateRegion itself causes the event-driven timing service to resync.
-      // That can legitimately fire the newly-due timer before this explicit
-      // processDue call reaches it, so wait for the authoritative Region state
-      // rather than racing two processors and requiring this one call to own it.
-      const timerRun = await this.#timing.processDue({ regionUuids: [regionUuid] });
-      const settled = await waitFor(async () => {
-        const candidate = await globalThis.fromUuid(regionUuid);
-        if (!candidate) return null;
-        const candidateFlammable = [...(candidate.behaviors ?? [])].find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? liveFlammable;
-        const candidateState = this.#mutations.getState(candidate, candidateFlammable) ?? {};
-        const candidateTimers = candidate?.flags?.[MODULE_ID]?.[ENVIRONMENT_FLAG_KEY]?.timers ?? {};
-        const candidateSource = candidate?.toObject?.(false) ?? candidate ?? {};
-        const burned = Object.keys(candidateState.burningCells ?? {}).length === 0
-          && Object.keys(candidateState.burnedCells ?? {}).length === 1;
-        const hole = Array.isArray(candidateSource.shapes)
-          && candidateSource.shapes.length === 2
-          && candidateSource.shapes.some(shape => shape.hole === true);
-        if (!burned || !hole || Object.keys(candidateTimers).length !== 0) return null;
-        return { region: candidate, flammable: candidateFlammable, state: candidateState, timers: candidateTimers, source: candidateSource };
-      });
-      region = settled?.region ?? await globalThis.fromUuid(regionUuid);
-      const afterFlammable = settled?.flammable ?? [...(region?.behaviors ?? [])].find(entry => entry.type === ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE) ?? liveFlammable;
-      const afterState = settled?.state ?? this.#mutations.getState(region, afterFlammable) ?? {};
-      const afterSource = settled?.source ?? region?.toObject?.(false) ?? region ?? {};
-      const afterTimers = settled?.timers ?? region?.flags?.[MODULE_ID]?.[ENVIRONMENT_FLAG_KEY]?.timers ?? {};
-      const firedAfter = Number(this.#timing.getStats()?.fired ?? 0);
-      const timerFired = timerRun?.fired === 1 || firedAfter > firedBefore;
-      record("One-round Web timer burns the ignited cell away", timerFired && Object.keys(afterState.burningCells ?? {}).length === 0 && Object.keys(afterState.burnedCells ?? {}).length === 1, { timerRun, firedBefore, firedAfter, afterState });
-      record("Burn-away mutates the same Region by adding one hole", Array.isArray(afterSource.shapes) && afterSource.shapes.length === 2 && afterSource.shapes.some(shape => shape.hole === true), afterSource.shapes);
-      record("Consumed Web burn timer is removed persistently", Object.keys(afterTimers).length === 0, afterTimers);
-
-      const repeat = await this.#environment.emitFire({
-        geometry: this.#geometry.fromPoint(firePoint, { scene }),
-        delivery: ENVIRONMENT_DELIVERY_MODES.MANUAL,
-        scene,
-        idempotencyKey: `ae5e-web-test-fire-repeat:${stamp}`,
-        source: { testFixture: true, suite: "web", repeat: true }
-      });
-      record("Fire inside a burned-away Web hole cannot reignite that cell", repeat?.processed === true && repeat?.reactions === 0, repeat);
-
-      if (concentration?.parent?.effects?.get?.(concentration.id)) {
-        await fixtureActor.deleteEmbeddedDocuments("ActiveEffect", [concentration.id], { ae5eTestFixture: true });
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-      const afterConcentration = regionUuid ? await globalThis.fromUuid(regionUuid) : null;
-      record("Ending concentration deletes the dependent Web Region", !afterConcentration, {
-        concentrationEffectUuid: concentration?.uuid ?? null,
-        regionUuid
-      });
-      if (!afterConcentration) regionUuid = null;
-    } finally {
-      if (regionUuid) {
-        try { await this.#regions.delete(regionUuid); } catch { /* best effort */ }
-      }
-      if (fixtureActor?.id && globalThis.game?.actors?.get?.(fixtureActor.id)) {
-        try { await fixtureActor.delete({ ae5eTestFixture: true }); } catch { /* best effort */ }
-      }
-    }
-
-    return this.#finishWebTest({ checks, scene, notify });
-  }
-
-  #finishWebTest({ checks, scene, notify }) {
-    const passed = checks.every(check => check.passed);
-    const result = {
-      passed,
-      checks,
-      sceneUuid: scene?.uuid ?? null,
-      web: this.#web.getStats(),
-      activities: this.#activities?.getStats?.() ?? null,
-      environment: this.#environment.getStats(),
-      mutations: this.#mutations.getStats(),
-      timing: this.#timing.getStats()
-    };
-    banner("ENVIRONMENTAL WEB", passed);
-    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL" })));
-    console.log(result);
-    notifyResult("environmental Web", passed, notify);
     return result;
   }
 

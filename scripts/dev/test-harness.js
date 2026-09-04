@@ -37,6 +37,7 @@ import { CatMetadataAuthoringTestSuite } from "./cat-metadata-authoring-test-sui
 import { CatMetadataContextMenuTestSuite } from "./cat-metadata-context-menu-test-suite.js";
 import { CatConfigurationAuthoringTestSuite } from "./cat-configuration-authoring-test-suite.js";
 import { RelationshipLifecycleTestSuite } from "./relationship-lifecycle-test-suite.js";
+import { WebItemValidator } from "./web-item-validator.js";
 
 export class TestHarness {
   #dependencies;
@@ -70,9 +71,10 @@ export class TestHarness {
   #catMetadataContextMenuSuite;
   #catConfigurationAuthoringSuite;
   #relationshipLifecycleSuite;
+  #webItemValidator = new WebItemValidator();
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, activities, regions, environment, environmentGeometry, environmentBehaviors, environmentCapabilities, environmentProfiles, environmentIndex, environmentMutations, environmentTiming, flammability, midiEnvironment, web, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, activities, regions, environment, environmentGeometry, environmentBehaviors, environmentCapabilities, environmentProfiles, environmentIndex, environmentMutations, environmentTiming, flammability, midiEnvironment, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -124,8 +126,9 @@ export class TestHarness {
       flammability,
       midi: midiEnvironment,
       activities,
-      web,
       regions,
+      persistentAreaEvents,
+      persistentAreaLifecycle,
       socket
     });
     this.#animationOwnershipSuite = new AnimationOwnershipTestSuite({ ownership: animationOwnership, automatedAnimations });
@@ -167,20 +170,30 @@ export class TestHarness {
     return this.#environmentalSuite.runMidiFireTest(options);
   }
 
-  runEnvironmentalWebTest(options) {
-    return this.#environmentalSuite.runWebTest(options);
-  }
-
-  validateWebItem(options) {
-    return this.#environmentalSuite.validateWebItem(options);
-  }
-
   runEnvironmentalLiveLifecycleTest(options) {
     return this.#environmentalSuite.runLiveLifecycleTest(options);
   }
 
   runEnvironmentalPerformanceTest(options) {
     return this.#environmentalSuite.runPerformanceTest(options);
+  }
+
+  async validateWebItem(options = {}) {
+    const result = await this.#webItemValidator.validate(options);
+    console.log(
+      `%cAE5E — WEB SOURCE ITEM — ${result?.passed ? "PASS" : "FAIL"}`,
+      `font-size:24px;font-weight:bold;color:${result?.passed ? "#5cff8d" : "#ff5c5c"};`
+    );
+    console.table((result?.checks ?? []).map(check => ({
+      Check: check.name,
+      Result: check.passed ? "PASS" : "FAIL",
+      Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details))
+    })));
+    console.log(result);
+    if (options?.notify !== false && globalThis.ui?.notifications) {
+      ui.notifications[result?.passed ? "info" : "error"](`AE5E Web source Item ${result?.passed ? "PASSED" : "FAILED"}. See console.`);
+    }
+    return result;
   }
 
   runOngoingEffectFoundationTest(options) {

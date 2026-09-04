@@ -31,9 +31,9 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.3.13");
+  assert.equal(manifest.version, "0.4.3.20");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
-  assert.deepEqual(manifest.documentTypes?.RegionBehavior?.web, {});
+  assert.deepEqual(manifest.documentTypes?.RegionBehavior?.["persistent-area"], {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);
   assert.match(apiSource, /runEnvironmentalAcceptanceTest/);
   assert.match(apiSource, /environment:\s*Object\.freeze/);
@@ -41,15 +41,15 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   assert.match(apiSource, /runEnvironmentalFoundationTest/);
   assert.match(apiSource, /runEnvironmentalMidiFireTest/);
   assert.match(apiSource, /runMidiFire:\s*\(options\)\s*=>\s*tests\.runEnvironmentalMidiFireTest/);
-  assert.match(apiSource, /runWeb:\s*\(options\)\s*=>\s*tests\.runEnvironmentalWebTest/);
-  assert.match(apiSource, /this\.web = Object\.freeze/);
+  assert.doesNotMatch(apiSource, /this\.web = Object\.freeze/);
   assert.match(apiSource, /this\.activities = Object\.freeze/);
   assert.match(apiSource, /runEnvironmentalLiveLifecycleTest/);
   assert.match(apiSource, /runEnvironmentalPerformanceTest/);
   assert.match(mainSource, /environmentBehaviors\.initialize\(\)/);
+  assert.match(apiSource, /persistentAreas:\s*Object\.freeze/);
   assert.match(mainSource, /midiEnvironment\.initialize\(\)/);
   assert.match(mainSource, /environmentTiming\.initialize\(\)/);
-  assert.match(mainSource, /web\.initialize\(\)/);
+  assert.doesNotMatch(mainSource, /web\.initialize\(\)/);
 });
 
 test("environment capability and profile registries are generic extension seams", () => {

@@ -1,3 +1,21 @@
+# Current infrastructure acceptance — v0.4.3.20
+
+The final persistent-area infrastructure cleanup must be accepted inside Foundry before Web is re-authored. Run on AE5E's primary GM client:
+
+```js
+const ae5e = game.modules.get("action-effects-5e").api;
+await ae5e.tests.environment.runFoundation({ notify: true });
+await ae5e.tests.runRegionAuthorityFoundationTest({ notify: true });
+await ae5e.tests.runOngoingEffectFoundationTest({ notify: true });
+await ae5e.tests.runFoundationSmokeTest({ notify: true });
+```
+
+The environmental foundation now verifies the generic persistent-area RegionBehavior, authority sockets, lifecycle initialization, and recipe validator. Web-specific gameplay acceptance is intentionally deferred until the Item macro is rebuilt.
+
+Repository `npm test` remains a supporting development gate; live Foundry acceptance is authoritative.
+
+---
+
 ## v0.4.3.4 Environmental Interaction acceptance
 
 After installing/reloading v0.4.3.4 on the **primary GM** with an active Scene, run:

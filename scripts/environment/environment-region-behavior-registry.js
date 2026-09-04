@@ -1,7 +1,7 @@
 import { ENVIRONMENT_BEHAVIOR_TYPES } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
 import { FlammableRegionBehaviorType } from "./flammable-region-behavior-type.js";
-import { WebRegionBehaviorType } from "./web-region-behavior-type.js";
+import { PersistentAreaRegionBehaviorType } from "./persistent-area-region-behavior-type.js";
 
 export class EnvironmentRegionBehaviorRegistry {
   #initialized = false;
@@ -23,10 +23,10 @@ export class EnvironmentRegionBehaviorRegistry {
         icon: "fa-solid fa-fire-flame-curved"
       },
       {
-        type: ENVIRONMENT_BEHAVIOR_TYPES.WEB,
-        model: WebRegionBehaviorType,
-        label: "BEHAVIOR.TYPES.action-effects-5e.web.label",
-        icon: "fa-solid fa-spider-web"
+        type: ENVIRONMENT_BEHAVIOR_TYPES.PERSISTENT_AREA,
+        model: PersistentAreaRegionBehaviorType,
+        label: "BEHAVIOR.TYPES.action-effects-5e.persistent-area.label",
+        icon: "fa-solid fa-vector-square"
       }
     ];
     config.typeLabels ??= {};
@@ -42,7 +42,7 @@ export class EnvironmentRegionBehaviorRegistry {
     globalThis.Hooks?.once?.("i18nInit", () => {
       try {
         globalThis.foundry?.helpers?.Localization?.localizeDataModel?.(FlammableRegionBehaviorType);
-        globalThis.foundry?.helpers?.Localization?.localizeDataModel?.(WebRegionBehaviorType);
+        globalThis.foundry?.helpers?.Localization?.localizeDataModel?.(PersistentAreaRegionBehaviorType);
       } catch (error) {
         Logger.debug("Environmental RegionBehavior localization helper was unavailable.", error);
       }
@@ -53,17 +53,17 @@ export class EnvironmentRegionBehaviorRegistry {
 
   getStatus() {
     const flammableType = ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE;
-    const webType = ENVIRONMENT_BEHAVIOR_TYPES.WEB;
+    const persistentAreaType = ENVIRONMENT_BEHAVIOR_TYPES.PERSISTENT_AREA;
     return Object.freeze({
       initialized: this.#initialized,
       flammableType,
       flammableRegistered: globalThis.CONFIG?.RegionBehavior?.dataModels?.[flammableType] === FlammableRegionBehaviorType,
-      webType,
-      webRegistered: globalThis.CONFIG?.RegionBehavior?.dataModels?.[webType] === WebRegionBehaviorType,
+      persistentAreaType,
+      persistentAreaRegistered: globalThis.CONFIG?.RegionBehavior?.dataModels?.[persistentAreaType] === PersistentAreaRegionBehaviorType,
+      persistentAreaIcon: globalThis.CONFIG?.RegionBehavior?.typeIcons?.[persistentAreaType] ?? null,
+      persistentAreaLabel: globalThis.CONFIG?.RegionBehavior?.typeLabels?.[persistentAreaType] ?? null,
       icon: globalThis.CONFIG?.RegionBehavior?.typeIcons?.[flammableType] ?? null,
       label: globalThis.CONFIG?.RegionBehavior?.typeLabels?.[flammableType] ?? null,
-      webIcon: globalThis.CONFIG?.RegionBehavior?.typeIcons?.[webType] ?? null,
-      webLabel: globalThis.CONFIG?.RegionBehavior?.typeLabels?.[webType] ?? null,
       ...this.#stats
     });
   }

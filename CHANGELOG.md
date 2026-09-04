@@ -1,3 +1,45 @@
+# 0.4.3.20 — Persistent-area infrastructure cleanup — Checkpoint 5
+
+- Finalized the generic persistent-area infrastructure audit after removing Web-specific production runtime in Checkpoint 4.
+- Rebuilt Web source-Item validation as **dev/test tooling only** (`scripts/dev/web-item-validator.js`). Production AE5E remains unaware of Web spell rules.
+- The dev validator now requires `target.override = true` and `target.prompt = false` on Cast Web, Web Save, and Burning Web Damage, validates the explicit external Escape Web helper, and contains no Legacy Escape Web Activity fallback.
+- Expanded the live environmental foundation gate to verify the generic persistent-area RegionBehavior registration, event/lifecycle authority socket handlers, lifecycle initialization, and generic recipe validation.
+- Removed the provisional Web On Use macro from the module package. Web macro authoring remains intentionally deferred until this infrastructure build passes live Foundry acceptance.
+- Replaced stale current README/Web setup guidance with the finalized AE5E-vs-Item architecture boundary and current acceptance commands. Historical release notes remain in this changelog.
+- Added automated boundary coverage ensuring Web validation remains under dev/test tooling and `api.web` cannot return.
+- Compendium packs and assets are intentionally unchanged.
+
+# 0.4.3.19 — Persistent-area Web migration checkpoint
+
+- Migrated the recoverable Web ItemMacro to generic AE5E persistent-area infrastructure. The Item now declares its own save triggers, restraint template, Escape helper configuration, native difficult-terrain request, concentration dependency, Region geometry, and presentation.
+- Extended generic persistent-area event recipes with owned-effect conditions and outcome operations that compose the Checkpoint 2 event runtime with the Checkpoint 3 lifecycle service. Context substitution is limited to generic Region/behavior/token identifiers.
+- Added a generic Foundry-core `modifyMovementCost` RegionBehavior builder. AE5E does not calculate difficult-terrain movement.
+- Removed the production `WebService`, `WebRegionBehaviorType`, `api.web`, Web RegionBehavior registration/manifest type, Web runtime constants, Web socket operations, and Web-specific environmental initialization.
+- The authoritative Escape Web helper remains Item-selected; the Web macro stamps compatibility metadata onto its runtime restraint through the generic effect-patch facility.
+- Web-specific live validator tooling is intentionally deferred to the final audit checkpoint so it can be rebuilt as dev-only validation against the new Item-authored contract.
+
+## 0.4.3.18 — Persistent-area architecture cleanup checkpoint 3
+
+- Adds generic `PersistentAreaLifecycleService` beside the existing Web runtime; Web migration remains intentionally deferred to checkpoint 4.
+- Item automations can clone an exact Transfer-disabled Active Effect template embedded on a source Item onto a target Actor through GM/socket authority, stamp deterministic owner/effect metadata, omit lifecycle-owned serialized fields such as `duration`, and pass generic effect patches/metadata.
+- Runtime effects are idempotent by exact owner document UUID plus Item-authored effect key, so overlapping persistent areas remain independent while repeated application for one area reuses the existing effect.
+- Generic cleanup removes all effects owned by a deleted Region/document across both world Actors and unlinked synthetic Token Actors; a primary-GM `deleteRegion` hook performs the same cleanup automatically.
+- Generic runtime-effect creation can propagate the existing AE5E ongoing-action configuration and voluntary-movement-restriction configuration without knowing the spell/feature that supplied them.
+- Adds generic Midi-QOL concentration-dependent binding for arbitrary dependent documents using source Actor/Item UUIDs. AE5E does not recreate concentration mechanics.
+- Added architecture/regression coverage proving the lifecycle source contains no Web-specific activity/effect/helper names, exact source-Item template cloning, serialized-duration omission, overlapping-owner isolation, synthetic-Actor cleanup, Region-deletion cleanup, ongoing-action propagation, movement-restriction propagation, public-API wiring, and Midi concentration binding.
+- Repository gate: **236/236 PASS**; syntax check: **98 JavaScript files PASS**.
+- `web-service.js` and `web-region-behavior-type.js` remain byte-for-byte unchanged from checkpoint 2 / v0.4.3.13 behavior. Compendium `packs/` and `assets/` remain byte-for-byte unchanged.
+
+## 0.4.3.17 — Persistent-area architecture cleanup checkpoint 2
+
+- Adds a new generic `action-effects-5e.persistent-area` Foundry RegionBehavior and `PersistentAreaEventService` while leaving the accepted Web v0.4.3.13 runtime implementation untouched.
+- Item automations can author declarative Region-event recipes that select native Foundry Region events, execute configured D&D5e Activities through the existing CAT/Midi authority bridge, apply generic combat-turn or continuous-occupancy gates, and optionally pause/stop voluntary movement from a configured Activity outcome.
+- The generic recipe runtime contains no Web spell names, Web save timing, restraint/effect rules, damage, terrain, animation, or flammability policy. Web migration is intentionally deferred to a later cleanup checkpoint.
+- Occupancy-gated recipes automatically subscribe to `TOKEN_EXIT` so the reusable gate can reset when a token leaves the Region. Movement pausing uses only the native event's own movement payload and never borrows stale Token movement history.
+- Added generic regression coverage using a fictional persistent area for event selection, combat-turn gating, exploration occupancy gating/reset, CAT/Midi Activity execution, and voluntary-movement interruption.
+- Repository gate: **230/230 PASS**; syntax check: **97 JavaScript files PASS**.
+- `web-service.js` and `web-region-behavior-type.js` are byte-for-byte unchanged from v0.4.3.13. Compendium `packs/` and `assets/` are also byte-for-byte unchanged.
+
 ## 0.4.3.13 — Web restraint/helper lifecycle hardening
 
 - Fixed Web Region teardown for unlinked/synthetic Token Actors. Region-specific restraint cleanup now scans both world Actors and Token Actors across scenes, deduplicated by Actor UUID, so ending concentration removes `Restrained by Web` from the actual live Actor that owns it.

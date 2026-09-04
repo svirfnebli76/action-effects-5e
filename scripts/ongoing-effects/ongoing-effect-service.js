@@ -251,7 +251,7 @@ export class OngoingEffectService {
 
     // Delete every helper owned by this exact Active Effect UUID. Normally there
     // is one; removing all matches self-heals duplicates created by an older race
-    // without touching helpers belonging to another Web/effect on the same Actor.
+    // without touching helpers belonging to another independent effect on the same Actor.
     if (actor && effectUuid) {
       for (const item of asArray(actor.items)) {
         const grant = this.getGrantConfig(item);

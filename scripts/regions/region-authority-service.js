@@ -65,6 +65,38 @@ export class RegionAuthorityService {
   }
 
   /**
+   * Build Foundry core's native Modify Movement Cost RegionBehavior. AE5E does
+   * not calculate terrain cost; it only prepares the core behavior data.
+   */
+  buildMovementCostBehavior({ multiplier = 1, name = "AE5E — Movement Cost" } = {}) {
+    const model = globalThis.CONFIG?.RegionBehavior?.dataModels?.modifyMovementCost ?? null;
+    if (!model) return { built: false, reason: "modify-movement-cost-unavailable", behavior: null };
+
+    let fields = null;
+    try { fields = model.defineSchema?.()?.difficulties?.fields ?? null; } catch { fields = null; }
+    let actions = Object.keys(fields ?? {});
+    if (!actions.length) {
+      actions = Object.entries(globalThis.CONFIG?.Token?.movement?.actions ?? {})
+        .filter(([, config]) => typeof config?.deriveTerrainDifficulty !== "function")
+        .map(([action]) => action);
+    }
+    if (!actions.length && globalThis.CONFIG?.Token?.movement?.defaultAction) {
+      actions = [String(globalThis.CONFIG.Token.movement.defaultAction)];
+    }
+    if (!actions.length) return { built: false, reason: "movement-actions-unavailable", behavior: null };
+
+    const difficulty = Math.max(0, Math.min(5, Number(multiplier) || 1));
+    return {
+      built: true,
+      behavior: {
+        name: String(name ?? "AE5E — Movement Cost").trim() || "AE5E — Movement Cost",
+        type: "modifyMovementCost",
+        system: { difficulties: Object.fromEntries(actions.map(action => [action, difficulty])) }
+      }
+    };
+  }
+
+  /**
    * Create an AE5E-owned Region in a Scene through GM authority.
    * @param {object} regionData Raw Foundry Region document data.
    * @param {object} options

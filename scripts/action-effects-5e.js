@@ -52,14 +52,15 @@ import { EnvironmentProfileRegistry } from "./environment/environment-profile-re
 import { EnvironmentCapabilityRegistry } from "./environment/environment-capability-registry.js";
 import { EnvironmentGeometryService } from "./environment/environment-geometry-service.js";
 import { EnvironmentRegionBehaviorRegistry } from "./environment/environment-region-behavior-registry.js";
+import { PersistentAreaEventService } from "./environment/persistent-area-event-service.js";
+import { PersistentAreaLifecycleService } from "./environment/persistent-area-lifecycle-service.js";
+import { PersistentAreaRegionBehaviorType } from "./environment/persistent-area-region-behavior-type.js";
 import { EnvironmentRegionIndex } from "./environment/environment-region-index.js";
 import { EnvironmentMutationService } from "./environment/environment-mutation-service.js";
 import { EnvironmentTimingService } from "./environment/environment-timing-service.js";
 import { FlammabilityService } from "./environment/flammability-service.js";
 import { EnvironmentalInteractionService } from "./environment/environmental-interaction-service.js";
 import { MidiEnvironmentAdapter } from "./environment/midi-environment-adapter.js";
-import { WebService } from "./environment/web-service.js";
-import { WebRegionBehaviorType } from "./environment/web-region-behavior-type.js";
 import { TestHarness } from "./dev/test-harness.js";
 import { ActionEffects5eApi } from "./api.js";
 
@@ -134,6 +135,17 @@ const environmentProfiles = new EnvironmentProfileRegistry();
 const environmentCapabilities = new EnvironmentCapabilityRegistry();
 const environmentGeometry = new EnvironmentGeometryService();
 const environmentBehaviors = new EnvironmentRegionBehaviorRegistry();
+const persistentAreaLifecycle = new PersistentAreaLifecycleService({
+  socket,
+  authority: reactionAuthority
+});
+const persistentAreaEvents = new PersistentAreaEventService({
+  socket,
+  authority: reactionAuthority,
+  activities,
+  lifecycle: persistentAreaLifecycle
+});
+PersistentAreaRegionBehaviorType.configure(persistentAreaEvents);
 const environmentIndex = new EnvironmentRegionIndex({ capabilities: environmentCapabilities, geometry: environmentGeometry });
 const environmentMutations = new EnvironmentMutationService();
 const environmentTiming = new EnvironmentTimingService({ authority: reactionAuthority, mutations: environmentMutations });
@@ -154,20 +166,7 @@ const environment = new EnvironmentalInteractionService({
   mutations: environmentMutations
 });
 const midiEnvironment = new MidiEnvironmentAdapter({ environment, geometry: environmentGeometry });
-const web = new WebService({
-  socket,
-  authority: reactionAuthority,
-  regions,
-  geometry: environmentGeometry,
-  profiles: environmentProfiles,
-  mutations: environmentMutations,
-  timing: environmentTiming,
-  activities,
-  ongoingEffects,
-  selectionIndicator,
-  crosshairs
-});
-WebRegionBehaviorType.configure(web);
+
 const displacement = new DisplacementService({
   socket,
   movement,
@@ -227,6 +226,8 @@ const tests = new TestHarness({
   environment,
   environmentGeometry,
   environmentBehaviors,
+  persistentAreaEvents,
+  persistentAreaLifecycle,
   environmentCapabilities,
   environmentProfiles,
   environmentIndex,
@@ -234,7 +235,6 @@ const tests = new TestHarness({
   environmentTiming,
   flammability,
   midiEnvironment,
-  web,
   relationships,
   relationshipLifecycle,
   relationshipMovement,
@@ -331,6 +331,8 @@ const api = new ActionEffects5eApi({
   environment,
   environmentGeometry,
   environmentBehaviors,
+  persistentAreaEvents,
+  persistentAreaLifecycle,
   environmentCapabilities,
   environmentProfiles,
   environmentIndex,
@@ -338,7 +340,6 @@ const api = new ActionEffects5eApi({
   environmentTiming,
   flammability,
   midiEnvironment,
-  web,
   relationships,
   relationshipLifecycle,
   relationshipMovement,
@@ -412,9 +413,9 @@ Hooks.once("ready", async () => {
   externalPromptBridge.initialize();
   await reactionAuthority.initialize();
   environmentTiming.initialize();
+  persistentAreaLifecycle.initialize();
   environment.initialize();
   midiEnvironment.initialize();
-  web.initialize();
   automatedAnimations.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();

@@ -11,7 +11,7 @@
   "ACTION_EFFECTS_5E.Settings.DebugLogging.Hint": "Writes additional Action Effects 5E diagnostics to the browser console.",
   "ACTION_EFFECTS_5E.Settings.CaptureDiagnostics.Name": "Capture Recent Movement Transactions",
   "ACTION_EFFECTS_5E.Settings.CaptureDiagnostics.Hint": "Records up to 50 recent movement transactions for development. Leave disabled during normal play for the lowest overhead.",
-  "BEHAVIOR.TYPES.action-effects-5e.flammable.label": "AE5E — Flammable",
+  "BEHAVIOR.TYPES.action-effects-5e.flammable.label": "AE5E \u2014 Flammable",
   "BEHAVIOR.TYPES.action-effects-5e.flammable.FIELDS.profileId.label": "Material Profile",
   "BEHAVIOR.TYPES.action-effects-5e.flammable.FIELDS.profileId.hint": "Selects the AE5E environmental reaction profile used when fire intersects this Region. Generic records ignition state; spell-specific profiles such as Web can define burning, timing, damage, and geometry changes.",
   "BEHAVIOR.TYPES.action-effects-5e.flammable.FIELDS.priority.label": "Environmental Priority",
@@ -19,12 +19,13 @@
   "TYPES": {
     "RegionBehavior": {
       "action-effects-5e": {
-        "flammable": "AE5E — Flammable",
-        "web": "AE5E — Web"
+        "flammable": "AE5E \u2014 Flammable",
+        "web": "AE5E \u2014 Web",
+        "persistent-area": "AE5E \u2014 Persistent Area"
       }
     }
   },
-  "BEHAVIOR.TYPES.action-effects-5e.web.label": "AE5E — Web",
+  "BEHAVIOR.TYPES.action-effects-5e.web.label": "AE5E \u2014 Web",
   "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.instanceId.label": "Web Instance ID",
   "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.sourceItemUuid.label": "Source Item UUID",
   "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.casterActorUuid.label": "Caster Actor UUID",
@@ -33,5 +34,10 @@
   "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.burnDamageActivity.label": "Burning Damage Activity",
   "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.restrainedEffectRole.label": "Restrained Effect Role",
   "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.sizeFeet.label": "Web Size (ft)",
-  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.cellSizeFeet.label": "Burn Cell Size (ft)"
+  "BEHAVIOR.TYPES.action-effects-5e.web.FIELDS.cellSizeFeet.label": "Burn Cell Size (ft)",
+  "BEHAVIOR.TYPES.action-effects-5e.persistent-area.label": "AE5E \u2014 Persistent Area",
+  "BEHAVIOR.TYPES.action-effects-5e.persistent-area.FIELDS.instanceId.label": "Persistent Area Instance ID",
+  "BEHAVIOR.TYPES.action-effects-5e.persistent-area.FIELDS.recipeJson.label": "Event Recipe",
+  "BEHAVIOR.TYPES.action-effects-5e.persistent-area.FIELDS.recipeJson.hint": "Declarative Item-authored event recipe executed by generic AE5E persistent-area infrastructure.",
+  "BEHAVIOR.TYPES.action-effects-5e.persistent-area.FIELDS.stateJson.label": "Runtime Gate State"
 }

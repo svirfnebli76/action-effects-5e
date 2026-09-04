@@ -15,6 +15,9 @@ import {
   ENVIRONMENT_EVENT_TYPES,
   ENVIRONMENT_FLAG_KEY,
   ENVIRONMENT_MAX_RECENT_EVENTS,
+  PERSISTENT_AREA_RECIPE_SCHEMA_VERSION,
+  PERSISTENT_AREA_LIFECYCLE_SCHEMA_VERSION,
+  PERSISTENT_AREA_EFFECT_FLAG,
   ENVIRONMENT_SCHEMA_VERSION,
   HOOKS,
   MODULE_ID,
@@ -68,14 +71,6 @@ import {
   SELECTION_INDICATOR_SOUND_VOLUME,
   SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
   SELECTION_INDICATOR_SCALE,
-  WEB_ACTIVITY_REFERENCES,
-  WEB_BURN_SECONDS,
-  WEB_CELL_SIZE_FEET,
-  WEB_EFFECT_ROLE,
-  WEB_FLAG_KEY,
-  WEB_PROFILE_ID,
-  WEB_SCHEMA_VERSION,
-  WEB_SIZE_FEET,
   TELEPORT_POLICIES
 } from "./core/constants.js";
 import {
@@ -115,6 +110,8 @@ export class ActionEffects5eApi {
     environment,
     environmentGeometry,
     environmentBehaviors,
+    persistentAreaEvents,
+    persistentAreaLifecycle,
     environmentCapabilities,
     environmentProfiles,
     environmentIndex,
@@ -122,7 +119,6 @@ export class ActionEffects5eApi {
     environmentTiming,
     flammability,
     midiEnvironment,
-    web,
     relationships,
     relationshipLifecycle,
     relationshipMovement,
@@ -197,20 +193,17 @@ export class ActionEffects5eApi {
       ONGOING_ACTION_TIMINGS,
       REGION_AUTHORITY_FLAG,
       ENVIRONMENT_SCHEMA_VERSION,
-      WEB_SCHEMA_VERSION,
-      WEB_FLAG_KEY,
-      WEB_PROFILE_ID,
-      WEB_SIZE_FEET,
-      WEB_CELL_SIZE_FEET,
-      WEB_BURN_SECONDS,
-      WEB_EFFECT_ROLE,
-      WEB_ACTIVITY_REFERENCES,
-      ENVIRONMENT_FLAG_KEY,
+                                      ENVIRONMENT_FLAG_KEY,
       ENVIRONMENT_EVENT_TYPES,
       ENVIRONMENT_CAPABILITIES,
       ENVIRONMENT_BEHAVIOR_TYPES,
       ENVIRONMENT_DELIVERY_MODES,
       ENVIRONMENT_MAX_RECENT_EVENTS,
+      PERSISTENT_AREA_RECIPE_SCHEMA_VERSION,
+      PERSISTENT_AREA_LIFECYCLE_SCHEMA_VERSION,
+      PERSISTENT_AREA_EFFECT_FLAG,
+  PERSISTENT_AREA_LIFECYCLE_SCHEMA_VERSION,
+  PERSISTENT_AREA_EFFECT_FLAG,
       ENVIRONMENT_DEDUPE_TTL_MS,
       ESKIE_PREMIUM_MODULE_ID,
       ESKIE_FREE_MODULE_ID,
@@ -339,22 +332,6 @@ export class ActionEffects5eApi {
       getStats: () => activities.getStats()
     });
 
-    this.web = Object.freeze({
-      placeCast: (options) => web.placeCast(options),
-      restorePlacementTargets: (placementOrIds) => web.restorePlacementTargets(placementOrIds),
-      commitCast: (options) => web.commitCast(options),
-      playCastAnimation: (options) => web.playCastAnimation(options),
-      create: (options) => web.create(options),
-      bindConcentration: (options) => web.bindConcentration(options),
-      isWebRegion: (region) => web.isWebRegion(region),
-      getRegionData: (region) => web.getRegionData(region),
-      tokenFootprint: (token) => web.tokenFootprint(token),
-      renderPersistentVisual: (regionOrUuid, options) => web.renderPersistentVisual(regionOrUuid, options),
-      validateSourceItem: (itemOrUuid, options) => web.validateSourceItem(itemOrUuid, options),
-      cleanupVisual: (regionOrUuid) => web.cleanupVisual(regionOrUuid),
-      getStats: () => web.getStats()
-    });
-
     this.ongoingEffects = Object.freeze({
       getEffectConfig: (effect) => ongoingEffects.getEffectConfig(effect),
       getGrantConfig: (item) => ongoingEffects.getGrantConfig(item),
@@ -374,6 +351,7 @@ export class ActionEffects5eApi {
     this.regions = Object.freeze({
       create: (regionData, options) => regions.create(regionData, options),
       delete: (regionOrUuid) => regions.delete(regionOrUuid),
+      buildMovementCostBehavior: (options) => regions.buildMovementCostBehavior(options),
       isOwned: (region) => regions.isOwned(region),
       getOwnership: (region) => regions.getOwnership(region),
       getStats: () => regions.getStats()
@@ -389,6 +367,21 @@ export class ActionEffects5eApi {
       getRecentEvents: () => environment.getRecentEvents(),
       getStats: () => environment.getStats(),
       getBehaviorStatus: () => environmentBehaviors.getStatus(),
+      persistentAreas: Object.freeze({
+        validateRecipe: (recipe) => persistentAreaEvents.validateRecipe(recipe),
+        buildBehavior: (options) => persistentAreaEvents.buildBehavior(options),
+        getRecipe: (behavior) => persistentAreaEvents.getRecipe(behavior),
+        getState: (behavior) => persistentAreaEvents.getState(behavior),
+        lifecycle: Object.freeze({
+          applyEffectTemplate: (options) => persistentAreaLifecycle.applyEffectTemplate(options),
+          hasOwnedEffect: (options) => persistentAreaLifecycle.hasOwnedEffect(options),
+          removeOwnedEffects: (options) => persistentAreaLifecycle.removeOwnedEffects(options),
+          bindConcentrationDependent: (options) => persistentAreaLifecycle.bindConcentrationDependent(options),
+          getEffectOwnership: (effect) => persistentAreaLifecycle.getEffectOwnership(effect),
+          getStats: () => persistentAreaLifecycle.getStats()
+        }),
+        getStats: () => persistentAreaEvents.getStats()
+      }),
       getCapabilityStats: () => environmentCapabilities.getStats(),
       getProfileStats: () => environmentProfiles.getStats(),
       getIndexStats: () => environmentIndex.getStats(),
@@ -536,18 +529,16 @@ export class ActionEffects5eApi {
         runAll: (options) => tests.runEnvironmentalAcceptanceTest(options),
         runFoundation: (options) => tests.runEnvironmentalFoundationTest(options),
         runMidiFire: (options) => tests.runEnvironmentalMidiFireTest(options),
-        runWeb: (options) => tests.runEnvironmentalWebTest(options),
-        validateWebItem: (options) => tests.validateWebItem(options),
         runLifecycle: (options) => tests.runEnvironmentalLiveLifecycleTest(options),
-        runPerformance: (options) => tests.runEnvironmentalPerformanceTest(options)
+        runPerformance: (options) => tests.runEnvironmentalPerformanceTest(options),
+        validateWebItem: (options) => tests.validateWebItem(options)
       }),
       runEnvironmentalAcceptanceTest: (options) => tests.runEnvironmentalAcceptanceTest(options),
       runEnvironmentalFoundationTest: (options) => tests.runEnvironmentalFoundationTest(options),
       runEnvironmentalMidiFireTest: (options) => tests.runEnvironmentalMidiFireTest(options),
-      runEnvironmentalWebTest: (options) => tests.runEnvironmentalWebTest(options),
-      validateWebItem: (options) => tests.validateWebItem(options),
       runEnvironmentalLiveLifecycleTest: (options) => tests.runEnvironmentalLiveLifecycleTest(options),
       runEnvironmentalPerformanceTest: (options) => tests.runEnvironmentalPerformanceTest(options),
+      validateWebItem: (options) => tests.validateWebItem(options),
       runOngoingEffectFoundationTest: (options) => tests.runOngoingEffectFoundationTest(options),
       runOngoingEffectLiveLifecycleTest: (options) => tests.runOngoingEffectLiveLifecycleTest(options),
       runOngoingEffectLiveMandatorySaveExecutionTest: (options) => tests.runOngoingEffectLiveMandatorySaveExecutionTest(options),

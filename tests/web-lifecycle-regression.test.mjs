@@ -4,11 +4,9 @@ import test from "node:test";
 import {
   MODULE_ID,
   ONGOING_ACTION_EFFECT_FLAG,
-  ONGOING_ACTION_ITEM_FLAG,
-  WEB_FLAG_KEY
+  ONGOING_ACTION_ITEM_FLAG
 } from "../scripts/core/constants.js";
 import { OngoingEffectService } from "../scripts/ongoing-effects/ongoing-effect-service.js";
-import { WebService } from "../scripts/environment/web-service.js";
 
 const documents = new Map();
 
@@ -288,76 +286,3 @@ test("OngoingEffectService teardown removes every duplicate helper for one effec
   }
 });
 
-test("Web Region cleanup removes restraints from synthetic Token Actors as well as world Actors", async () => {
-  const previousGame = globalThis.game;
-  const socket = new FakeSocket();
-  const regionA = "Scene.test.Region.web-a";
-  const regionB = "Scene.test.Region.web-b";
-
-  const makeActor = (uuid, effectSpecs) => ({
-    uuid,
-    effects: effectSpecs.map(([id, regionUuid]) => ({
-      id,
-      uuid: `${uuid}.ActiveEffect.${id}`,
-      flags: { [MODULE_ID]: { [WEB_FLAG_KEY]: { role: "runtime-restraint", regionUuid } } }
-    })),
-    deleted: [],
-    async deleteEmbeddedDocuments(type, ids) {
-      assert.equal(type, "ActiveEffect");
-      this.deleted.push(...ids);
-      this.effects = this.effects.filter(effect => !ids.includes(effect.id));
-      return ids;
-    }
-  });
-
-  const worldActor = makeActor("Actor.world", [["world-a", regionA]]);
-  const syntheticActor = makeActor(
-    "Scene.test.Token.enemy.Actor.base",
-    [["synthetic-a", regionA], ["synthetic-b", regionB]]
-  );
-  const linkedTokenActor = worldActor;
-
-  const scene = {
-    uuid: "Scene.test",
-    tokens: new Map([
-      ["enemy", { uuid: "Scene.test.Token.enemy", actor: syntheticActor }],
-      ["linked", { uuid: "Scene.test.Token.linked", actor: linkedTokenActor }]
-    ])
-  };
-
-  globalThis.game = {
-    user: { id: "gm", isGM: true },
-    actors: new Map([[worldActor.uuid, worldActor]]),
-    scenes: new Map([[scene.uuid, scene]])
-  };
-
-  // Registration of web.removeRestraints happens in the constructor; no Region
-  // geometry or Activity infrastructure is required for this focused test.
-  void new WebService({
-    socket,
-    authority: { getPrimaryGm: () => ({ id: "gm" }) },
-    regions: {},
-    geometry: {},
-    profiles: {},
-    mutations: {},
-    timing: {},
-    activities: {},
-    ongoingEffects: {},
-    selectionIndicator: null
-  });
-
-  try {
-    const cleanup = await socket.handlers.get("web.removeRestraints")(regionA);
-    assert.equal(cleanup.removed, 2);
-    assert.deepEqual(worldActor.deleted, ["world-a"]);
-    assert.deepEqual(syntheticActor.deleted, ["synthetic-a"]);
-    assert.equal(syntheticActor.effects.length, 1);
-    assert.equal(
-      syntheticActor.effects[0].flags[MODULE_ID][WEB_FLAG_KEY].regionUuid,
-      regionB,
-      "an overlapping second Web restraint must remain intact"
-    );
-  } finally {
-    globalThis.game = previousGame;
-  }
-});

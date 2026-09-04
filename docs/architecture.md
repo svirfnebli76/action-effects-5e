@@ -1,3 +1,15 @@
+# Current Item / AE5E architecture boundary — v0.4.3.20
+
+AE5E production runtime owns reusable infrastructure only. Item automation owns Item-specific rules. Persistent Items may submit declarative Region-event/lifecycle recipes; AE5E persists and executes those generic instructions without knowing the spell or feature semantics.
+
+The persistent-area runtime is intentionally generic: native Region event transport, CAT/Midi Activity execution, generic gates, movement pause/stop, Item-effect-template cloning, Region/document ownership, synthetic Token Actor cleanup, ongoing helper propagation, and Midi concentration dependency binding.
+
+Web-specific names, timing, effects, damage, terrain policy, helper selection, geometry, and presentation are prohibited from production runtime. Web authoring validation is permitted only under `scripts/dev` / tests.
+
+AE5E does not duplicate mechanics already owned by Foundry/D&D5e/installed modules. For difficult terrain, AE5E may construct Foundry's native Modify Movement Cost behavior but Foundry remains the movement-cost engine.
+
+---
+
 ## v0.4.3.4 Midi fire bridge acceptance boundary
 
 The runtime Midi adapter exposes one `processWorkflow()` path which performs synchronous workflow interpretation followed by asynchronous Environmental event emission. The registered `midi-qol.DamageRollComplete` hook delegates to this same path. AE5E's automated live acceptance calls `processWorkflow()` directly rather than rebroadcasting a synthetic global Midi hook, because other installed modules may also subscribe to that hook and should not receive test-only workflow objects. Foundation acceptance separately verifies that the actual Midi hook observer is registered.
