@@ -131,7 +131,9 @@ export class OngoingEffectService {
 
   validateConfig(config) {
     if (!config || typeof config !== "object") return { valid: false, reason: "missing-config" };
+    const templateSupplied = config.templateUuid !== undefined && config.templateUuid !== null;
     const templateValid = typeof config.templateUuid === "string" && config.templateUuid.startsWith("Compendium.");
+    if (templateSupplied && !templateValid) return { valid: false, reason: "invalid-template-uuid" };
     const sourceActivity = config.sourceActivity;
     const sourceActivityValid = Boolean(
       sourceActivity

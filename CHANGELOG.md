@@ -1,3 +1,9 @@
+## 0.4.3.22
+
+- Fixed ongoing-effect configuration validation so an explicitly supplied non-compendium `templateUuid` reports `invalid-template-uuid` instead of the less precise `missing-grant-source`.
+- Added an offline regression test covering template UUID validation versus the alternate `sourceActivity` grant source.
+- No persistent-area, Web, Item, pack, or asset behavior changed.
+
 # 0.4.3.21 — Startup wiring correction
 
 - Fixed a startup-blocking `TestHarness` constructor wiring regression introduced during the persistent-area infrastructure cleanup.
