@@ -1,3 +1,13 @@
+## 0.4.3.28 — Persistent-area entry interruption — Region-crossing snap correction
+
+- Corrected the generic entry-position planner after live Foundry v14 diagnostics proved that a long drag can report an unsnapped geometric Region checkpoint (for example `x=3349`) and then skip the first complete grid position in its supplied pending waypoints (jumping directly to `x=3200`).
+- When an opted-in traversed movement first crosses into a Region at an unsnapped point, AE5E now asks Foundry `TokenDocument#getSnappedPosition()` to resolve that exact crossing to the native grid position, verifies the resulting token placement with `TokenDocument#testInsideRegion()`, and inserts the verified snapped position into the replay route before the next supplied waypoint. Tiny forward probes along the actual movement vector are used only as snap tie-breakers.
+- AE5E does not infer a one-square pixel offset, assume a 100 px grid, or perform Web-specific geometry. Foundry remains authoritative for both snapping and Region containment.
+- The successful v0.4.3.27 architecture is otherwise unchanged: planning still occurs through the proven `preMoveToken` path, the original movement is cancelled before commit and replayed once through native `Scene.moveTokens()`, interaction holds discard additional movement rather than queue it, and Region Activities continue through the existing CAT/Midi-QOL workflow bridge.
+- One-step keyboard entry remains on its already-native destination; true teleport-style movement remains destination-based and does not fabricate traversal.
+- Replaced the optimistic long-drag fixture with the exact live diagnostic shape (`3500 -> 3351 -> 3349` followed by pending `3200 -> 3100`) and added regression coverage proving AE5E inserts `3300` as the first complete interior checkpoint instead of incorrectly selecting `3200`.
+- Repository gate: **240/240 PASS**; syntax check: **98 JavaScript files PASS** before packaging.
+
 ## 0.4.3.27 — Persistent-area entry interruption — native preMove planning
 
 - Reworked the opt-in persistent-area entry-interruption planner around Foundry v14's live `preMoveToken` movement data after live diagnostics proved normal canvas drag and keyboard movement bypass `TokenDocument#move`, `Scene#moveTokens`, `startMovement`, and `planToken` before reaching AE5E.

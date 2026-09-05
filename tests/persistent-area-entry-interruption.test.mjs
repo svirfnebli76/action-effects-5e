@@ -54,6 +54,7 @@ function fixture({ entryInterruption = true } = {}) {
   };
 
   const scene = {
+    grid: { size: 100 },
     regions: [region],
     async moveTokens(instructions, options) {
       calls.moves.push({ instructions, options });
@@ -70,9 +71,16 @@ function fixture({ entryInterruption = true } = {}) {
     width: 1,
     height: 1,
     parent: scene,
+    getSnappedPosition(position) {
+      return {
+        x: Math.round(Number(position.x) / 100) * 100,
+        y: Math.round(Number(position.y) / 100) * 100,
+        elevation: Number(position.elevation ?? 0)
+      };
+    },
     testInsideRegion(candidateRegion, position) {
       assert.equal(candidateRegion, region);
-      return Number(position.x) <= 3300 && Number(position.x) >= 3000;
+      return Number(position.x) <= 3349 && Number(position.x) >= 3000;
     }
   };
 
@@ -89,14 +97,16 @@ function nativeDragMovement() {
     passed: {
       waypoints: [
         { x: 3500, y: 2200, elevation: 0, action: "walk", snapped: true, intermediate: true, checkpoint: false },
-        { x: 3400, y: 2200, elevation: 0, action: "walk", snapped: true, intermediate: true, checkpoint: false },
-        { x: 3349, y: 2200, elevation: 0, action: "walk", snapped: false, intermediate: true, checkpoint: true },
-        { x: 3300, y: 2200, elevation: 0, action: "walk", snapped: true, intermediate: true, checkpoint: false },
-        { x: 3200, y: 2200, elevation: 0, action: "walk", snapped: true, intermediate: true, checkpoint: false },
-        { x: 3100, y: 2200, elevation: 0, action: "walk", snapped: true, explicit: true, intermediate: false, checkpoint: true }
+        { x: 3351, y: 2200, elevation: 0, action: "walk", snapped: false, explicit: true, intermediate: false, checkpoint: false },
+        { x: 3349, y: 2200, elevation: 0, action: "walk", snapped: false, intermediate: false, checkpoint: true }
       ]
     },
-    pending: { waypoints: [] }
+    pending: {
+      waypoints: [
+        { x: 3200, y: 2200, elevation: 0, action: "walk", snapped: true, intermediate: false, checkpoint: false },
+        { x: 3100, y: 2200, elevation: 0, action: "walk", snapped: true, explicit: true, intermediate: false, checkpoint: true }
+      ]
+    }
   };
 }
 
@@ -127,7 +137,7 @@ test("preMoveToken planning uses Foundry's already-expanded route and holds at t
   assert.deepEqual(
     result.waypoints.filter(point => point.checkpoint).map(point => point.x),
     [3349, 3300, 3100],
-    "AE5E must preserve Foundry's existing boundary/terminal checkpoints and add the first complete interior square"
+    "AE5E must preserve Foundry's existing boundary/terminal checkpoints and insert the Foundry-snapped first complete interior square"
   );
   const entry = result.plan.entries[0];
   assert.equal(entry.position.x, 3300);
@@ -142,6 +152,20 @@ test("the planner never mistakes the later native snapped waypoint for the first
   const result = service.planMovement(token, movement, transactionFor(movement));
   assert.equal(result.plan.entries[0].position.x, 3300);
   assert.notEqual(result.plan.entries[0].position.x, 3200);
+});
+
+
+test("an unsnapped Region crossing is snapped by Foundry and inserted ahead of the next supplied waypoint", () => {
+  const { service, token } = fixture();
+  const movement = nativeDragMovement();
+  const result = service.planMovement(token, movement, transactionFor(movement));
+
+  const xs = result.waypoints.map(point => point.x);
+  assert.deepEqual(xs, [3500, 3351, 3349, 3300, 3200, 3100]);
+  const inserted = result.waypoints.find(point => point.x === 3300);
+  assert.equal(inserted?.snapped, true);
+  assert.equal(inserted?.checkpoint, true);
+  assert.equal(result.plan.entries[0].pathIndex, 3);
 });
 
 test("one-step keyboard entry promotes that native destination to the interaction checkpoint", () => {
@@ -228,7 +252,7 @@ test("a replay carrying the exact entry plan bypasses the planner instead of rec
   assert.equal(service.getStats().bypassedPlannedMovements, 1);
 });
 
-test(".27 source contains no .25 settlement policy and no failed .26 TokenDocument.move planner wrapper", () => {
+test(".28 source contains no .25 settlement policy and no failed .26 TokenDocument.move planner wrapper", () => {
   const source = [
     fs.readFileSync(new URL("../scripts/environment/persistent-area-entry-interruption-service.js", import.meta.url), "utf8"),
     fs.readFileSync(new URL("../scripts/environment/persistent-area-event-service.js", import.meta.url), "utf8")

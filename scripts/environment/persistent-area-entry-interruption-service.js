@@ -91,7 +91,10 @@ function dedupeWaypoints(points) {
  * native route is, however, already expanded by the time preMoveToken fires.
  * This service consumes that route through MovementService, cancels only the
  * original operation before it commits, and replays one native Scene.moveTokens
- * route with the first complete interior position promoted to a checkpoint.
+ * route with the first Foundry-snapped complete interior position promoted to
+ * a checkpoint. If Foundry omits that snapped position from the supplied route,
+ * AE5E derives it by snapping the geometric Region crossing through Foundry's
+ * own TokenDocument API and verifying Region containment.
  *
  * Item rules are never executed here. The persistent-area Region event runtime
  * still owns the Activity/CAT/Midi workflow and the eventual resume/stop decision.
@@ -180,9 +183,13 @@ export class PersistentAreaEntryInterruptionService {
       regionStates.set(participant.behavior.uuid, { inside, pendingEntry: false });
     }
 
-    const points = teleport ? [destination] : route;
+    const points = teleport ? [destination] : route.map(point => ({ ...clone(point) }));
     for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
       const point = points[pointIndex];
+      const previousPoint = pointIndex > 0 ? points[pointIndex - 1] : origin;
+      const nextPoint = points[pointIndex + 1] ?? destination;
+      const derivedPoints = [];
+
       for (const participant of participants) {
         const key = participant.behavior.uuid;
         const state = regionStates.get(key) ?? { inside: false, pendingEntry: false };
@@ -191,7 +198,26 @@ export class PersistentAreaEntryInterruptionService {
         try { isInside = token.testInsideRegion(participant.region, point) === true; }
         catch { isInside = false; }
 
-        if (!wasInside && isInside) state.pendingEntry = true;
+        if (!wasInside && isInside) {
+          state.pendingEntry = true;
+
+          // Foundry can report the geometric Region crossing as an unsnapped
+          // checkpoint and omit the first complete grid position from its
+          // supplied pending waypoints. Ask Foundry to snap that exact crossing
+          // (with tiny forward probes only as tie-breakers), verify the snapped
+          // token is inside the owning Region, and insert that native position
+          // into the replay route. Do not infer a grid-square pixel offset.
+          if (!teleport && point.snapped !== true) {
+            const derived = this.#firstSnappedInteriorPosition({
+              token,
+              region: participant.region,
+              crossingPoint: point,
+              previousPoint,
+              nextPoint
+            });
+            if (derived) derivedPoints.push(derived);
+          }
+        }
 
         if (state.pendingEntry && isInside && (teleport || point.snapped === true)) {
           const position = sanitizeWaypoint(point);
@@ -215,6 +241,10 @@ export class PersistentAreaEntryInterruptionService {
         state.inside = isInside;
         regionStates.set(key, state);
       }
+
+      if (!teleport && derivedPoints.length) {
+        this.#insertDerivedPoints(points, pointIndex, derivedPoints, point, nextPoint);
+      }
     }
 
     if (!entries.length) {
@@ -223,7 +253,7 @@ export class PersistentAreaEntryInterruptionService {
       return { planned: false, reason: enteredButUnsettled ? "no-native-interior-position" : "route-does-not-enter", waypoints: route, plan: null };
     }
 
-    const waypoints = route.map(point => ({ ...clone(point) }));
+    const waypoints = points.map(point => ({ ...clone(point) }));
     for (const entry of entries) {
       const index = waypoints.findIndex(point => samePosition(point, entry.position));
       if (index >= 0) waypoints[index].checkpoint = true;
@@ -239,6 +269,114 @@ export class PersistentAreaEntryInterruptionService {
     };
 
     return { planned: true, reason: "native-entry-checkpoints-planned", waypoints, plan };
+  }
+
+  #firstSnappedInteriorPosition({ token, region, crossingPoint, previousPoint, nextPoint }) {
+    if (!token || !region || !crossingPoint || typeof token.getSnappedPosition !== "function") return null;
+
+    const previous = sanitizeWaypoint(previousPoint);
+    const crossing = sanitizeWaypoint(crossingPoint);
+    const next = sanitizeWaypoint(nextPoint);
+    if (!crossing) return null;
+
+    const directionSource = previous && next && positionChanged(previous, next)
+      ? { from: previous, to: next }
+      : next && positionChanged(crossing, next)
+        ? { from: crossing, to: next }
+        : previous && positionChanged(previous, crossing)
+          ? { from: previous, to: crossing }
+          : null;
+    if (!directionSource) return null;
+
+    const dx = Number(directionSource.to.x) - Number(directionSource.from.x);
+    const dy = Number(directionSource.to.y) - Number(directionSource.from.y);
+    const length = Math.hypot(dx, dy);
+    if (!Number.isFinite(length) || length <= 0) return null;
+    const ux = dx / length;
+    const uy = dy / length;
+
+    const maxForward = next
+      ? Math.max(0, ((Number(next.x) - Number(crossing.x)) * ux) + ((Number(next.y) - Number(crossing.y)) * uy))
+      : Number.POSITIVE_INFINITY;
+    const gridSize = Number(token?.parent?.grid?.size ?? globalThis.canvas?.grid?.size ?? 100);
+    const base = Number.isFinite(gridSize) && gridSize > 0 ? gridSize : 100;
+    const probeDistances = [0, base * 0.001, base * 0.01, base * 0.05, base * 0.1, base * 0.25, base * 0.49];
+
+    for (const distance of probeDistances) {
+      if (Number.isFinite(maxForward) && maxForward > 0 && distance > maxForward) continue;
+      const probe = {
+        ...clone(crossing),
+        x: Number(crossing.x) + (ux * distance),
+        y: Number(crossing.y) + (uy * distance),
+        elevation: Number(crossing.elevation ?? 0)
+      };
+
+      let snapped = null;
+      try { snapped = token.getSnappedPosition(probe); }
+      catch { snapped = null; }
+      if (!snapped || !Number.isFinite(Number(snapped.x)) || !Number.isFinite(Number(snapped.y))) continue;
+
+      const candidate = sanitizeWaypoint({
+        ...(next ?? crossing),
+        ...snapped,
+        elevation: Number.isFinite(Number(snapped.elevation)) ? Number(snapped.elevation) : Number(crossing.elevation ?? 0),
+        action: crossing.action ?? next?.action ?? previous?.action ?? null,
+        checkpoint: false,
+        explicit: false,
+        snapped: true
+      });
+      if (!candidate) continue;
+
+      const forward = ((Number(candidate.x) - Number(crossing.x)) * ux)
+        + ((Number(candidate.y) - Number(crossing.y)) * uy);
+      if (forward < -1e-6) continue;
+      if (Number.isFinite(maxForward) && maxForward > 0 && forward > maxForward + 1e-6) continue;
+
+      let inside = false;
+      try { inside = token.testInsideRegion(region, candidate) === true; }
+      catch { inside = false; }
+      if (!inside) continue;
+
+      return candidate;
+    }
+
+    return null;
+  }
+
+  #insertDerivedPoints(points, insertAfterIndex, candidates, crossingPoint, nextPoint) {
+    if (!Array.isArray(points) || !candidates?.length) return;
+    const crossing = sanitizeWaypoint(crossingPoint);
+    const next = sanitizeWaypoint(nextPoint);
+    if (!crossing) return;
+
+    let ux = 0;
+    let uy = 0;
+    if (next && positionChanged(crossing, next)) {
+      const dx = Number(next.x) - Number(crossing.x);
+      const dy = Number(next.y) - Number(crossing.y);
+      const length = Math.hypot(dx, dy);
+      if (Number.isFinite(length) && length > 0) {
+        ux = dx / length;
+        uy = dy / length;
+      }
+    }
+
+    const unique = [];
+    for (const raw of candidates) {
+      const candidate = sanitizeWaypoint(raw);
+      if (!candidate || samePosition(candidate, crossing)) continue;
+      if (points.some(point => samePosition(point, candidate))) continue;
+      if (unique.some(point => samePosition(point, candidate))) continue;
+      unique.push(candidate);
+    }
+
+    unique.sort((a, b) => {
+      const aProgress = ((Number(a.x) - Number(crossing.x)) * ux) + ((Number(a.y) - Number(crossing.y)) * uy);
+      const bProgress = ((Number(b.x) - Number(crossing.x)) * ux) + ((Number(b.y) - Number(crossing.y)) * uy);
+      return aProgress - bProgress;
+    });
+
+    if (unique.length) points.splice(insertAfterIndex + 1, 0, ...unique);
   }
 
   #handleBeforeMovement(transaction, context = {}) {
