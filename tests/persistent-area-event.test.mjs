@@ -42,7 +42,13 @@ function setupGlobals(documents) {
     }
   };
   globalThis.fromUuid = async uuid => documents.get(uuid) ?? null;
-  globalThis.foundry = { utils: { deepClone: value => structuredClone(value) } };
+  let randomCounter = 0;
+  globalThis.foundry = {
+    utils: {
+      deepClone: value => structuredClone(value),
+      randomID: () => `test-random-${++randomCounter}`
+    }
+  };
 }
 
 test("PersistentAreaEventService builds a generic recipe without spell-specific assumptions", () => {
@@ -161,12 +167,14 @@ test("PersistentAreaEventService supports one check per continuous occupancy out
   setupGlobals(documents);
   const socket = new FakeSocket();
   let executions = 0;
+  const idempotencyKeys = [];
   const service = new PersistentAreaEventService({
     socket,
     authority: { getPrimaryGm: () => ({ id: "gm" }) },
     activities: {
       execute: async request => {
         executions += 1;
+        idempotencyKeys.push(request.idempotencyKey);
         return { executed: true, saves: [request.targetTokenUuids[0]], failedSaves: [] };
       }
     }
@@ -214,6 +222,12 @@ test("PersistentAreaEventService supports one check per continuous occupancy out
     const reentry = await service.handleRegionEvent(behavior, makeEvent("tokenMoveIn", "move-3"));
     assert.equal(reentry.handled, true);
     assert.equal(executions, 2);
+    assert.equal(idempotencyKeys.length, 2);
+    assert.notEqual(
+      idempotencyKeys[0],
+      idempotencyKeys[1],
+      "A new continuous occupancy must receive a fresh Activity idempotency key."
+    );
   } finally {
     globalThis.game = previousGame;
   }

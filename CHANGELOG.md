@@ -1,3 +1,8 @@
+## 0.4.3.23
+
+- Fixed generic persistent-area occupancy re-entry idempotency so a gate that is reset on Region exit receives a fresh Activity-execution claim on the next occupancy.
+- No Web-specific runtime rules were added; the correction applies to all persistent-area recipes using occupancy gating.
+
 ## 0.4.3.22
 
 - Fixed ongoing-effect configuration validation so an explicitly supplied non-compendium `templateUuid` reports `invalid-template-uuid` instead of the less precise `missing-grant-source`.

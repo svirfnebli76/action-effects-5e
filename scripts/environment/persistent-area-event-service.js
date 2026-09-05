@@ -354,7 +354,7 @@ export class PersistentAreaEventService {
           behavior.uuid,
           eventName,
           tokenUuid,
-          gate.key ?? payload?.movementId ?? "event"
+          gate.claimId ?? payload?.movementId ?? gate.key ?? "event"
         ].join(":");
 
         result = await this.#activities.execute({
@@ -488,9 +488,23 @@ export class PersistentAreaEventService {
 
     state.gates ??= {};
     state.gates[gateId] ??= {};
-    if (state.gates[gateId][tokenUuid] === key) return { claimed: false, changed: false, key };
-    state.gates[gateId][tokenUuid] = key;
-    return { claimed: true, changed: true, key };
+
+    // Store a unique claim identifier alongside the semantic gate key. The
+    // semantic key (for example "occupancy") determines whether this event is
+    // gated, while claimId distinguishes a later, newly valid claim after the
+    // gate has been released/reset. This prevents ActivityExecutionService's
+    // longer-lived idempotency cache from mistaking a new occupancy for the
+    // earlier one. Older string-only state remains readable for compatibility.
+    const existing = state.gates[gateId][tokenUuid];
+    const existingKey = typeof existing === "string" ? existing : normalizeString(existing?.key);
+    const existingClaimId = typeof existing === "object" ? normalizeString(existing?.claimId) || null : null;
+    if (existingKey === key) {
+      return { claimed: false, changed: false, key, claimId: existingClaimId };
+    }
+
+    const claimId = randomId();
+    state.gates[gateId][tokenUuid] = { key, claimId };
+    return { claimed: true, changed: true, key, claimId };
   }
 
   #releaseGate(state, handler, tokenUuid) {
