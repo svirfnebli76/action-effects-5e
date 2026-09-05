@@ -633,3 +633,247 @@ test("tokenCenterInOwnerRegion allows genuine movement whose final token center 
     globalThis.canvas = previousCanvas;
   }
 });
+
+test("PersistentAreaEventService can settle a Region entry at the next snapped waypoint before resolving the Activity", async () => {
+  const previousGame = globalThis.game;
+  const documents = new Map();
+  setupGlobals(documents);
+  const socket = new FakeSocket();
+  let executions = 0;
+  const service = new PersistentAreaEventService({
+    socket,
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    activities: {
+      execute: async request => {
+        executions += 1;
+        return { executed: true, saves: [request.targetTokenUuids[0]], failedSaves: [] };
+      }
+    }
+  });
+
+  const recipe = {
+    schemaVersion: 1,
+    gates: { occupancy: { combat: "none", outsideCombat: "occupancy" } },
+    handlers: {
+      tokenMoveIn: {
+        gateId: "occupancy",
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" },
+        movement: {
+          pause: true,
+          pauseAt: "nextSnappedWaypoint",
+          stopOn: "failure",
+          agencies: [MOVEMENT_AGENCIES.VOLUNTARY]
+        }
+      },
+      tokenMoveWithin: {
+        gateId: "occupancy",
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" },
+        movement: {
+          pause: true,
+          stopOn: "failure",
+          agencies: [MOVEMENT_AGENCIES.VOLUNTARY]
+        }
+      }
+    }
+  };
+
+  const { behavior } = makeBehavior(service, recipe, documents);
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: [{ id: "gm", active: true, isGM: true }],
+    combat: null
+  };
+
+  let paused = 0;
+  let stopped = 0;
+  let resumed = 0;
+  const moveCalls = [];
+  const token = {
+    uuid: "Scene.test.Token.target",
+    x: 3349,
+    y: 2200,
+    elevation: 0,
+    rendered: true,
+    object: { movementAnimationPromise: Promise.resolve() },
+    pauseMovement() {
+      paused += 1;
+      return async () => { resumed += 1; return true; };
+    },
+    stopMovement() {
+      stopped += 1;
+      return true;
+    },
+    async move(waypoints, options) {
+      moveCalls.push({ waypoints: structuredClone(waypoints), options: structuredClone(options) });
+      return true;
+    }
+  };
+
+  const firstMovement = {
+    id: "move-entry",
+    method: "dragging",
+    autoRotate: true,
+    showRuler: true,
+    measureOptions: {},
+    terrainOptions: {},
+    constrainOptions: {},
+    updateOptions: { actionEffects5e: { agency: MOVEMENT_AGENCIES.VOLUNTARY } },
+    pending: {
+      waypoints: [
+        { x: 3200, y: 2200, elevation: 0, action: "walk", checkpoint: false, explicit: false, snapped: true },
+        { x: 3100, y: 2200, elevation: 0, action: "walk", checkpoint: true, explicit: true, snapped: true }
+      ]
+    }
+  };
+
+  try {
+    const entry = await service.handleRegionEvent(behavior, {
+      name: "tokenMoveIn",
+      user: { id: "gm", isSelf: true },
+      data: { token, movement: firstMovement }
+    });
+
+    assert.equal(entry.handled, true);
+    assert.equal(entry.settled, true);
+    assert.equal(executions, 0, "The Activity must not resolve at the geometric boundary checkpoint.");
+    assert.equal(paused, 1);
+    assert.equal(stopped, 1);
+    assert.equal(resumed, 0);
+
+    await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(moveCalls.length, 1);
+    assert.equal(moveCalls[0].waypoints[0].x, 3200);
+    assert.equal(moveCalls[0].waypoints[0].snapped, true);
+    assert.equal(moveCalls[0].waypoints[0].checkpoint, true, "The first snapped pending waypoint must become a checkpoint.");
+    assert.equal(moveCalls[0].waypoints[1].x, 3100, "The remainder of the original route must be preserved.");
+    assert.equal(moveCalls[0].options.method, "dragging");
+    const marker = moveCalls[0].options.actionEffects5e.persistentAreaSettlements[behavior.uuid];
+    assert.equal(marker.target.x, 3200);
+    assert.equal(typeof marker.settlementId, "string");
+    assert.ok(marker.settlementId.length > 0);
+    assert.equal(marker.deferredPayload.eventName, "tokenMoveIn");
+    assert.equal(marker.deferredPayload.movementId, "move-entry");
+
+    // A same-behavior Region event emitted while the replacement route is
+    // travelling toward the promoted snapped checkpoint must not claim the
+    // deferred interaction early.
+    const interim = await service.handleRegionEvent(behavior, {
+      name: "tokenMoveWithin",
+      user: { id: "gm", isSelf: true },
+      data: {
+        token,
+        movement: {
+          id: "move-settling",
+          method: "dragging",
+          updateOptions: moveCalls[0].options,
+          destination: { x: 3250, y: 2200, elevation: 0 },
+          passed: {
+            waypoints: [
+              { x: 3250, y: 2200, elevation: 0, checkpoint: false, snapped: false }
+            ]
+          }
+        }
+      }
+    });
+    assert.equal(interim.handled, true);
+    assert.equal(interim.settlementPending, true);
+    assert.equal(executions, 0);
+    assert.equal(paused, 1, "Interim same-behavior events must not pause or execute the Activity.");
+
+    token.x = 3200;
+    const settledMovement = {
+      id: "move-settled",
+      method: "dragging",
+      updateOptions: moveCalls[0].options,
+      destination: { x: 3100, y: 2200, elevation: 0 },
+      passed: {
+        waypoints: [
+          { x: 3200, y: 2200, elevation: 0, checkpoint: true, snapped: true }
+        ]
+      }
+    };
+
+    const resolved = await service.handleRegionEvent(behavior, {
+      name: "tokenMoveWithin",
+      user: { id: "gm", isSelf: true },
+      data: { token, movement: settledMovement }
+    });
+
+    assert.equal(resolved.handled, true);
+    assert.equal(resolved.outcome, "success");
+    assert.equal(executions, 1, "The Activity resolves once the token reaches the snapped checkpoint.");
+    assert.equal(paused, 2);
+    assert.equal(resumed, 1, "A successful Activity resumes the replacement movement.");
+
+    // Foundry keeps the original update options on the resumed route. The
+    // consumed settlement marker must therefore never resolve the deferred
+    // Activity a second time after resume.
+    const later = await service.handleRegionEvent(behavior, {
+      name: "tokenMoveWithin",
+      user: { id: "gm", isSelf: true },
+      data: {
+        token,
+        movement: {
+          id: "move-after-settlement",
+          method: "dragging",
+          updateOptions: moveCalls[0].options,
+          destination: { x: 3100, y: 2200, elevation: 0 },
+          passed: {
+            waypoints: [
+              { x: 3100, y: 2200, elevation: 0, checkpoint: true, snapped: true }
+            ]
+          }
+        }
+      }
+    });
+    assert.equal(later.gated, true);
+    assert.equal(executions, 1, "A consumed settlement must not execute the deferred Activity twice.");
+  } finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("PersistentAreaEventService validates pauseAt movement policies", () => {
+  const documents = new Map();
+  setupGlobals(documents);
+  const service = new PersistentAreaEventService({
+    socket: new FakeSocket(),
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    activities: { execute: async () => ({ executed: true }) }
+  });
+
+  const valid = service.validateRecipe({
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveIn: {
+        movement: { pause: true, pauseAt: "nextSnappedWaypoint" }
+      }
+    }
+  });
+  assert.equal(valid.valid, true);
+
+  const invalidMode = service.validateRecipe({
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveIn: {
+        movement: { pause: true, pauseAt: "somewhereElse" }
+      }
+    }
+  });
+  assert.equal(invalidMode.valid, false);
+  assert.equal(invalidMode.errors.includes("handler-tokenMoveIn-invalid-pauseAt"), true);
+
+  const missingPause = service.validateRecipe({
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveIn: {
+        movement: { pauseAt: "nextSnappedWaypoint" }
+      }
+    }
+  });
+  assert.equal(missingPause.valid, false);
+  assert.equal(missingPause.errors.includes("handler-tokenMoveIn-pauseAt-requires-pause"), true);
+});

@@ -1,3 +1,12 @@
+## 0.4.3.25
+
+- Added generic persistent-area movement policy `movement.pauseAt: "nextSnappedWaypoint"`.
+- Region-entry automations can now defer their configured Activity from Foundry's geometric boundary checkpoint to the next native snapped pending waypoint while preserving the remainder of the original movement route.
+- The deferred Activity retains the original Region event semantics, movement agency, and destination, so a route that ultimately exits the Region still resolves the entry interaction at the snapped checkpoint.
+- Snapped-settlement markers are scoped to the exact AE5E persistent-area RegionBehavior and consumed exactly once, preventing an internal continuation from resolving the same deferred Activity twice while leaving unrelated Foundry/Midi/CPR/other-module Region behaviors untouched.
+- Rebuilt from the user's fresh authoritative v0.4.3.24 installed-module baseline. `packs/` and `assets/` are preserved byte-for-byte, including the corrected hidden Escape Web helper; stale legacy Web runtime/test files already retired by v0.4.3.24 are omitted from the package.
+- No Item-specific/Web-specific runtime rules were added to AE5E.
+
 ## 0.4.3.24
 
 - Added the generic persistent-area `tokenCenterInOwnerRegion` event qualifier. Item-authored recipes can require that a token's final movement destination/current center still lies inside the owning Region before an event consumes a combat-turn or occupancy gate.
