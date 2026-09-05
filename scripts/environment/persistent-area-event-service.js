@@ -2,6 +2,8 @@ import {
   MODULE_ID,
   MOVEMENT_AGENCIES,
   OPERATION_METADATA_KEY,
+  PERSISTENT_AREA_ENTRY_PLANS_KEY,
+  PERSISTENT_AREA_ENTRY_PLAN_SCHEMA_VERSION,
   PERSISTENT_AREA_RECIPE_SCHEMA_VERSION
 } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
@@ -10,7 +12,6 @@ import { duplicateSafely, randomId } from "../core/utils.js";
 const GATE_COMBAT_MODES = new Set(["none", "turn"]);
 const GATE_OUTSIDE_MODES = new Set(["none", "occupancy", "movement"]);
 const STOP_OUTCOMES = new Set(["never", "success", "failure"]);
-const PAUSE_AT_MODES = new Set(["eventcheckpoint", "nextsnappedwaypoint"]);
 const OPERATION_WHENS = new Set(["always", "success", "failure", "unknown"]);
 const OPERATION_TYPES = new Set(["applyEffectTemplate", "removeOwnedEffects"]);
 const CONDITION_TYPES = new Set(["ownedEffect", "tokenCenterInOwnerRegion"]);
@@ -80,8 +81,10 @@ export class PersistentAreaEventService {
   #activities;
   #lifecycle;
   #geometry;
+  #movement;
   #locks = new Map();
-  #consumedSettlements = new Map();
+  #entryClaims = new Map();
+  #consumedEntries = new Map();
   #stats = {
     events: 0,
     routed: 0,
@@ -89,17 +92,20 @@ export class PersistentAreaEventService {
     gated: 0,
     occupancyResets: 0,
     movementsPaused: 0,
-    movementsSettled: 0,
     movementsStopped: 0,
+    entryInterruptionsClaimed: 0,
+    entryInterruptionsResolved: 0,
+    entryInterruptionHolds: 0,
     errors: 0
   };
 
-  constructor({ socket, authority, activities, lifecycle = null, geometry = null }) {
+  constructor({ socket, authority, activities, lifecycle = null, geometry = null, movement = null }) {
     this.#socket = socket;
     this.#authority = authority;
     this.#activities = activities;
     this.#lifecycle = lifecycle;
     this.#geometry = geometry;
+    this.#movement = movement;
     socket.register("persistentArea.regionEvent", payload => this.#processRegionEvent(payload));
   }
 
@@ -151,10 +157,16 @@ export class PersistentAreaEventService {
         else {
           const stopOn = normalizeString(movement.stopOn ?? "never").toLowerCase();
           if (!STOP_OUTCOMES.has(stopOn)) errors.push(`handler-${eventName}-invalid-stopOn`);
-          const pauseAt = normalizeString(movement.pauseAt ?? "eventCheckpoint").toLowerCase();
-          if (!PAUSE_AT_MODES.has(pauseAt)) errors.push(`handler-${eventName}-invalid-pauseAt`);
-          if (pauseAt !== "eventcheckpoint" && movement.pause !== true) errors.push(`handler-${eventName}-pauseAt-requires-pause`);
           if (movement.agencies != null && !Array.isArray(movement.agencies)) errors.push(`handler-${eventName}-agencies-must-be-array`);
+          if (movement.entryInterruption != null && typeof movement.entryInterruption !== "boolean") {
+            errors.push(`handler-${eventName}-entryInterruption-must-be-boolean`);
+          }
+          if (movement.entryInterruption === true && eventName !== eventNames().moveIn) {
+            errors.push(`handler-${eventName}-entryInterruption-requires-tokenMoveIn`);
+          }
+          if (movement.entryInterruption === true && movement.pause !== true) {
+            errors.push(`handler-${eventName}-entryInterruption-requires-pause`);
+          }
         }
       }
 
@@ -212,6 +224,9 @@ export class PersistentAreaEventService {
     const usesOccupancy = Object.values(validation.recipe.gates)
       .some(gate => normalizeString(gate?.outsideCombat).toLowerCase() === "occupancy");
     if (usesOccupancy) events.add(exitEvent);
+    const usesEntryInterruption = Object.entries(validation.recipe.handlers)
+      .some(([eventName, handler]) => eventName === eventNames().moveIn && handler?.movement?.entryInterruption === true);
+    if (usesEntryInterruption) events.add(eventNames().moveWithin);
 
     return {
       built: true,
@@ -250,89 +265,25 @@ export class PersistentAreaEventService {
     const recipe = this.getRecipe(behavior);
     if (!recipe) return { handled: false, reason: "invalid-recipe" };
     const eventName = normalizeString(event?.name ?? event?.type);
-    const handler = recipe.handlers[eventName] ?? null;
 
-    // Only native movement events carrying their own movement payload are
-    // eligible for movement pausing. Never borrow stale token.movement data.
+    // Entry-interruption plans are attached before Foundry starts the native
+    // movement. They let the Region event at the geometric boundary claim a
+    // short-lived movement hold without running the Activity there. The same
+    // native movement continues to the first planned interior checkpoint, where
+    // AE5E pauses it and resolves the ORIGINAL tokenMoveIn handler through the
+    // ordinary ActivityExecutionService / CAT / Midi path.
     const movement = event?.data?.movement ?? null;
-    const metadata = movement?.updateOptions?.[OPERATION_METADATA_KEY] ?? null;
+    const planned = await this.#handlePlannedEntryEvent({ behavior, recipe, token, movement, event, eventName });
+    if (planned) return planned;
 
-    // A replacement movement created by #settleAtNextSnappedWaypoint carries
-    // a deferred persistent-area payload. When that replacement reaches the
-    // promoted snapped checkpoint, resolve the ORIGINAL Region event there.
-    // This preserves the Item's event semantics even if the remainder of the
-    // route eventually exits the Region.
-    const settlementMarker = this.#settlementMarkerFor(metadata, behavior?.uuid);
-    const settlementKey = this.#settlementKey(behavior?.uuid, settlementMarker);
-    const settlementConsumed = settlementKey ? this.#settlementWasConsumed(settlementKey) : false;
-    if (settlementMarker && !settlementConsumed) {
-      if (this.#movementReachedSettlementTarget(token, movement, settlementMarker.target)) {
-        return this.#resolveDeferredSettlement({
-          behavior,
-          recipe,
-          token,
-          movement,
-          marker: settlementMarker,
-          settlementKey
-        });
-      }
-
-      // The replacement route can emit ordinary Region events while travelling
-      // from the geometric boundary checkpoint to the promoted snapped
-      // checkpoint. Those events belong to the same replacement movement but
-      // must not claim the deferred Item interaction early. Other Region
-      // behaviors remain untouched because the marker is scoped by behavior UUID.
-      return {
-        handled: true,
-        eventName,
-        settled: false,
-        settlementPending: true,
-        reason: "awaiting-snapped-waypoint",
-        stopMovement: false
-      };
-    }
-
+    const handler = recipe.handlers[eventName] ?? null;
     const needsOccupancyReset = eventName === eventNames().exit
       && Object.values(recipe.gates).some(gate => normalizeString(gate?.outsideCombat).toLowerCase() === "occupancy");
     if (!handler && !needsOccupancyReset) return { handled: false, reason: "unconfigured-event", eventName };
 
+    // Only native movement events carrying their own movement payload are
+    // eligible for movement pausing. Never borrow stale token.movement data.
     const movementConfig = handler?.movement ?? null;
-    const payload = {
-      behaviorUuid: behavior?.uuid ?? null,
-      eventName,
-      tokenUuid: token.uuid,
-      movementId: movement?.id ?? null,
-      movementMethod: movement?.method ?? null,
-      movementDestination: this.#sanitizeMovementDestination(movement?.destination),
-      movementAgency: metadata?.agency ?? null,
-      eventUserId: event?.user?.id ?? globalThis.game?.user?.id ?? null
-    };
-
-    // Some native Region entry checkpoints are geometric boundary crossings,
-    // which can leave a grid-snapped token visually straddling the boundary.
-    // A recipe may request that AE5E replace the remaining route with a native
-    // Foundry continuation whose first snapped pending waypoint is promoted to
-    // a checkpoint. The original Region event is deferred until that position.
-    const pauseAt = normalizeString(movementConfig?.pauseAt ?? "eventCheckpoint").toLowerCase();
-    const alreadySettled = Boolean(this.#settlementMarkerFor(metadata, behavior?.uuid));
-    if (
-      movementConfig?.pause === true
-      && pauseAt === "nextsnappedwaypoint"
-      && movement
-      && !alreadySettled
-    ) {
-      const settlement = await this.#settleAtNextSnappedWaypoint({ behavior, token, movement, payload });
-      if (settlement?.settled === true) {
-        return {
-          handled: true,
-          eventName,
-          settled: true,
-          settlement,
-          stopMovement: false
-        };
-      }
-    }
-
     let resume = null;
     if (movementConfig?.pause === true && movement && typeof token.pauseMovement === "function") {
       try {
@@ -342,6 +293,8 @@ export class PersistentAreaEventService {
         resume = null;
       }
     }
+
+    const payload = this.#movementPayload({ behavior, eventName, token, movement, eventUserId: event?.user?.id });
 
     try {
       const result = await this.#routeRegionEvent(payload);
@@ -364,177 +317,134 @@ export class PersistentAreaEventService {
     }
   }
 
-  async #settleAtNextSnappedWaypoint({ behavior, token, movement, payload }) {
-    if (
-      !behavior?.uuid
-      || !movement?.id
-      || !payload?.eventName
-      || typeof token?.pauseMovement !== "function"
-      || typeof token?.stopMovement !== "function"
-      || typeof token?.move !== "function"
-    ) {
-      return { settled: false, reason: "movement-control-unavailable" };
+  getStats() {
+    this.#pruneEntryState();
+    return Object.freeze({ ...this.#stats, locks: this.#locks.size, pendingEntryInterruptions: this.#entryClaims.size });
+  }
+
+  async #handlePlannedEntryEvent({ behavior, recipe, token, movement, event, eventName }) {
+    if (!movement || !behavior?.uuid) return null;
+    const plan = this.#entryPlanFor(movement, token.uuid);
+    if (!plan) return null;
+
+    this.#pruneEntryState();
+    const candidates = asArray(plan.entries)
+      .filter(entry => entry?.behaviorUuid === behavior.uuid)
+      .sort((a, b) => Number(a?.sequence ?? 0) - Number(b?.sequence ?? 0));
+    if (!candidates.length) return null;
+
+    const unresolved = candidates.filter(entry => !this.#entryWasConsumed(plan.planId, entry.entryId));
+    if (!unresolved.length) return null;
+
+    const reached = unresolved.find(entry => this.#movementReachedPosition(token, movement, entry?.position));
+    if (reached) {
+      return this.#resolvePlannedEntry({ behavior, recipe, token, movement, event, plan, entry: reached });
     }
 
-    const pending = asArray(movement?.pending?.waypoints);
-    const snappedIndex = pending.findIndex(waypoint => waypoint?.snapped === true);
-    if (snappedIndex < 0) return { settled: false, reason: "no-pending-snapped-waypoint" };
-
-    const waypoints = pending
-      .map(waypoint => this.#sanitizeContinuationWaypoint(waypoint))
-      .filter(Boolean);
-    if (waypoints.length !== pending.length || !waypoints[snappedIndex]) {
-      return { settled: false, reason: "pending-waypoint-unavailable" };
+    const activeClaim = unresolved
+      .map(entry => ({ entry, claim: this.#entryClaims.get(this.#entryKey(plan.planId, entry.entryId)) }))
+      .find(record => record.claim);
+    if (activeClaim) {
+      return {
+        handled: true,
+        eventName,
+        entryInterruption: true,
+        pending: true,
+        entryId: activeClaim.entry.entryId,
+        stopMovement: false
+      };
     }
 
-    waypoints[snappedIndex].checkpoint = true;
-    const target = this.#sanitizeMovementDestination(waypoints[snappedIndex]);
-    if (!target) return { settled: false, reason: "snapped-waypoint-invalid" };
+    if (eventName !== eventNames().moveIn) return null;
+    const entry = unresolved[0];
+    const key = this.#entryKey(plan.planId, entry.entryId);
+    const holdId = `${MODULE_ID}.persistent-entry.${entry.entryId}`;
+    this.#movement?.acquireInteractionHold?.({
+      tokenUuid: token.uuid,
+      holdId,
+      bypassPlanId: plan.planId,
+      message: null,
+      broadcast: true
+    });
+    this.#stats.entryInterruptionHolds += 1;
 
-    let resume = null;
-    try {
-      resume = token.pauseMovement();
-      if (resume) this.#stats.movementsPaused += 1;
-    } catch {
-      resume = null;
-    }
-    if (!resume) return { settled: false, reason: "movement-could-not-pause" };
-
-    try {
-      const movementAnimationPromise = token?.object?.movementAnimationPromise;
-      if (movementAnimationPromise && typeof movementAnimationPromise.then === "function") {
-        await movementAnimationPromise;
-      }
-    } catch {
-      // The movement-control operation is authoritative even if animation
-      // synchronization is unavailable.
-    }
-
-    let stopped = false;
-    try {
-      stopped = token.stopMovement() === true;
-    } catch {
-      stopped = false;
-    }
-
-    if (!stopped) {
-      try { await resume(); } catch { /* fail open */ }
-      return { settled: false, reason: "movement-could-not-stop" };
-    }
-
-    const updateOptions = movement?.updateOptions && typeof movement.updateOptions === "object"
-      ? clone(movement.updateOptions)
-      : {};
-    const ae5eMetadata = updateOptions[OPERATION_METADATA_KEY] && typeof updateOptions[OPERATION_METADATA_KEY] === "object"
-      ? clone(updateOptions[OPERATION_METADATA_KEY])
-      : {};
-    const settlements = ae5eMetadata.persistentAreaSettlements && typeof ae5eMetadata.persistentAreaSettlements === "object"
-      ? clone(ae5eMetadata.persistentAreaSettlements)
-      : {};
-    settlements[behavior.uuid] = {
-      settlementId: randomId(),
-      target,
-      deferredPayload: {
-        eventName: payload.eventName,
-        movementId: payload.movementId,
-        movementMethod: payload.movementMethod,
-        movementDestination: payload.movementDestination,
-        movementAgency: payload.movementAgency,
-        eventUserId: payload.eventUserId
-      }
+    const claim = {
+      key,
+      planId: plan.planId,
+      entryId: entry.entryId,
+      holdId,
+      tokenUuid: token.uuid,
+      behaviorUuid: behavior.uuid,
+      claimedAt: Date.now(),
+      payload: this.#movementPayload({
+        behavior,
+        eventName: entry.eventName ?? eventNames().moveIn,
+        token,
+        movement,
+        eventUserId: event?.user?.id,
+        interactionId: entry.entryId,
+        movementDestination: entry?.sourceDestination ?? null
+      })
     };
-    ae5eMetadata.persistentAreaSettlements = settlements;
-    updateOptions[OPERATION_METADATA_KEY] = ae5eMetadata;
+    this.#entryClaims.set(key, claim);
+    this.#stats.entryInterruptionsClaimed += 1;
 
-    const moveOptions = {
-      ...updateOptions,
-      method: movement.method ?? "api",
-      autoRotate: movement.autoRotate === true,
-      showRuler: movement.showRuler === true,
-      split: false
-    };
-    if (movement.measureOptions && typeof movement.measureOptions === "object") moveOptions.measureOptions = clone(movement.measureOptions);
-    if (movement.terrainOptions && typeof movement.terrainOptions === "object") moveOptions.terrainOptions = clone(movement.terrainOptions);
-    if (movement.constrainOptions && typeof movement.constrainOptions === "object") moveOptions.constrainOptions = clone(movement.constrainOptions);
-
-    this.#stats.movementsSettled += 1;
-
-    // Starting a replacement movement inside the Region event's own update
-    // workflow risks nesting document movement operations. Defer the handoff
-    // until the current movement stop has completed.
-    globalThis.setTimeout?.(() => {
-      Promise.resolve(token.move(waypoints, moveOptions)).catch(error => {
-        this.#stats.errors += 1;
-        Logger.error("AE5E persistent-area snapped movement settlement failed", error);
-      });
-    }, 0);
+    const finished = movement?.finished;
+    if (finished && typeof finished.finally === "function") {
+      void finished.finally(() => {
+        if (!this.#entryWasConsumed(plan.planId, entry.entryId)) this.#releaseEntryClaim(key);
+      }).catch(() => undefined);
+    }
 
     return {
-      settled: true,
-      sourceMovementId: movement.id,
-      waypointIndex: snappedIndex,
-      waypoint: clone(waypoints[snappedIndex])
+      handled: true,
+      eventName,
+      entryInterruption: true,
+      pending: true,
+      entryId: entry.entryId,
+      stopMovement: false
     };
   }
 
-  #settlementMarkerFor(metadata, behaviorUuid) {
-    if (!metadata || typeof metadata !== "object" || !behaviorUuid) return null;
-    const settlements = metadata.persistentAreaSettlements;
-    if (!settlements || typeof settlements !== "object") return null;
-    const marker = settlements[behaviorUuid];
-    return marker && typeof marker === "object" ? marker : null;
-  }
-
-  #settlementKey(behaviorUuid, marker) {
-    const settlementId = normalizeString(marker?.settlementId);
-    if (!behaviorUuid || !settlementId) return null;
-    return `${behaviorUuid}:${settlementId}`;
-  }
-
-  #settlementWasConsumed(key) {
-    this.#pruneConsumedSettlements();
-    return this.#consumedSettlements.has(key);
-  }
-
-  #consumeSettlement(key) {
-    if (!key) return;
-    this.#pruneConsumedSettlements();
-    this.#consumedSettlements.set(key, Date.now());
-  }
-
-  #pruneConsumedSettlements() {
-    const cutoff = Date.now() - 5 * 60 * 1000;
-    for (const [key, timestamp] of this.#consumedSettlements) {
-      if (timestamp < cutoff) this.#consumedSettlements.delete(key);
-    }
-  }
-
-  #movementReachedSettlementTarget(token, movement, target) {
-    if (!target || !Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.y))) return false;
-    const candidates = [
-      { x: token?.x, y: token?.y, elevation: token?.elevation },
-      asArray(movement?.passed?.waypoints).at(-1) ?? null
-    ];
-    return candidates.some(candidate => {
-      if (!candidate) return false;
-      if (Number(candidate.x) !== Number(target.x) || Number(candidate.y) !== Number(target.y)) return false;
-      if (target.elevation == null) return true;
-      return Number(candidate.elevation ?? 0) === Number(target.elevation);
-    });
-  }
-
-  async #resolveDeferredSettlement({ behavior, recipe, token, movement, marker, settlementKey = null }) {
-    const deferred = marker?.deferredPayload ?? null;
-    const eventName = normalizeString(deferred?.eventName);
-    if (!eventName || !recipe.handlers?.[eventName]) {
-      return { handled: false, reason: "settlement-handler-unavailable", eventName };
+  async #resolvePlannedEntry({ behavior, token, movement, event, plan, entry }) {
+    const key = this.#entryKey(plan.planId, entry.entryId);
+    let claim = this.#entryClaims.get(key) ?? null;
+    if (!claim) {
+      const holdId = `${MODULE_ID}.persistent-entry.${entry.entryId}`;
+      this.#movement?.acquireInteractionHold?.({
+        tokenUuid: token.uuid,
+        holdId,
+        bypassPlanId: plan.planId,
+        message: null,
+        broadcast: true
+      });
+      this.#stats.entryInterruptionHolds += 1;
+      claim = {
+        key,
+        planId: plan.planId,
+        entryId: entry.entryId,
+        holdId,
+        tokenUuid: token.uuid,
+        behaviorUuid: behavior.uuid,
+        claimedAt: Date.now(),
+        payload: this.#movementPayload({
+          behavior,
+          eventName: entry.eventName ?? eventNames().moveIn,
+          token,
+          movement,
+          eventUserId: event?.user?.id,
+          interactionId: entry.entryId,
+          movementDestination: entry?.sourceDestination ?? null
+        })
+      };
+      this.#entryClaims.set(key, claim);
+      this.#stats.entryInterruptionsClaimed += 1;
     }
 
-    // Consume this exact behavior-scoped settlement before routing. The marker
-    // remains in Foundry's immutable movement options for the rest of the
-    // replacement route, so an in-memory claim prevents the same deferred
-    // interaction from resolving again after a successful resume.
-    this.#consumeSettlement(settlementKey ?? this.#settlementKey(behavior?.uuid, marker));
+    // Consume before routing so another same-behavior Region event emitted for
+    // this checkpoint cannot execute the same Activity twice. Activity execution
+    // still has its own authority-side idempotency key as a second safety layer.
+    this.#consumeEntry(plan.planId, entry.entryId);
 
     let resume = null;
     if (typeof token.pauseMovement === "function") {
@@ -546,59 +456,110 @@ export class PersistentAreaEventService {
       }
     }
 
-    const payload = {
-      behaviorUuid: behavior?.uuid ?? null,
-      eventName,
-      tokenUuid: token.uuid,
-      movementId: deferred?.movementId ?? movement?.id ?? null,
-      movementMethod: deferred?.movementMethod ?? movement?.method ?? null,
-      movementDestination: deferred?.movementDestination ?? this.#sanitizeMovementDestination(movement?.destination),
-      movementAgency: deferred?.movementAgency ?? null,
-      eventUserId: deferred?.eventUserId ?? globalThis.game?.user?.id ?? null
-    };
-
     try {
-      const result = await this.#routeRegionEvent(payload);
+      const result = await this.#routeRegionEvent(claim.payload);
+      this.#stats.entryInterruptionsResolved += 1;
+
+      // Operations have completed on the authority client before this point. On
+      // failure, a persistent restriction (if configured) therefore exists before
+      // the short-lived interaction hold is released. This avoids an unlock gap.
+      this.#releaseEntryClaim(key);
+
       if (result?.stopMovement === true && typeof token.stopMovement === "function") {
         try {
           token.stopMovement();
           this.#stats.movementsStopped += 1;
         } catch { /* fail open */ }
-        return { ...result, settled: true };
+        return { ...result, entryInterruption: true, entryId: entry.entryId };
       }
+
       if (resume) await resume();
-      return { ...result, settled: true };
+      return { ...result, entryInterruption: true, entryId: entry.entryId };
     } catch (error) {
       this.#stats.errors += 1;
+      this.#releaseEntryClaim(key);
       if (resume) {
         try { await resume(); } catch { /* fail open */ }
       }
-      Logger.error("AE5E persistent-area deferred snapped settlement failed", error);
+      Logger.error("AE5E persistent-area planned entry resolution failed", error);
       throw error;
     }
   }
 
-  #sanitizeContinuationWaypoint(waypoint) {
-    if (!waypoint || !Number.isFinite(Number(waypoint.x)) || !Number.isFinite(Number(waypoint.y))) return null;
-    const result = {
-      x: Number(waypoint.x),
-      y: Number(waypoint.y)
+  #movementPayload({ behavior, eventName, token, movement, eventUserId = null, interactionId = null, movementDestination = undefined }) {
+    const metadata = movement?.updateOptions?.[OPERATION_METADATA_KEY] ?? null;
+    return {
+      behaviorUuid: behavior?.uuid ?? null,
+      eventName,
+      tokenUuid: token?.uuid ?? null,
+      movementId: movement?.id ?? null,
+      movementMethod: movement?.method ?? null,
+      movementDestination: movementDestination === undefined
+        ? this.#sanitizeMovementDestination(movement?.destination)
+        : this.#sanitizeMovementDestination(movementDestination),
+      movementAgency: metadata?.agency ?? null,
+      eventUserId: eventUserId ?? globalThis.game?.user?.id ?? null,
+      interactionId: normalizeString(interactionId) || null
     };
-    if (Number.isFinite(Number(waypoint.elevation))) result.elevation = Number(waypoint.elevation);
-    if (Number.isFinite(Number(waypoint.width))) result.width = Number(waypoint.width);
-    if (Number.isFinite(Number(waypoint.height))) result.height = Number(waypoint.height);
-    if (Number.isFinite(Number(waypoint.depth))) result.depth = Number(waypoint.depth);
-    if (normalizeString(waypoint.action)) result.action = normalizeString(waypoint.action);
-    if (waypoint.level != null) result.level = clone(waypoint.level);
-    if (waypoint.shape != null) result.shape = clone(waypoint.shape);
-    result.checkpoint = waypoint.checkpoint === true;
-    result.explicit = waypoint.explicit === true;
-    result.snapped = waypoint.snapped === true;
-    return result;
   }
 
-  getStats() {
-    return Object.freeze({ ...this.#stats, locks: this.#locks.size });
+  #entryPlanFor(movement, tokenUuid) {
+    const metadata = movement?.updateOptions?.[OPERATION_METADATA_KEY];
+    const plan = metadata?.[PERSISTENT_AREA_ENTRY_PLANS_KEY]?.[tokenUuid];
+    if (!plan || Number(plan.schemaVersion) !== PERSISTENT_AREA_ENTRY_PLAN_SCHEMA_VERSION) return null;
+    if (!normalizeString(plan.planId) || !Array.isArray(plan.entries)) return null;
+    return plan;
+  }
+
+  #movementReachedPosition(token, movement, position) {
+    if (!position || !Number.isFinite(Number(position.x)) || !Number.isFinite(Number(position.y))) return false;
+    const candidates = [
+      movement?.destination ?? null,
+      asArray(movement?.passed?.waypoints).at(-1) ?? null,
+      { x: token?.x, y: token?.y, elevation: token?.elevation }
+    ];
+    return candidates.some(candidate => {
+      if (!candidate) return false;
+      if (Number(candidate.x) !== Number(position.x) || Number(candidate.y) !== Number(position.y)) return false;
+      return Number(candidate.elevation ?? 0) === Number(position.elevation ?? 0);
+    });
+  }
+
+  #entryKey(planId, entryId) {
+    return `${normalizeString(planId)}:${normalizeString(entryId)}`;
+  }
+
+  #entryWasConsumed(planId, entryId) {
+    this.#pruneEntryState();
+    return this.#consumedEntries.has(this.#entryKey(planId, entryId));
+  }
+
+  #consumeEntry(planId, entryId) {
+    this.#pruneEntryState();
+    this.#consumedEntries.set(this.#entryKey(planId, entryId), Date.now());
+  }
+
+  #releaseEntryClaim(key) {
+    const claim = this.#entryClaims.get(key);
+    if (!claim) return false;
+    this.#entryClaims.delete(key);
+    this.#movement?.releaseInteractionHold?.({
+      tokenUuid: claim.tokenUuid,
+      holdId: claim.holdId,
+      broadcast: true
+    });
+    return true;
+  }
+
+  #pruneEntryState() {
+    const cutoff = Date.now() - 15 * 60 * 1000;
+    for (const [key, timestamp] of this.#consumedEntries) {
+      if (timestamp < cutoff) this.#consumedEntries.delete(key);
+    }
+    for (const [key, claim] of this.#entryClaims) {
+      if (Number(claim?.claimedAt ?? 0) >= cutoff) continue;
+      this.#releaseEntryClaim(key);
+    }
   }
 
   async #routeRegionEvent(payload) {
@@ -678,7 +639,7 @@ export class PersistentAreaEventService {
           behavior.uuid,
           eventName,
           tokenUuid,
-          gate.claimId ?? payload?.movementId ?? gate.key ?? "event"
+          gate.claimId ?? payload?.interactionId ?? payload?.movementId ?? gate.key ?? "event"
         ].join(":");
 
         result = await this.#activities.execute({

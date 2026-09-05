@@ -634,11 +634,67 @@ test("tokenCenterInOwnerRegion allows genuine movement whose final token center 
   }
 });
 
-test("PersistentAreaEventService can settle a Region entry at the next snapped waypoint before resolving the Activity", async () => {
+test("entryInterruption is opt-in only on tokenMoveIn and silently subscribes to moveWithin for the interior checkpoint", () => {
+  const documents = new Map();
+  setupGlobals(documents);
+  const service = new PersistentAreaEventService({
+    socket: new FakeSocket(),
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    activities: { execute: async () => ({ executed: true }) }
+  });
+
+  const valid = service.buildBehavior({
+    recipe: {
+      schemaVersion: 1,
+      gates: {},
+      handlers: {
+        tokenMoveIn: {
+          movement: { pause: true, entryInterruption: true },
+          activity: { itemUuid: "Item.fixture", activityReference: "Fixture Save" }
+        }
+      }
+    }
+  });
+  assert.equal(valid.built, true);
+  assert.deepEqual(new Set(valid.behavior.system.events), new Set(["tokenMoveIn", "tokenMoveWithin"]));
+
+  const wrongEvent = service.validateRecipe({
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveWithin: {
+        movement: { pause: true, entryInterruption: true },
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Save" }
+      }
+    }
+  });
+  assert.equal(wrongEvent.valid, false);
+  assert.equal(wrongEvent.errors.includes("handler-tokenMoveWithin-entryInterruption-requires-tokenMoveIn"), true);
+
+  const noPause = service.validateRecipe({
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveIn: {
+        movement: { entryInterruption: true },
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Save" }
+      }
+    }
+  });
+  assert.equal(noPause.valid, false);
+  assert.equal(noPause.errors.includes("handler-tokenMoveIn-entryInterruption-requires-pause"), true);
+});
+
+test("planned entry claims at the Region boundary, resolves the original handler exactly once at the first interior checkpoint, then resumes", async () => {
   const previousGame = globalThis.game;
   const documents = new Map();
   setupGlobals(documents);
   const socket = new FakeSocket();
+  const holdCalls = [];
+  const movementService = {
+    acquireInteractionHold(options) { holdCalls.push({ type: "acquire", ...options }); return { acquired: true }; },
+    releaseInteractionHold(options) { holdCalls.push({ type: "release", ...options }); return { released: true }; }
+  };
   let executions = 0;
   const service = new PersistentAreaEventService({
     socket,
@@ -648,36 +704,26 @@ test("PersistentAreaEventService can settle a Region entry at the next snapped w
         executions += 1;
         return { executed: true, saves: [request.targetTokenUuids[0]], failedSaves: [] };
       }
-    }
+    },
+    movement: movementService
   });
 
-  const recipe = {
+  const { behavior } = makeBehavior(service, {
     schemaVersion: 1,
-    gates: { occupancy: { combat: "none", outsideCombat: "occupancy" } },
+    gates: {},
     handlers: {
       tokenMoveIn: {
-        gateId: "occupancy",
-        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" },
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Save" },
         movement: {
           pause: true,
-          pauseAt: "nextSnappedWaypoint",
-          stopOn: "failure",
-          agencies: [MOVEMENT_AGENCIES.VOLUNTARY]
-        }
-      },
-      tokenMoveWithin: {
-        gateId: "occupancy",
-        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" },
-        movement: {
-          pause: true,
+          entryInterruption: true,
           stopOn: "failure",
           agencies: [MOVEMENT_AGENCIES.VOLUNTARY]
         }
       }
     }
-  };
+  }, documents);
 
-  const { behavior } = makeBehavior(service, recipe, documents);
   globalThis.game = {
     user: { id: "gm", isGM: true },
     users: [{ id: "gm", active: true, isGM: true }],
@@ -685,195 +731,205 @@ test("PersistentAreaEventService can settle a Region entry at the next snapped w
   };
 
   let paused = 0;
-  let stopped = 0;
   let resumed = 0;
-  const moveCalls = [];
+  let stopped = 0;
   const token = {
     uuid: "Scene.test.Token.target",
-    x: 3349,
+    x: 3600,
     y: 2200,
     elevation: 0,
-    rendered: true,
-    object: { movementAnimationPromise: Promise.resolve() },
-    pauseMovement() {
-      paused += 1;
-      return async () => { resumed += 1; return true; };
-    },
-    stopMovement() {
-      stopped += 1;
-      return true;
-    },
-    async move(waypoints, options) {
-      moveCalls.push({ waypoints: structuredClone(waypoints), options: structuredClone(options) });
-      return true;
-    }
+    pauseMovement() { paused += 1; return async () => { resumed += 1; }; },
+    stopMovement() { stopped += 1; }
   };
-
-  const firstMovement = {
-    id: "move-entry",
-    method: "dragging",
-    autoRotate: true,
-    showRuler: true,
-    measureOptions: {},
-    terrainOptions: {},
-    constrainOptions: {},
-    updateOptions: { actionEffects5e: { agency: MOVEMENT_AGENCIES.VOLUNTARY } },
-    pending: {
-      waypoints: [
-        { x: 3200, y: 2200, elevation: 0, action: "walk", checkpoint: false, explicit: false, snapped: true },
-        { x: 3100, y: 2200, elevation: 0, action: "walk", checkpoint: true, explicit: true, snapped: true }
-      ]
+  const plan = {
+    schemaVersion: 1,
+    planId: "plan-entry",
+    tokenUuid: token.uuid,
+    entries: [{
+      entryId: "entry-1",
+      behaviorUuid: behavior.uuid,
+      regionUuid: "Scene.test.Region.area",
+      eventName: "tokenMoveIn",
+      sequence: 0,
+      segmentIndex: 0,
+      position: { x: 3300, y: 2200, elevation: 0, snapped: true },
+      teleport: false,
+      sourceMethod: "dragging",
+      sourceDestination: { x: 3100, y: 2200, elevation: 0 }
+    }]
+  };
+  const updateOptions = {
+    actionEffects5e: {
+      agency: MOVEMENT_AGENCIES.VOLUNTARY,
+      persistentAreaEntryPlans: { [token.uuid]: plan }
     }
   };
 
   try {
-    const entry = await service.handleRegionEvent(behavior, {
+    const boundary = await service.handleRegionEvent(behavior, {
       name: "tokenMoveIn",
       user: { id: "gm", isSelf: true },
-      data: { token, movement: firstMovement }
+      data: {
+        token,
+        movement: {
+          id: "original-segment",
+          method: "dragging",
+          destination: { x: 3349, y: 2200, elevation: 0 },
+          passed: { waypoints: [{ x: 3349, y: 2200, elevation: 0, checkpoint: true }] },
+          updateOptions
+        }
+      }
     });
 
-    assert.equal(entry.handled, true);
-    assert.equal(entry.settled, true);
-    assert.equal(executions, 0, "The Activity must not resolve at the geometric boundary checkpoint.");
+    assert.equal(boundary.entryInterruption, true);
+    assert.equal(boundary.pending, true);
+    assert.equal(executions, 0, "The Midi/CAT Activity must not run at the geometric Region boundary.");
+    assert.equal(paused, 0, "The original movement must continue to the planned interior checkpoint.");
+    assert.equal(holdCalls.filter(call => call.type === "acquire").length, 1);
+
+    token.x = 3300;
+    const checkpoint = await service.handleRegionEvent(behavior, {
+      name: "tokenMoveWithin",
+      user: { id: "gm", isSelf: true },
+      data: {
+        token,
+        movement: {
+          id: "checkpoint-segment",
+          method: "dragging",
+          destination: { x: 3300, y: 2200, elevation: 0 },
+          passed: { waypoints: [{ x: 3300, y: 2200, elevation: 0, checkpoint: true, snapped: true }] },
+          updateOptions
+        }
+      }
+    });
+
+    assert.equal(checkpoint.entryInterruption, true);
+    assert.equal(checkpoint.outcome, "success");
+    assert.equal(executions, 1, "The original tokenMoveIn handler must execute exactly once through ActivityExecutionService.");
     assert.equal(paused, 1);
-    assert.equal(stopped, 1);
-    assert.equal(resumed, 0);
+    assert.equal(resumed, 1);
+    assert.equal(stopped, 0);
+    assert.equal(holdCalls.filter(call => call.type === "release").length, 1);
 
-    await new Promise(resolve => setTimeout(resolve, 5));
-    assert.equal(moveCalls.length, 1);
-    assert.equal(moveCalls[0].waypoints[0].x, 3200);
-    assert.equal(moveCalls[0].waypoints[0].snapped, true);
-    assert.equal(moveCalls[0].waypoints[0].checkpoint, true, "The first snapped pending waypoint must become a checkpoint.");
-    assert.equal(moveCalls[0].waypoints[1].x, 3100, "The remainder of the original route must be preserved.");
-    assert.equal(moveCalls[0].options.method, "dragging");
-    const marker = moveCalls[0].options.actionEffects5e.persistentAreaSettlements[behavior.uuid];
-    assert.equal(marker.target.x, 3200);
-    assert.equal(typeof marker.settlementId, "string");
-    assert.ok(marker.settlementId.length > 0);
-    assert.equal(marker.deferredPayload.eventName, "tokenMoveIn");
-    assert.equal(marker.deferredPayload.movementId, "move-entry");
-
-    // A same-behavior Region event emitted while the replacement route is
-    // travelling toward the promoted snapped checkpoint must not claim the
-    // deferred interaction early.
-    const interim = await service.handleRegionEvent(behavior, {
+    const duplicate = await service.handleRegionEvent(behavior, {
       name: "tokenMoveWithin",
       user: { id: "gm", isSelf: true },
       data: {
         token,
         movement: {
-          id: "move-settling",
+          id: "duplicate-checkpoint-event",
           method: "dragging",
-          updateOptions: moveCalls[0].options,
-          destination: { x: 3250, y: 2200, elevation: 0 },
-          passed: {
-            waypoints: [
-              { x: 3250, y: 2200, elevation: 0, checkpoint: false, snapped: false }
-            ]
-          }
+          destination: { x: 3300, y: 2200, elevation: 0 },
+          updateOptions
         }
       }
     });
-    assert.equal(interim.handled, true);
-    assert.equal(interim.settlementPending, true);
-    assert.equal(executions, 0);
-    assert.equal(paused, 1, "Interim same-behavior events must not pause or execute the Activity.");
-
-    token.x = 3200;
-    const settledMovement = {
-      id: "move-settled",
-      method: "dragging",
-      updateOptions: moveCalls[0].options,
-      destination: { x: 3100, y: 2200, elevation: 0 },
-      passed: {
-        waypoints: [
-          { x: 3200, y: 2200, elevation: 0, checkpoint: true, snapped: true }
-        ]
-      }
-    };
-
-    const resolved = await service.handleRegionEvent(behavior, {
-      name: "tokenMoveWithin",
-      user: { id: "gm", isSelf: true },
-      data: { token, movement: settledMovement }
-    });
-
-    assert.equal(resolved.handled, true);
-    assert.equal(resolved.outcome, "success");
-    assert.equal(executions, 1, "The Activity resolves once the token reaches the snapped checkpoint.");
-    assert.equal(paused, 2);
-    assert.equal(resumed, 1, "A successful Activity resumes the replacement movement.");
-
-    // Foundry keeps the original update options on the resumed route. The
-    // consumed settlement marker must therefore never resolve the deferred
-    // Activity a second time after resume.
-    const later = await service.handleRegionEvent(behavior, {
-      name: "tokenMoveWithin",
-      user: { id: "gm", isSelf: true },
-      data: {
-        token,
-        movement: {
-          id: "move-after-settlement",
-          method: "dragging",
-          updateOptions: moveCalls[0].options,
-          destination: { x: 3100, y: 2200, elevation: 0 },
-          passed: {
-            waypoints: [
-              { x: 3100, y: 2200, elevation: 0, checkpoint: true, snapped: true }
-            ]
-          }
-        }
-      }
-    });
-    assert.equal(later.gated, true);
-    assert.equal(executions, 1, "A consumed settlement must not execute the deferred Activity twice.");
+    assert.notEqual(duplicate?.entryId, "entry-1");
+    assert.equal(executions, 1);
   } finally {
     globalThis.game = previousGame;
   }
 });
 
-test("PersistentAreaEventService validates pauseAt movement policies", () => {
+test("planned entry waits for Activity operations before releasing the interaction hold and can stop the original voluntary route on failure", async () => {
+  const previousGame = globalThis.game;
   const documents = new Map();
   setupGlobals(documents);
+  const sequence = [];
+  const movementService = {
+    acquireInteractionHold() { sequence.push("hold-acquired"); return { acquired: true }; },
+    releaseInteractionHold() { sequence.push("hold-released"); return { released: true }; }
+  };
+  const lifecycle = {
+    async applyEffectTemplate() { sequence.push("failure-operation-applied"); return { created: true }; }
+  };
   const service = new PersistentAreaEventService({
     socket: new FakeSocket(),
     authority: { getPrimaryGm: () => ({ id: "gm" }) },
-    activities: { execute: async () => ({ executed: true }) }
+    activities: {
+      execute: async request => {
+        sequence.push("midi-workflow-complete");
+        return { executed: true, failedSaves: [request.targetTokenUuids[0]], saves: [] };
+      }
+    },
+    lifecycle,
+    movement: movementService
   });
 
-  const valid = service.validateRecipe({
+  const { behavior } = makeBehavior(service, {
     schemaVersion: 1,
     gates: {},
     handlers: {
       tokenMoveIn: {
-        movement: { pause: true, pauseAt: "nextSnappedWaypoint" }
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Save" },
+        movement: { pause: true, entryInterruption: true, stopOn: "failure", agencies: [MOVEMENT_AGENCIES.VOLUNTARY] },
+        operations: [{
+          type: "applyEffectTemplate",
+          when: "failure",
+          templateEffectUuid: "Item.fixture.ActiveEffect.template",
+          effectKey: "fixture-restraint"
+        }]
       }
     }
-  });
-  assert.equal(valid.valid, true);
+  }, documents);
+  behavior.parent = { uuid: "Scene.test.Region.area" };
 
-  const invalidMode = service.validateRecipe({
-    schemaVersion: 1,
-    gates: {},
-    handlers: {
-      tokenMoveIn: {
-        movement: { pause: true, pauseAt: "somewhereElse" }
-      }
-    }
-  });
-  assert.equal(invalidMode.valid, false);
-  assert.equal(invalidMode.errors.includes("handler-tokenMoveIn-invalid-pauseAt"), true);
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: [{ id: "gm", active: true, isGM: true }],
+    combat: null
+  };
 
-  const missingPause = service.validateRecipe({
+  let stopped = 0;
+  let resumed = 0;
+  const token = {
+    uuid: "Scene.test.Token.target",
+    x: 3300,
+    y: 2200,
+    elevation: 0,
+    pauseMovement() { sequence.push("movement-paused"); return async () => { resumed += 1; sequence.push("movement-resumed"); }; },
+    stopMovement() { stopped += 1; sequence.push("movement-stopped"); }
+  };
+  const plan = {
     schemaVersion: 1,
-    gates: {},
-    handlers: {
-      tokenMoveIn: {
-        movement: { pauseAt: "nextSnappedWaypoint" }
+    planId: "plan-failure",
+    tokenUuid: token.uuid,
+    entries: [{
+      entryId: "entry-failure",
+      behaviorUuid: behavior.uuid,
+      eventName: "tokenMoveIn",
+      sequence: 0,
+      position: { x: 3300, y: 2200, elevation: 0, snapped: true },
+      sourceDestination: { x: 3100, y: 2200, elevation: 0 }
+    }]
+  };
+  const movement = {
+    id: "checkpoint",
+    method: "dragging",
+    destination: { x: 3300, y: 2200, elevation: 0 },
+    passed: { waypoints: [{ x: 3300, y: 2200, elevation: 0, checkpoint: true }] },
+    updateOptions: {
+      actionEffects5e: {
+        agency: MOVEMENT_AGENCIES.VOLUNTARY,
+        persistentAreaEntryPlans: { [token.uuid]: plan }
       }
     }
-  });
-  assert.equal(missingPause.valid, false);
-  assert.equal(missingPause.errors.includes("handler-tokenMoveIn-pauseAt-requires-pause"), true);
+  };
+
+  try {
+    const result = await service.handleRegionEvent(behavior, {
+      name: "tokenMoveWithin",
+      user: { id: "gm", isSelf: true },
+      data: { token, movement }
+    });
+    assert.equal(result.outcome, "failure");
+    assert.equal(result.stopMovement, true);
+    assert.equal(stopped, 1);
+    assert.equal(resumed, 0);
+    assert.ok(sequence.indexOf("midi-workflow-complete") < sequence.indexOf("failure-operation-applied"));
+    assert.ok(sequence.indexOf("failure-operation-applied") < sequence.indexOf("hold-released"), "Persistent failure operations must exist before the temporary hold releases.");
+    assert.ok(sequence.indexOf("hold-released") < sequence.indexOf("movement-stopped"));
+  } finally {
+    globalThis.game = previousGame;
+  }
 });

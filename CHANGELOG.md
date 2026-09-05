@@ -1,11 +1,15 @@
-## 0.4.3.25
+## 0.4.3.26 — Persistent-area entry interruption
 
-- Added generic persistent-area movement policy `movement.pauseAt: "nextSnappedWaypoint"`.
-- Region-entry automations can now defer their configured Activity from Foundry's geometric boundary checkpoint to the next native snapped pending waypoint while preserving the remainder of the original movement route.
-- The deferred Activity retains the original Region event semantics, movement agency, and destination, so a route that ultimately exits the Region still resolves the entry interaction at the snapped checkpoint.
-- Snapped-settlement markers are scoped to the exact AE5E persistent-area RegionBehavior and consumed exactly once, preventing an internal continuation from resolving the same deferred Activity twice while leaving unrelated Foundry/Midi/CPR/other-module Region behaviors untouched.
-- Rebuilt from the user's fresh authoritative v0.4.3.24 installed-module baseline. `packs/` and `assets/` are preserved byte-for-byte, including the corrected hidden Escape Web helper; stale legacy Web runtime/test files already retired by v0.4.3.24 are omitted from the package.
-- No Item-specific/Web-specific runtime rules were added to AE5E.
+- Added generic, opt-in persistent-area `movement.entryInterruption = true` infrastructure for `TOKEN_MOVE_IN` handlers. Item recipes can require a Region-triggered Activity to resolve at the earliest native snapped token position inside the owning Region before the original movement continues.
+- Entry planning is performed before Foundry starts the original `TokenDocument.move()` operation. AE5E inserts an explicit checkpoint into that same native route and preserves Foundry's original movement Promise rather than stopping and relaunching the Token.
+- Traversed movement uses Foundry's public `TokenDocument#getCompleteMovementPath()` and `TokenDocument#testInsideRegion()` semantics. True teleport-style movement is never treated as traversal; an entry interruption resolves at the real teleport destination.
+- Added a short-lived, interaction-scoped movement hold. Once an opted-in Region entry is claimed, subsequent movement instructions for that Token are discarded until the configured Activity and its outcome operations finish. Only the exact already-planned movement may continue to its interior checkpoint while the hold is active.
+- The temporary hold is stronger than the existing voluntary-movement restriction because it prevents all new movement agencies from racing an unresolved Region interaction. After resolution, normal agency rules resume; persistent voluntary restrictions continue to use the established Entangle-derived movement policy.
+- Region Activities still execute exclusively through the existing `ActivityExecutionService` / CAT / Midi-QOL workflow bridge. Entry interruption adds no substitute saves, checks, attacks, damage rolls, or Midi workflow logic.
+- Added client synchronization for interaction holds through the existing AE5E Socketlib service and fail-safe expiry/cleanup so a failed or abandoned interaction cannot permanently strand Token movement.
+- Removed the experimental v0.4.3.25 `pauseAt: "nextSnappedWaypoint"` stop-and-relaunch approach completely. There is no `nextSnappedWaypoint`, `pauseAt`, or settlement-relaunch runtime in this build.
+- The capability remains strictly opt-in to `action-effects-5e.persistent-area` RegionBehaviors. Unrelated Foundry, Midi-QOL, CPR, Gambit's, and other third-party Region behaviors are not enrolled by AE5E.
+- Added regression coverage for long-drag first-interior checkpoint planning, one-step keyboard entry, non-traversing teleport entry, opt-in isolation, all-agency temporary holds, exact planned-route bypass, one-and-only-one Activity execution at the interior checkpoint, failure-operation-before-unlock ordering, and removal of the v0.4.3.25 experimental policy.
 
 ## 0.4.3.24
 

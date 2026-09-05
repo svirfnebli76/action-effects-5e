@@ -36,7 +36,7 @@ test("production module graph evaluates far enough to register Foundry lifecycle
     on: () => 1,
     callAll: () => {}
   };
-  const moduleRecord = { version: "0.4.3.25", active: true };
+  const moduleRecord = { version: "0.4.3.24", active: true };
   globalThis.game = {
     modules: new Map([["action-effects-5e", moduleRecord]]),
     users: [],

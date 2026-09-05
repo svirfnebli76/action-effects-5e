@@ -77,3 +77,52 @@ test("teleport action is not cancelled by the restriction hook", () => {
   assert.equal(result, undefined);
   assert.deepEqual(notices, []);
 });
+
+test("interaction-scoped hold blocks every new movement agency while allowing only the exact planned continuation", () => {
+  const { callbacks, notices } = setupGlobals();
+  const service = makeService();
+  service.initialize();
+  const subject = { uuid: "Scene.s.Token.free", actor: { effects: [] } };
+
+  const hold = service.acquireInteractionHold({
+    tokenUuid: subject.uuid,
+    holdId: "hold-1",
+    bypassPlanId: "plan-1",
+    broadcast: false
+  });
+  assert.equal(hold.acquired, true);
+
+  // Even forced movement is rejected while a Region interaction is unresolved.
+  const blockedForced = callbacks.get("preMoveToken")(
+    subject,
+    { id: "forced-new", destination: { action: "walk" }, passed: { waypoints: [{ action: "walk" }] } },
+    { [OPERATION_METADATA_KEY]: { agency: MOVEMENT_AGENCIES.FORCED } }
+  );
+  assert.equal(blockedForced, false);
+  assert.deepEqual(notices, []);
+
+  // The original Foundry movement is allowed to advance between its planned
+  // boundary and interior checkpoints because it carries the exact plan ID.
+  const planned = callbacks.get("preMoveToken")(
+    subject,
+    { id: "continuation", destination: { action: "walk" }, passed: { waypoints: [{ action: "walk" }] } },
+    {
+      [OPERATION_METADATA_KEY]: {
+        agency: MOVEMENT_AGENCIES.FORCED,
+        persistentAreaEntryPlans: {
+          [subject.uuid]: { schemaVersion: 1, planId: "plan-1", entries: [] }
+        }
+      }
+    }
+  );
+  assert.equal(planned, undefined);
+
+  assert.equal(service.releaseInteractionHold({ tokenUuid: subject.uuid, holdId: "hold-1", broadcast: false }).released, true);
+
+  const afterRelease = callbacks.get("preMoveToken")(
+    subject,
+    { id: "forced-after", destination: { action: "walk" }, passed: { waypoints: [{ action: "walk" }] } },
+    { [OPERATION_METADATA_KEY]: { agency: MOVEMENT_AGENCIES.FORCED } }
+  );
+  assert.equal(afterRelease, undefined);
+});

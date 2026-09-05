@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.3.25";
+export const MODULE_VERSION = "0.4.3.26";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -39,6 +39,8 @@ export const OVERLAP_POLICIES = Object.freeze({
 });
 
 export const OPERATION_METADATA_KEY = "actionEffects5e";
+export const PERSISTENT_AREA_ENTRY_PLANS_KEY = "persistentAreaEntryPlans";
+export const PERSISTENT_AREA_ENTRY_PLAN_SCHEMA_VERSION = 1;
 export const SCENE_RELATIONSHIPS_FLAG = "relationships";
 export const RELATIONSHIP_GRANT_FLAG = "relationshipGrant";
 export const RELATIONSHIP_LIFECYCLE_SCHEMA_VERSION = 1;

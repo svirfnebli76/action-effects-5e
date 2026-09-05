@@ -4,6 +4,7 @@ import {
   MODULE_ID,
   MOVEMENT_PHASES,
   OPERATION_METADATA_KEY,
+  PERSISTENT_AREA_ENTRY_PLANS_KEY,
   SETTINGS
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
@@ -43,19 +44,32 @@ export class MovementService {
   #relationships;
   #accounting;
   #catMovement;
+  #socket;
   #voluntaryMovementRestriction;
   #initialized = false;
   #pending = new Map();
   #recent = [];
   #hookIds = [];
   #movementContexts = new Map();
+  #interactionHolds = new Map();
+  #interactionHoldTtlMs = 15 * 60 * 1000;
+  #interactionHoldStats = {
+    acquired: 0,
+    released: 0,
+    blockedMovements: 0,
+    bypassedContinuations: 0,
+    expired: 0
+  };
 
-  constructor({ registry, relationships, accounting = null, catMovement = null, voluntaryMovementRestriction = null }) {
+  constructor({ registry, relationships, accounting = null, catMovement = null, socket = null, voluntaryMovementRestriction = null }) {
     this.#registry = registry;
     this.#relationships = relationships;
     this.#accounting = accounting;
     this.#catMovement = catMovement;
+    this.#socket = socket;
     this.#voluntaryMovementRestriction = voluntaryMovementRestriction ?? new VoluntaryMovementRestrictionPolicy();
+    this.#socket?.register?.("movement.interactionHold.acquire", payload => this.#applyInteractionHold(payload));
+    this.#socket?.register?.("movement.interactionHold.release", payload => this.#removeInteractionHold(payload));
   }
 
   initialize() {
@@ -77,6 +91,7 @@ export class MovementService {
     this.#hookIds = [];
     this.#pending.clear();
     this.#movementContexts.clear();
+    this.#interactionHolds.clear();
     this.#initialized = false;
   }
 
@@ -156,6 +171,35 @@ export class MovementService {
     return this.#voluntaryMovementRestriction.evaluate(options);
   }
 
+  acquireInteractionHold({ tokenUuid, holdId = `${MODULE_ID}-hold-${randomId(20)}`, bypassPlanId = null, message = null, broadcast = true } = {}) {
+    const payload = {
+      tokenUuid: typeof tokenUuid === "string" ? tokenUuid : tokenUuid?.uuid,
+      holdId,
+      bypassPlanId: typeof bypassPlanId === "string" && bypassPlanId.length ? bypassPlanId : null,
+      message: typeof message === "string" && message.trim().length ? message.trim() : null,
+      createdAt: Date.now()
+    };
+    const result = this.#applyInteractionHold(payload);
+    if (result.acquired && broadcast) this.#broadcastInteractionHold("movement.interactionHold.acquire", payload);
+    return Object.freeze({ ...result, ...payload });
+  }
+
+  releaseInteractionHold({ tokenUuid, holdId, broadcast = true } = {}) {
+    const payload = {
+      tokenUuid: typeof tokenUuid === "string" ? tokenUuid : tokenUuid?.uuid,
+      holdId
+    };
+    const result = this.#removeInteractionHold(payload);
+    if (result.released && broadcast) this.#broadcastInteractionHold("movement.interactionHold.release", payload);
+    return Object.freeze({ ...result, ...payload });
+  }
+
+  getInteractionHolds(tokenUuid = null) {
+    this.#pruneInteractionHolds();
+    if (tokenUuid) return [...(this.#interactionHolds.get(tokenUuid)?.values() ?? [])].map(duplicateSafely);
+    return [...this.#interactionHolds.entries()].flatMap(([uuid, holds]) => [...holds.values()].map(hold => ({ tokenUuid: uuid, ...duplicateSafely(hold) })));
+  }
+
   async dispatchSyntheticForTesting(transaction) {
     await this.#registry.dispatch(transaction, MOVEMENT_PHASES.AFTER, { synthetic: true, service: this });
   }
@@ -166,10 +210,88 @@ export class MovementService {
       pendingTransactions: this.#pending.size,
       recentTransactions: this.#recent.length,
       movementContexts: this.#movementContexts.size,
+      interactionHolds: this.getInteractionHolds().length,
+      interactionHoldStats: duplicateSafely(this.#interactionHoldStats),
       accounting: this.#accounting?.getStats?.() ?? null,
       voluntaryMovementRestriction: this.#voluntaryMovementRestriction.getStats(),
       registry: this.#registry.getStats()
     };
+  }
+
+  #applyInteractionHold(payload = {}) {
+    this.#pruneInteractionHolds();
+    const tokenUuid = typeof payload?.tokenUuid === "string" ? payload.tokenUuid : null;
+    const holdId = typeof payload?.holdId === "string" ? payload.holdId : null;
+    if (!tokenUuid || !holdId) return { acquired: false, reason: "invalid-hold" };
+    if (!this.#interactionHolds.has(tokenUuid)) this.#interactionHolds.set(tokenUuid, new Map());
+    const holds = this.#interactionHolds.get(tokenUuid);
+    const already = holds.has(holdId);
+    holds.set(holdId, Object.freeze({
+      holdId,
+      bypassPlanId: typeof payload?.bypassPlanId === "string" && payload.bypassPlanId.length ? payload.bypassPlanId : null,
+      message: typeof payload?.message === "string" && payload.message.trim().length ? payload.message.trim() : null,
+      createdAt: Number.isFinite(Number(payload?.createdAt)) ? Number(payload.createdAt) : Date.now()
+    }));
+    if (!already) this.#interactionHoldStats.acquired += 1;
+    return { acquired: true, already };
+  }
+
+  #removeInteractionHold(payload = {}) {
+    const tokenUuid = typeof payload?.tokenUuid === "string" ? payload.tokenUuid : null;
+    const holdId = typeof payload?.holdId === "string" ? payload.holdId : null;
+    if (!tokenUuid || !holdId) return { released: false, reason: "invalid-hold" };
+    const holds = this.#interactionHolds.get(tokenUuid);
+    if (!holds?.delete(holdId)) return { released: false, reason: "hold-unavailable" };
+    if (!holds.size) this.#interactionHolds.delete(tokenUuid);
+    this.#interactionHoldStats.released += 1;
+    return { released: true };
+  }
+
+  #broadcastInteractionHold(name, payload) {
+    if (!this.#socket?.ready || !globalThis.game?.users) return;
+    const recipients = [...game.users]
+      .filter(user => user?.active && user?.id && user.id !== game.user?.id)
+      .map(user => user.id);
+    if (!recipients.length) return;
+    void this.#socket.executeForUsers(name, recipients, duplicateSafely(payload)).catch(error => {
+      Logger.debug(`Could not synchronize AE5E interaction hold '${name}'.`, error);
+    });
+  }
+
+  #evaluateInteractionHolds(document, operation = {}) {
+    this.#pruneInteractionHolds();
+    const holds = this.#interactionHolds.get(document?.uuid);
+    if (!holds?.size) return { blocked: false, reason: "no-interaction-hold" };
+
+    const metadata = operation?.[OPERATION_METADATA_KEY] ?? {};
+    const tokenPlan = metadata?.[PERSISTENT_AREA_ENTRY_PLANS_KEY]?.[document?.uuid] ?? null;
+    const planId = typeof tokenPlan?.planId === "string" ? tokenPlan.planId : null;
+    const bypassAll = metadata?.bypassInteractionHolds === true && metadata?.generatedBy === MODULE_ID;
+    if (bypassAll) {
+      this.#interactionHoldStats.bypassedContinuations += 1;
+      return { blocked: false, reason: "ae5e-explicit-bypass" };
+    }
+
+    for (const hold of holds.values()) {
+      if (hold.bypassPlanId && planId === hold.bypassPlanId) continue;
+      this.#interactionHoldStats.blockedMovements += 1;
+      return { blocked: true, reason: "interaction-in-progress", hold, message: hold.message ?? null };
+    }
+
+    this.#interactionHoldStats.bypassedContinuations += 1;
+    return { blocked: false, reason: "planned-continuation" };
+  }
+
+  #pruneInteractionHolds() {
+    const cutoff = Date.now() - this.#interactionHoldTtlMs;
+    for (const [tokenUuid, holds] of this.#interactionHolds) {
+      for (const [holdId, hold] of holds) {
+        if (Number(hold.createdAt ?? 0) >= cutoff) continue;
+        holds.delete(holdId);
+        this.#interactionHoldStats.expired += 1;
+      }
+      if (!holds.size) this.#interactionHolds.delete(tokenUuid);
+    }
   }
 
   #isEnabled() {
@@ -219,6 +341,17 @@ export class MovementService {
     if (!this.#isEnabled()) return;
     const interoperableOperation = this.#catMovement?.enrichOperation({ document, movement, operation }) ?? operation;
     const effectiveOperation = this.#withMovementContext(movement, interoperableOperation);
+
+    // A short-lived interaction hold is stronger than an Active Effect movement
+    // restriction. It prevents ANY new movement instruction from racing ahead of
+    // an unresolved Region interaction, regardless of agency. The already-planned
+    // movement which caused the interaction is allowed to continue only when its
+    // behavior-scoped plan ID matches every active hold for this Token.
+    const interactionHold = this.#evaluateInteractionHolds(document, effectiveOperation);
+    if (interactionHold.blocked) {
+      if (interactionHold.message) ui?.notifications?.warn?.(interactionHold.message);
+      return false;
+    }
 
     // Voluntary movement restriction is evaluated before the ordinary movement
     // interest fast-path. Native drag/keyboard movement often carries no AE5E

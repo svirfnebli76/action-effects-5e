@@ -53,6 +53,7 @@ import { EnvironmentCapabilityRegistry } from "./environment/environment-capabil
 import { EnvironmentGeometryService } from "./environment/environment-geometry-service.js";
 import { EnvironmentRegionBehaviorRegistry } from "./environment/environment-region-behavior-registry.js";
 import { PersistentAreaEventService } from "./environment/persistent-area-event-service.js";
+import { PersistentAreaEntryInterruptionService } from "./environment/persistent-area-entry-interruption-service.js";
 import { PersistentAreaLifecycleService } from "./environment/persistent-area-lifecycle-service.js";
 import { PersistentAreaRegionBehaviorType } from "./environment/persistent-area-region-behavior-type.js";
 import { EnvironmentRegionIndex } from "./environment/environment-region-index.js";
@@ -85,7 +86,7 @@ const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animatio
 const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
 const relationships = new RelationshipService({ socket, lifecycle: relationshipLifecycle, spending: movementSpending });
 const relativeRelationships = new RelativeTokenRelationshipService();
-const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement });
+const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement, socket });
 const displacementDirections = new DisplacementDirectionService();
 const movementObstructions = new MovementObstructionService({ relativeRelationships });
 const displacementPlanner = new DisplacementPlanner({
@@ -144,7 +145,11 @@ const persistentAreaEvents = new PersistentAreaEventService({
   authority: reactionAuthority,
   activities,
   lifecycle: persistentAreaLifecycle,
-  geometry: environmentGeometry
+  geometry: environmentGeometry,
+  movement
+});
+const persistentAreaEntryInterruption = new PersistentAreaEntryInterruptionService({
+  events: persistentAreaEvents
 });
 PersistentAreaRegionBehaviorType.configure(persistentAreaEvents);
 const environmentIndex = new EnvironmentRegionIndex({ capabilities: environmentCapabilities, geometry: environmentGeometry });
@@ -333,6 +338,7 @@ const api = new ActionEffects5eApi({
   environmentGeometry,
   environmentBehaviors,
   persistentAreaEvents,
+  persistentAreaEntryInterruption,
   persistentAreaLifecycle,
   environmentCapabilities,
   environmentProfiles,
@@ -409,6 +415,7 @@ Hooks.once("ready", async () => {
   relationshipMovement.initialize();
   relationshipRotation.initialize();
   movement.initialize();
+  persistentAreaEntryInterruption.initialize();
   displacement.initialize();
   await selectionIndicator.initialize();
   externalPromptBridge.initialize();

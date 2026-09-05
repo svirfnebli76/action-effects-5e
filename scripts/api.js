@@ -111,6 +111,7 @@ export class ActionEffects5eApi {
     environmentGeometry,
     environmentBehaviors,
     persistentAreaEvents,
+    persistentAreaEntryInterruption,
     persistentAreaLifecycle,
     environmentCapabilities,
     environmentProfiles,
@@ -372,6 +373,7 @@ export class ActionEffects5eApi {
         buildBehavior: (options) => persistentAreaEvents.buildBehavior(options),
         getRecipe: (behavior) => persistentAreaEvents.getRecipe(behavior),
         getState: (behavior) => persistentAreaEvents.getState(behavior),
+        getEntryInterruptionStats: () => persistentAreaEntryInterruption?.getStats?.() ?? null,
         lifecycle: Object.freeze({
           applyEffectTemplate: (options) => persistentAreaLifecycle.applyEffectTemplate(options),
           hasOwnedEffect: (options) => persistentAreaLifecycle.hasOwnedEffect(options),
