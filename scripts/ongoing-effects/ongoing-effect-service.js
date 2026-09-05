@@ -48,6 +48,7 @@ export class OngoingEffectService {
   #claims = new Set();
   #grantPromises = new Map();
   #workflowResultPromises = new Map();
+  #workflowExecutionIds = new WeakMap();
   #stats = {
     effectsObserved: 0,
     grantsCreated: 0,
@@ -107,6 +108,7 @@ export class OngoingEffectService {
     this.#combatState.clear();
     this.#grantPromises.clear();
     this.#workflowResultPromises.clear();
+    this.#workflowExecutionIds = new WeakMap();
     this.#initialized = false;
   }
 
@@ -540,6 +542,7 @@ export class OngoingEffectService {
         itemUuid: item.uuid,
         effectUuid: effect.uuid,
         workflowId: payload.workflowId ?? null,
+        executionId: payload.executionId ?? null,
         executionUserId: payload.executionUserId ?? null
       });
       return { handled: true, success: false, effectRemoved: false };
@@ -550,6 +553,7 @@ export class OngoingEffectService {
       itemUuid: item.uuid,
       effectUuid: effect.uuid,
       workflowId: payload.workflowId ?? null,
+      executionId: payload.executionId ?? null,
       executionUserId: payload.executionUserId ?? null
     });
 
@@ -557,7 +561,8 @@ export class OngoingEffectService {
     if (grant.removeEffectOnSuccess !== false && effect?.parent?.deleteEmbeddedDocuments) {
       await effect.parent.deleteEmbeddedDocuments("ActiveEffect", [effect.id], {
         ae5eOngoingSuccess: true,
-        ae5eOngoingWorkflowId: payload.workflowId ?? null
+        ae5eOngoingWorkflowId: payload.workflowId ?? null,
+        ae5eOngoingExecutionId: payload.executionId ?? null
       });
       effectRemoved = true;
     }
@@ -728,7 +733,7 @@ export class OngoingEffectService {
     const activity = workflow?.activity ?? null;
     const actor = item?.actor ?? item?.parent ?? activity?.actor ?? null;
     const firstRoll = this.#firstWorkflowRoll(workflow);
-    const dc = Number(workflow?.saveDC ?? workflow?.dc ?? activity?.dc?.value ?? activity?.check?.dc ?? NaN);
+    const dc = Number(workflow?.saveDC ?? workflow?.dc ?? activity?.dc?.value ?? activity?.check?.dc?.value ?? activity?.check?.dc ?? NaN);
     return {
       schema: "ae5e.ongoing-workflow-result",
       version: 1,
@@ -737,7 +742,18 @@ export class OngoingEffectService {
       itemUuid: item?.uuid ?? null,
       actorUuid: actor?.uuid ?? null,
       activityUuid: activity?.uuid ?? activity?.id ?? null,
-      workflowId: workflow?.uuid ?? workflow?.id ?? null,
+
+      // Midi-QOL 14 can expose the Activity UUID through workflow.id for
+      // Activity-backed workflows. That value is therefore diagnostic only and
+      // must never be used as the identity of one execution.
+      workflowId: workflow?.id ?? null,
+
+      // AE5E assigns one stable identity to the live workflow object. Midi's
+      // duplicate completion hooks receive the same object and therefore share
+      // this execution ID, while a later use of the same Activity receives a
+      // fresh ID and cannot be mistaken for the previous roll.
+      executionId: this.#workflowExecutionId(workflow),
+
       executionUserId: game?.user?.id ?? null,
       rollTotal: Number.isFinite(Number(firstRoll?.total)) ? Number(firstRoll.total) : null,
       dc: Number.isFinite(dc) ? dc : null
@@ -751,19 +767,23 @@ export class OngoingEffectService {
       executed: result.executed === true,
       via: result.via ?? null,
       reason: result.reason ?? null,
-      workflowId: workflow?.uuid ?? workflow?.id ?? null,
+      workflowId: workflow?.id ?? null,
       activityUuid: workflow?.activity?.uuid ?? workflow?.activity?.id ?? null,
       itemUuid: workflow?.item?.uuid ?? workflow?.activity?.item?.uuid ?? null
     };
   }
 
   #firstWorkflowRoll(workflow) {
+    // Midi-QOL 14 stores per-token save/check results on tokenSaves. Do not
+    // access the deprecated workflow.saveRolls getter.
+    const tokenSaveRolls = this.#tokenSaveRolls(workflow);
+    if (tokenSaveRolls.length) return tokenSaveRolls[0];
+
     const candidates = [
       workflow?.utilityRolls,
       workflow?.checkRolls,
       workflow?.skillRolls,
       workflow?.abilityRolls,
-      workflow?.saveRolls,
       workflow?.rolls
     ];
     for (const candidate of candidates) {
@@ -774,10 +794,43 @@ export class OngoingEffectService {
     return workflow?.roll ?? null;
   }
 
+  #tokenSaveRolls(workflow) {
+    const tokenSaves = workflow?.tokenSaves;
+    if (!tokenSaves) return [];
+    if (Array.isArray(tokenSaves)) return tokenSaves.filter(Boolean);
+    if (tokenSaves instanceof Map) return [...tokenSaves.values()].filter(Boolean);
+    if (typeof tokenSaves.values === "function") {
+      try { return [...tokenSaves.values()].filter(Boolean); } catch { /* plain-object fallback below */ }
+    }
+    if (typeof tokenSaves === "object") return Object.values(tokenSaves).filter(Boolean);
+    return [];
+  }
+
+  #workflowExecutionId(workflow) {
+    if (!workflow || (typeof workflow !== "object" && typeof workflow !== "function")) return null;
+    const existing = this.#workflowExecutionIds.get(workflow);
+    if (existing) return existing;
+
+    const randomId = globalThis.foundry?.utils?.randomID?.(20)
+      ?? globalThis.crypto?.randomUUID?.()
+      ?? `ae5e-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const executionId = `ae5e-ongoing-${randomId}`;
+    this.#workflowExecutionIds.set(workflow, executionId);
+    return executionId;
+  }
+
   #workflowResultKey(payload) {
+    const executionId = payload?.executionId;
+    if (executionId) {
+      return `${payload.effectUuid ?? "effect"}:${payload.itemUuid ?? "item"}:${executionId}`;
+    }
+
+    // Compatibility fallback for externally supplied v1 payloads which predate
+    // executionId. New live workflow processing never relies on workflowId.
     const workflowId = payload?.workflowId;
     if (!workflowId) return null;
-    return `${payload.effectUuid ?? "effect"}:${payload.itemUuid ?? "item"}:${workflowId}`;
+    return `${payload.effectUuid ?? "effect"}:${payload.itemUuid ?? "item"}:legacy:${workflowId}`;
   }
 
   #rememberWorkflowResult(key, promise) {

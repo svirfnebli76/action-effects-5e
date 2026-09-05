@@ -185,6 +185,159 @@ test("duplicate Midi completion hooks route one authority result per workflow", 
   }
 });
 
+
+test("same Midi Activity ID is processed independently across failure then success executions", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { id: "gm", isGM: true }, settings: { get: () => false } };
+  const { actor, effect, item } = makeGrantFixture();
+  documents.set(effect.uuid, effect);
+  documents.set(item.uuid, item);
+  const { service } = makeService();
+
+  const activity = {
+    id: "escape-check",
+    uuid: "Actor.target.Item.escape.Activity.escape-check",
+    item
+  };
+
+  const failure = {
+    id: activity.uuid,
+    item,
+    activity,
+    saves: new Set(),
+    failedSaves: new Set([actor]),
+    tokenSaves: {
+      "Scene.test.Token.target": { total: 4, isSuccess: false }
+    },
+    dc: 15
+  };
+
+  const success = {
+    id: activity.uuid,
+    item,
+    activity,
+    saves: new Set([actor]),
+    failedSaves: new Set(),
+    tokenSaves: {
+      "Scene.test.Token.target": { total: 18, isSuccess: true }
+    },
+    dc: 15
+  };
+
+  try {
+    const failed = await service.processWorkflowResult(failure);
+    assert.equal(failed.handled, true);
+    assert.equal(failed.success, false);
+    assert.deepEqual(actor.deletedEffects, []);
+
+    const succeeded = await service.processWorkflowResult(success);
+    assert.equal(succeeded.handled, true);
+    assert.equal(succeeded.success, true);
+    assert.equal(succeeded.effectRemoved, true);
+    assert.deepEqual(actor.deletedEffects, [effect.id]);
+
+    const stats = service.getStats();
+    assert.equal(stats.failures, 1);
+    assert.equal(stats.successes, 1);
+    assert.equal(stats.duplicateWorkflowResults, 0,
+      "a later execution of the same Activity UUID must not be mistaken for the earlier workflow");
+  } finally {
+    documents.clear();
+    globalThis.game = previousGame;
+  }
+});
+
+test("duplicate completion hooks for one workflow object still de-duplicate when workflow.id is an Activity UUID", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { id: "player", isGM: false }, settings: { get: () => false } };
+  const { actor, item } = makeGrantFixture();
+  const socket = new FakeSocket();
+  const { service } = makeService({ socket });
+
+  const workflow = {
+    id: "Actor.target.Item.escape.Activity.escape-check",
+    item,
+    saves: new Set([actor]),
+    failedSaves: new Set(),
+    tokenSaves: {
+      "Scene.test.Token.target": { total: 18, isSuccess: true }
+    },
+    dc: 15
+  };
+
+  try {
+    const first = await service.processWorkflowResult(workflow);
+    const second = await service.processWorkflowResult(workflow);
+
+    assert.equal(first.handled, true);
+    assert.equal(second.handled, true);
+    assert.equal(socket.gmCalls.length, 1,
+      "both Midi completion hooks for the same live workflow must route only once");
+    assert.equal(service.getStats().duplicateWorkflowResults, 1);
+
+    const payload = socket.gmCalls[0].args[0];
+    assert.equal(payload.workflowId, workflow.id);
+    assert.equal(typeof payload.executionId, "string");
+    assert.ok(payload.executionId.length > 0);
+  } finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("ongoing-effect result extraction uses tokenSaves and never touches deprecated Midi getters", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = { user: { id: "player", isGM: false }, settings: { get: () => false } };
+  const { actor, item } = makeGrantFixture();
+  const socket = new FakeSocket();
+  const { service } = makeService({ socket });
+
+  const workflow = {
+    id: "Actor.target.Item.escape.Activity.escape-check",
+    item,
+    activity: {
+      id: "escape-check",
+      uuid: "Actor.target.Item.escape.Activity.escape-check",
+      item,
+      check: { dc: { value: 15 } }
+    },
+    saves: new Set([actor]),
+    failedSaves: new Set(),
+    tokenSaves: new Map([
+      ["Scene.test.Token.target", { total: 19, isSuccess: true }]
+    ]),
+    dc: 15
+  };
+
+  Object.defineProperty(workflow, "saveRolls", {
+    configurable: true,
+    get() {
+      throw new Error("deprecated workflow.saveRolls getter was accessed");
+    }
+  });
+
+  Object.defineProperty(workflow, "uuid", {
+    configurable: true,
+    get() {
+      throw new Error("deprecated workflow.uuid getter was accessed");
+    }
+  });
+
+  try {
+    const result = await service.processWorkflowResult(workflow);
+    assert.equal(result.handled, true);
+    assert.equal(result.success, true);
+    assert.equal(socket.gmCalls.length, 1);
+
+    const payload = socket.gmCalls[0].args[0];
+    assert.equal(payload.rollTotal, 19);
+    assert.equal(payload.dc, 15);
+    assert.equal(payload.workflowId, workflow.id);
+    assert.equal(typeof payload.executionId, "string");
+  } finally {
+    globalThis.game = previousGame;
+  }
+});
+
 test("GM authority validates the grant/effect pair and removes the parent effect on success", async () => {
   const previousGame = globalThis.game;
   globalThis.game = { user: { id: "gm", isGM: true }, settings: { get: () => false } };

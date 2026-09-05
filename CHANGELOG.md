@@ -1,3 +1,12 @@
+## 0.4.3.29 — Ongoing-effect Midi workflow result identity
+
+- Corrected generic ongoing-effect result de-duplication for Midi-QOL 14 Activity workflows. Midi can expose the same Activity UUID through `workflow.id` on every use, so AE5E no longer treats that value as a per-execution identity.
+- AE5E now assigns a private per-workflow-object `executionId`. Midi's duplicate completion hooks for one live workflow share that ID and still collapse to one authority result, while a later use of the same Activity receives a new ID and is processed independently.
+- Removed all `workflow.saveRolls` access from `OngoingEffectService`. The deprecated Midi getter is replaced by `workflow.tokenSaves`, with Map/collection/plain-object support, while normal `saves` / `failedSaves` remain authoritative for success/failure classification.
+- Avoided the deprecated Midi `workflow.uuid` getter in ongoing-effect payload/serialization paths; `workflow.id` is retained only as diagnostic metadata and is not used for new live de-duplication.
+- Added regression coverage for repeated failure/failure/success executions of the same Activity ID, duplicate completion hooks for one execution, `tokenSaves` roll extraction, and fail-closed guards proving neither deprecated getter is touched.
+- No persistent-area entry-interruption, movement, Region, CAT, compendium, or asset behavior changed.
+
 ## 0.4.3.28 — Persistent-area entry interruption — Region-crossing snap correction
 
 - Corrected the generic entry-position planner after live Foundry v14 diagnostics proved that a long drag can report an unsnapped geometric Region checkpoint (for example `x=3349`) and then skip the first complete grid position in its supplied pending waypoints (jumping directly to `x=3200`).
