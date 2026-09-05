@@ -691,9 +691,11 @@ test("planned entry claims at the Region boundary, resolves the original handler
   setupGlobals(documents);
   const socket = new FakeSocket();
   const holdCalls = [];
+  let movementContext = null;
   const movementService = {
     acquireInteractionHold(options) { holdCalls.push({ type: "acquire", ...options }); return { acquired: true }; },
-    releaseInteractionHold(options) { holdCalls.push({ type: "release", ...options }); return { released: true }; }
+    releaseInteractionHold(options) { holdCalls.push({ type: "release", ...options }); return { released: true }; },
+    getMovementContext() { return movementContext; }
   };
   let executions = 0;
   const service = new PersistentAreaEventService({
@@ -758,11 +760,9 @@ test("planned entry claims at the Region boundary, resolves the original handler
       sourceDestination: { x: 3100, y: 2200, elevation: 0 }
     }]
   };
-  const updateOptions = {
-    actionEffects5e: {
-      agency: MOVEMENT_AGENCIES.VOLUNTARY,
-      persistentAreaEntryPlans: { [token.uuid]: plan }
-    }
+  movementContext = {
+    agency: MOVEMENT_AGENCIES.VOLUNTARY,
+    persistentAreaEntryPlans: { [token.uuid]: plan }
   };
 
   try {
@@ -775,8 +775,7 @@ test("planned entry claims at the Region boundary, resolves the original handler
           id: "original-segment",
           method: "dragging",
           destination: { x: 3349, y: 2200, elevation: 0 },
-          passed: { waypoints: [{ x: 3349, y: 2200, elevation: 0, checkpoint: true }] },
-          updateOptions
+          passed: { waypoints: [{ x: 3349, y: 2200, elevation: 0, checkpoint: true }] }
         }
       }
     });
@@ -797,8 +796,7 @@ test("planned entry claims at the Region boundary, resolves the original handler
           id: "checkpoint-segment",
           method: "dragging",
           destination: { x: 3300, y: 2200, elevation: 0 },
-          passed: { waypoints: [{ x: 3300, y: 2200, elevation: 0, checkpoint: true, snapped: true }] },
-          updateOptions
+          passed: { waypoints: [{ x: 3300, y: 2200, elevation: 0, checkpoint: true, snapped: true }] }
         }
       }
     });
@@ -819,8 +817,7 @@ test("planned entry claims at the Region boundary, resolves the original handler
         movement: {
           id: "duplicate-checkpoint-event",
           method: "dragging",
-          destination: { x: 3300, y: 2200, elevation: 0 },
-          updateOptions
+          destination: { x: 3300, y: 2200, elevation: 0 }
         }
       }
     });

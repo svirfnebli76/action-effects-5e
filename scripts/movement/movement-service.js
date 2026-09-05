@@ -103,6 +103,11 @@ export class MovementService {
     return this.#registry.unregister(id);
   }
 
+  getMovementContext(movement = {}) {
+    const context = this.#resolveMovementContext(movement);
+    return context ? duplicateSafely(context) : null;
+  }
+
   registerMovementContext(movementId, metadata = {}) {
     if (typeof movementId !== "string" || !movementId.length) {
       throw new TypeError("Movement context requires a non-empty movement ID.");
@@ -315,16 +320,20 @@ export class MovementService {
     return this.#registry.hasPotentialInterest(document, phase, { userId });
   }
 
-  #withMovementContext(movement, operation = {}) {
+  #resolveMovementContext(movement = {}) {
     // Foundry assigns a new movement.id when it continues through an explicit
     // checkpoint, while waypoint.subpathId remains tied to the original movement
     // instruction ID. Resolve semantic ownership by either identifier so every
     // continuation of an AE5E-generated route stays internal and recursion-safe.
-    let context = null;
     for (const key of movementContextKeys(movement)) {
-      context = this.#movementContexts.get(key);
-      if (context) break;
+      const context = this.#movementContexts.get(key);
+      if (context) return context;
     }
+    return null;
+  }
+
+  #withMovementContext(movement, operation = {}) {
+    const context = this.#resolveMovementContext(movement);
     if (!context) return operation ?? {};
 
     const operationMetadata = operation?.[OPERATION_METADATA_KEY];

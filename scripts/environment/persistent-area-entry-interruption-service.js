@@ -1,5 +1,8 @@
 import {
   MODULE_ID,
+  MOVEMENT_AGENCIES,
+  MOVEMENT_PHASES,
+  MOVEMENT_RESOURCES,
   OPERATION_METADATA_KEY,
   PATH_TYPES,
   PERSISTENT_AREA_ENTRY_PLANS_KEY,
@@ -8,9 +11,10 @@ import {
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 
-const TOKEN_MOVE_WRAPPER_TARGET = "foundry.documents.TokenDocument.prototype.move";
 const MOVE_IN_EVENT = () => globalThis.CONST?.REGION_EVENTS?.TOKEN_MOVE_IN ?? "tokenMoveIn";
-const POSITION_KEYS = new Set([
+const CONSUMER_ID = `${MODULE_ID}.persistent-area-entry-interruption`;
+const CONSUMER_PRIORITY = 20_000;
+const WAYPOINT_FIELDS = Object.freeze([
   "x", "y", "elevation", "width", "height", "depth", "shape", "level",
   "action", "checkpoint", "explicit", "snapped"
 ]);
@@ -37,274 +41,364 @@ function samePosition(a, b) {
     && Number(a.elevation ?? 0) === Number(b.elevation ?? 0);
 }
 
-function movementActionConfig(actionId) {
-  const actions = globalThis.CONFIG?.Token?.movement?.actions;
-  return actions?.get?.(actionId) ?? actions?.[actionId] ?? null;
+function positionChanged(a, b) {
+  return !samePosition(a, b);
+}
+
+function sanitizeWaypoint(value) {
+  if (!value || !Number.isFinite(Number(value.x)) || !Number.isFinite(Number(value.y))) return null;
+  const result = {};
+  for (const key of WAYPOINT_FIELDS) {
+    if (value[key] === undefined || value[key] === null) continue;
+    result[key] = clone(value[key]);
+  }
+  result.x = Number(value.x);
+  result.y = Number(value.y);
+  result.elevation = Number.isFinite(Number(value.elevation)) ? Number(value.elevation) : 0;
+  if (Number.isFinite(Number(value.width))) result.width = Number(value.width);
+  if (Number.isFinite(Number(value.height))) result.height = Number(value.height);
+  if (Number.isFinite(Number(value.depth))) result.depth = Number(value.depth);
+  result.checkpoint = value.checkpoint === true;
+  result.explicit = value.explicit === true;
+  result.snapped = value.snapped === true;
+  return result;
+}
+
+function dedupeWaypoints(points) {
+  const result = [];
+  for (const raw of points) {
+    const point = sanitizeWaypoint(raw);
+    if (!point) continue;
+    if (samePosition(result.at(-1), point)) {
+      const existing = result[result.length - 1];
+      const checkpoint = existing.checkpoint === true || point.checkpoint === true;
+      const explicit = existing.explicit === true || point.explicit === true;
+      Object.assign(existing, point);
+      if (checkpoint) existing.checkpoint = true;
+      if (explicit) existing.explicit = true;
+      continue;
+    }
+    result.push(point);
+  }
+  return result;
 }
 
 /**
- * Prepares native Foundry token movement for opt-in persistent-area entry
- * interruption. It does not execute any Item rule. Its only job is to ensure
- * the original native movement contains a checkpoint at the earliest native
- * grid position inside each opted-in Region and to attach a behavior-scoped
- * plan to the movement update options.
+ * Generic opt-in persistent-area entry interruption planner.
  *
- * The caller's original TokenDocument#move promise remains Foundry-owned. We
- * never stop/relaunch the movement merely to insert the entry checkpoint.
+ * Foundry v14's normal canvas drag and keyboard movement do not pass through
+ * TokenDocument#move or Scene#moveTokens before preMoveToken. The authoritative
+ * native route is, however, already expanded by the time preMoveToken fires.
+ * This service consumes that route through MovementService, cancels only the
+ * original operation before it commits, and replays one native Scene.moveTokens
+ * route with the first complete interior position promoted to a checkpoint.
+ *
+ * Item rules are never executed here. The persistent-area Region event runtime
+ * still owns the Activity/CAT/Midi workflow and the eventual resume/stop decision.
  */
 export class PersistentAreaEntryInterruptionService {
   #events;
+  #movement;
   #initialized = false;
-  #wrapperRegistered = false;
+  #removeConsumer = null;
+  #activeOriginalMovements = new Set();
   #stats = {
+    observedMovements: 0,
     plannedMovements: 0,
     plannedEntries: 0,
-    bypassedPreparedMovements: 0,
-    unsupportedComplexMoves: 0,
-    wrapperErrors: 0
+    cancelledOriginalMovements: 0,
+    replayedMovements: 0,
+    bypassedPlannedMovements: 0,
+    blockedOverlappingOriginals: 0,
+    noNativeInteriorPosition: 0,
+    replayErrors: 0
   };
 
-  constructor({ events }) {
+  constructor({ events, movement }) {
     this.#events = events;
+    this.#movement = movement;
   }
 
   initialize() {
     if (this.#initialized) return;
     this.#initialized = true;
 
-    const wrapperApi = globalThis.libWrapper;
-    if (!wrapperApi?.register) {
-      Logger.warn("Persistent-area entry interruption could not register TokenDocument.move; libWrapper is unavailable.");
+    if (!this.#movement?.registerConsumer) {
+      Logger.warn("Persistent-area entry interruption could not register its pre-movement consumer; MovementService is unavailable.");
       return;
     }
 
-    const service = this;
-    try {
-      wrapperApi.register(
-        MODULE_ID,
-        TOKEN_MOVE_WRAPPER_TARGET,
-        function ae5ePersistentAreaEntryMoveWrapper(wrapped, waypoints, options = {}) {
-          return service.#wrapTokenMove(this, wrapped, waypoints, options);
-        },
-        "MIXED"
-      );
-      this.#wrapperRegistered = true;
-    } catch (error) {
-      this.#stats.wrapperErrors += 1;
-      Logger.error("Could not register the persistent-area TokenDocument.move wrapper.", error);
-    }
+    this.#removeConsumer = this.#movement.registerConsumer({
+      id: CONSUMER_ID,
+      phases: [MOVEMENT_PHASES.BEFORE],
+      priority: CONSUMER_PRIORITY,
+      execution: "initiator",
+      handler: this.#handleBeforeMovement.bind(this)
+    });
   }
 
   shutdown() {
-    if (this.#wrapperRegistered) {
-      try { globalThis.libWrapper?.unregister?.(MODULE_ID, TOKEN_MOVE_WRAPPER_TARGET); }
-      catch (error) { Logger.debug("Could not unregister persistent-area TokenDocument.move wrapper.", error); }
-    }
-    this.#wrapperRegistered = false;
+    try { this.#removeConsumer?.(); }
+    catch (error) { Logger.debug("Could not unregister persistent-area entry interruption consumer.", error); }
+    this.#removeConsumer = null;
+    this.#activeOriginalMovements.clear();
     this.#initialized = false;
   }
 
   getStats() {
-    return Object.freeze({ ...this.#stats, initialized: this.#initialized, wrapperRegistered: this.#wrapperRegistered });
+    return Object.freeze({
+      ...this.#stats,
+      initialized: this.#initialized,
+      consumerRegistered: Boolean(this.#removeConsumer),
+      activeOriginalMovements: this.#activeOriginalMovements.size
+    });
   }
 
   /** Public for deterministic unit testing; not exposed as an Item API. */
-  prepareMove(token, waypoints, options = {}) {
-    const existingPlan = this.getPlanFromOptions(options, token?.uuid);
-    if (existingPlan) {
-      this.#stats.bypassedPreparedMovements += 1;
-      return { planned: false, reason: "already-prepared", waypoints, options, plan: existingPlan };
-    }
-
-    if (!token?.uuid || !token?.parent || typeof token?.getCompleteMovementPath !== "function" || typeof token?.testInsideRegion !== "function") {
-      return { planned: false, reason: "token-movement-api-unavailable", waypoints, options, plan: null };
-    }
-
-    const normalized = this.#normalizeWaypoints(token, waypoints);
-    if (!normalized?.waypoints?.length) return { planned: false, reason: "no-movement-waypoints", waypoints, options, plan: null };
-    if (normalized.complex && normalized.waypoints.length > 1) {
-      this.#stats.unsupportedComplexMoves += 1;
-      return { planned: false, reason: "complex-token-data-move", waypoints, options, plan: null };
+  planMovement(token, movement, transaction = {}) {
+    if (!token?.uuid || !token?.parent || typeof token?.testInsideRegion !== "function") {
+      return { planned: false, reason: "token-region-api-unavailable", waypoints: [], plan: null };
     }
 
     const participants = this.#entryBehaviors(token);
-    if (!participants.length) return { planned: false, reason: "no-entry-interruption-regions", waypoints, options, plan: null };
+    if (!participants.length) return { planned: false, reason: "no-entry-interruption-regions", waypoints: [], plan: null };
 
-    const originalDestination = normalized.waypoints.at(-1);
+    const origin = sanitizeWaypoint(transaction?.origin ?? movement?.origin ?? token);
+    const route = this.#extractRoute(movement, transaction);
+    if (!origin || !route.length) return { planned: false, reason: "movement-route-unavailable", waypoints: [], plan: null };
+
+    const destination = route.at(-1);
+    const teleport = transaction?.pathType === PATH_TYPES.TELEPORT;
     const planId = `${MODULE_ID}-persistent-entry-${randomId(20)}`;
     const entries = [];
-    const insertionsBySegment = new Map();
     const regionStates = new Map();
 
     for (const participant of participants) {
       let inside = false;
-      try { inside = token.testInsideRegion(participant.region, normalized.origin) === true; }
+      try { inside = token.testInsideRegion(participant.region, origin) === true; }
       catch { inside = false; }
       regionStates.set(participant.behavior.uuid, { inside, pendingEntry: false });
     }
 
-    let segmentOrigin = normalized.origin;
-    for (let segmentIndex = 0; segmentIndex < normalized.waypoints.length; segmentIndex += 1) {
-      const endpoint = normalized.waypoints[segmentIndex];
-      const teleport = this.#isTeleportSegment(endpoint, options);
-      let complete = null;
-      try {
-        complete = teleport
-          ? [clone(segmentOrigin), clone(endpoint)]
-          : token.getCompleteMovementPath([clone(segmentOrigin), clone(endpoint)]);
-      } catch (error) {
-        Logger.debug("Could not expand a movement segment while planning persistent-area entry interruption.", error);
-        complete = [clone(segmentOrigin), clone(endpoint)];
-      }
-      const points = asArray(complete).filter(point => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)));
-      if (!points.length || !samePosition(points[0], segmentOrigin)) points.unshift(clone(segmentOrigin));
+    const points = teleport ? [destination] : route;
+    for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
+      const point = points[pointIndex];
+      for (const participant of participants) {
+        const key = participant.behavior.uuid;
+        const state = regionStates.get(key) ?? { inside: false, pendingEntry: false };
+        const wasInside = state.inside === true;
+        let isInside = false;
+        try { isInside = token.testInsideRegion(participant.region, point) === true; }
+        catch { isInside = false; }
 
-      for (let pointIndex = 1; pointIndex < points.length; pointIndex += 1) {
-        const point = points[pointIndex];
-        for (const participant of participants) {
-          const key = participant.behavior.uuid;
-          const state = regionStates.get(key) ?? { inside: false, pendingEntry: false };
-          const wasInside = state.inside === true;
-          let isInside = false;
-          try { isInside = token.testInsideRegion(participant.region, point) === true; }
-          catch { isInside = false; }
+        if (!wasInside && isInside) state.pendingEntry = true;
 
-          // Foundry's geometric ENTER transition may occur at an unsnapped
-          // boundary position where a grid token is only partially over the
-          // Region. Once that transition begins, keep searching forward along
-          // the same native path until we identify the earliest legal snapped
-          // Token position that is still inside the Region.
-          if (!wasInside && isInside) state.pendingEntry = true;
-
-          if (state.pendingEntry && isInside) {
-            let stop = clone(point);
-            if (!teleport && stop.snapped !== true && typeof token?.getSnappedPosition === "function") {
-              try {
-                const snapped = token.getSnappedPosition(stop);
-                if (snapped && token.testInsideRegion(participant.region, snapped) === true) {
-                  stop = { ...stop, ...clone(snapped), snapped: true };
-                }
-              } catch { /* keep searching the native path */ }
-            }
-
-            // A traversed entry must settle at a native snapped position. If the
-            // Region is thinner than one legal grid position, no synthetic
-            // coordinate is invented; the ordinary Region event remains free to
-            // use Foundry's boundary behavior instead. A true teleport is already
-            // discontinuous, so its real destination is the interaction position.
-            if (teleport || stop.snapped === true) {
-              const entry = {
-                entryId: `${planId}-${entries.length + 1}`,
-                behaviorUuid: participant.behavior.uuid,
-                regionUuid: participant.region.uuid ?? null,
-                eventName: MOVE_IN_EVENT(),
-                sequence: entries.length,
-                segmentIndex,
-                position: this.#sanitizePosition(stop),
-                teleport,
-                sourceMethod: normalizeString(options?.method) || null,
-                sourceDestination: this.#sanitizePosition(originalDestination)
-              };
-              entries.push(entry);
-              state.pendingEntry = false;
-
-              if (!insertionsBySegment.has(segmentIndex)) insertionsBySegment.set(segmentIndex, []);
-              insertionsBySegment.get(segmentIndex).push({
-                order: pointIndex,
-                position: entry.position,
-                action: stop.action ?? endpoint.action ?? null
-              });
-            }
-          }
-
-          if (!isInside) state.pendingEntry = false;
-          state.inside = isInside;
-          regionStates.set(key, state);
+        if (state.pendingEntry && isInside && (teleport || point.snapped === true)) {
+          const position = sanitizeWaypoint(point);
+          const entry = {
+            entryId: `${planId}-${entries.length + 1}`,
+            behaviorUuid: participant.behavior.uuid,
+            regionUuid: participant.region.uuid ?? null,
+            eventName: MOVE_IN_EVENT(),
+            sequence: entries.length,
+            pathIndex: pointIndex,
+            position,
+            teleport,
+            sourceMethod: normalizeString(movement?.method ?? transaction?.method) || null,
+            sourceDestination: sanitizeWaypoint(destination)
+          };
+          entries.push(entry);
+          state.pendingEntry = false;
         }
-      }
 
-      segmentOrigin = endpoint;
+        if (!isInside) state.pendingEntry = false;
+        state.inside = isInside;
+        regionStates.set(key, state);
+      }
     }
 
-    if (!entries.length) return { planned: false, reason: "route-does-not-enter", waypoints, options, plan: null };
-
-    const rewritten = [];
-    for (let segmentIndex = 0; segmentIndex < normalized.waypoints.length; segmentIndex += 1) {
-      const endpoint = { ...clone(normalized.waypoints[segmentIndex]) };
-      const insertions = [...(insertionsBySegment.get(segmentIndex) ?? [])]
-        .sort((a, b) => a.order - b.order);
-
-      for (const insertion of insertions) {
-        if (samePosition(rewritten.at(-1), insertion.position)) {
-          rewritten[rewritten.length - 1].checkpoint = true;
-          continue;
-        }
-        if (samePosition(endpoint, insertion.position)) {
-          endpoint.checkpoint = true;
-          endpoint.snapped = endpoint.snapped === true || insertion.position.snapped === true;
-          continue;
-        }
-        rewritten.push({
-          ...clone(insertion.position),
-          ...(insertion.action ? { action: insertion.action } : {}),
-          checkpoint: true,
-          explicit: false,
-          snapped: insertion.position.snapped !== false
-        });
-      }
-      rewritten.push(endpoint);
+    if (!entries.length) {
+      const enteredButUnsettled = [...regionStates.values()].some(state => state.pendingEntry === true);
+      if (enteredButUnsettled) this.#stats.noNativeInteriorPosition += 1;
+      return { planned: false, reason: enteredButUnsettled ? "no-native-interior-position" : "route-does-not-enter", waypoints: route, plan: null };
     }
 
-    // A single TokenData-style move may carry fields unrelated to movement.
-    // Marking its existing destination as a checkpoint preserves that object,
-    // but expanding it into multiple waypoint objects could change update
-    // semantics. Fail open rather than splitting a complex TokenData update.
-    if (normalized.complex && rewritten.length !== normalized.waypoints.length) {
-      this.#stats.unsupportedComplexMoves += 1;
-      return { planned: false, reason: "complex-token-data-move", waypoints, options, plan: null };
+    const waypoints = route.map(point => ({ ...clone(point) }));
+    for (const entry of entries) {
+      const index = waypoints.findIndex(point => samePosition(point, entry.position));
+      if (index >= 0) waypoints[index].checkpoint = true;
     }
+    if (waypoints.length) waypoints[waypoints.length - 1].checkpoint = true;
 
     const plan = {
       schemaVersion: PERSISTENT_AREA_ENTRY_PLAN_SCHEMA_VERSION,
       planId,
       tokenUuid: token.uuid,
+      originalMovementId: transaction?.movementId ?? movement?.id ?? null,
       entries
     };
 
-    const nextOptions = this.#withPlan(options, token.uuid, plan);
-    this.#stats.plannedMovements += 1;
-    this.#stats.plannedEntries += entries.length;
-
-    const nextWaypoints = Array.isArray(waypoints)
-      ? rewritten
-      : (rewritten.length === 1 ? rewritten[0] : rewritten);
-
-    return {
-      planned: true,
-      reason: "entry-checkpoints-added",
-      waypoints: nextWaypoints,
-      options: nextOptions,
-      plan
-    };
+    return { planned: true, reason: "native-entry-checkpoints-planned", waypoints, plan };
   }
 
-  getPlanFromOptions(options, tokenUuid) {
-    const metadata = options?.[OPERATION_METADATA_KEY];
-    const plans = metadata?.[PERSISTENT_AREA_ENTRY_PLANS_KEY];
-    const plan = plans?.[tokenUuid];
-    if (!plan || Number(plan.schemaVersion) !== PERSISTENT_AREA_ENTRY_PLAN_SCHEMA_VERSION) return null;
-    return plan;
-  }
+  #handleBeforeMovement(transaction, context = {}) {
+    this.#stats.observedMovements += 1;
+    const token = context?.document;
+    const movement = context?.movement;
+    if (!token?.uuid || !movement || !positionChanged(transaction?.origin, transaction?.destination)) return true;
 
-  #wrapTokenMove(token, wrapped, waypoints, options = {}) {
-    try {
-      const prepared = this.prepareMove(token, waypoints, options);
-      return wrapped(prepared.waypoints, prepared.options);
-    } catch (error) {
-      this.#stats.wrapperErrors += 1;
-      Logger.error("Persistent-area entry interruption planning failed; using the original Foundry movement.", error);
-      return wrapped(waypoints, options);
+    const existingPlan = this.#planFromMetadata(transaction?.metadata, token.uuid);
+    if (existingPlan) {
+      this.#stats.bypassedPlannedMovements += 1;
+      return true;
     }
+
+    if (this.#activeOriginalMovements.has(transaction.movementId)) {
+      this.#stats.blockedOverlappingOriginals += 1;
+      return false;
+    }
+
+    const prepared = this.planMovement(token, movement, transaction);
+    if (!prepared.planned) return true;
+
+    this.#stats.plannedMovements += 1;
+    this.#stats.plannedEntries += prepared.plan.entries.length;
+    this.#stats.cancelledOriginalMovements += 1;
+    this.#activeOriginalMovements.add(transaction.movementId);
+
+    const preflightHoldId = `${MODULE_ID}.persistent-entry-plan.${prepared.plan.planId}`;
+    this.#movement?.acquireInteractionHold?.({
+      tokenUuid: token.uuid,
+      holdId: preflightHoldId,
+      bypassPlanId: prepared.plan.planId,
+      message: null,
+      broadcast: true
+    });
+
+    // Foundry is still unwinding the cancelled preMoveToken operation. Match the
+    // proven relationship/Grapple translation pattern and begin the replacement
+    // on the next event-loop task rather than inside the hook stack.
+    setTimeout(() => {
+      void this.#replayMovement({
+        token,
+        transaction,
+        movement,
+        prepared,
+        preflightHoldId
+      });
+    }, 0);
+
+    return false;
+  }
+
+  async #replayMovement({ token, transaction, movement, prepared, preflightHoldId }) {
+    const scene = token?.parent;
+    const originalMovementId = transaction?.movementId;
+    let releaseContext = null;
+
+    try {
+      if (!scene?.moveTokens || !token?.id) throw new Error("The originating Scene or Token is no longer available.");
+      if (!samePosition(token, transaction.origin)) {
+        throw new Error("The token changed position before the entry-interrupted movement could be replayed.");
+      }
+
+      const movementId = randomId(16);
+      const agency = transaction.agency === MOVEMENT_AGENCIES.UNKNOWN
+        ? MOVEMENT_AGENCIES.VOLUNTARY
+        : transaction.agency;
+      const resource = transaction.resource === MOVEMENT_RESOURCES.UNKNOWN
+        ? MOVEMENT_RESOURCES.MOVEMENT
+        : transaction.resource;
+      const originalMetadata = transaction?.metadata && typeof transaction.metadata === "object"
+        ? clone(transaction.metadata)
+        : {};
+
+      const metadata = {
+        ...originalMetadata,
+        transactionId: `${MODULE_ID}-persistent-entry-replay-${randomId(20)}`,
+        pathType: transaction.pathType,
+        agency,
+        resource,
+        movementMode: transaction.movementMode ?? null,
+        sourceUuid: transaction.sourceUuid ?? originalMetadata.sourceUuid ?? null,
+        initiatorUuid: transaction.initiatorUuid ?? token.uuid,
+        requestingUserId: transaction.userId ?? globalThis.game?.user?.id ?? null,
+        originalMovementId,
+        persistentAreaEntryReplay: true,
+        persistentAreaEntryPlanId: prepared.plan.planId,
+        [PERSISTENT_AREA_ENTRY_PLANS_KEY]: {
+          [token.uuid]: clone(prepared.plan)
+        },
+        ...(originalMetadata.generatedBy && originalMetadata.generatedBy !== MODULE_ID
+          ? { externalGeneratedBy: originalMetadata.generatedBy }
+          : {}),
+        generatedBy: MODULE_ID,
+        internal: true,
+        suppressAutomation: false
+      };
+
+      const instruction = {
+        id: movementId,
+        waypoints: prepared.waypoints.map(clone),
+        method: movement?.method ?? transaction?.method ?? "api",
+        autoRotate: movement?.autoRotate === true,
+        split: movement?.split === true,
+        showRuler: movement?.showRuler ?? (movement?.method === "dragging"),
+        ...(movement?.constrainOptions && typeof movement.constrainOptions === "object"
+          ? { constrainOptions: clone(movement.constrainOptions) }
+          : {}),
+        ...(movement?.measureOptions && typeof movement.measureOptions === "object"
+          ? { measureOptions: clone(movement.measureOptions) }
+          : {}),
+        ...(movement?.terrainOptions && typeof movement.terrainOptions === "object"
+          ? { terrainOptions: clone(movement.terrainOptions) }
+          : {})
+      };
+
+      const operationOptions = {
+        [OPERATION_METADATA_KEY]: metadata
+      };
+
+      releaseContext = this.#movement.registerMovementContext(movementId, metadata);
+      const results = await scene.moveTokens({ [token.id]: instruction }, operationOptions);
+      this.#stats.replayedMovements += 1;
+
+      if (results?.[token.id] !== true) {
+        Logger.debug("Persistent-area entry-interrupted movement ended before its original destination.", {
+          tokenUuid: token.uuid,
+          originalMovementId,
+          planId: prepared.plan.planId,
+          result: results?.[token.id]
+        });
+      }
+    } catch (error) {
+      this.#stats.replayErrors += 1;
+      Logger.error("Persistent-area entry-interrupted movement replay failed.", error);
+      globalThis.ui?.notifications?.error?.(`Action Effects 5E could not continue this movement: ${error.message}`);
+    } finally {
+      try { releaseContext?.(); } catch { /* best effort */ }
+      this.#movement?.releaseInteractionHold?.({
+        tokenUuid: token?.uuid,
+        holdId: preflightHoldId,
+        broadcast: true
+      });
+      if (originalMovementId) this.#activeOriginalMovements.delete(originalMovementId);
+    }
+  }
+
+  #extractRoute(movement, transaction) {
+    const passed = asArray(movement?.passed?.waypoints);
+    const pending = asArray(movement?.pending?.waypoints);
+    let route = passed.length || pending.length
+      ? [...passed, ...pending]
+      : asArray(transaction?.path);
+
+    if (!route.length && movement?.destination) route = [movement.destination];
+    route = dedupeWaypoints(route);
+
+    const origin = transaction?.origin ?? movement?.origin;
+    while (route.length > 1 && samePosition(route[0], origin)) route.shift();
+    return route;
   }
 
   #entryBehaviors(token) {
@@ -323,74 +417,10 @@ export class PersistentAreaEntryInterruptionService {
     return results;
   }
 
-  #normalizeWaypoints(token, waypoints) {
-    const raw = Array.isArray(waypoints) ? waypoints : [waypoints];
-    if (!raw.length || raw.some(point => !point || typeof point !== "object")) return null;
-
-    const origin = {
-      x: Number(token.x ?? 0),
-      y: Number(token.y ?? 0),
-      elevation: Number(token.elevation ?? 0),
-      width: Number(token.width ?? 1),
-      height: Number(token.height ?? 1),
-      ...(token.shape != null ? { shape: token.shape } : {}),
-      ...(token.level != null ? { level: token.level } : {})
-    };
-
-    let previous = origin;
-    let complex = false;
-    const normalized = raw.map(candidate => {
-      for (const key of Object.keys(candidate)) if (!POSITION_KEYS.has(key)) complex = true;
-      const resolved = {
-        ...clone(candidate),
-        x: Number(candidate.x ?? previous.x),
-        y: Number(candidate.y ?? previous.y),
-        elevation: Number(candidate.elevation ?? previous.elevation),
-        width: Number(candidate.width ?? previous.width ?? 1),
-        height: Number(candidate.height ?? previous.height ?? 1)
-      };
-      previous = resolved;
-      return resolved;
-    });
-
-    return { origin, waypoints: normalized, complex };
-  }
-
-  #isTeleportSegment(endpoint, options) {
-    const metadata = options?.[OPERATION_METADATA_KEY] ?? {};
-    if (metadata?.pathType === PATH_TYPES.TELEPORT || metadata?.teleport === true) return true;
-    if (String(options?.method ?? "").toLowerCase() === "teleport") return true;
-    return movementActionConfig(endpoint?.action)?.teleport === true;
-  }
-
-  #sanitizePosition(value) {
-    if (!value || !Number.isFinite(Number(value.x)) || !Number.isFinite(Number(value.y))) return null;
-    const result = {
-      x: Number(value.x),
-      y: Number(value.y),
-      elevation: Number.isFinite(Number(value.elevation)) ? Number(value.elevation) : 0
-    };
-    for (const key of ["width", "height", "depth"]) {
-      if (Number.isFinite(Number(value[key]))) result[key] = Number(value[key]);
-    }
-    if (value.shape != null) result.shape = clone(value.shape);
-    if (value.level != null) result.level = clone(value.level);
-    if (normalizeString(value.action)) result.action = normalizeString(value.action);
-    result.snapped = value.snapped === true;
-    return result;
-  }
-
-  #withPlan(options, tokenUuid, plan) {
-    const next = { ...(options ?? {}) };
-    const metadata = options?.[OPERATION_METADATA_KEY] && typeof options[OPERATION_METADATA_KEY] === "object"
-      ? { ...options[OPERATION_METADATA_KEY] }
-      : {};
-    const plans = metadata[PERSISTENT_AREA_ENTRY_PLANS_KEY] && typeof metadata[PERSISTENT_AREA_ENTRY_PLANS_KEY] === "object"
-      ? { ...metadata[PERSISTENT_AREA_ENTRY_PLANS_KEY] }
-      : {};
-    plans[tokenUuid] = clone(plan);
-    metadata[PERSISTENT_AREA_ENTRY_PLANS_KEY] = plans;
-    next[OPERATION_METADATA_KEY] = metadata;
-    return next;
+  #planFromMetadata(metadata, tokenUuid) {
+    const plan = metadata?.[PERSISTENT_AREA_ENTRY_PLANS_KEY]?.[tokenUuid];
+    if (!plan || Number(plan.schemaVersion) !== PERSISTENT_AREA_ENTRY_PLAN_SCHEMA_VERSION) return null;
+    if (!normalizeString(plan.planId) || !Array.isArray(plan.entries)) return null;
+    return plan;
   }
 }

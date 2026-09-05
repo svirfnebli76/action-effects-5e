@@ -487,7 +487,7 @@ export class PersistentAreaEventService {
   }
 
   #movementPayload({ behavior, eventName, token, movement, eventUserId = null, interactionId = null, movementDestination = undefined }) {
-    const metadata = movement?.updateOptions?.[OPERATION_METADATA_KEY] ?? null;
+    const metadata = this.#movementMetadata(movement);
     return {
       behaviorUuid: behavior?.uuid ?? null,
       eventName,
@@ -503,8 +503,18 @@ export class PersistentAreaEventService {
     };
   }
 
+  #movementMetadata(movement) {
+    const contextual = this.#movement?.getMovementContext?.(movement) ?? null;
+    const direct = movement?.updateOptions?.[OPERATION_METADATA_KEY] ?? null;
+    if (!contextual && !direct) return null;
+    return {
+      ...(contextual && typeof contextual === "object" ? contextual : {}),
+      ...(direct && typeof direct === "object" ? direct : {})
+    };
+  }
+
   #entryPlanFor(movement, tokenUuid) {
-    const metadata = movement?.updateOptions?.[OPERATION_METADATA_KEY];
+    const metadata = this.#movementMetadata(movement);
     const plan = metadata?.[PERSISTENT_AREA_ENTRY_PLANS_KEY]?.[tokenUuid];
     if (!plan || Number(plan.schemaVersion) !== PERSISTENT_AREA_ENTRY_PLAN_SCHEMA_VERSION) return null;
     if (!normalizeString(plan.planId) || !Array.isArray(plan.entries)) return null;

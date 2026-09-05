@@ -1,3 +1,15 @@
+## 0.4.3.27 — Persistent-area entry interruption — native preMove planning
+
+- Reworked the opt-in persistent-area entry-interruption planner around Foundry v14's live `preMoveToken` movement data after live diagnostics proved normal canvas drag and keyboard movement bypass `TokenDocument#move`, `Scene#moveTokens`, `startMovement`, and `planToken` before reaching AE5E.
+- Removed the failed v0.4.3.26 `TokenDocument#move` planning wrapper and its wrapper-specific diagnostics. Entry planning now runs as a high-priority consumer of AE5E's existing `MovementService`, so the same native pre-movement path seen by the established Entangle/Grapple infrastructure is authoritative.
+- For traversed movement, AE5E reads Foundry's already-expanded native `passed`/`pending` route, preserves existing Region/terminal checkpoints, and promotes the earliest already-native snapped token position inside each opted-in owning Region to an explicit checkpoint. It does not infer a pixel offset or use the obsolete v0.4.3.25 next-pending-waypoint policy.
+- The original UI movement is cancelled before commit and replayed once through native `Scene.moveTokens()` on the next event-loop task, matching the proven coordinated-relationship movement translation pattern. The replay carries an explicit movement ID and AE5E movement context so checkpoint continuations remain recursion-safe even when custom operation options are not exposed on Foundry's movement payload.
+- Added a preflight interaction hold before the replay starts. Additional movement requests are discarded rather than queued while the entry interaction is in flight; the exact planned replay is allowed through by its plan ID. The existing Region-event hold remains responsible for the Activity-resolution interval.
+- Persistent-area Region events now recover entry-plan metadata from `MovementService` movement contexts instead of assuming `movement.updateOptions` preserves custom metadata. Activity execution remains unchanged and continues through `ActivityExecutionService` / CAT / Midi-QOL; no substitute save/check/damage workflow was added.
+- Ordinary untagged drag/keyboard movement is normalized to voluntary only for post-workflow `stopOn` semantics; Region entry detection itself remains agency-neutral. Teleport-style movement still resolves at its real destination and is not converted into traversed squares.
+- Added live-diagnostic-shaped regression coverage for the observed `3349` unsnapped Region boundary followed by native `3300`, `3200`, and terminal positions, one-step keyboard entry, teleport destination entry, no recursive replay planning, movement-context recovery, and one native `Scene.moveTokens()` replay.
+- Repository gate: **239/239 PASS**; syntax check: **98 JavaScript files PASS** before packaging.
+
 ## 0.4.3.26 — Persistent-area entry interruption
 
 - Added generic, opt-in persistent-area `movement.entryInterruption = true` infrastructure for `TOKEN_MOVE_IN` handlers. Item recipes can require a Region-triggered Activity to resolve at the earliest native snapped token position inside the owning Region before the original movement continues.

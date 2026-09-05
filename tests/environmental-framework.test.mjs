@@ -31,7 +31,7 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.3.26");
+  assert.equal(manifest.version, "0.4.3.27");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.["persistent-area"], {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);

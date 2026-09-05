@@ -149,7 +149,8 @@ const persistentAreaEvents = new PersistentAreaEventService({
   movement
 });
 const persistentAreaEntryInterruption = new PersistentAreaEntryInterruptionService({
-  events: persistentAreaEvents
+  events: persistentAreaEvents,
+  movement
 });
 PersistentAreaRegionBehaviorType.configure(persistentAreaEvents);
 const environmentIndex = new EnvironmentRegionIndex({ capabilities: environmentCapabilities, geometry: environmentGeometry });
