@@ -22,4 +22,10 @@ test("persistent-area services are threaded through live TestHarness startup wir
     /new\s+EnvironmentalTestSuite\s*\(\s*\{[\s\S]*?persistentAreaEvents\s*,[\s\S]*?persistentAreaLifecycle\s*,[\s\S]*?\}\s*\)/,
     "TestHarness must forward both persistent-area services into EnvironmentalTestSuite"
   );
+
+  assert.match(
+    entry,
+    /new\s+PersistentAreaEventService\s*\(\s*\{[\s\S]*?geometry\s*:\s*environmentGeometry[\s\S]*?\}\s*\)/,
+    "PersistentAreaEventService must receive the shared EnvironmentGeometryService for generic Region event qualifiers"
+  );
 });

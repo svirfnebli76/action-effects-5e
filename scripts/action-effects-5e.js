@@ -143,7 +143,8 @@ const persistentAreaEvents = new PersistentAreaEventService({
   socket,
   authority: reactionAuthority,
   activities,
-  lifecycle: persistentAreaLifecycle
+  lifecycle: persistentAreaLifecycle,
+  geometry: environmentGeometry
 });
 PersistentAreaRegionBehaviorType.configure(persistentAreaEvents);
 const environmentIndex = new EnvironmentRegionIndex({ capabilities: environmentCapabilities, geometry: environmentGeometry });

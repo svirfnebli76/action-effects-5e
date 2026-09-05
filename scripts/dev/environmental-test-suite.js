@@ -152,6 +152,7 @@ export class EnvironmentalTestSuite {
       handlers: {
         [globalThis.CONST?.REGION_EVENTS?.TOKEN_MOVE_IN ?? "tokenMoveIn"]: {
           gateId: "once",
+          conditions: [{ type: "tokenCenterInOwnerRegion", inside: true }],
           activity: { itemUuid: "Item.ae5e-foundation", activityReference: "activity" }
         }
       }

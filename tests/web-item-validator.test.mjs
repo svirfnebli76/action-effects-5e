@@ -6,7 +6,7 @@ function activity({ id, name, type, system = {} }) {
   return { id, uuid: `Item.web.Activity.${id}`, name, type, system };
 }
 
-function makeFixture({ saveOverride = true, savePrompt = false, burnOverride = true, castOverride = true } = {}) {
+function makeFixture({ saveOverride = true, savePrompt = false, burnOverride = true, castOverride = true, escapeTargetType = "self" } = {}) {
   const cast = activity({
     id: "cast-web",
     name: "Cast Web",
@@ -74,6 +74,7 @@ function makeFixture({ saveOverride = true, savePrompt = false, burnOverride = t
     type: "check",
     system: {
       activation: { type: "action" },
+      target: { affects: { type: escapeTargetType, choice: false }, override: false, prompt: false },
       check: { ability: "str", associated: ["ath"] },
       damage: { parts: [] },
       effects: [],
@@ -127,4 +128,11 @@ test("Web validator requires an explicit authoritative external Escape Web helpe
   assert.equal(result.passed, false);
   assert.equal(result.checks.find(check => check.name === "Authoritative Escape Web helper UUID is supplied")?.passed, false);
   assert.equal(result.checks.some(check => /Legacy Escape Web/.test(check.name)), false);
+});
+
+
+test("Web validator requires the authoritative Escape Web helper to target Self", async () => {
+  const result = await validateFixture({ escapeTargetType: "" });
+  assert.equal(result.passed, false);
+  assert.equal(result.checks.find(check => check.name === "Escape Web targets Self")?.passed, false);
 });

@@ -407,3 +407,229 @@ test("PersistentAreaEventService can claim a gate then skip its Activity when a 
     globalThis.game = previousGame;
   }
 });
+
+test("PersistentAreaEventService validates tokenCenterInOwnerRegion as a generic event qualifier", () => {
+  const documents = new Map();
+  setupGlobals(documents);
+  const service = new PersistentAreaEventService({
+    socket: new FakeSocket(),
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    activities: { execute: async () => ({ executed: true }) }
+  });
+
+  const valid = service.validateRecipe({
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveWithin: {
+        conditions: [{ type: "tokenCenterInOwnerRegion", inside: true }],
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" }
+      }
+    }
+  });
+  assert.equal(valid.valid, true, valid.errors?.join(", "));
+
+  const invalid = service.validateRecipe({
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveWithin: {
+        conditions: [{ type: "tokenCenterInOwnerRegion", inside: "yes" }],
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" }
+      }
+    }
+  });
+  assert.equal(invalid.valid, false);
+  assert.equal(
+    invalid.errors.includes("handler-tokenMoveWithin-condition-0-inside-must-be-boolean"),
+    true
+  );
+});
+
+test("tokenCenterInOwnerRegion skips an exiting move-within before consuming the combat-turn gate", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const documents = new Map();
+  setupGlobals(documents);
+
+  const socket = new FakeSocket();
+  let executions = 0;
+  const geometry = {
+    fromRegion: region => region,
+    fromToken: token => ({ shapes: [{ type: "point", x: token.x + 50, y: token.y + 50 }] }),
+    containsPoint: (_region, point) => point.x >= 0 && point.x < 400 && point.y >= 0 && point.y < 400
+  };
+  const service = new PersistentAreaEventService({
+    socket,
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    activities: {
+      execute: async request => {
+        executions += 1;
+        return { executed: true, saves: [request.targetTokenUuids[0]], failedSaves: [] };
+      }
+    },
+    geometry
+  });
+
+  const recipe = {
+    schemaVersion: 1,
+    gates: { turn: { combat: "turn", outsideCombat: "none" } },
+    handlers: {
+      tokenMoveWithin: {
+        gateId: "turn",
+        conditions: [{ type: "tokenCenterInOwnerRegion", inside: true }],
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" }
+      },
+      tokenMoveIn: {
+        gateId: "turn",
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" }
+      }
+    }
+  };
+
+  const { behavior } = makeBehavior(service, recipe, documents);
+  const region = { uuid: "Scene.test.Region.area" };
+  behavior.parent = region;
+  behavior.region = region;
+
+  const scene = { documentName: "Scene", grid: { size: 100 } };
+  const token = {
+    documentName: "Token",
+    uuid: "Scene.test.Token.target",
+    x: 100,
+    y: 100,
+    width: 1,
+    height: 1,
+    elevation: 0,
+    parent: scene
+  };
+  documents.set(token.uuid, token);
+
+  globalThis.canvas = { grid: { size: 100 } };
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: [{ id: "gm", active: true, isGM: true }],
+    combat: { uuid: "Combat.one", started: true, round: 1, turn: 1 }
+  };
+
+  const makeEvent = (name, movementId, destination) => ({
+    name,
+    user: { id: "gm", isSelf: true },
+    data: {
+      token,
+      movement: {
+        id: movementId,
+        method: "dragging",
+        destination,
+        updateOptions: {}
+      }
+    }
+  });
+
+  try {
+    // Foundry may emit tokenMoveWithin for the inside portion of a path whose
+    // final destination is outside. The qualifier must reject this event.
+    const exiting = await service.handleRegionEvent(
+      behavior,
+      makeEvent("tokenMoveWithin", "exit-path", { x: 500, y: 100, elevation: 0 })
+    );
+    assert.equal(exiting.handled, true);
+    assert.equal(exiting.skipped, true);
+    assert.equal(exiting.reason, "condition-failed");
+    assert.equal(executions, 0);
+    assert.deepEqual(JSON.parse(behavior.system.stateJson), { gates: {} });
+
+    // Because the false move-within did not consume the turn gate, a legitimate
+    // re-entry during the same combat turn remains eligible.
+    const reentry = await service.handleRegionEvent(
+      behavior,
+      makeEvent("tokenMoveIn", "reentry-path", { x: 100, y: 100, elevation: 0 })
+    );
+    assert.equal(reentry.handled, true);
+    assert.equal(reentry.gated, undefined);
+    assert.equal(executions, 1);
+  } finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+  }
+});
+
+test("tokenCenterInOwnerRegion allows genuine movement whose final token center remains inside", async () => {
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const documents = new Map();
+  setupGlobals(documents);
+
+  let executions = 0;
+  const service = new PersistentAreaEventService({
+    socket: new FakeSocket(),
+    authority: { getPrimaryGm: () => ({ id: "gm" }) },
+    activities: {
+      execute: async request => {
+        executions += 1;
+        return { executed: true, saves: [request.targetTokenUuids[0]], failedSaves: [] };
+      }
+    },
+    geometry: {
+      fromRegion: region => region,
+      fromToken: token => ({ shapes: [{ type: "point", x: token.x + 50, y: token.y + 50 }] }),
+      containsPoint: (_region, point) => point.x >= 0 && point.x < 400 && point.y >= 0 && point.y < 400
+    }
+  });
+
+  const { behavior } = makeBehavior(service, {
+    schemaVersion: 1,
+    gates: {},
+    handlers: {
+      tokenMoveWithin: {
+        conditions: [{ type: "tokenCenterInOwnerRegion", inside: true }],
+        activity: { itemUuid: "Item.fixture", activityReference: "Fixture Check" }
+      }
+    }
+  }, documents);
+  const region = { uuid: "Scene.test.Region.area" };
+  behavior.parent = region;
+  behavior.region = region;
+
+  const scene = { documentName: "Scene", grid: { size: 100 } };
+  const token = {
+    documentName: "Token",
+    uuid: "Scene.test.Token.target",
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    elevation: 0,
+    parent: scene
+  };
+  documents.set(token.uuid, token);
+
+  globalThis.canvas = { grid: { size: 100 } };
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    users: [{ id: "gm", active: true, isGM: true }],
+    combat: null
+  };
+
+  try {
+    const result = await service.handleRegionEvent(behavior, {
+      name: "tokenMoveWithin",
+      user: { id: "gm", isSelf: true },
+      data: {
+        token,
+        movement: {
+          id: "inside-path",
+          method: "dragging",
+          destination: { x: 200, y: 100, elevation: 0 },
+          updateOptions: {}
+        }
+      }
+    });
+    assert.equal(result.handled, true);
+    assert.equal(result.skipped, undefined);
+    assert.equal(executions, 1);
+  } finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+  }
+});

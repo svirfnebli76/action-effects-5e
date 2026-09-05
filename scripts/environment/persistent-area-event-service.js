@@ -12,7 +12,7 @@ const GATE_OUTSIDE_MODES = new Set(["none", "occupancy", "movement"]);
 const STOP_OUTCOMES = new Set(["never", "success", "failure"]);
 const OPERATION_WHENS = new Set(["always", "success", "failure", "unknown"]);
 const OPERATION_TYPES = new Set(["applyEffectTemplate", "removeOwnedEffects"]);
-const CONDITION_TYPES = new Set(["ownedEffect"]);
+const CONDITION_TYPES = new Set(["ownedEffect", "tokenCenterInOwnerRegion"]);
 
 function clone(value) {
   return duplicateSafely(value);
@@ -78,6 +78,7 @@ export class PersistentAreaEventService {
   #authority;
   #activities;
   #lifecycle;
+  #geometry;
   #locks = new Map();
   #stats = {
     events: 0,
@@ -90,11 +91,12 @@ export class PersistentAreaEventService {
     errors: 0
   };
 
-  constructor({ socket, authority, activities, lifecycle = null }) {
+  constructor({ socket, authority, activities, lifecycle = null, geometry = null }) {
     this.#socket = socket;
     this.#authority = authority;
     this.#activities = activities;
     this.#lifecycle = lifecycle;
+    this.#geometry = geometry;
     socket.register("persistentArea.regionEvent", payload => this.#processRegionEvent(payload));
   }
 
@@ -161,6 +163,9 @@ export class PersistentAreaEventService {
         if (!CONDITION_TYPES.has(type)) errors.push(`handler-${eventName}-condition-${index}-unsupported-type`);
         if (type === "ownedEffect" && !normalizeString(condition.effectKey)) errors.push(`handler-${eventName}-condition-${index}-effectKey-required`);
         if (condition.exists != null && typeof condition.exists !== "boolean") errors.push(`handler-${eventName}-condition-${index}-exists-must-be-boolean`);
+        if (type === "tokenCenterInOwnerRegion" && condition.inside != null && typeof condition.inside !== "boolean") {
+          errors.push(`handler-${eventName}-condition-${index}-inside-must-be-boolean`);
+        }
       }
 
       const operations = Array.isArray(handler.operations) ? handler.operations : [];
@@ -265,6 +270,7 @@ export class PersistentAreaEventService {
       tokenUuid: token.uuid,
       movementId: movement?.id ?? null,
       movementMethod: movement?.method ?? null,
+      movementDestination: this.#sanitizeMovementDestination(movement?.destination),
       movementAgency: metadata?.agency ?? null,
       eventUserId: event?.user?.id ?? globalThis.game?.user?.id ?? null
     };
@@ -332,6 +338,23 @@ export class PersistentAreaEventService {
 
       if (!handler) return { handled: false, reason: "unconfigured-event", eventName };
 
+      // Event-qualification conditions run before any turn/occupancy gate is
+      // consumed. This is important for native Region movement sequences where
+      // Foundry can emit TOKEN_MOVE_WITHIN for the inside portion of a path that
+      // ultimately exits the Region. A non-qualifying event must not consume a
+      // later legitimate trigger in the same turn or occupancy.
+      const qualifiers = await this.#eventQualifiersPass(handler, behavior, payload);
+      if (!qualifiers.passed) {
+        return {
+          handled: true,
+          eventName,
+          skipped: true,
+          reason: "condition-failed",
+          condition: qualifiers.condition,
+          stopMovement: false
+        };
+      }
+
       const gate = this.#claimGate(state, recipe, handler, payload);
       if (!gate.claimed) {
         this.#stats.gated += 1;
@@ -383,6 +406,68 @@ export class PersistentAreaEventService {
     });
   }
 
+  #sanitizeMovementDestination(destination) {
+    if (!destination || !Number.isFinite(Number(destination.x)) || !Number.isFinite(Number(destination.y))) return null;
+    const result = { x: Number(destination.x), y: Number(destination.y) };
+    if (Number.isFinite(Number(destination.elevation))) result.elevation = Number(destination.elevation);
+    return result;
+  }
+
+  async #eventQualifiersPass(handler, behavior, payload) {
+    const conditions = Array.isArray(handler?.conditions) ? handler.conditions : [];
+    for (const condition of conditions) {
+      if (condition?.type !== "tokenCenterInOwnerRegion") continue;
+      const result = await this.#tokenCenterInOwnerRegion(behavior, payload);
+      const expected = condition.inside !== false;
+      if (result.available !== true) {
+        return { passed: false, condition, reason: result.reason ?? "geometry-unavailable" };
+      }
+      if (Boolean(result.inside) !== expected) return { passed: false, condition };
+    }
+    return { passed: true, condition: null };
+  }
+
+  async #tokenCenterInOwnerRegion(behavior, payload) {
+    if (!this.#geometry?.fromRegion || !this.#geometry?.containsPoint) {
+      return { available: false, inside: false, reason: "geometry-unavailable" };
+    }
+
+    const region = behavior?.region ?? behavior?.parent ?? behavior?.system?.behavior?.parent ?? null;
+    if (!region) return { available: false, inside: false, reason: "owner-region-unavailable" };
+
+    let token = null;
+    try { token = await globalThis.fromUuid?.(payload?.tokenUuid); } catch { token = null; }
+    if (!token) return { available: false, inside: false, reason: "token-unavailable" };
+
+    const regionGeometry = this.#geometry.fromRegion(region);
+    if (!regionGeometry) return { available: false, inside: false, reason: "owner-region-geometry-unavailable" };
+
+    const destination = payload?.movementDestination;
+    let point = null;
+    if (destination && Number.isFinite(Number(destination.x)) && Number.isFinite(Number(destination.y))) {
+      const document = token?.document ?? token;
+      const gridSize = Number(document?.parent?.grid?.size ?? globalThis.canvas?.grid?.size ?? 100);
+      const width = Number(document?.width ?? 1);
+      const height = Number(document?.height ?? 1);
+      const x = Number(destination.x) + (Number.isFinite(width) ? width : 1) * (Number.isFinite(gridSize) ? gridSize : 100) / 2;
+      const y = Number(destination.y) + (Number.isFinite(height) ? height : 1) * (Number.isFinite(gridSize) ? gridSize : 100) / 2;
+      point = {
+        x,
+        y,
+        elevation: Number.isFinite(Number(destination.elevation)) ? Number(destination.elevation) : Number(document?.elevation ?? 0)
+      };
+    } else {
+      const tokenGeometry = this.#geometry.fromToken?.(token);
+      point = tokenGeometry?.shapes?.find?.(shape => shape?.type === "point") ?? null;
+    }
+
+    if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) {
+      return { available: false, inside: false, reason: "token-center-unavailable" };
+    }
+
+    return { available: true, inside: Boolean(this.#geometry.containsPoint(regionGeometry, point)) };
+  }
+
   #operationContext(behavior, payload) {
     const region = behavior?.region ?? behavior?.parent ?? behavior?.system?.behavior?.parent ?? null;
     return {
@@ -396,6 +481,8 @@ export class PersistentAreaEventService {
 
   async #conditionsPass(handler, context) {
     for (const condition of Array.isArray(handler?.conditions) ? handler.conditions : []) {
+      // tokenCenterInOwnerRegion is an event qualifier and is intentionally
+      // evaluated before gate claim in #eventQualifiersPass.
       if (condition?.type !== "ownedEffect") continue;
       if (!this.#lifecycle?.hasOwnedEffect) return { passed: false, condition, reason: "lifecycle-unavailable" };
       const result = await this.#lifecycle.hasOwnedEffect({

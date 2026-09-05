@@ -1,3 +1,12 @@
+## 0.4.3.24
+
+- Added the generic persistent-area `tokenCenterInOwnerRegion` event qualifier. Item-authored recipes can require that a token's final movement destination/current center still lies inside the owning Region before an event consumes a combat-turn or occupancy gate.
+- The qualifier uses AE5E's existing Foundry-derived `EnvironmentGeometryService`; it does not introduce spell-specific geometry or movement rules.
+- Event qualification runs before gate claim so an exiting path that produces a native `TOKEN_MOVE_WITHIN` event cannot consume a later legitimate same-turn trigger.
+- Updated the dev-only Web Item validator to require the authoritative Escape Web helper Activity to target `Self`. The validator reports authoring state only and never repairs compendium content.
+- Removed inert legacy `WebService` / `WebRegionBehaviorType` source and their obsolete development/recovery tests from the package. Production AE5E remains free of Web-specific runtime rules.
+- The authoritative `packs/` and `assets/` trees are preserved byte-for-byte from the user-supplied v0.4.3.23 baseline, including the intentional hidden Escape Web helper authoring change.
+
 ## 0.4.3.23
 
 - Fixed generic persistent-area occupancy re-entry idempotency so a gate that is reset on Region exit receives a fresh Activity-execution claim on the next occupancy.

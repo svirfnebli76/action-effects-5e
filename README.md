@@ -28,7 +28,7 @@ A persistent Item may provide a declarative recipe at use time. AE5E can persist
 The generic persistent-area stack consists of:
 
 - `action-effects-5e.persistent-area` — native Foundry v14 RegionBehavior type;
-- `PersistentAreaEventService` — event recipe validation/routing, CAT/Midi Activity execution, generic gates, movement pause/stop, and generic outcome operations;
+- `PersistentAreaEventService` — event recipe validation/routing, CAT/Midi Activity execution, generic gates, pre-gate Region geometry qualifiers, movement pause/stop, and generic outcome operations;
 - `PersistentAreaLifecycleService` — source-Item Active Effect cloning, Region/document ownership, synthetic Actor cleanup, ongoing-action propagation, and Midi concentration dependency binding;
 - `RegionAuthorityService` — primary-GM Region document authority and native RegionBehavior helpers.
 
@@ -50,7 +50,7 @@ await game.modules.get("action-effects-5e").api.tests.environment.validateWebIte
 });
 ```
 
-The validator requires the automation-only `Cast Web`, `Web Save`, and `Burning Web Damage` Activities to use `target.override = true` and `target.prompt = false`. It validates the external Escape Web helper and does not require or support the retired legacy Escape Web Activity on the spell.
+The validator requires the automation-only `Cast Web`, `Web Save`, and `Burning Web Damage` Activities to use `target.override = true` and `target.prompt = false`. It validates the external Escape Web helper, requires that helper Activity to target `Self`, and does not require or support the retired legacy Escape Web Activity on the spell.
 
 ## Live Foundry acceptance
 

@@ -166,6 +166,7 @@ export class WebItemValidator {
       associated: [...escapeAssociated]
     });
     record("Escape Web is an Action", String(activityField(escape, "activation.type", "")) === "action", activityField(escape, "activation", null));
+    record("Escape Web targets Self", normalize(activityField(escape, "target.affects.type", "")) === "self", activityField(escape, "target", null));
     record("Escape Web has no damage or automatic effects", asArray(activityField(escape, "damage.parts", [])).length === 0 && noAppliedEffects(escape), {
       damageParts: asArray(activityField(escape, "damage.parts", [])).length,
       effects: asArray(activityField(escape, "effects", [])).length
