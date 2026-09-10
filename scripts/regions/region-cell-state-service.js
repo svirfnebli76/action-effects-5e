@@ -7,6 +7,12 @@ import {
 import { Logger } from "../core/logger.js";
 
 const EPSILON = 1e-9;
+// Positive-overlap decisions use a deliberately larger tolerance than pure
+// arithmetic comparisons. Token-local rotation/translation can transform an
+// exact shared face into a ~1e-15..1e-9 sliver; that is numerical noise, not
+// rules-positive overlap. Genuine fractional overlap used by AE5E tests is
+// orders of magnitude larger than this threshold.
+const OVERLAP_EPSILON = 1e-7;
 
 function duplicate(value) {
   if (globalThis.foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
@@ -648,14 +654,14 @@ export class RegionCellStateService {
 
     for (let z = minZ; z <= maxZ; z += 1) {
       const zOverlap = Math.min(localTop, z + 1) - Math.max(localBottom, z);
-      if (zOverlap <= EPSILON) continue;
+      if (zOverlap <= OVERLAP_EPSILON) continue;
       for (let y = minY; y <= maxY; y += 1) {
         for (let x = minX; x <= maxX; x += 1) {
           const state = this.getCellStateFromConfig(normalized, { x, y, z });
           if (!desiredStates.has(state)) continue;
           const clipped = clipPolygonToCell(localPolygon, x, y);
           const xyArea = polygonArea(clipped);
-          if (xyArea <= EPSILON) continue;
+          if (xyArea <= OVERLAP_EPSILON) continue;
           intersections.push({ x, y, z, key: `${x},${y},${z}`, state, xyArea, zOverlap });
         }
       }

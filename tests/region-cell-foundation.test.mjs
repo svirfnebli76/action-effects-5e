@@ -214,6 +214,51 @@ test("Region cell containment requires positive XY and Z overlap and respects in
   assert.equal(service.intersectsToken(region, token({ x: 0, y: 0, elevation: 19.999, depth: 1 })).intersects, true, "positive fractional Z overlap counts");
 });
 
+
+
+test("Token-local 225-degree frame treats exact translated face contact as zero overlap", () => {
+  const { service, region, documents, scene } = makeFixture();
+  const source = token({ x: 100, y: 200, elevation: 0, width: 1, height: 1, depth: 1 });
+  source.uuid = "Scene.scene.Token.rotated-source";
+  source.rotation = 225;
+  scene.tokens.set("rotated-source", source);
+  documents.set(source.uuid, source);
+
+  region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig({
+    bounds: { min: { x: 0, y: 0, z: 0 }, size: { x: 3, y: 1, z: 1 } },
+    defaultState: "GONE",
+    cells: { "2,0,0": "ACTIVE" },
+    frame: {
+      type: "token",
+      sourceTokenUuid: source.uuid,
+      offset: { x: -0.5, y: -0.5, z: 0 },
+      rotationOffset: -225
+    }
+  });
+
+  const movedSource = { ...source, x: source.x + scene.grid.size };
+  const movedCell = service.getCellWorldVolume(region, { x: 2, y: 0, z: 0 }, { sourceToken: movedSource });
+  const center = movedCell.polygon.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+  center.x /= movedCell.polygon.length;
+  center.y /= movedCell.polygon.length;
+
+  const target = token({
+    x: center.x - (scene.grid.size / 2),
+    y: center.y - (scene.grid.size / 2),
+    elevation: 0,
+    width: 1,
+    height: 1,
+    depth: 1
+  });
+
+  const before = service.intersectsToken(region, target);
+  assert.equal(before.intersects, false, "exact face contact before source translation must not count even after rotated token-local transforms");
+
+  source.x += scene.grid.size;
+  const after = service.intersectsToken(region, target);
+  assert.equal(after.intersects, true, "the same target must overlap after the source translates one grid space");
+});
+
 test("Large rectangular Tokens can overlap active and inactive cells simultaneously", () => {
   const { service, region } = makeFixture();
   region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig({

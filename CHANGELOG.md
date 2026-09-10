@@ -1,3 +1,10 @@
+
+## 0.4.3.29-region-cell-exp.9
+
+- Harden Region-cell positive-overlap geometry against floating-point slivers produced by token-local rotation/translation transforms.
+- Exact shared-face contact remains non-overlap even for a 225-degree token-local frame; genuine fractional XY/Z overlap remains accepted.
+- Added a deterministic regression for translated 1x1 face contact under a 225-degree token-local frame.
+
 ## 0.4.3.29 — Ongoing-effect Midi workflow result identity
 
 - Corrected generic ongoing-effect result de-duplication for Midi-QOL 14 Activity workflows. Midi can expose the same Activity UUID through `workflow.id` on every use, so AE5E no longer treats that value as a per-execution identity.
