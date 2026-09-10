@@ -1,7 +1,3 @@
-2026/09/05-10:09:19.941 aaf8 Recovering log #169
-2026/09/05-10:09:19.942 aaf8 Level-0 table #171: started
-2026/09/05-10:09:19.943 aaf8 Level-0 table #171: 33471 bytes OK
-2026/09/05-10:09:19.943 aaf8 Recovering log #176
-2026/09/05-10:09:19.945 aaf8 Delete type=0 #169
-2026/09/05-10:09:19.945 aaf8 Delete type=0 #176
-2026/09/05-10:09:19.946 aaf8 Delete type=3 #167
+2026/09/09-18:47:42.422 251c Recovering log #184
+2026/09/09-18:47:42.425 251c Delete type=0 #184
+2026/09/09-18:47:42.425 251c Delete type=3 #182
