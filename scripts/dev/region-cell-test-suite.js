@@ -11,6 +11,45 @@ function banner(label, passed) {
   );
 }
 
+
+export function formatConsoleDetails(value) {
+  if (value == null) return "—";
+  if (typeof value === "string") return value;
+
+  const seen = new WeakSet();
+  try {
+    return JSON.stringify(value, (_key, current) => {
+      if (current instanceof Set) return [...current];
+      if (current instanceof Map) return Object.fromEntries(current);
+      if (!current || typeof current !== "object") return current;
+
+      // Foundry Documents and our synthetic Document-like fixtures frequently
+      // contain parent/attachment back-references. Preserve useful identity in
+      // diagnostics without recursively serializing the full document graph.
+      if (typeof current.uuid === "string" && (current.documentName || current.constructor?.name?.endsWith?.("Document"))) {
+        return {
+          documentName: current.documentName ?? current.constructor?.name ?? "Document",
+          uuid: current.uuid
+        };
+      }
+
+      if (seen.has(current)) return "[Circular]";
+      seen.add(current);
+      return current;
+    });
+  } catch (error) {
+    return `[Unserializable: ${error?.message ?? String(error)}]`;
+  }
+}
+
+function consoleRows(checks) {
+  return checks.map(check => ({
+    Check: check.name,
+    Result: check.passed ? "PASS" : "FAIL",
+    Details: formatConsoleDetails(check.details)
+  }));
+}
+
 function syntheticRegion(service, config = null) {
   const region = {
     uuid: "Scene.synthetic.Region.region-cells",
@@ -101,7 +140,7 @@ export class RegionCellTestSuite {
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, stats: this.#cells.getStats() };
     banner("REGION CELL FOUNDATION", passed);
-    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL", Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details)) })));
+    console.table(consoleRows(checks));
     console.log(result);
     if (notify && globalThis.ui?.notifications) ui.notifications[passed ? "info" : "error"](`AE5E Region Cell Foundation ${passed ? "PASSED" : "FAILED"}. See console.`);
     return result;
@@ -154,7 +193,7 @@ export class RegionCellTestSuite {
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, cellStats: this.#cells.getStats(), occupancyStats: this.#occupancy.getStats() };
     banner("REGION CELL CONTAINMENT", passed);
-    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL", Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details)) })));
+    console.table(consoleRows(checks));
     console.log(result);
     if (notify && globalThis.ui?.notifications) ui.notifications[passed ? "info" : "error"](`AE5E Region Cell Containment ${passed ? "PASSED" : "FAILED"}. See console.`);
     return result;
@@ -221,7 +260,7 @@ export class RegionCellTestSuite {
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, occupancyStats: this.#occupancy.getStats(), entryStats: this.#entryInterruption?.getStats?.() ?? null };
     banner("REGION CELL MOVEMENT", passed);
-    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL", Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details)) })));
+    console.table(consoleRows(checks));
     console.log(result);
     if (notify && globalThis.ui?.notifications) ui.notifications[passed ? "info" : "error"](`AE5E Region Cell Movement ${passed ? "PASSED" : "FAILED"}. See console.`);
     return result;
@@ -259,7 +298,7 @@ export class RegionCellTestSuite {
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, stats: this.#movementCosts?.getStats?.() ?? null };
     banner("REGION CELL TERRAIN", passed);
-    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL", Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details)) })));
+    console.table(consoleRows(checks));
     console.log(result);
     if (notify && globalThis.ui?.notifications) ui.notifications[passed ? "info" : "error"](`AE5E Region Cell Terrain ${passed ? "PASSED" : "FAILED"}. See console.`);
     return result;
@@ -325,7 +364,7 @@ export class RegionCellTestSuite {
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, stats: this.#attachments?.getStats?.() ?? null };
     banner("REGION CELL ATTACHMENT", passed);
-    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL", Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details)) })));
+    console.table(consoleRows(checks));
     console.log(result);
     if (notify && globalThis.ui?.notifications) ui.notifications[passed ? "info" : "error"](`AE5E Region Cell Attachment ${passed ? "PASSED" : "FAILED"}. See console.`);
     return result;
@@ -379,7 +418,7 @@ export class RegionCellTestSuite {
     const passed = checks.every(check => check.passed);
     const result = { passed, checks, performance: { iterations: count, elapsedMs, queriesPerSecond: elapsedMs > 0 ? Math.round((count / elapsedMs) * 1000) : null } };
     banner("REGION CELL WEB SIMULATION", passed);
-    console.table(checks.map(check => ({ Check: check.name, Result: check.passed ? "PASS" : "FAIL", Details: check.details == null ? "—" : (typeof check.details === "string" ? check.details : JSON.stringify(check.details)) })));
+    console.table(consoleRows(checks));
     console.log(result);
     if (notify && globalThis.ui?.notifications) ui.notifications[passed ? "info" : "error"](`AE5E Region Cell Web Simulation ${passed ? "PASSED" : "FAILED"}. See console.`);
     return result;
