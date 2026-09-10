@@ -454,7 +454,7 @@ export class RegionCellLiveAcceptanceSuite {
         type: "token",
         sourceTokenUuid: source.uuid,
         offset: { x: -0.5, y: -0.5, z: 0 },
-        rotationOffset: 0
+        rotationOffset: -sourceOrigin.rotation
       }
     });
     if (configured?.configured !== true) {
@@ -462,9 +462,30 @@ export class RegionCellLiveAcceptanceSuite {
       throw new Error(`Could not configure attached Region cells: ${configured?.reason ?? "unknown"}`);
     }
 
-    const translationTargetPosition = {
-      x: sourceOrigin.x + (grid.size * 3),
+    // The user's source Token may begin at any rotation. This fixture's logical
+    // cell pattern is normalized with rotationOffset above so the initial ACTIVE
+    // cell behaves as 0° local geometry regardless of the source's presentation.
+    // Derive target positions from the actual transformed cell volumes rather
+    // than assuming the source starts at 0°.
+    const sourceAtTranslation = {
+      uuid: source.uuid,
+      x: sourceOrigin.x + grid.size,
       y: sourceOrigin.y,
+      elevation: sourceOrigin.elevation,
+      width: sourceOrigin.width,
+      height: sourceOrigin.height,
+      rotation: sourceOrigin.rotation
+    };
+    const translationVolume = this.#cells.getCellWorldVolume(region, { x: 2, y: 0, z: 0 }, {
+      sourceToken: sourceAtTranslation
+    });
+    if (!translationVolume?.polygon?.length) throw new Error("Could not resolve the translated attached-cell target position.");
+    const translationCenter = translationVolume.polygon.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+    translationCenter.x /= translationVolume.polygon.length;
+    translationCenter.y /= translationVolume.polygon.length;
+    const translationTargetPosition = {
+      x: translationCenter.x - (grid.size / 2),
+      y: translationCenter.y - (grid.size / 2),
       elevation: sourceOrigin.elevation
     };
     const elevatedTargetPosition = {
@@ -483,9 +504,12 @@ export class RegionCellLiveAcceptanceSuite {
       }
     });
     if (!rotationVolume?.polygon?.length) throw new Error("Could not resolve the rotated attached-cell target position.");
+    const rotationCenter = rotationVolume.polygon.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+    rotationCenter.x /= rotationVolume.polygon.length;
+    rotationCenter.y /= rotationVolume.polygon.length;
     const rotationTargetPosition = {
-      x: Math.min(...rotationVolume.polygon.map(point => point.x)),
-      y: Math.min(...rotationVolume.polygon.map(point => point.y)),
+      x: rotationCenter.x - (grid.size / 2),
+      y: rotationCenter.y - (grid.size / 2),
       elevation: sourceOrigin.elevation
     };
 
@@ -504,6 +528,19 @@ export class RegionCellLiveAcceptanceSuite {
       throw error;
     }
     const [lowTarget, highTarget, rotationTarget] = targetDocuments;
+
+    // A valid acceptance fixture must begin with all three stationary targets
+    // outside the ACTIVE cell. Otherwise no later enter transition can be
+    // interpreted unambiguously. This guards arbitrary source rotations and
+    // future transform changes in the harness itself.
+    const initiallyInside = [lowTarget, highTarget, rotationTarget].filter(token => this.#occupancy.testTokenAt(region, token));
+    if (initiallyInside.length) {
+      const ids = targetDocuments.map(token => token?.id).filter(Boolean);
+      if (ids.length) await scene.deleteEmbeddedDocuments("Token", ids, { ae5eLiveAcceptanceCleanup: true }).catch(() => undefined);
+      try { await this.#regions.delete(region); }
+      catch { try { await region.delete?.({ ae5eLiveAcceptanceCleanup: true }); } catch { /* best effort */ } }
+      throw new Error(`Attachment fixture geometry is ambiguous: ${initiallyInside.map(token => token.name).join(", ")} began inside the ACTIVE cell.`);
+    }
 
     const transitions = [];
     const transitionHookId = Hooks.on(HOOKS.REGION_CELL_OCCUPANCY_TRANSITION, transition => {
