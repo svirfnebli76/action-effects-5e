@@ -30,6 +30,7 @@ import { CrosshairTestSuite } from "./crosshair-test-suite.js";
 import { OngoingEffectTestSuite } from "./ongoing-effect-test-suite.js";
 import { RegionAuthorityTestSuite } from "./region-authority-test-suite.js";
 import { RegionCellTestSuite } from "./region-cell-test-suite.js";
+import { RegionCellLiveAcceptanceSuite } from "./region-cell-live-acceptance-suite.js";
 import { EnvironmentalTestSuite } from "./environmental-test-suite.js";
 import { AnimationOwnershipTestSuite } from "./animation-ownership-test-suite.js";
 import { CatTeleportTestSuite } from "./cat-teleport-test-suite.js";
@@ -65,6 +66,7 @@ export class TestHarness {
   #ongoingEffectSuite;
   #regionAuthoritySuite;
   #regionCellSuite;
+  #regionCellLiveAcceptanceSuite;
   #environmentalSuite;
   #animationOwnershipSuite;
   #catTeleportSuite;
@@ -117,6 +119,16 @@ export class TestHarness {
     this.#ongoingEffectSuite = new OngoingEffectTestSuite({ service: ongoingEffects, catSpell });
     this.#regionAuthoritySuite = new RegionAuthorityTestSuite({ service: regions, socket });
     this.#regionCellSuite = new RegionCellTestSuite({ cells: regionCells, occupancy: regionOccupancy, movementCosts: regionCellMovementCosts, attachments: regionCellAttachments, socket, persistentAreaEntryInterruption });
+    this.#regionCellLiveAcceptanceSuite = new RegionCellLiveAcceptanceSuite({
+      regions,
+      cells: regionCells,
+      occupancy: regionOccupancy,
+      movementCosts: regionCellMovementCosts,
+      attachments: regionCellAttachments,
+      movement,
+      persistentAreaEvents,
+      persistentAreaEntryInterruption
+    });
     this.#environmentalSuite = new EnvironmentalTestSuite({
       environment,
       geometry: environmentGeometry,
@@ -187,6 +199,46 @@ export class TestHarness {
 
   runRegionCellFullSuite(options) {
     return this.#regionCellSuite.runFullSuite(options);
+  }
+
+  setupRegionCellLiveMovementTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.setupMovementTest(options);
+  }
+
+  resetRegionCellLiveMovementTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.resetMovementToken(options);
+  }
+
+  reportRegionCellLiveMovementTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.reportMovementTest(options);
+  }
+
+  cleanupRegionCellLiveMovementTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.cleanupMovementTest(options);
+  }
+
+  setupRegionCellLiveAttachmentTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.setupAttachmentTest(options);
+  }
+
+  resetRegionCellLiveAttachmentTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.resetAttachmentSource(options);
+  }
+
+  reportRegionCellLiveAttachmentTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.reportAttachmentTest(options);
+  }
+
+  cleanupRegionCellLiveAttachmentTest(options) {
+    return this.#regionCellLiveAcceptanceSuite.cleanupAttachmentTest(options);
+  }
+
+  cleanupRegionCellLiveAcceptance(options) {
+    return this.#regionCellLiveAcceptanceSuite.cleanupAll(options);
+  }
+
+  getRegionCellLiveAcceptanceStatus() {
+    return this.#regionCellLiveAcceptanceSuite.getStatus();
   }
 
   runEnvironmentalAcceptanceTest(options) {

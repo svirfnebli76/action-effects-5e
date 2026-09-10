@@ -100,6 +100,8 @@ export class RegionCellAttachmentService {
 
     const nativeAttachments = source?.attachments?.regions;
     if (nativeAttachments != null) {
+      // Foundry v14.365 exposes a readonly TokenDocument.attachments.regions set.
+      // Treat it as authoritative when available.
       for (const region of asArray(nativeAttachments)) {
         if (!region?.uuid || !this.#cells.isConfigured(region)) continue;
         const config = this.#cells.getConfig(region);
@@ -107,11 +109,12 @@ export class RegionCellAttachmentService {
         found.set(region.uuid, region);
       }
     } else {
-      // Fallback/diagnostic path for synthetic harnesses which cannot construct
-      // Foundry's readonly TokenDocument.attachments collection. Real Foundry
-      // Tokens must be natively attached; a token-local flag alone is not enough.
+      // Compatibility path for v14 builds where attachment ownership is exposed
+      // primarily on RegionDocument.attachment.token. A token-local cell frame
+      // alone is never enough to impersonate a native Foundry attachment.
       for (const region of asArray(source?.parent?.regions)) {
         if (!region?.uuid || found.has(region.uuid) || !this.#cells.isConfigured(region)) continue;
+        if (!this.#regionIsNativelyAttachedToSource(region, source)) continue;
         const config = this.#cells.getConfig(region);
         if (config?.frame?.type !== "token" || config.frame.sourceTokenUuid !== source.uuid) continue;
         found.set(region.uuid, region);
@@ -281,6 +284,20 @@ export class RegionCellAttachmentService {
       width: Number(source?.width ?? source?._source?.width ?? 1),
       height: Number(source?.height ?? source?._source?.height ?? 1)
     };
+  }
+
+  #regionIsNativelyAttachedToSource(region, source) {
+    const candidate = region?.attachment?.token
+      ?? region?._source?.attachment?.token
+      ?? region?.attachedToken
+      ?? null;
+    if (!candidate || !source?.uuid) return false;
+    if (typeof candidate === "string") {
+      return candidate === source.id || candidate === source.uuid;
+    }
+    return candidate === source
+      || candidate?.uuid === source.uuid
+      || (candidate?.id && candidate.id === source.id);
   }
 
   #nativeInside(region, token) {

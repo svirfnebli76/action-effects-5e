@@ -326,4 +326,12 @@ test("3x3 Token fallback depth spans three Z cells and native attachment is requ
   assert.deepEqual(f.attachments.regionsForSource(source), [], "token-local frame alone must not impersonate a native attachment");
   source.attachments.regions.add(f.region);
   assert.equal(f.attachments.regionsForSource(source).length, 1);
+
+  // Foundry v14 compatibility: some attachment paths expose ownership on the
+  // Region document itself rather than through TokenDocument.attachments.
+  source.attachments = undefined;
+  f.region.attachment = { token: source.id };
+  assert.equal(f.attachments.regionsForSource(source).length, 1, "RegionDocument.attachment.token is accepted as native attachment evidence");
+  f.region.attachment = null;
+  assert.deepEqual(f.attachments.regionsForSource(source), [], "token-local frame alone remains insufficient when Region attachment metadata is absent");
 });
