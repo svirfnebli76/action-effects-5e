@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.3.29-region-cell-exp.4";
+export const MODULE_VERSION = "0.4.3.29-region-cell-exp.6";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",

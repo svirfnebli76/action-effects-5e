@@ -424,6 +424,7 @@ export class RegionCellLiveAcceptanceSuite {
     const grid = this.#grid(scene);
     const sourceOrigin = cloneTransform(source);
     const fixtureId = `region-cell-live-attachment-${randomId(12)}`;
+    await this.#cleanupStaleAttachmentFixtureRegions(scene);
 
     const RegionDocument = globalThis.CONFIG?.Region?.documentClass;
     if (typeof RegionDocument?.createTokenEmanation !== "function") {
@@ -488,11 +489,20 @@ export class RegionCellLiveAcceptanceSuite {
       elevation: sourceOrigin.elevation
     };
 
-    const targetDocuments = await this.#createTemporaryTargets(source, [
-      { name: "AE5E TEST — Translation Target (Low)", ...translationTargetPosition },
-      { name: "AE5E TEST — Translation Target (High)", ...elevatedTargetPosition },
-      { name: "AE5E TEST — Rotation Target", ...rotationTargetPosition }
-    ]);
+    let targetDocuments;
+    try {
+      targetDocuments = await this.#createTemporaryTargets(source, [
+        { name: "AE5E TEST — Translation Target (Low)", ...translationTargetPosition },
+        { name: "AE5E TEST — Translation Target (High)", ...elevatedTargetPosition },
+        { name: "AE5E TEST — Rotation Target", ...rotationTargetPosition }
+      ]);
+    } catch (error) {
+      try { await this.#regions.delete(region); }
+      catch {
+        try { await region.delete?.({ ae5eLiveAcceptanceCleanup: true }); } catch { /* best effort */ }
+      }
+      throw error;
+    }
     const [lowTarget, highTarget, rotationTarget] = targetDocuments;
 
     const transitions = [];
@@ -736,28 +746,52 @@ export class RegionCellLiveAcceptanceSuite {
     };
   }
 
+  async #cleanupStaleAttachmentFixtureRegions(scene) {
+    const regions = Array.from(scene?.regions ?? []).filter(region => {
+      const authority = region?.getFlag?.(MODULE_ID, REGION_AUTHORITY_FLAG)
+        ?? region?.flags?.[MODULE_ID]?.[REGION_AUTHORITY_FLAG]
+        ?? region?._source?.flags?.[MODULE_ID]?.[REGION_AUTHORITY_FLAG]
+        ?? null;
+      const metadata = authority?.metadata ?? {};
+      return metadata?.testFixture === true
+        && metadata?.suite === "region-cell-live-acceptance"
+        && metadata?.fixture === "attachment";
+    });
+    for (const region of regions) {
+      try { await this.#regions.delete(region); }
+      catch {
+        try { await region.delete?.({ ae5eLiveAcceptanceCleanup: true }); } catch { /* best effort */ }
+      }
+    }
+    return regions.length;
+  }
+
   async #createTemporaryTargets(source, placements) {
     const scene = source.parent;
     const sourceData = source.toObject?.(false) ?? source.toObject?.() ?? {};
-    const data = placements.map((placement, index) => {
-      const token = duplicateSafely(sourceData);
-      delete token._id;
-      delete token._regions;
-      delete token._movementHistory;
-      token.name = placement.name ?? `AE5E TEST Target ${index + 1}`;
-      token.x = placement.x;
-      token.y = placement.y;
-      token.elevation = placement.elevation;
-      token.rotation = 0;
-      token.locked = true;
-      token.hidden = false;
-      token.flags ??= {};
-      token.flags[MODULE_ID] = {
-        ...(token.flags[MODULE_ID] ?? {}),
-        regionCellLiveAcceptanceTarget: true
-      };
-      return token;
-    });
+    const sourceTexture = duplicateSafely(sourceData.texture ?? source.texture ?? {});
+    const sourceWidth = numeric(sourceData.width ?? source.width, 1);
+    const sourceHeight = numeric(sourceData.height ?? source.height, 1);
+    const data = placements.map((placement, index) => ({
+      name: placement.name ?? `AE5E TEST Target ${index + 1}`,
+      actorId: null,
+      actorLink: false,
+      x: placement.x,
+      y: placement.y,
+      elevation: placement.elevation,
+      width: sourceWidth,
+      height: sourceHeight,
+      rotation: 0,
+      locked: true,
+      hidden: false,
+      texture: sourceTexture,
+      sight: { enabled: false },
+      flags: {
+        [MODULE_ID]: {
+          regionCellLiveAcceptanceTarget: true
+        }
+      }
+    }));
     const created = await scene.createEmbeddedDocuments("Token", data, { ae5eLiveAcceptanceFixture: true });
     if (!Array.isArray(created) || created.length !== placements.length) {
       const ids = (created ?? []).map(token => token?.id).filter(Boolean);
