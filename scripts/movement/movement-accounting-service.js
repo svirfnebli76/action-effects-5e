@@ -267,8 +267,8 @@ export class MovementAccountingService {
     if (this.#costModifiers.has(logicalId)) throw new Error(`Movement cost modifier '${logicalId}' is already registered.`);
 
     const requestedBaseAction = baseAction ?? globalThis.CONFIG?.Token?.movement?.defaultAction ?? "walk";
-    if (this.#isModifierSlotId(requestedBaseAction)) {
-      throw new Error("AE5E movement cost modifiers cannot use another modifier slot as their base action.");
+    if (this.#isModifierSlotId(requestedBaseAction) && !this.#slotAssignments.has(requestedBaseAction)) {
+      throw new Error(`Base movement modifier slot '${requestedBaseAction}' is not currently assigned.`);
     }
     if (!getConfiguredAction(requestedBaseAction)) {
       throw new Error(`Base movement action '${requestedBaseAction}' is not registered.`);

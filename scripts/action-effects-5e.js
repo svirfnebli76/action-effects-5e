@@ -48,6 +48,10 @@ import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-even
 import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.js";
 import { ActivityExecutionService } from "./activities/activity-execution-service.js";
 import { RegionAuthorityService } from "./regions/region-authority-service.js";
+import { RegionCellStateService } from "./regions/region-cell-state-service.js";
+import { RegionOccupancyService } from "./regions/region-occupancy-service.js";
+import { RegionCellMovementCostService } from "./regions/region-cell-movement-cost-service.js";
+import { RegionCellAttachmentService } from "./regions/region-cell-attachment-service.js";
 import { EnvironmentProfileRegistry } from "./environment/environment-profile-registry.js";
 import { EnvironmentCapabilityRegistry } from "./environment/environment-capability-registry.js";
 import { EnvironmentGeometryService } from "./environment/environment-geometry-service.js";
@@ -132,6 +136,10 @@ const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifie
 const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const regions = new RegionAuthorityService({ socket, authority: reactionAuthority });
+const regionCells = new RegionCellStateService({ socket, authority: reactionAuthority, regions });
+const regionOccupancy = new RegionOccupancyService({ cells: regionCells });
+const regionCellMovementCosts = new RegionCellMovementCostService({ occupancy: regionOccupancy, accounting: movementAccounting });
+const regionCellAttachments = new RegionCellAttachmentService({ cells: regionCells, occupancy: regionOccupancy });
 const environmentProfiles = new EnvironmentProfileRegistry();
 const environmentCapabilities = new EnvironmentCapabilityRegistry();
 const environmentGeometry = new EnvironmentGeometryService();
@@ -150,7 +158,8 @@ const persistentAreaEvents = new PersistentAreaEventService({
 });
 const persistentAreaEntryInterruption = new PersistentAreaEntryInterruptionService({
   events: persistentAreaEvents,
-  movement
+  movement,
+  occupancy: regionOccupancy
 });
 PersistentAreaRegionBehaviorType.configure(persistentAreaEvents);
 const environmentIndex = new EnvironmentRegionIndex({ capabilities: environmentCapabilities, geometry: environmentGeometry });
@@ -230,10 +239,15 @@ const tests = new TestHarness({
   ongoingEffects,
   activities,
   regions,
+  regionCells,
+  regionOccupancy,
+  regionCellMovementCosts,
+  regionCellAttachments,
   environment,
   environmentGeometry,
   environmentBehaviors,
   persistentAreaEvents,
+  persistentAreaEntryInterruption,
   persistentAreaLifecycle,
   environmentCapabilities,
   environmentProfiles,
@@ -335,6 +349,10 @@ const api = new ActionEffects5eApi({
   ongoingEffects,
   activities,
   regions,
+  regionCells,
+  regionOccupancy,
+  regionCellMovementCosts,
+  regionCellAttachments,
   environment,
   environmentGeometry,
   environmentBehaviors,
@@ -417,6 +435,7 @@ Hooks.once("ready", async () => {
   relationshipRotation.initialize();
   movement.initialize();
   persistentAreaEntryInterruption.initialize();
+  regionCellAttachments.initialize();
   displacement.initialize();
   await selectionIndicator.initialize();
   externalPromptBridge.initialize();

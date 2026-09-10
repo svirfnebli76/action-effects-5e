@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.3.28";
+export const MODULE_VERSION = "0.4.3.29-region-cell-exp.3";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -111,6 +111,15 @@ export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator
 
 
 export const REGION_AUTHORITY_FLAG = "authorityRegion";
+
+// Experimental Region-local 3D cell-state infrastructure. Cell states are
+// intentionally generic; Item automation owns any spell-specific semantics.
+export const REGION_CELL_SCHEMA_VERSION = 1;
+export const REGION_CELL_FLAG = "regionCells";
+export const REGION_CELL_STATES = Object.freeze({
+  ACTIVE: "ACTIVE",
+  INACTIVE: "INACTIVE"
+});
 
 // Region-native environmental interaction framework. Event producers (Midi,
 // crosshairs, native Regions, compatibility adapters) emit normalized geometry;
@@ -389,5 +398,6 @@ export const HOOKS = Object.freeze({
   SPELL_MODIFIER_PHASE: `${MODULE_ID}.spellModifierPhase`,
   SPELL_MODIFIER_SESSION_CREATED: `${MODULE_ID}.spellModifierSessionCreated`,
   SPELL_MODIFIER_APPLIED: `${MODULE_ID}.spellModifierApplied`,
-  SPELL_MODIFIER_SESSION_COMPLETE: `${MODULE_ID}.spellModifierSessionComplete`
+  SPELL_MODIFIER_SESSION_COMPLETE: `${MODULE_ID}.spellModifierSessionComplete`,
+  REGION_CELL_OCCUPANCY_TRANSITION: `${MODULE_ID}.regionCellOccupancyTransition`
 });

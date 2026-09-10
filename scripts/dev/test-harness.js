@@ -29,6 +29,7 @@ import { SpellModifierEngineTestSuite } from "./spell-modifier-engine-test-suite
 import { CrosshairTestSuite } from "./crosshair-test-suite.js";
 import { OngoingEffectTestSuite } from "./ongoing-effect-test-suite.js";
 import { RegionAuthorityTestSuite } from "./region-authority-test-suite.js";
+import { RegionCellTestSuite } from "./region-cell-test-suite.js";
 import { EnvironmentalTestSuite } from "./environmental-test-suite.js";
 import { AnimationOwnershipTestSuite } from "./animation-ownership-test-suite.js";
 import { CatTeleportTestSuite } from "./cat-teleport-test-suite.js";
@@ -63,6 +64,7 @@ export class TestHarness {
   #crosshairSuite;
   #ongoingEffectSuite;
   #regionAuthoritySuite;
+  #regionCellSuite;
   #environmentalSuite;
   #animationOwnershipSuite;
   #catTeleportSuite;
@@ -74,7 +76,7 @@ export class TestHarness {
   #webItemValidator = new WebItemValidator();
   #orbitOverlay = new OrbitDebugOverlay();
 
-  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, activities, regions, environment, environmentGeometry, environmentBehaviors, persistentAreaEvents, persistentAreaLifecycle, environmentCapabilities, environmentProfiles, environmentIndex, environmentMutations, environmentTiming, flammability, midiEnvironment, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
+  constructor({ dependencies, compatibility, movement, movementAccounting, movementSpending, catMovement, catSpell, catAutomationRegistry, catMetadataAuthoring, catConfigurationAuthoring, catMetadataContextMenu, animationOwnership, automatedAnimations, spellModifierRegistry, spellModifierDiscovery, spellModifierChoices, spellModifiers, spellModifierEvents, ongoingEffects, activities, regions, regionCells, regionOccupancy, regionCellMovementCosts, regionCellAttachments, environment, environmentGeometry, environmentBehaviors, persistentAreaEvents, persistentAreaEntryInterruption, persistentAreaLifecycle, environmentCapabilities, environmentProfiles, environmentIndex, environmentMutations, environmentTiming, flammability, midiEnvironment, relationships, relationshipLifecycle, relationshipMovement, relationshipRotation, relativeRelationships, relationshipLinkObstructions, displacement, displacementBatch, displacementOverlay, selectionIndicator, externalPromptBridge, choicePrompts, crosshairs, reactionRegistry, reactionAuthority, reactionDiscovery, reactionOrdering, reactionDialogs, reactionBroker, reactionEvents, socket }) {
     this.#dependencies = dependencies;
     this.#compatibility = compatibility;
     this.#movement = movement;
@@ -114,6 +116,7 @@ export class TestHarness {
     this.#crosshairSuite = new CrosshairTestSuite({ crosshairs });
     this.#ongoingEffectSuite = new OngoingEffectTestSuite({ service: ongoingEffects, catSpell });
     this.#regionAuthoritySuite = new RegionAuthorityTestSuite({ service: regions, socket });
+    this.#regionCellSuite = new RegionCellTestSuite({ cells: regionCells, occupancy: regionOccupancy, movementCosts: regionCellMovementCosts, attachments: regionCellAttachments, socket, persistentAreaEntryInterruption });
     this.#environmentalSuite = new EnvironmentalTestSuite({
       environment,
       geometry: environmentGeometry,
@@ -156,6 +159,34 @@ export class TestHarness {
 
   runRegionAuthorityLiveLifecycleTest(options) {
     return this.#regionAuthoritySuite.runLiveLifecycleTest(options);
+  }
+
+  runRegionCellFoundationTest(options) {
+    return this.#regionCellSuite.runFoundationTest(options);
+  }
+
+  runRegionCellContainmentTest(options) {
+    return this.#regionCellSuite.runContainmentTest(options);
+  }
+
+  runRegionCellMovementTest(options) {
+    return this.#regionCellSuite.runMovementTest(options);
+  }
+
+  runRegionCellTerrainTest(options) {
+    return this.#regionCellSuite.runTerrainTest(options);
+  }
+
+  runRegionCellAttachmentTest(options) {
+    return this.#regionCellSuite.runAttachmentTest(options);
+  }
+
+  runRegionCellWebSimulationTest(options) {
+    return this.#regionCellSuite.runWebSimulationTest(options);
+  }
+
+  runRegionCellFullSuite(options) {
+    return this.#regionCellSuite.runFullSuite(options);
   }
 
   runEnvironmentalAcceptanceTest(options) {

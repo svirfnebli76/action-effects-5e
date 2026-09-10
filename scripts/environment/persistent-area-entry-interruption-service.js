@@ -45,6 +45,36 @@ function positionChanged(a, b) {
   return !samePosition(a, b);
 }
 
+function interpolateWaypoint(from, to, t) {
+  const result = {
+    ...clone(to ?? from ?? {}),
+    x: Number(from?.x ?? 0) + ((Number(to?.x ?? 0) - Number(from?.x ?? 0)) * t),
+    y: Number(from?.y ?? 0) + ((Number(to?.y ?? 0) - Number(from?.y ?? 0)) * t),
+    elevation: Number(from?.elevation ?? 0) + ((Number(to?.elevation ?? 0) - Number(from?.elevation ?? 0)) * t),
+    checkpoint: false,
+    explicit: false,
+    snapped: false
+  };
+  return sanitizeWaypoint(result);
+}
+
+function segmentProgress(from, to, point, token) {
+  const gridSize = Number(token?.parent?.grid?.size ?? globalThis.canvas?.grid?.size ?? 100);
+  const gridDistance = Number(token?.parent?.grid?.distance ?? globalThis.canvas?.grid?.distance ?? 5);
+  const zScale = Number.isFinite(gridSize) && gridSize > 0 && Number.isFinite(gridDistance) && gridDistance > 0
+    ? gridSize / gridDistance
+    : 20;
+  const dx = Number(to?.x ?? 0) - Number(from?.x ?? 0);
+  const dy = Number(to?.y ?? 0) - Number(from?.y ?? 0);
+  const dz = (Number(to?.elevation ?? 0) - Number(from?.elevation ?? 0)) * zScale;
+  const px = Number(point?.x ?? 0) - Number(from?.x ?? 0);
+  const py = Number(point?.y ?? 0) - Number(from?.y ?? 0);
+  const pz = (Number(point?.elevation ?? 0) - Number(from?.elevation ?? 0)) * zScale;
+  const denominator = (dx * dx) + (dy * dy) + (dz * dz);
+  if (!Number.isFinite(denominator) || denominator <= 1e-9) return 0;
+  return ((px * dx) + (py * dy) + (pz * dz)) / denominator;
+}
+
 function sanitizeWaypoint(value) {
   if (!value || !Number.isFinite(Number(value.x)) || !Number.isFinite(Number(value.y))) return null;
   const result = {};
@@ -102,6 +132,7 @@ function dedupeWaypoints(points) {
 export class PersistentAreaEntryInterruptionService {
   #events;
   #movement;
+  #occupancy;
   #initialized = false;
   #removeConsumer = null;
   #activeOriginalMovements = new Set();
@@ -114,12 +145,16 @@ export class PersistentAreaEntryInterruptionService {
     bypassedPlannedMovements: 0,
     blockedOverlappingOriginals: 0,
     noNativeInteriorPosition: 0,
+    cellCompletePathsExpanded: 0,
+    cellSegmentsTraced: 0,
+    cellTransitionsInserted: 0,
     replayErrors: 0
   };
 
-  constructor({ events, movement }) {
+  constructor({ events, movement, occupancy = null }) {
     this.#events = events;
     this.#movement = movement;
+    this.#occupancy = occupancy;
   }
 
   initialize() {
@@ -159,7 +194,7 @@ export class PersistentAreaEntryInterruptionService {
 
   /** Public for deterministic unit testing; not exposed as an Item API. */
   planMovement(token, movement, transaction = {}) {
-    if (!token?.uuid || !token?.parent || typeof token?.testInsideRegion !== "function") {
+    if (!token?.uuid || !token?.parent || (!this.#occupancy && typeof token?.testInsideRegion !== "function")) {
       return { planned: false, reason: "token-region-api-unavailable", waypoints: [], plan: null };
     }
 
@@ -177,13 +212,13 @@ export class PersistentAreaEntryInterruptionService {
     const regionStates = new Map();
 
     for (const participant of participants) {
-      let inside = false;
-      try { inside = token.testInsideRegion(participant.region, origin) === true; }
-      catch { inside = false; }
+      const inside = this.#testInside(token, participant.region, origin);
       regionStates.set(participant.behavior.uuid, { inside, pendingEntry: false });
     }
 
-    const points = teleport ? [destination] : route.map(point => ({ ...clone(point) }));
+    const points = teleport
+      ? [destination]
+      : this.#expandCellTransitionRoute(token, route, origin, participants);
     for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
       const point = points[pointIndex];
       const previousPoint = pointIndex > 0 ? points[pointIndex - 1] : origin;
@@ -194,9 +229,7 @@ export class PersistentAreaEntryInterruptionService {
         const key = participant.behavior.uuid;
         const state = regionStates.get(key) ?? { inside: false, pendingEntry: false };
         const wasInside = state.inside === true;
-        let isInside = false;
-        try { isInside = token.testInsideRegion(participant.region, point) === true; }
-        catch { isInside = false; }
+        const isInside = this.#testInside(token, participant.region, point);
 
         if (!wasInside && isInside) {
           state.pendingEntry = true;
@@ -271,6 +304,146 @@ export class PersistentAreaEntryInterruptionService {
     return { planned: true, reason: "native-entry-checkpoints-planned", waypoints, plan };
   }
 
+  #testInside(token, region, position) {
+    try {
+      if (this.#occupancy) return this.#occupancy.testTokenAt(region, token, position) === true;
+      return token?.testInsideRegion?.(region, position) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  #expandCellTransitionRoute(token, route, origin, participants) {
+    if (!this.#occupancy?.isCellBacked) return route.map(point => ({ ...clone(point) }));
+    const hasCellParticipants = participants.some(participant => this.#occupancy.isCellBacked(participant.region));
+    if (!hasCellParticipants) return route.map(point => ({ ...clone(point) }));
+
+    // Foundry v14 exposes the complete snapped, step-by-step movement route.
+    // Cell occupancy is a grid-space rules model, so these settled positions are
+    // authoritative for entry/exit and difficult-terrain decisions. Do not use
+    // animation-frame swept-volume overlap as a substitute: doing so would make
+    // a one-cell burned tunnel effectively impassable for a one-cell Token.
+    if (typeof token?.getCompleteMovementPath === "function") {
+      const expanded = [];
+      let segmentStart = sanitizeWaypoint(origin);
+      let succeeded = true;
+      for (const rawEndpoint of route) {
+        const endpoint = sanitizeWaypoint(rawEndpoint);
+        if (!segmentStart || !endpoint) continue;
+        let complete = [];
+        try { complete = asArray(token.getCompleteMovementPath([segmentStart, endpoint])); }
+        catch { complete = []; }
+        if (!complete.length) { succeeded = false; break; }
+        for (const rawPoint of complete) {
+          const point = sanitizeWaypoint(rawPoint);
+          if (!point || samePosition(point, segmentStart)) continue;
+          if (samePosition(expanded.at(-1), point)) continue;
+          expanded.push(point);
+        }
+        if (!samePosition(expanded.at(-1), endpoint)) expanded.push({ ...clone(endpoint) });
+        segmentStart = endpoint;
+      }
+      if (succeeded && expanded.length) {
+        this.#stats.cellCompletePathsExpanded += 1;
+        return dedupeWaypoints(expanded);
+      }
+    }
+
+    // Diagnostic fallback for synthetic/non-canvas callers. Live Foundry v14
+    // should normally take the public getCompleteMovementPath route above. The
+    // analytic tracer finds candidate state boundaries, then Foundry snapping is
+    // still required before an entry checkpoint is accepted.
+    if (!this.#occupancy?.traceTokenSegment) return route.map(point => ({ ...clone(point) }));
+    const expanded = [];
+    let segmentStart = sanitizeWaypoint(origin);
+
+    for (const rawEndpoint of route) {
+      const endpoint = sanitizeWaypoint(rawEndpoint);
+      if (!segmentStart || !endpoint) continue;
+      const additions = [];
+
+      for (const participant of participants) {
+        if (!this.#occupancy.isCellBacked(participant.region)) continue;
+        const trace = this.#occupancy.traceTokenSegment(participant.region, token, { from: segmentStart, to: endpoint });
+        if (!trace?.traced) continue;
+        this.#stats.cellSegmentsTraced += 1;
+
+        for (const transition of trace.transitions ?? []) {
+          if (transition.type !== "enter") continue;
+          const t = Number(transition.t);
+          if (!Number.isFinite(t) || t <= 1e-8 || t >= 1 - 1e-8) continue;
+          const crossing = interpolateWaypoint(segmentStart, endpoint, t);
+          if (!crossing) continue;
+          const settled = this.#firstCellSnappedInteriorPosition({
+            token,
+            region: participant.region,
+            crossingPoint: crossing,
+            previousPoint: segmentStart,
+            nextPoint: endpoint,
+            interval: transition.interval
+          });
+          if (!settled) continue;
+          const settledT = segmentProgress(segmentStart, endpoint, settled, token);
+          additions.push({ t: settledT, point: settled });
+        }
+      }
+
+      additions.sort((a, b) => a.t - b.t);
+      for (const addition of additions) {
+        if (!addition.point || samePosition(expanded.at(-1) ?? segmentStart, addition.point)) continue;
+        expanded.push(addition.point);
+        this.#stats.cellTransitionsInserted += 1;
+      }
+      if (!samePosition(expanded.at(-1), endpoint)) expanded.push({ ...clone(endpoint) });
+      segmentStart = endpoint;
+    }
+
+    return dedupeWaypoints(expanded);
+  }
+
+  #firstCellSnappedInteriorPosition({ token, region, crossingPoint, previousPoint, nextPoint, interval = null }) {
+    const previous = sanitizeWaypoint(previousPoint);
+    const crossing = sanitizeWaypoint(crossingPoint);
+    const next = sanitizeWaypoint(nextPoint);
+    if (!previous || !crossing || !next) return null;
+    const minimum = segmentProgress(previous, next, crossing, token) - 1e-8;
+    const maximum = Number.isFinite(Number(interval?.end)) ? Number(interval.end) + 1e-8 : 1 + 1e-8;
+
+    if (typeof token?.getCompleteMovementPath === "function") {
+      let complete = [];
+      try { complete = asArray(token.getCompleteMovementPath([previous, next])); }
+      catch { complete = []; }
+      const candidates = complete
+        .map(sanitizeWaypoint)
+        .filter(Boolean)
+        .map(point => ({ point, t: segmentProgress(previous, next, point, token) }))
+        .filter(({ t }) => t >= minimum && t <= maximum)
+        .sort((a, b) => a.t - b.t);
+      for (const { point } of candidates) {
+        if (this.#testInside(token, region, point)) return { ...point, snapped: true };
+      }
+    }
+
+    if (typeof token?.getSnappedPosition !== "function") return null;
+    const probeFractions = [0, 0.001, 0.01, 0.05, 0.1, 0.25, 0.49, 0.51, 0.75, 0.99];
+    const crossingT = segmentProgress(previous, next, crossing, token);
+    const remaining = Math.max(0, maximum - crossingT);
+    for (const fraction of probeFractions) {
+      const t = Math.min(maximum, crossingT + (remaining * fraction));
+      const probe = interpolateWaypoint(previous, next, t);
+      if (!probe) continue;
+      let snapped = null;
+      try { snapped = token.getSnappedPosition(probe); }
+      catch { snapped = null; }
+      const candidate = sanitizeWaypoint({ ...probe, ...snapped, snapped: true });
+      if (!candidate) continue;
+      const candidateT = segmentProgress(previous, next, candidate, token);
+      if (candidateT < minimum || candidateT > maximum) continue;
+      if (this.#testInside(token, region, candidate)) return candidate;
+    }
+    return null;
+  }
+
   #firstSnappedInteriorPosition({ token, region, crossingPoint, previousPoint, nextPoint }) {
     if (!token || !region || !crossingPoint || typeof token.getSnappedPosition !== "function") return null;
 
@@ -332,10 +505,7 @@ export class PersistentAreaEntryInterruptionService {
       if (forward < -1e-6) continue;
       if (Number.isFinite(maxForward) && maxForward > 0 && forward > maxForward + 1e-6) continue;
 
-      let inside = false;
-      try { inside = token.testInsideRegion(region, candidate) === true; }
-      catch { inside = false; }
-      if (!inside) continue;
+      if (!this.#testInside(token, region, candidate)) continue;
 
       return candidate;
     }
