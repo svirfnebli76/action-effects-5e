@@ -772,9 +772,16 @@ export class RegionCellLiveAcceptanceSuite {
     const sourceTexture = duplicateSafely(sourceData.texture ?? source.texture ?? {});
     const sourceWidth = numeric(sourceData.width ?? source.width, 1);
     const sourceHeight = numeric(sourceData.height ?? source.height, 1);
+    const actorId = source?.actor?.id ?? sourceData.actorId ?? source?._source?.actorId ?? null;
+    if (!actorId) {
+      throw new Error("Use an Actor-backed 1x1 source Token for the attached-Region live acceptance test.");
+    }
     const data = placements.map((placement, index) => ({
       name: placement.name ?? `AE5E TEST Target ${index + 1}`,
-      actorId: null,
+      // CAT and other Region consumers reasonably expect Scene Tokens to have an Actor.
+      // Reuse the source Actor as three unlinked synthetic Tokens, while keeping the
+      // fixture payload minimal so no source vision/detection-mode data is cloned.
+      actorId,
       actorLink: false,
       x: placement.x,
       y: placement.y,

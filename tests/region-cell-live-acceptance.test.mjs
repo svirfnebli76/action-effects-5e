@@ -25,7 +25,10 @@ test("Region Cell physical live-acceptance harness is wired through TestHarness 
   }
   assert.match(suite, /createTokenEmanation/);
   assert.match(suite, /measureMovementPath/);
-  assert.match(suite, /actorId:\s*null/);
+  assert.match(suite, /const actorId =/);
+  assert.match(suite, /actorId,/);
+  assert.match(suite, /actorLink:\s*false/);
+  assert.doesNotMatch(suite, /actorId:\s*null/);
   assert.match(suite, /sight:\s*\{\s*enabled:\s*false\s*\}/);
   assert.doesNotMatch(suite, /const token = duplicateSafely\(sourceData\)/);
   assert.match(suite, /cleanupStaleAttachmentFixtureRegions/);
