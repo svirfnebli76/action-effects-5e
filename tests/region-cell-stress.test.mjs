@@ -116,6 +116,72 @@ function activeComponents(cells, region) {
   return groups;
 }
 
+
+test("live attachment hook evaluates pending changes when updateToken document still exposes the old transform", async () => {
+  const f = fixture();
+  const source = f.makeToken({ id: "source", x: 0, y: 0, rotation: 0 });
+  const target = f.makeToken({ id: "target", x: 200, y: 50, elevation: 0 });
+  await f.cells.configure(f.region, {
+    bounds: { min: { x: 0, y: 0, z: 0 }, size: { x: 1, y: 1, z: 1 } },
+    defaultState: "ACTIVE",
+    frame: { type: "token", sourceTokenUuid: source.uuid, offset: { x: 0, y: 0, z: 0 } }
+  });
+  source.attachments.regions.add(f.region);
+
+  const handlers = new Map();
+  const emitted = [];
+  const previousHooks = globalThis.Hooks;
+  globalThis.Hooks = {
+    on(name, fn) {
+      const list = handlers.get(name) ?? [];
+      list.push(fn);
+      handlers.set(name, list);
+      return fn;
+    },
+    off(name, fn) {
+      const list = handlers.get(name) ?? [];
+      handlers.set(name, list.filter(candidate => candidate !== fn));
+    },
+    callAll(name, ...args) {
+      emitted.push({ name, args });
+      for (const fn of handlers.get(name) ?? []) fn(...args);
+    }
+  };
+
+  try {
+    f.attachments.initialize();
+    assert.equal(f.occupancy.testTokenAt(f.region, target), false);
+
+    const changes = { x: 150 };
+    const options = {};
+    const userId = globalThis.game.user.id;
+    for (const fn of handlers.get("preUpdateToken") ?? []) fn(source, changes, options, userId);
+
+    // Reproduce Foundry v14 live behavior: updateToken fires while the Document
+    // still exposes the old x=0 transform and the accepted x=150 exists only
+    // in the changes object.
+    assert.equal(source.x, 0);
+    for (const fn of handlers.get("updateToken") ?? []) fn(source, changes, options, userId);
+
+    const transition = emitted
+      .filter(entry => entry.name === `${MODULE_ID}.regionCellOccupancyTransition`)
+      .map(entry => entry.args[0])
+      .find(entry => entry.tokenUuid === target.uuid);
+
+    assert.ok(transition, "pending changes should produce a cell occupancy transition");
+    assert.equal(transition.type, "enter");
+    assert.equal(transition.beforeInside, false);
+    assert.equal(transition.inside, true);
+    assert.equal(transition.sourceTransformBefore.x, 0);
+    assert.equal(transition.sourceTransformAfter.x, 150);
+    assert.equal(source.x, 0, "test Document remains stale to mirror the live Foundry hook timing");
+    assert.equal(f.attachments.getStats().pendingSnapshots, 0);
+  } finally {
+    f.attachments.shutdown();
+    globalThis.Hooks = previousHooks;
+  }
+});
+
 test("attached cell volume detects stationary Tokens swept in and out by source translation without rewriting cells", async () => {
   const f = fixture();
   const source = f.makeToken({ id: "source", x: 0, y: 0 });

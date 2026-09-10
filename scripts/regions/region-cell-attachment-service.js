@@ -135,7 +135,7 @@ export class RegionCellAttachmentService {
       for (const token of sceneTokens) {
         if (!token?.uuid) continue;
         try {
-          const inside = this.#occupancy.testTokenAt(region, token);
+          const inside = this.#occupancy.testTokenAt(region, token, null, { sourceToken: source });
           tokenStates.push({ token, tokenUuid: token.uuid, inside, nativeInside: this.#nativeInside(region, token) });
           this.#stats.tokenEvaluations += 1;
         } catch (error) {
@@ -158,12 +158,13 @@ export class RegionCellAttachmentService {
   }
 
   /** Compare a prior snapshot against the source Token's current transform. */
-  compareSourceState(source, snapshot, { emit = true } = {}) {
+  compareSourceState(source, snapshot, { emit = true, sourceToken = null } = {}) {
     this.#stats.comparisons += 1;
     if (!snapshot || snapshot.sourceUuid !== source?.uuid) {
       return { compared: false, reason: "snapshot-source-mismatch", transitions: [] };
     }
 
+    const evaluationSource = sourceToken ?? source;
     const transitions = [];
     for (const record of snapshot.records ?? []) {
       const region = record.region;
@@ -172,7 +173,7 @@ export class RegionCellAttachmentService {
         const token = before.token;
         if (!token?.uuid) continue;
         try {
-          const inside = this.#occupancy.testTokenAt(region, token);
+          const inside = this.#occupancy.testTokenAt(region, token, null, { sourceToken: evaluationSource });
           this.#stats.tokenEvaluations += 1;
           if (inside === before.inside) continue;
           const transition = {
@@ -188,7 +189,7 @@ export class RegionCellAttachmentService {
             nativeBeforeInside: before.nativeInside,
             nativeInside: this.#nativeInside(region, token),
             sourceTransformBefore: duplicate(snapshot.sourceTransform),
-            sourceTransformAfter: this.#sourceTransform(source),
+            sourceTransformAfter: this.#sourceTransform(evaluationSource),
             detectedBy: "region-cell-attachment"
           };
           transitions.push(transition);
@@ -215,7 +216,7 @@ export class RegionCellAttachmentService {
       sourceTokenUuid: source.uuid,
       transitions,
       sourceTransformBefore: duplicate(snapshot.sourceTransform),
-      sourceTransformAfter: this.#sourceTransform(source)
+      sourceTransformAfter: this.#sourceTransform(evaluationSource)
     };
   }
 
@@ -251,7 +252,8 @@ export class RegionCellAttachmentService {
     const snapshot = this.#pending.get(requestId);
     if (!snapshot) return;
     this.#pending.delete(requestId);
-    this.compareSourceState(document, snapshot, { emit: true });
+    const sourceToken = this.#sourceWithPendingChanges(document, snapshot, changes);
+    this.compareSourceState(document, snapshot, { emit: true, sourceToken });
   }
 
   #onDeleteToken(document) {
@@ -283,6 +285,22 @@ export class RegionCellAttachmentService {
       rotation: Number(source?.rotation ?? source?._source?.rotation ?? 0),
       width: Number(source?.width ?? source?._source?.width ?? 1),
       height: Number(source?.height ?? source?._source?.height ?? 1)
+    };
+  }
+
+  #sourceWithPendingChanges(source, snapshot, changes) {
+    const before = snapshot?.sourceTransform ?? this.#sourceTransform(source);
+    return {
+      uuid: source?.uuid ?? snapshot?.sourceUuid ?? null,
+      id: source?.id ?? null,
+      documentName: source?.documentName ?? "Token",
+      parent: source?.parent ?? null,
+      x: hasOwn(changes, "x") ? Number(changes.x) : before.x,
+      y: hasOwn(changes, "y") ? Number(changes.y) : before.y,
+      elevation: hasOwn(changes, "elevation") ? Number(changes.elevation) : before.elevation,
+      rotation: hasOwn(changes, "rotation") ? Number(changes.rotation) : before.rotation,
+      width: hasOwn(changes, "width") ? Number(changes.width) : before.width,
+      height: hasOwn(changes, "height") ? Number(changes.height) : before.height
     };
   }
 

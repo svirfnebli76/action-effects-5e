@@ -1,3 +1,9 @@
+## 0.4.3.29-region-cell-exp.10
+
+- Fixed live attached-Region cell transition detection on Foundry v14 when `updateToken` exposes the pre-update Token transform and the accepted transform exists in the `changes` payload.
+- RegionCellAttachmentService now evaluates the post-update occupancy from the captured pre-update transform plus pending Token changes, while preserving the real Token document as the event source.
+- Added a regression test reproducing stale `updateToken` document state for source translation.
+
 
 ## 0.4.3.29-region-cell-exp.9
 
