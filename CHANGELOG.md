@@ -1,15 +1,15 @@
-## 0.4.3.29-region-cell-exp.10
+## 0.4.3.30 — Region-local 3D cell-state infrastructure
 
-- Fixed live attached-Region cell transition detection on Foundry v14 when `updateToken` exposes the pre-update Token transform and the accepted transform exists in the `changes` payload.
-- RegionCellAttachmentService now evaluates the post-update occupancy from the captured pre-update transform plus pending Token changes, while preserving the real Token document as the event source.
-- Added a regression test reproducing stale `updateToken` document state for source translation.
-
-
-## 0.4.3.29-region-cell-exp.9
-
-- Harden Region-cell positive-overlap geometry against floating-point slivers produced by token-local rotation/translation transforms.
-- Exact shared-face contact remains non-overlap even for a 225-degree token-local frame; genuine fractional XY/Z overlap remains accepted.
-- Added a deterministic regression for translated 1x1 face contact under a 225-degree token-local frame.
+- Added accepted generic Region-local/source-local 3D cell-state infrastructure for persistent true-3D areas while retaining one native Foundry Region as the broad shell/container.
+- Added sparse bounded cell-state persistence, arbitrary generic states, local/world transforms, token-volume overlap, large-token/depth handling, exact positive-overlap boundary semantics, and Region/source-local translation/elevation/rotation support.
+- Added `RegionOccupancyService` so ordinary Regions continue using Foundry containment while cell-backed Regions use AE5E 3D occupancy for final rules decisions. No global `TokenDocument.testInsideRegion()` override is used.
+- Integrated cell occupancy with persistent-area entry interruption so inactive→ACTIVE transitions can be detected inside one broad Region, including burned/open passages and re-entry into later ACTIVE cells.
+- Added generic cell-aware movement-cost classification using Foundry's complete snapped route; inactive/GONE steps retain normal movement cost while qualifying ACTIVE steps can receive an Item-selected modifier. Existing AE5E movement modifiers can compose through assigned modifier slots.
+- Added native Token-attached Region occupancy tracking for stationary targets swept by source translation, elevation, or rotation. Foundry v14 `updateToken` timing is handled by evaluating the after-state from the pre-update transform plus accepted pending `changes`.
+- Added Region-cell foundation, containment, movement, terrain, attachment, Web-like 4×4×4 dynamic-destruction, concurrency, lifecycle, console-reporting, and live-acceptance test coverage.
+- Corrected live-acceptance target-role binding so Foundry/module document creation order cannot shuffle low/high/rotation reporter identities.
+- Removed the obsolete legacy `web-service.js`, `web-region-behavior-type.js`, and `web-automation.test.mjs`; Web-specific production runtime remains prohibited.
+- Compendiums and assets are unchanged.
 
 ## 0.4.3.29 — Ongoing-effect Midi workflow result identity
 

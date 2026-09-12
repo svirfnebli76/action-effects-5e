@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.3.29-region-cell-exp.10";
+export const MODULE_VERSION = "0.4.3.30";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -112,8 +112,8 @@ export const SELECTION_INDICATOR_EFFECT_NAME = `${MODULE_ID}.selection-indicator
 
 export const REGION_AUTHORITY_FLAG = "authorityRegion";
 
-// Experimental Region-local 3D cell-state infrastructure. Cell states are
-// intentionally generic; Item automation owns any spell-specific semantics.
+// Region-local 3D cell-state infrastructure. Cell states are intentionally
+// generic; Item automation owns any spell-specific semantics.
 export const REGION_CELL_SCHEMA_VERSION = 1;
 export const REGION_CELL_FLAG = "regionCells";
 export const REGION_CELL_STATES = Object.freeze({

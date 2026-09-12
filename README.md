@@ -31,8 +31,12 @@ The generic persistent-area stack consists of:
 - `PersistentAreaEventService` — event recipe validation/routing, CAT/Midi Activity execution, generic gates, pre-gate Region geometry qualifiers, movement pause/stop, and generic outcome operations;
 - `PersistentAreaLifecycleService` — source-Item Active Effect cloning, Region/document ownership, synthetic Actor cleanup, ongoing-action propagation, and Midi concentration dependency binding;
 - `RegionAuthorityService` — primary-GM Region document authority and native RegionBehavior helpers.
+- `RegionCellStateService` — Region-local/source-local 3D grid-cell state with sparse persistence and local↔world transforms.
+- `RegionOccupancyService` — compatibility façade that keeps native Foundry containment for ordinary Regions and uses AE5E 3D occupancy for cell-backed Regions.
+- `RegionCellMovementCostService` — per-step cell-aware movement-cost classification for cell-backed persistent areas.
+- `RegionCellAttachmentService` — stationary-target enter/exit detection when a native Token-attached Region translates, changes elevation, or rotates.
 
-AE5E does not implement spell-specific difficult-terrain math. `regions.buildMovementCostBehavior()` only constructs Foundry's native Modify Movement Cost RegionBehavior; Foundry owns movement-cost calculation.
+AE5E does not implement spell-specific difficult-terrain rules. Ordinary Regions may use `regions.buildMovementCostBehavior()` to construct Foundry's native Modify Movement Cost RegionBehavior. Cell-backed Regions use the generic Region-cell movement-cost service so inactive/GONE cells can remain normal terrain while ACTIVE cells modify cost; Item automation decides which cell states and multiplier its rules require. Foundry/D&D5e movement measurement and movement history remain authoritative.
 
 ## Web status after infrastructure cleanup
 

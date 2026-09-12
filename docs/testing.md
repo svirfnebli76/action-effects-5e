@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.3.21
+# Current infrastructure acceptance — v0.4.3.30
 
 The final persistent-area infrastructure cleanup must be accepted inside Foundry before Web is re-authored. Run on AE5E's primary GM client:
 
@@ -13,6 +13,23 @@ await ae5e.tests.runFoundationSmokeTest({ notify: true });
 The environmental foundation now verifies the generic persistent-area RegionBehavior, authority sockets, lifecycle initialization, and recipe validator. Web-specific gameplay acceptance is intentionally deferred until the Item macro is rebuilt.
 
 Repository `npm test` remains a supporting development gate; live Foundry acceptance is authoritative.
+
+---
+
+## v0.4.3.30 Region Cell acceptance
+
+Run the deterministic Region-cell suite on the primary GM client:
+
+```js
+await game.modules.get("action-effects-5e").api.tests.runRegionCellFullSuite({
+  notify: true,
+  iterations: 10000
+});
+```
+
+Expected result: Foundation PASS, Containment PASS, Movement PASS, Terrain PASS, Attachment PASS, Web Simulation PASS, and Full Suite PASS. The suite requires no selected Token or pre-created Region.
+
+Physical acceptance additionally validated a real drag/keyboard corridor with GONE→ACTIVE→ACTIVE→GONE→ACTIVE state, production entry interruption/cancel/replay behavior, and a native Token-attached Region translated, elevated, and rotated across stationary targets at independent elevations. The attachment service regression must preserve Foundry v14's live timing behavior where `updateToken` may expose the old document transform while the accepted transform is present in `changes`.
 
 ---
 

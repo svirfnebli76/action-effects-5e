@@ -37,4 +37,7 @@ test("Region Cell physical live-acceptance harness is wired through TestHarness 
   assert.match(suite, /const rotationVolume = this\.#cells\.getCellWorldVolume/);
   assert.match(suite, /Attachment fixture geometry is ambiguous/);
   assert.match(suite, /catch \(error\) \{[\s\S]*this\.#regions\.delete\(region\)/);
+  assert.match(suite, /const createdByName = new Map\(created\.map/);
+  assert.match(suite, /const ordered = placements\.map\(placement => createdByName\.get\(placement\.name\)\)/);
+  assert.match(suite, /return ordered;/);
 });

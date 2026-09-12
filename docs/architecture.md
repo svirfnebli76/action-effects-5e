@@ -1,12 +1,26 @@
-# Current Item / AE5E architecture boundary — v0.4.3.21
+# Current Item / AE5E architecture boundary — v0.4.3.30
 
 AE5E production runtime owns reusable infrastructure only. Item automation owns Item-specific rules. Persistent Items may submit declarative Region-event/lifecycle recipes; AE5E persists and executes those generic instructions without knowing the spell or feature semantics.
 
-The persistent-area runtime is intentionally generic: native Region event transport, CAT/Midi Activity execution, generic gates, movement pause/stop, Item-effect-template cloning, Region/document ownership, synthetic Token Actor cleanup, ongoing helper propagation, and Midi concentration dependency binding.
+The persistent-area runtime is intentionally generic: native Region event transport, CAT/Midi Activity execution, generic gates, movement pause/stop, Item-effect-template cloning, Region/document ownership, synthetic Token Actor cleanup, ongoing helper propagation, Midi concentration dependency binding, and optional Region-local 3D cell occupancy/state.
 
 Web-specific names, timing, effects, damage, terrain policy, helper selection, geometry, and presentation are prohibited from production runtime. Web authoring validation is permitted only under `scripts/dev` / tests.
 
-AE5E does not duplicate mechanics already owned by Foundry/D&D5e/installed modules. For difficult terrain, AE5E may construct Foundry's native Modify Movement Cost behavior but Foundry remains the movement-cost engine.
+AE5E does not duplicate mechanics already owned by Foundry/D&D5e/installed modules. Ordinary Regions may use Foundry's native Modify Movement Cost behavior. Cell-backed Regions use AE5E's generic per-step cell-state classifier only to decide where a configured movement-cost modifier applies; Foundry/D&D5e remain authoritative for path measurement and movement history.
+
+---
+
+## v0.4.3.30 Region-local 3D cell-state boundary
+
+Persistent true-3D areas may use one native Foundry Region as a broad shell while AE5E stores exact occupancy as Region-local/source-local grid cells under `flags.action-effects-5e.regionCells`. The cell service supports arbitrary generic states (for example ACTIVE/INACTIVE/BURNING/GONE), bounded sparse storage, local↔world transforms, token-volume intersection, and native Token-attached Region transforms. Item automation owns the meaning and transitions of those states.
+
+`RegionOccupancyService` is the compatibility boundary: ordinary Regions retain Foundry containment, while configured cell-backed Regions use AE5E cell occupancy for the final rules decision. Persistent-area entry interruption therefore can detect inactive→ACTIVE transitions inside one broad Region without globally overriding Foundry `testInsideRegion()` semantics or rewriting Region shapes during movement.
+
+Cell-aware movement cost uses Foundry's complete snapped route and applies temporary AE5E movement-cost actions only to steps whose full Token volume overlaps configured qualifying cells. This allows burned/GONE cells to return to normal cost while neighboring ACTIVE cells remain difficult terrain. AE5E does not maintain a second movement ledger.
+
+For native Token-attached Regions, `RegionCellAttachmentService` snapshots stationary-token occupancy before a source transform and compares against an explicit post-update source transform. Foundry v14 can fire `updateToken` while the Token document still exposes the old transform and the accepted x/y/elevation/rotation exists only in `changes`; the service therefore constructs the after-transform from the pre-update snapshot plus pending changes. It emits the generic `action-effects-5e.regionCellOccupancyTransition` hook rather than fabricating native Region events.
+
+The architecture was accepted after deterministic and live Foundry testing of movement entry, cell-aware movement cost, source translation/elevation/rotation, same-XY different-Z targets, dynamic 4×4×4 Web-like destruction/tunnels, concurrency, persistence/lifecycle, and performance. Vertically sliced native Regions remain a fallback rather than the leading persistent-volume architecture.
 
 ---
 

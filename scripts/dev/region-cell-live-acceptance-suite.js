@@ -842,7 +842,19 @@ export class RegionCellLiveAcceptanceSuite {
       if (ids.length) await scene.deleteEmbeddedDocuments("Token", ids, { ae5eLiveAcceptanceCleanup: true }).catch(() => undefined);
       throw new Error("Could not create all temporary attachment target Tokens.");
     }
-    return created;
+
+    // Foundry/module document hooks may not preserve requested create order. Bind
+    // the acceptance roles by their unique fixture names instead of assuming the
+    // returned array is [low, high, rotation]. This is diagnostic-only plumbing;
+    // production Region-cell occupancy is independent of Token creation order.
+    const createdByName = new Map(created.map(token => [token?.name, token]));
+    const ordered = placements.map(placement => createdByName.get(placement.name));
+    if (ordered.some(token => !token)) {
+      const ids = created.map(token => token?.id).filter(Boolean);
+      if (ids.length) await scene.deleteEmbeddedDocuments("Token", ids, { ae5eLiveAcceptanceCleanup: true }).catch(() => undefined);
+      throw new Error("Could not bind all temporary attachment target Tokens to their requested fixture roles.");
+    }
+    return ordered;
   }
 
   async #administrativeTokenUpdate(token, changes) {
