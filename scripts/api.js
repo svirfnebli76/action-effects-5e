@@ -76,6 +76,12 @@ import {
   SELECTION_INDICATOR_SCALE,
   TELEPORT_POLICIES
 } from "./core/constants.js";
+import { CROSSHAIR_3D_SHAPES } from "./crosshairs3d/geometry-service.js";
+import { CROSSHAIR_3D_CELL_COVERAGE_THRESHOLD } from "./crosshairs3d/cell-rasterizer-service.js";
+import {
+  CROSSHAIR_3D_PROPAGATION_MODES,
+  CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT
+} from "./crosshairs3d/propagation-mode-service.js";
 import {
   ESKIE_CROSSHAIR_COLORS,
   ESKIE_CROSSHAIR_DEFAULTS,
@@ -139,6 +145,14 @@ export class ActionEffects5eApi {
     externalPromptBridge,
     choicePrompts,
     crosshairs,
+    crosshairs3dGeometry,
+    crosshairs3dCells,
+    crosshairs3dTokens,
+    crosshairs3dRange,
+    crosshairs3dRevisions,
+    crosshairs3dPropagation,
+    crosshairs3dTargeting,
+    crosshairs3dPlacement,
     reactionRegistry,
     reactionAuthority,
     reactionDiscovery,
@@ -236,7 +250,11 @@ export class ActionEffects5eApi {
       SELECTION_INDICATOR_EFFECT_NAME,
       SELECTION_INDICATOR_ROLES,
       SELECTION_INDICATOR_ROLE_PRIORITY,
-      SELECTION_INDICATOR_PRESENTATIONS
+      SELECTION_INDICATOR_PRESENTATIONS,
+      CROSSHAIR_3D_SHAPES,
+      CROSSHAIR_3D_CELL_COVERAGE_THRESHOLD,
+      CROSSHAIR_3D_PROPAGATION_MODES,
+      CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT
     });
 
     this.dependencies = Object.freeze({
@@ -525,6 +543,56 @@ export class ActionEffects5eApi {
       resolveAsset: (request, options) => crosshairs.resolveAsset(request, options),
       show: (options) => crosshairs.show(options),
       getStats: () => crosshairs.getStats()
+    });
+
+    this.crosshairs3d = Object.freeze({
+      geometry: Object.freeze({
+        normalizeShape: (shape) => crosshairs3dGeometry.normalizeShape(shape),
+        getBounds: (shape) => crosshairs3dGeometry.getBounds(shape),
+        containsPoint: (shape, point, options) => crosshairs3dGeometry.containsPoint(shape, point, options),
+        xyCoverageAtZ: (shape, rect, z, options) => crosshairs3dGeometry.xyCoverageAtZ(shape, rect, z, options),
+        direction: (shapeOrYaw, pitch) => crosshairs3dGeometry.direction(shapeOrYaw, pitch),
+        rayBasis: (shapeOrYaw, pitch) => crosshairs3dGeometry.rayBasis(shapeOrYaw, pitch)
+      }),
+      cells: Object.freeze({
+        normalizeGrid: (grid) => crosshairs3dCells.normalizeGrid(grid),
+        cellToWorld: (cell, grid) => crosshairs3dCells.cellToWorld(cell, grid),
+        candidateBounds: (shape, grid) => crosshairs3dCells.candidateBounds(shape, grid),
+        isCellAffected: (shape, cell, grid, options) => crosshairs3dCells.isCellAffected(shape, cell, grid, options),
+        rasterize: (shape, options) => crosshairs3dCells.rasterize(shape, options),
+        worldCells: (mask) => crosshairs3dCells.worldCells(mask)
+      }),
+      tokens: Object.freeze({
+        resolveVolume: (token, options) => crosshairs3dTokens.resolve(token, options),
+        intersectsCell: (volume, cell, options) => crosshairs3dTokens.intersectsCell(volume, cell, options),
+        intersectsAnyCell: (volume, cells, options) => crosshairs3dTokens.intersectsAnyCell(volume, cells, options)
+      }),
+      range: Object.freeze({
+        distanceBetweenPoints: (a, b) => crosshairs3dRange.distanceBetweenPoints(a, b),
+        nearestPointOnVolume: (volume, point) => crosshairs3dRange.nearestPointOnVolume(volume, point),
+        distanceFromVolumeToPoint: (volume, point) => crosshairs3dRange.distanceFromVolumeToPoint(volume, point),
+        clampPointFromOrigin: (origin, requested, maxDistance) => crosshairs3dRange.clampPointFromOrigin(origin, requested, maxDistance)
+      }),
+      revisions: Object.freeze({
+        create: (state) => crosshairs3dRevisions.create(state),
+        revise: (previous, patch) => crosshairs3dRevisions.revise(previous, patch),
+        isCurrent: (candidate, current) => crosshairs3dRevisions.isCurrent(candidate, current)
+      }),
+      propagation: Object.freeze({
+        normalize: (mode, fallback) => crosshairs3dPropagation.normalize(mode, fallback),
+        resolve: (options) => crosshairs3dPropagation.resolve(options)
+      }),
+      targeting: Object.freeze({
+        candidateCellsForVolume: (volume, grid) => crosshairs3dTargeting.candidateCellsForVolume(volume, grid),
+        inspectVolume: (shape, volume, options) => crosshairs3dTargeting.inspectVolume(shape, volume, options),
+        testVolume: (shape, volume, options) => crosshairs3dTargeting.testVolume(shape, volume, options)
+      }),
+      placement: Object.freeze({
+        show: (options) => crosshairs3dPlacement.show(options),
+        getStats: () => crosshairs3dPlacement.getStats()
+      }),
+      show: (options) => crosshairs3dPlacement.show(options),
+      getStats: () => crosshairs3dPlacement.getStats()
     });
 
     this.reactions = Object.freeze({

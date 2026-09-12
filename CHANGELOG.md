@@ -1,3 +1,33 @@
+## 0.4.4.2 — Action Effects 3D Crosshairs — live placement and targeting
+
+- Added the opt-in live `ae5e.crosshairs3d.show(...)` placement session on top of the v0.4.4.1 pure 3D geometry foundation. Existing `ae5e.crosshairs` Items remain unchanged.
+- Added session-scoped MOVE / ROTATE / ELEVATE controls: normal mouse movement controls XY, Shift + mouse wheel applies exact 5-degree yaw increments, and Ctrl + mouse wheel applies one Scene grid-distance elevation increment. Ctrl+Shift is intentionally non-operative, and all temporary input interception is cleaned up on confirm, cancel, or error.
+- Added accepted-revision targeting on every usable placement change using the locked gridded rules path: continuous 3D primitive -> affected 3D grid cells -> full Token 3D-volume positive overlap. Rapid input is coalesced without losing wheel notches, and stale async revisions cannot overwrite newer target state.
+- Added atomic accepted-state publication: target highlighting, AE5E guides, elevation labels, the hidden Sequencer carrier, and optional Eskie presentation advance only after the newest revision has resolved. Final confirmation waits for the newest authoritative revision before committing targets.
+- Added remote surface-following through Foundry v14 move surfaces, preferring a matching surface on the currently viewed Level as contextual guidance while keeping exact XYZ authoritative. After manual elevation, later XY movement preserves the selected absolute world-Z plane unless higher physical terrain requires an upward clamp.
+- Added true-3D range enforcement for remote placement. When a requested XY point exceeds range, AE5E solves the farthest legal horizontal placement while preserving the selected absolute Z plane and re-resolving physical surface elevation along the solve.
+- Added Self Cone/Ray 3D pitch controls with fixed centerline length, legal source-boundary apex resolution, endpoint elevation tracking, deterministic zero-roll Ray geometry, and opposite-apex handoff when pitch crosses through vertical.
+- Added retained accepted-state presentation: horizontal shapes may use Eskie artwork when available; pitched Cones switch to an AE5E-owned retained PIXI 3D guide; Ray XY projection shortens with pitch while preserving a W x W vertical footprint. Presentation failure falls back to the AE5E geometry guide rather than failing placement.
+- Added lightweight placement UI with current mode, current elevation, only the controls enabled for that placement, and the persistent Right Click to Cancel hint.
+- Added optional LOS validation against the resolved authoritative XYZ using the source Token vision API. The cursor remains free while accepted placement state is constrained to legal revisions.
+- Preserved hidden/Invisible target secrecy by performing no AE5E visibility filtering or disclosure UI: mechanically eligible Tokens can remain in the authoritative target set while Foundry/Midi presentation controls what the player can see.
+- Added deterministic regression coverage for live confirmation/cancel target ownership, exact wheel increments, rapid-input coalescing, Self pitch, vertical apex handoff, current-Level surface preference, absolute-Z range clamping, and retained Eskie/fallback visual behavior.
+- Checkpoint 2 deliberately does not yet implement live `Direct` / `Spread` obstruction propagation or persistent Region generation; those remain Checkpoint 3 work.
+
+## 0.4.4.1 — Action Effects 3D Crosshairs — geometry foundation
+
+- Began the Action Effects 3D Crosshairs major feature line as an opt-in foundation. Existing 2D/Eskie crosshair Items are unchanged and no live placement hooks are registered by this checkpoint.
+- Added pure authoritative 3D geometry for Prism/Cube, vertical Cylinder, Sphere, finite right Cone, square-cross-section Ray, and horizontal Free Line, including the accepted origin semantics, yaw/pitch handling, and deterministic zero-roll Ray basis.
+- Added true Euclidean XYZ range helpers, nearest-point-on-source-volume measurement, and radial clamping helpers for later live placement enforcement.
+- Added Token 3D-volume resolution using explicit Foundry depth when present and longest-XY-edge fallback when absent, including non-square Tokens and positive-overlap cell intersection semantics.
+- Added continuous-shape to fixed Scene-grid 3D cell derivation with the accepted >=50% XY-through-positive-Z rule, zero-contact exclusion, negative-elevation and non-5-foot-grid support, and conservative candidate bounds.
+- Added lazy gridded targeting geometry so live targeting can evaluate only the grid cells overlapped by a Token rather than rasterizing an entire pitched Cone/Ray on every placement revision. This preserves the accepted continuous-shape -> affected-cell -> Token-overlap rules order.
+- Added immutable monotonic placement-revision records and the propagation-mode data contract (`none`, `direct`, `spread`) with Item-default / future CAT-override resolution.
+- Exposed the pure Checkpoint 1 foundation through the separate `ae5e.crosshairs3d` public API; the existing `ae5e.crosshairs` API is preserved.
+- Added deterministic Node regression coverage for shape families/origins, 3D range, Token depth, 50% activation, boundary semantics, Sphere/ray/cube rasterization, rotated geometry, negative elevation, non-5-foot grids, zero-roll Rays, large Tokens, lazy targeting, propagation selection, and placement revisions.
+- Removed the unreferenced legacy `scripts/environment/web-service.js` that was still present in the authoritative ZIP despite the v0.4.3.30 runtime boundary/changelog already declaring that Web-specific production runtime obsolete. No production import referenced this file.
+- Existing Region-local 3D cell state, preMove entry interruption, compendiums, and assets are unchanged.
+
 ## 0.4.3.30 — Region-local 3D cell-state infrastructure
 
 - Added accepted generic Region-local/source-local 3D cell-state infrastructure for persistent true-3D areas while retaining one native Foundry Region as the broad shell/container.

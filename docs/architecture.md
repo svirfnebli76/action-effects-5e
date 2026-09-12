@@ -1,3 +1,17 @@
+# Action Effects 5E architecture
+
+## v0.4.4.2 Action Effects 3D Crosshairs — live placement and targeting
+
+The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
+
+The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
+
+The live `ae5e.crosshairs3d.show(...)` session owns temporary input interception and accepted-state synchronization only for the duration of an opted-in placement. Normal mouse movement resolves XY/surfaces, Shift-wheel changes yaw by five degrees, Ctrl-wheel changes elevation/pitch by one Scene grid-distance intent, rapid input coalesces without dropping notches, and final confirmation waits for the newest authoritative revision. Accepted target state, presentation, and the hidden Sequencer carrier are published together after geometry/legality/target resolution rather than exposing raw cursor state as rules state.
+
+Remote placements follow Foundry move surfaces during normal MOVE; after manual elevation the selected world-Z plane is preserved across later XY movement unless higher terrain forces an upward clamp. Range remains true Euclidean XYZ from the nearest point of the source volume. Self Cone/Ray placement retains fixed centerline length, uses legal source-boundary 3D apexes, and hands the apex to the opposite source boundary after crossing vertical. Horizontal Cone presentation may use Eskie art, while pitched Cone presentation uses an AE5E-owned projected 3D guide.
+
+The existing Region-local 3D cell services remain the persistent-volume backend for later checkpoints. v0.4.4.2 does not yet create persistent Regions or implement live `Direct`/`Spread` obstruction propagation. The accepted persistent-area preMove entry interruption / Region-crossing snap remains unchanged.
+
 # Current Item / AE5E architecture boundary — v0.4.3.30
 
 AE5E production runtime owns reusable infrastructure only. Item automation owns Item-specific rules. Persistent Items may submit declarative Region-event/lifecycle recipes; AE5E persists and executes those generic instructions without knowing the spell or feature semantics.
