@@ -103,6 +103,7 @@ export class Crosshair3dPlacementSessionService {
         : null,
       selectedAbsoluteZ: initialPoint.z,
       elevationPhase: null,
+      elevationRadius: null,
       manualElevation: false,
       shape: baseShape,
       targets: Object.freeze([]),
@@ -129,6 +130,7 @@ export class Crosshair3dPlacementSessionService {
         endpointZ: initialState.endpointZ,
         selectedAbsoluteZ: initialPoint.z,
         elevationPhase: null,
+        elevationRadius: null,
         manualElevation: false
       },
       requestedSerial: 0,
@@ -140,12 +142,14 @@ export class Crosshair3dPlacementSessionService {
       listeners: [],
       modifier: { shift: false, ctrl: false },
       carrierSuppressionUntil: 0,
+      pointerPixel: null,
+      moveOffsetPixel: null,
       mode: "MOVE",
       lastTargetIds: [...originalTargetIds],
       elevationArc: null,
       finalBarrier: Promise.resolve(),
       result: null,
-      visualState: this.#visuals?.createSession?.({ id: globalThis.foundry?.utils?.randomID?.(12), ...(options.visual ?? {}) }) ?? null
+      visualState: this.#visuals?.createSession?.({ id: globalThis.foundry?.utils?.randomID?.(12), ...(options.visual ?? {}), source }) ?? null
     };
     this.#active = session;
     this.#stats.sessions += 1;
@@ -206,6 +210,10 @@ export class Crosshair3dPlacementSessionService {
     const callbackConfig = {};
     const request = crosshair => {
       if (Date.now() < session.carrierSuppressionUntil) return session.current;
+      const raw = crosshair?.document ?? crosshair;
+      if (Number.isFinite(Number(raw?.x)) && Number.isFinite(Number(raw?.y))) {
+        session.pointerPixel = { x: Number(raw.x), y: Number(raw.y) };
+      }
       return this.#requestResolution(session, { carrier: crosshair, reason: "move" });
     };
     if (callbacks.SHOW) callbackConfig[callbacks.SHOW] = async crosshair => {
@@ -214,7 +222,12 @@ export class Crosshair3dPlacementSessionService {
     };
     if (callbacks.MOVE) callbackConfig[callbacks.MOVE] = request;
     if (callbacks.MOUSE_MOVE) callbackConfig[callbacks.MOUSE_MOVE] = crosshair => {
-      if (session.mode !== "MOVE") this.#syncCarrierToRevision(session, crosshair, session.current);
+      if (session.mode === "MOVE") return;
+      const raw = crosshair?.document ?? crosshair;
+      if (Number.isFinite(Number(raw?.x)) && Number.isFinite(Number(raw?.y))) {
+        session.pointerPixel = { x: Number(raw.x), y: Number(raw.y) };
+      }
+      this.#syncCarrierToRevision(session, crosshair, session.current);
     };
     if (callbacks.PLACED) callbackConfig[callbacks.PLACED] = async crosshair => {
       // A rapid wheel burst may still be resolving when the click arrives. Let
@@ -253,7 +266,22 @@ export class Crosshair3dPlacementSessionService {
     const window = globalThis.window;
     if (!window?.addEventListener) return;
     const updateMode = () => {
+      const previous = session.mode;
       const next = session.modifier.ctrl && session.modifier.shift ? "MOVE" : session.modifier.ctrl ? "ELEVATE" : session.modifier.shift ? "ROTATE" : "MOVE";
+
+      // Modifier-driven 3D manipulation intentionally moves the authoritative
+      // crosshair away from the physical mouse pointer. When returning to MOVE,
+      // preserve that separation so the first mouse event translates from the
+      // accepted point instead of snapping the crosshair back under the cursor.
+      if (previous !== "MOVE" && next === "MOVE") {
+        const acceptedPixel = this.#metrics.distanceToPixels(session.intent.point, session.metrics);
+        const pointer = session.pointerPixel ?? acceptedPixel;
+        session.moveOffsetPixel = {
+          x: acceptedPixel.x - pointer.x,
+          y: acceptedPixel.y - pointer.y
+        };
+      }
+
       session.mode = next;
       this.#overlay.update({ mode: next });
     };
@@ -352,9 +380,9 @@ export class Crosshair3dPlacementSessionService {
       y: arc.anchor.y + (arc.unit.y * signedHorizontal),
       z
     };
-    Object.assign(session.intent, { point, selectedAbsoluteZ: z, elevationPhase: phase, manualElevation: true });
+    Object.assign(session.intent, { point, selectedAbsoluteZ: z, elevationPhase: phase, elevationRadius: arc.radius, manualElevation: true });
     this.#requestResolution(session, {
-      statePatch: { point, selectedAbsoluteZ: z, elevationPhase: phase, manualElevation: true },
+      statePatch: { point, selectedAbsoluteZ: z, elevationPhase: phase, elevationRadius: arc.radius, manualElevation: true },
       reason: "wheel-elevate",
       force: true
     });
@@ -410,13 +438,16 @@ export class Crosshair3dPlacementSessionService {
         patch.point = this.#resolveSelfApex(session.source, patch.yaw, patch.pitch, session.metrics, session.sourceVolume);
         Object.assign(session.intent, { headingYaw, yaw: patch.yaw, pitch: patch.pitch, point: patch.point });
       } else {
-        const pixelPoint = { x: finiteNumber(carrier.x), y: finiteNumber(carrier.y) };
+        const rawPixel = { x: finiteNumber(carrier.x), y: finiteNumber(carrier.y) };
+        const offset = session.moveOffsetPixel ?? { x: 0, y: 0 };
+        const pixelPoint = { x: rawPixel.x + offset.x, y: rawPixel.y + offset.y };
         const point = this.#resolveRemoteMovePoint(session, pixelPoint, previous.point.z);
         patch.point = point;
         patch.selectedAbsoluteZ = intended.manualElevation ? intended.selectedAbsoluteZ : point.z;
         patch.elevationPhase = null;
+        patch.elevationRadius = null;
         patch.yaw = normalizeDegrees(intended.yaw);
-        Object.assign(session.intent, { point: patch.point, selectedAbsoluteZ: patch.selectedAbsoluteZ, elevationPhase: null, yaw: patch.yaw });
+        Object.assign(session.intent, { point: patch.point, selectedAbsoluteZ: patch.selectedAbsoluteZ, elevationPhase: null, elevationRadius: null, yaw: patch.yaw });
         session.elevationArc = null;
       }
     }
@@ -430,6 +461,7 @@ export class Crosshair3dPlacementSessionService {
       endpointZ: patch.endpointZ ?? intended.endpointZ,
       selectedAbsoluteZ: patch.selectedAbsoluteZ ?? intended.selectedAbsoluteZ,
       elevationPhase: patch.elevationPhase ?? intended.elevationPhase ?? null,
+      elevationRadius: patch.elevationRadius ?? intended.elevationRadius ?? null,
       manualElevation: patch.manualElevation ?? intended.manualElevation
     };
     if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
@@ -582,35 +614,13 @@ export class Crosshair3dPlacementSessionService {
     const current = normalizeDegrees(currentInput);
     if (!step || distance <= 0) return current;
 
-    // Remote ELEVATE uses one full Scene grid-distance of vertical manipulation
-    // intent per wheel notch while remaining on the fixed-radius construction
-    // circle. Represent that intent as a cyclic four-radius travel coordinate:
-    //   0 -> +R -> 0 -> -R -> 0
-    // so any unused portion of a step carries through a pole instead of being
-    // discarded, and either wheel direction wraps continuously through 360°.
-    const radians = (current * Math.PI) / 180;
-    const z = radius * Math.sin(radians);
-    let travel;
-    if (current <= 90) travel = z;
-    else if (current <= 270) travel = (2 * radius) - z;
-    else travel = (4 * radius) + z;
-
-    const period = 4 * radius;
-    let nextTravel = (travel + (Math.sign(step) * distance)) % period;
-    if (nextTravel < 0) nextTravel += period;
-
-    const ratioToDegrees = value => (Math.asin(Math.max(-1, Math.min(1, value / radius))) * 180) / Math.PI;
-    let phase;
-    if (nextTravel <= radius) {
-      phase = ratioToDegrees(nextTravel);
-    } else if (nextTravel <= 3 * radius) {
-      const nextZ = (2 * radius) - nextTravel;
-      phase = 180 - ratioToDegrees(nextZ);
-    } else {
-      const nextZ = nextTravel - (4 * radius);
-      phase = 360 + ratioToDegrees(nextZ);
-    }
-    return normalizeDegrees(phase);
+    // Remote ELEVATE is orbital: one wheel notch advances exactly one Scene
+    // grid-distance along the fixed-radius construction circle. Arc length is
+    // s = r * theta, so the angular increment is distance / radius radians.
+    // This keeps every notch spatially uniform through zenith/nadir and the
+    // normalized phase naturally wraps in either direction through 360 degrees.
+    const deltaDegrees = ((distance / radius) * 180) / Math.PI;
+    return normalizeDegrees(current + (Math.sign(step) * deltaDegrees));
   }
 
   #stepArcPitch(currentInput, step, lengthInput, distanceInput) {

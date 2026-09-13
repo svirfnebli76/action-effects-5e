@@ -156,12 +156,15 @@ test("rapid wheel input preserves every accepted rotation notch while resolution
   assert.equal(result.yaw, 15);
 });
 
-test("remote elevation carries the full grid-distance step through a construction-circle pole", async () => {
+test("remote elevation advances one Scene grid-distance of arc length per wheel notch", async () => {
   const revisions = [];
   const h = harness({
-    carrierPosition: { x: 410, y: 100 },
-    onShow: ({ window }) => {
-      for (let i = 0; i < 4; i += 1) window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+    carrierPosition: { x: 300, y: 100 },
+    onShow: async ({ window }) => {
+      for (let i = 0; i < 4; i += 1) {
+        window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
     }
   });
   const result = await h.service.show({
@@ -174,9 +177,20 @@ test("remote elevation carries the full grid-distance step through a constructio
   });
 
   assert.equal(result.cancelled, false);
-  assert.equal(result.revision.manualElevation, true);
-  assert.ok(result.revision.elevationPhase > 90 && result.revision.elevationPhase < 180, "a step larger than the remaining rise carries through zenith in the same notch");
-  assert.ok(result.placementPoint.x < 7.5 && result.placementPoint.y < 7.5, "the accepted point is already on the far side of the pole");
+  const elevated = revisions.filter(revision => revision.reason === "wheel-elevate");
+  assert.equal(elevated.length, 4);
+  for (let i = 1; i < elevated.length; i += 1) {
+    const a = elevated[i - 1].elevationPhase;
+    const b = elevated[i].elevationPhase;
+    const delta = ((b - a + 540) % 360) - 180;
+    const radius = Math.hypot(
+      elevated[i].point.x - 5,
+      elevated[i].point.y - 5,
+      elevated[i].point.z - 0
+    );
+    const arcLength = Math.abs((delta * Math.PI / 180) * radius);
+    assert.ok(Math.abs(arcLength - 5) < 1e-6, `wheel notch advances 5 ft along the construction arc (got ${arcLength})`);
+  }
   assert.equal(h.service.getStats().wheelEvents, 4);
 });
 
@@ -219,6 +233,45 @@ test("remote elevation remains cyclic across repeated full-circle travel and Ctr
   assert.equal(result.cancelled, false);
   assert.ok(result.revision.elevationPhase >= 0 && result.revision.elevationPhase < 360);
   assert.equal(h.service.getStats().wheelEvents, 8);
+});
+
+test("releasing Ctrl preserves the elevated crosshair-to-pointer offset instead of snapping to the cursor", async () => {
+  let elevatedPoint = null;
+  const h = harness({
+    carrierPosition: { x: 300, y: 100 },
+    onShow: async ({ carrier, callbacks, window }) => {
+      window.dispatch("keydown", { key: "Control" });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
+      await new Promise(resolve => setTimeout(resolve, 5));
+      elevatedPoint = { ...h.service.getStats() };
+      window.dispatch("keyup", { key: "Control" });
+      await new Promise(resolve => setTimeout(resolve, 70));
+
+      // Simulate the physical pointer moving 20 px right after Ctrl release.
+      // Sequencer presents the raw pointer-centered carrier to MOVE; AE5E must
+      // translate from the accepted elevated position rather than snap to it.
+      carrier.x = 320; carrier.document.x = 320;
+      carrier.y = 100; carrier.document.y = 100;
+      await callbacks.move?.(carrier);
+    }
+  });
+  const revisions = [];
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: false, los: false },
+    onRevision: revision => revisions.push(revision)
+  });
+
+  const elevated = revisions.find(revision => revision.reason === "wheel-elevate");
+  const moved = revisions.find(revision => revision.reason === "move" && revision.revision > elevated.revision);
+  assert.ok(elevated && moved);
+  assert.ok(Math.abs((moved.point.x - elevated.point.x) - 1) < 0.05, "20 px pointer motion produces only the corresponding 1-ft XY translation");
+  assert.ok(Math.abs(moved.point.y - elevated.point.y) < 0.05, "handoff does not inject a Y snap");
+  assert.equal(moved.point.z, elevated.point.z, "manual Z is preserved during the smooth MOVE handoff");
+  assert.equal(result.cancelled, false);
 });
 
 test("Self Cone/ Ray pitch crosses vertical by handing the apex to the opposite source boundary", async () => {

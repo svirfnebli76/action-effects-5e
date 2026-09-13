@@ -11,6 +11,8 @@ function installSequencerStub() {
     name(v) { this.data.name = v; return this; }
     file(v) { this.data.file = v; return this; }
     atLocation(v) { this.data.source = v; return this; }
+    attachTo(v, options = {}) { this.data.source = v; this.data.attachTo = { active: true, ...options }; return this; }
+    stretchTo(v, options = {}) { this.data.target = v; this.data.stretchTo = { ...options }; return this; }
     elevation(v, options) { this.data.elevation = { elevation: v, ...options }; return this; }
     rotate(v) { this.data.angle = v; return this; }
     opacity(v) { this.data.opacity = v; return this; }
@@ -25,12 +27,14 @@ function installSequencerStub() {
     effect() { return this.builder; }
     async play() {
       const data = structuredClone(this.builder.data);
-      calls.starts.push(data);
+      calls.starts.push(structuredClone(data));
       const effect = {
         id: `effect-${data.name}`,
         data,
         _source: data.source,
         _cachedSourceData: { position: data.source },
+        _target: data.target,
+        _cachedTargetData: { position: data.target },
         _customAngle: data.angle ?? 0,
         elevation: data.elevation?.elevation ?? 0,
         async _transformSprite() {
@@ -38,6 +42,7 @@ function installSequencerStub() {
             id: this.id,
             source: structuredClone(this.data.source),
             angle: this.data.angle,
+            target: structuredClone(this.data.target),
             elevation: structuredClone(this.data.elevation),
             size: structuredClone(this.data.size)
           });
@@ -75,26 +80,44 @@ function metrics() {
 
 function crosshairs() {
   return {
-    resolveAsset: ({ shape }) => ({ file: `modules/eskie/${shape}.webm`, nativeFallback: false, tint: "#7fefef", reason: "test" })
+    resolveAsset: ({ shape, tint, color }) => ({
+      file: `modules/eskie/${shape}.webm`,
+      nativeFallback: false,
+      tint: tint ?? color ?? "#7fefef",
+      reason: "test"
+    })
   };
 }
 
 test("accepted-state Eskie artwork starts once and transforms the same live sprite in place", async () => {
   const calls = installSequencerStub();
   const service = new Crosshair3dPlacementVisualService({ crosshairs: crosshairs(), metrics: metrics() });
-  const state = service.createSession({ id: "one" });
+  const state = service.createSession({ id: "one", source: { id: "source-token" } });
   const shape = { type: "prism", origin: { x: 5, y: 10, z: 15 }, length: 10, width: 5, height: 5, yaw: 20 };
   const first = await service.update(state, shape);
   const second = await service.update(state, { ...shape, origin: { x: 10, y: 10, z: 20 }, yaw: 25 });
   assert.equal(first.artwork, true);
   assert.equal(second.artwork, true);
-  assert.equal(calls.starts.length, 1, "one retained visual is started");
-  assert.equal(calls.transforms.length, 1, "the retained CanvasEffect is transformed without media reinitialization");
+  const artworkStarts = calls.starts.filter(entry => entry.name === "action-effects-5e.crosshair3d.accepted.one");
+  const tracerStarts = calls.starts.filter(entry => entry.name === "action-effects-5e.crosshair3d.tracer.one");
+  const artworkTransforms = calls.transforms.filter(entry => entry.id === "effect-action-effects-5e.crosshair3d.accepted.one");
+  const tracerTransforms = calls.transforms.filter(entry => entry.id === "effect-action-effects-5e.crosshair3d.tracer.one");
+  assert.equal(artworkStarts.length, 1, "one retained visual is started");
+  assert.equal(tracerStarts.length, 1, "one retained source tracer is started");
+  assert.equal(artworkTransforms.length, 1, "the retained CanvasEffect is transformed without media reinitialization");
+  assert.equal(tracerTransforms.length, 1, "the retained tracer endpoint transforms in place");
   assert.equal(calls.destructiveUpdates.length, 0, "Sequencer updateEffects is not used during interactive movement");
-  assert.deepEqual(calls.transforms[0].source, { x: 200, y: 200 });
-  assert.equal(calls.transforms[0].angle, 25);
+  assert.deepEqual(artworkTransforms[0].source, { x: 200, y: 200 });
+  assert.equal(artworkTransforms[0].angle, 25);
+  assert.deepEqual(tracerStarts[0].target, { x: 100, y: 200 });
+  assert.deepEqual(tracerTransforms[0].target, { x: 200, y: 200 });
+  assert.equal(tracerStarts[0].opacity, 0.8);
+  assert.equal(tracerStarts[0].tint, "#4A4A4A");
   await service.clear(state);
-  assert.equal(calls.ends.at(-1).name, "action-effects-5e.crosshair3d.accepted.one");
+  assert.deepEqual(
+    calls.ends.slice(-2).map(entry => entry.name).sort(),
+    ["action-effects-5e.crosshair3d.accepted.one", "action-effects-5e.crosshair3d.tracer.one"].sort()
+  );
 });
 
 test("pitched Cone suppresses flat Eskie artwork and requests the AE5E 3D guide", async () => {

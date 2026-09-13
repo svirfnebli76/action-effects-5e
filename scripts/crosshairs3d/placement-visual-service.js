@@ -3,6 +3,7 @@ import { CROSSHAIR_3D_SHAPES } from "./geometry-service.js";
 import { finiteNumber } from "./geometry-utils.js";
 
 const DEFAULT_COLOR = "#7fefef";
+const DEFAULT_TRACER_COLOR = "#4A4A4A";
 const PITCH_EPSILON = 1e-6;
 
 function randomId() {
@@ -102,11 +103,14 @@ export class Crosshair3dPlacementVisualService {
     const state = {
       id,
       effectName: `action-effects-5e.crosshair3d.accepted.${id}`,
+      tracerName: `action-effects-5e.crosshair3d.tracer.${id}`,
       active: false,
+      tracerActive: false,
       visualShape: null,
       file: null,
       resolution: null,
       effectId: null,
+      tracerEffectId: null,
       updateSerial: 0,
       closed: false,
       options
@@ -118,10 +122,11 @@ export class Crosshair3dPlacementVisualService {
   async update(state, shapeInput, options = {}) {
     if (!state || state.closed) return Object.freeze({ artwork: false, guide: true, reason: "closed" });
     const shape = shapeInput;
+    const tracer = await this.#updateTracer(state, shape, options);
     const visualShape = visualShapeFor(shape);
     if (!visualShape) {
       await this.#endEffect(state);
-      return Object.freeze({ artwork: false, guide: true, reason: "3d-guide-required" });
+      return Object.freeze({ artwork: false, guide: true, tracer, reason: "3d-guide-required" });
     }
 
     const request = {
@@ -135,7 +140,7 @@ export class Crosshair3dPlacementVisualService {
     const resolution = this.#crosshairs?.resolveAsset?.(request) ?? null;
     if (!resolution?.file || resolution.nativeFallback) {
       await this.#endEffect(state);
-      return Object.freeze({ artwork: false, guide: true, reason: resolution?.reason ?? "asset-unavailable", resolution });
+      return Object.freeze({ artwork: false, guide: true, tracer, reason: resolution?.reason ?? "asset-unavailable", resolution });
     }
 
     const metrics = this.#metrics.resolve();
@@ -147,7 +152,7 @@ export class Crosshair3dPlacementVisualService {
     try {
       if (!state.active || state.file !== resolution.file || state.visualShape !== visualShape) {
         await this.#endEffect(state);
-        if (state.closed || serial !== state.updateSerial) return Object.freeze({ artwork: false, guide: true, reason: "stale-start" });
+        if (state.closed || serial !== state.updateSerial) return Object.freeze({ artwork: false, guide: true, tracer, reason: "stale-start" });
         const sequence = new globalThis.Sequence();
         let section = sequence
           .effect()
@@ -174,14 +179,14 @@ export class Crosshair3dPlacementVisualService {
         const updated = await this.#updateEffectInPlace(state, { pixel, yaw, elevation: shape.origin.z, size });
         if (!updated) {
           await this.#endEffect(state);
-          return Object.freeze({ artwork: false, guide: true, reason: "in-place-update-unavailable", resolution });
+          return Object.freeze({ artwork: false, guide: true, tracer, reason: "in-place-update-unavailable", resolution });
         }
       }
-      return Object.freeze({ artwork: true, guide: false, reason: "eskie", resolution });
+      return Object.freeze({ artwork: true, guide: false, tracer, reason: "eskie", resolution });
     } catch (error) {
       Logger.warn("Action Effects 3D Crosshairs could not update accepted-state Eskie artwork; using AE5E guide fallback.", error);
       await this.#endEffect(state);
-      return Object.freeze({ artwork: false, guide: true, reason: "visual-update-error", resolution });
+      return Object.freeze({ artwork: false, guide: true, tracer, reason: "visual-update-error", resolution });
     }
   }
 
@@ -190,23 +195,94 @@ export class Crosshair3dPlacementVisualService {
     state.closed = true;
     state.updateSerial += 1;
     await this.#endEffect(state);
+    await this.#endTracer(state);
     this.#sessions.delete(state.id);
   }
 
   getStats() {
-    return Object.freeze({ sessions: this.#sessions.size, activeEffects: [...this.#sessions.values()].filter(session => session.active).length });
+    return Object.freeze({
+      sessions: this.#sessions.size,
+      activeEffects: [...this.#sessions.values()].filter(session => session.active).length,
+      activeTracers: [...this.#sessions.values()].filter(session => session.tracerActive).length
+    });
   }
 
-  #findEffect(state) {
+  async #updateTracer(state, shape, options = {}) {
+    if ((options.tracer ?? state.options.tracer) === false || !state.options.source) {
+      await this.#endTracer(state);
+      return false;
+    }
+
+    const tracerColor = options.tracerColor ?? state.options.tracerColor ?? DEFAULT_TRACER_COLOR;
+    const resolution = this.#crosshairs?.resolveAsset?.({
+      shape: "line",
+      style: options.tracerStyle ?? state.options.tracerStyle ?? "generic_01",
+      size: options.tracerSize ?? state.options.tracerSize ?? "90ft",
+      color: tracerColor,
+      tint: tracerColor,
+      sizeStrategy: "nearest"
+    }) ?? null;
+    if (!resolution?.file || resolution.nativeFallback) {
+      await this.#endTracer(state);
+      return false;
+    }
+
+    const metrics = this.#metrics.resolve();
+    const pixel = this.#metrics.distanceToPixels(shape.origin, metrics);
+    const target = { x: pixel.x, y: pixel.y };
+
+    try {
+      if (!state.tracerActive) {
+        const sequence = new globalThis.Sequence();
+        let section = sequence
+          .effect()
+            .name(state.tracerName)
+            .file(resolution.file)
+            .attachTo(state.options.source)
+            .stretchTo(target, { attachTo: true })
+            .opacity(Number(options.tracerOpacity ?? state.options.tracerOpacity ?? 0.8))
+            .locally()
+            .persist();
+        if (resolution.tint && typeof section.tint === "function") section = section.tint(resolution.tint);
+        if (typeof section.belowTokens === "function") section = section.belowTokens();
+        await sequence.play();
+        state.tracerActive = true;
+        state.tracerEffectId = this.#findNamedEffect(state.tracerName, state.tracerEffectId)?.id ?? null;
+        return true;
+      }
+
+      const effect = this.#findNamedEffect(state.tracerName, state.tracerEffectId);
+      if (!effect?.data || typeof effect._transformSprite !== "function") {
+        await this.#endTracer(state);
+        return false;
+      }
+      effect.data.target = target;
+      effect._target = target;
+      if (effect._cachedTargetData) effect._cachedTargetData.position = target;
+      await effect._transformSprite();
+      state.tracerEffectId = effect.id ?? state.tracerEffectId;
+      return true;
+    } catch (error) {
+      Logger.debug("Could not update the Action Effects 3D Crosshairs source tracer in place.", error);
+      await this.#endTracer(state);
+      return false;
+    }
+  }
+
+  #findNamedEffect(name, effectId = null) {
     const manager = globalThis.Sequencer?.EffectManager;
     if (typeof manager?.getEffects !== "function") return null;
     try {
-      const effects = manager.getEffects({ name: state.effectName }) ?? [];
-      if (state.effectId) return effects.find(effect => effect?.id === state.effectId) ?? effects[0] ?? null;
+      const effects = manager.getEffects({ name }) ?? [];
+      if (effectId) return effects.find(effect => effect?.id === effectId) ?? effects[0] ?? null;
       return effects[0] ?? null;
     } catch (_error) {
       return null;
     }
+  }
+
+  #findEffect(state) {
+    return this.#findNamedEffect(state.effectName, state.effectId);
   }
 
   async #updateEffectInPlace(state, { pixel, yaw, elevation, size }) {
@@ -232,6 +308,17 @@ export class Crosshair3dPlacementVisualService {
     await effect._transformSprite();
     state.effectId = effect.id ?? state.effectId;
     return true;
+  }
+
+  async #endTracer(state) {
+    if (!state?.tracerActive) return;
+    try {
+      await globalThis.Sequencer?.EffectManager?.endEffects?.({ name: state.tracerName });
+    } catch (error) {
+      Logger.debug("Could not end 3D Crosshairs source tracer cleanly.", error);
+    }
+    state.tracerActive = false;
+    state.tracerEffectId = null;
   }
 
   async #endEffect(state) {

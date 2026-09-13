@@ -1,3 +1,12 @@
+## 0.4.4.5 — Action Effects 3D Crosshairs — uniform orbital steps and smooth MOVE handoff
+
+- Corrected remote Ctrl-wheel elevation so each accepted notch advances exactly one Scene grid-distance along the fixed-radius construction arc (`s = rθ`). This removes the large spatial jumps near zenith/nadir while preserving continuous 360° travel in either direction.
+- Corrected the ELEVATE/ROTATE → MOVE handoff. AE5E now preserves the accepted crosshair-to-pointer XY offset when modifiers are released, so subsequent normal mouse movement translates smoothly from the authoritative 3D position instead of snapping the crosshair back under the physical cursor. Manual world-Z remains preserved.
+- Restored the established AE5E source-to-placement tracer used by Entangle/Fireball: Eskie `generic_01` line, `#4A4A4A` tint, 0.8 opacity, below Tokens. The retained tracer endpoint updates in place and is cleaned on confirm/cancel/error with the rest of the temporary placement presentation.
+- Added `elevationRadius` to accepted remote elevation revisions so live diagnostics can verify the exact orbital arc distance (`radius × phase delta`) for each accepted wheel notch.
+- Added deterministic regressions for constant one-grid orbital arc travel, smooth modifier-to-MOVE handoff, and retained non-destructive tracer updates.
+- Kept Self Cone/Ray pitch/apex behavior unchanged pending its dedicated live acceptance tests. No Checkpoint 3 propagation, persistent Region, compendium, or Item behavior was added or changed.
+
 ## 0.4.4.4 — Action Effects 3D Crosshairs — cyclic remote elevation
 
 - Corrected remote construction-plane elevation so every Ctrl-wheel notch contributes the full one-grid-distance manipulation amount even when that step crosses zenith or nadir; unused distance is carried through the pole instead of being discarded by a clamp.

@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.4
+# Current infrastructure acceptance — v0.4.4.5
 
 ## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
 
@@ -16,7 +16,9 @@ The Checkpoint 2 suites additionally verify confirm/cancel target ownership, exa
 
 v0.4.4.3 adds regressions for remote elevation continuing through vertical on the retained construction arc, non-destructive in-place accepted-state Sequencer presentation updates, and confirmation waiting for the newest pending manipulation revision before final carrier reconciliation.
 
-v0.4.4.4 adds regressions for cyclic remote elevation, full grid-distance carry-through at zenith/nadir, reverse wrap from phase zero, and repeated full-circle travel without losing wheel intent.
+v0.4.4.4 adds regressions for cyclic remote elevation, reverse wrap from phase zero, and repeated full-circle travel without losing wheel intent.
+
+v0.4.4.5 adds regressions for constant one-grid-distance orbital arc travel through the full circle, smooth modifier-to-MOVE pointer-offset handoff, and retained in-place source-tracer updates using the established Entangle/Fireball dark-grey treatment. Accepted remote elevation revisions expose both `elevationPhase` and `elevationRadius` so live diagnostics can directly calculate orbital arc travel.
 
 Checkpoint 2 requires live Foundry acceptance because browser input interception, Sequencer CanvasEffect updates, PIXI guide placement, Token target highlighting/secrecy, Foundry surface resolution, and optional LOS cannot be accepted from Node tests alone. Checkpoint 3 must not begin until the focused live placement suite passes or any discovered runtime incompatibility is corrected.
 
