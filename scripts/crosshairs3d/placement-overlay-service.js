@@ -5,6 +5,7 @@ const ROOT_ID = "action-effects-5e-3d-crosshair-overlay";
 export class Crosshair3dPlacementOverlayService {
   #root = null;
   #elevationText = null;
+  #confirmText = null;
 
   show({ mode = "MOVE", hints = [] } = {}) {
     this.clear();
@@ -37,6 +38,16 @@ export class Crosshair3dPlacementOverlayService {
       text.eventMode = "none";
       parent.addChild(text);
       this.#elevationText = text;
+
+      const confirm = new PIXI.Text({
+        text: "Action Effects 3D Crosshairs — click to confirm",
+        style: { fontFamily: "Arial", fontSize: 18, fill: 0xffffff, stroke: { color: 0x000000, width: 4 } }
+      });
+      confirm.name = "action-effects-5e-3d-crosshair-confirm";
+      confirm.eventMode = "none";
+      confirm.anchor?.set?.(0.5, 0.5);
+      parent.addChild(confirm);
+      this.#confirmText = confirm;
     }
   }
 
@@ -45,11 +56,17 @@ export class Crosshair3dPlacementOverlayService {
       const el = this.#root.querySelector?.('[data-ae5e3d="mode"]');
       if (el) el.textContent = mode;
     }
-    if (this.#elevationText && point) {
-      this.#elevationText.text = `${this.#formatElevation(elevation)} ft`;
+    if (point) {
       const offset = Math.max(1, finiteNumber(gridSize, 100));
-      this.#elevationText.position.set(finiteNumber(point.x), finiteNumber(point.y) + offset);
-      this.#elevationText.visible = true;
+      if (this.#elevationText) {
+        this.#elevationText.text = `${this.#formatElevation(elevation)} ft`;
+        this.#elevationText.position.set(finiteNumber(point.x), finiteNumber(point.y) + offset);
+        this.#elevationText.visible = true;
+      }
+      if (this.#confirmText) {
+        this.#confirmText.position.set(finiteNumber(point.x), finiteNumber(point.y) - (offset * 0.35));
+        this.#confirmText.visible = true;
+      }
     }
   }
 
@@ -62,6 +79,13 @@ export class Crosshair3dPlacementOverlayService {
         this.#elevationText.destroy?.();
       } catch (_error) { /* noop */ }
       this.#elevationText = null;
+    }
+    if (this.#confirmText) {
+      try {
+        this.#confirmText.parent?.removeChild?.(this.#confirmText);
+        this.#confirmText.destroy?.();
+      } catch (_error) { /* noop */ }
+      this.#confirmText = null;
     }
   }
 

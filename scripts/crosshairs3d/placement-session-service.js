@@ -245,8 +245,7 @@ export class Crosshair3dPlacementSessionService {
       fillAlpha: 0,
       gridHighlight: false,
       location,
-      snap: { resolution: 8, direction: 5 },
-      label: { text: "Action Effects 3D Crosshairs — click to confirm" }
+      snap: { resolution: 8, direction: 5 }
     };
     return globalThis.Sequencer.Crosshair.show(crosshairConfig, callbackConfig).then(position => ({ position, cancelled: !position }));
   }
@@ -344,11 +343,13 @@ export class Crosshair3dPlacementSessionService {
     }
     const arc = session.elevationArc;
     if (arc.radius <= 1e-9) return;
-    const phase = this.#stepRemoteElevationPhase(arc.phase, step, arc.radius, session.metrics.distance);
+    const snapped = this.#stepRemoteElevationSnap(arc.phase, step, arc.anchor.z, arc.radius, session.metrics.distance);
+    const phase = snapped.phase;
     arc.phase = phase;
     const radians = (phase * Math.PI) / 180;
-    const signedHorizontal = arc.radius * Math.cos(radians);
-    const z = arc.anchor.z + (arc.radius * Math.sin(radians));
+    const horizontalMagnitude = Math.sqrt(Math.max(0, (arc.radius * arc.radius) - ((snapped.z - arc.anchor.z) ** 2)));
+    const signedHorizontal = Math.cos(radians) < 0 ? -horizontalMagnitude : horizontalMagnitude;
+    const z = snapped.z;
     const point = {
       x: arc.anchor.x + (arc.unit.x * signedHorizontal),
       y: arc.anchor.y + (arc.unit.y * signedHorizontal),
@@ -580,19 +581,54 @@ export class Crosshair3dPlacementSessionService {
     return { yaw: heading, pitch: arc, flipped: false };
   }
 
-  #stepRemoteElevationPhase(currentInput, step, radiusInput, distanceInput) {
+  #stepRemoteElevationSnap(currentInput, step, anchorZInput, radiusInput, distanceInput) {
     const radius = Math.max(1e-9, finiteNumber(radiusInput));
     const distance = Math.max(0, finiteNumber(distanceInput));
+    const anchorZ = finiteNumber(anchorZInput);
     const current = normalizeDegrees(currentInput);
-    if (!step || distance <= 0) return current;
+    const direction = Math.sign(step);
+    if (!direction || distance <= 0) {
+      return { phase: current, z: anchorZ + (radius * Math.sin((current * Math.PI) / 180)) };
+    }
 
-    // Remote ELEVATE is orbital: one wheel notch advances exactly one Scene
-    // grid-distance along the fixed-radius construction circle. Arc length is
-    // s = r * theta, so the angular increment is distance / radius radians.
-    // This keeps every notch spatially uniform through zenith/nadir and the
-    // normalized phase naturally wraps in either direction through 360 degrees.
-    const deltaDegrees = ((distance / radius) * 180) / Math.PI;
-    return normalizeDegrees(current + (Math.sign(step) * deltaDegrees));
+    // In ELEVATE mode the vertical axis is authoritative for snapping. Each
+    // accepted wheel notch advances to the next horizontal Scene-grid plane
+    // encountered while travelling around the retained construction circle.
+    // XY is then solved continuously from the circle instead of being snapped
+    // to a map-grid square. This keeps world Z exactly on grid-distance values
+    // (for example 0, 5, 10, 15 on a 5-ft Scene) regardless of circle radius.
+    const minZ = anchorZ - radius;
+    const maxZ = anchorZ + radius;
+    const firstLevel = Math.ceil((minZ - 1e-9) / distance);
+    const lastLevel = Math.floor((maxZ + 1e-9) / distance);
+    const candidates = [];
+    const addCandidate = (phase, z) => {
+      const normalized = normalizeDegrees(phase);
+      if (candidates.some(candidate => Math.abs((((candidate.phase - normalized + 540) % 360) - 180)) < 1e-7)) return;
+      candidates.push({ phase: normalized, z });
+    };
+
+    for (let level = firstLevel; level <= lastLevel; level += 1) {
+      const z = level * distance;
+      const ratio = Math.max(-1, Math.min(1, (z - anchorZ) / radius));
+      const alpha = (Math.asin(ratio) * 180) / Math.PI;
+      addCandidate(alpha, z);
+      addCandidate(180 - alpha, z);
+    }
+
+    let best = null;
+    for (const candidate of candidates) {
+      const delta = direction > 0
+        ? (candidate.phase - current + 360) % 360
+        : (current - candidate.phase + 360) % 360;
+      if (delta <= 1e-7) continue;
+      if (!best || delta < best.delta) best = { ...candidate, delta };
+    }
+
+    if (!best) {
+      return { phase: current, z: anchorZ + (radius * Math.sin((current * Math.PI) / 180)) };
+    }
+    return { phase: best.phase, z: best.z };
   }
 
   #stepArcPitch(currentInput, step, lengthInput, distanceInput) {

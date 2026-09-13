@@ -43,6 +43,7 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
   const inside = token({ id: "inside", x: 100, y: 100, elevation: 0 });
   const outside = token({ id: "outside", x: 600, y: 600, elevation: 0 });
   const targetHistory = [];
+  const crosshairConfigs = [];
   const window = fakeWindow();
   const carrierX = carrierPosition?.x ?? 150;
   const carrierY = carrierPosition?.y ?? 150;
@@ -67,7 +68,8 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
     Crosshair: {
       CALLBACKS,
       PLACEMENT_RESTRICTIONS: { LINE_OF_SIGHT: "los" },
-      async show(_config, callbacks) {
+      async show(config, callbacks) {
+        crosshairConfigs.push(config);
         await callbacks.show?.(carrier);
         await onShow?.({ carrier, callbacks, window });
         if (cancelled) return null;
@@ -80,7 +82,7 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
   globalThis.foundry = { utils: { randomID: () => "session-test" } };
 
   const service = new Crosshair3dPlacementSessionService({ crosshairs: {}, geometry, cells, tokens, range, revisions, targeting, metrics, surfaces, overlay, guide });
-  return { service, source, inside, outside, carrier, targetHistory, overlayEvents, guideEvents, window };
+  return { service, source, inside, outside, carrier, targetHistory, overlayEvents, guideEvents, crosshairConfigs, window };
 }
 
 test("live 3D placement collects targets through the grid-cell rules and preserves confirmed targets", async () => {
@@ -156,7 +158,7 @@ test("rapid wheel input preserves every accepted rotation notch while resolution
   assert.equal(result.yaw, 15);
 });
 
-test("remote elevation advances one Scene grid-distance of arc length per wheel notch", async () => {
+test("remote elevation snaps Z to Scene grid planes while XY remains continuous on the construction circle", async () => {
   const revisions = [];
   const h = harness({
     carrierPosition: { x: 300, y: 100 },
@@ -179,19 +181,44 @@ test("remote elevation advances one Scene grid-distance of arc length per wheel 
   assert.equal(result.cancelled, false);
   const elevated = revisions.filter(revision => revision.reason === "wheel-elevate");
   assert.equal(elevated.length, 4);
-  for (let i = 1; i < elevated.length; i += 1) {
-    const a = elevated[i - 1].elevationPhase;
-    const b = elevated[i].elevationPhase;
-    const delta = ((b - a + 540) % 360) - 180;
-    const radius = Math.hypot(
-      elevated[i].point.x - 5,
-      elevated[i].point.y - 5,
-      elevated[i].point.z - 0
-    );
-    const arcLength = Math.abs((delta * Math.PI / 180) * radius);
-    assert.ok(Math.abs(arcLength - 5) < 1e-6, `wheel notch advances 5 ft along the construction arc (got ${arcLength})`);
+  assert.deepEqual(elevated.map(revision => revision.point.z), [5, 10, 5, 0]);
+  for (const revision of elevated) {
+    assert.ok(Math.abs(revision.point.z / 5 - Math.round(revision.point.z / 5)) < 1e-9, "every accepted elevation lies exactly on a 5-ft Scene grid plane");
   }
+  assert.ok(
+    elevated.some(revision => Math.abs(revision.point.x / 5 - Math.round(revision.point.x / 5)) > 1e-3),
+    "ELEVATE solves XY continuously instead of forcing the construction circle onto map-grid XY coordinates"
+  );
   assert.equal(h.service.getStats().wheelEvents, 4);
+});
+
+test("remote elevation stays grid-Z snapped across an unsnapped zenith", async () => {
+  const revisions = [];
+  const h = harness({
+    carrierPosition: { x: 616.854, y: 100 },
+    onShow: async ({ window }) => {
+      for (let i = 0; i < 7; i += 1) {
+        window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: false, los: false },
+    onRevision: revision => revisions.push(revision)
+  });
+
+  assert.equal(result.cancelled, false);
+  const elevated = revisions.filter(revision => revision.reason === "wheel-elevate");
+  assert.deepEqual(elevated.map(revision => revision.point.z), [5, 10, 15, 20, 25, 25, 20]);
+  assert.ok(
+    elevated[5].elevationPhase > 90,
+    "when zenith lies between Z grid planes, the next notch reaches the matching snapped plane on the far side rather than publishing an unsnapped pole elevation"
+  );
 });
 
 test("remote elevation wraps backward from phase zero instead of clamping", async () => {
@@ -272,6 +299,22 @@ test("releasing Ctrl returns remote MOVE to the cursor position while preserving
   assert.equal(result.cancelled, false);
 });
 
+
+test("functional Sequencer carrier does not own the click-to-confirm label", async () => {
+  const h = harness();
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    capabilities: { elevation: true, rotation: false, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  assert.equal(h.crosshairConfigs.length, 1);
+  assert.equal(Object.hasOwn(h.crosshairConfigs[0], "label"), false, "raw cursor carrier cannot drag a Sequencer label outside the accepted boundary");
+  assert.ok(h.overlayEvents.some(([type, data]) => type === "update" && data?.point), "AE5E overlay is updated from accepted authoritative revisions");
+});
+
 test("Self Cone/ Ray pitch crosses vertical by handing the apex to the opposite source boundary", async () => {
   const h = harness({
     onShow: ({ window }) => {
@@ -320,6 +363,7 @@ test("surface resolution prefers a matching move surface on the current Foundry 
 
 test("remote MOVE preserves the manually selected absolute Z plane while true-3D range clamps XY", async () => {
   const h = harness({
+    carrierPosition: { x: 300, y: 100 },
     onShow: async ({ window, carrier, callbacks }) => {
       window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
       carrier.x = 1000;

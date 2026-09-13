@@ -1,3 +1,11 @@
+## 0.4.4.7 — Action Effects 3D Crosshairs — grid-Z elevation snapping and authoritative confirm label
+
+- Corrected remote ELEVATE snapping to match the intended vertical-grid UX. Ctrl-wheel now advances to the next horizontal Scene-grid Z plane encountered around the retained construction circle, so accepted elevations stay on exact grid-distance values (for example `0, 5, 10, 15...` on a 5-ft Scene) regardless of construction-circle radius. XY is solved continuously from the fixed-radius circle during ELEVATE rather than being quantized to map-grid XY coordinates.
+- Preserved cyclic 360-degree travel in either direction. If zenith/nadir lies between two legal Z planes, traversal crosses the pole without publishing the unsnapped pole elevation; the next accepted point is the corresponding snapped Z-plane intersection on the far side.
+- Removed the click-to-confirm text from Sequencer's invisible functional cursor carrier. AE5E now owns that text in its placement overlay and positions it from each accepted authoritative crosshair point, preventing out-of-range cursor motion from making the label chase the cursor and flicker back.
+- Retained the accepted v0.4.4.6 behavior for default cursor-centered MOVE after modifier release, manual absolute-Z preservation, cyclic elevation state, and the dark-grey Entangle/Fireball source tracer. Self Cone/Ray pitch remains unchanged pending dedicated live acceptance.
+- Added deterministic regressions for exact grid-Z snapping, free XY circle solving, unsnapped-pole traversal, and authoritative confirmation-label ownership/cleanup.
+
 ## 0.4.4.6 — Action Effects 3D Crosshairs — restore default cursor-centered MOVE handoff
 
 - Reverted only the v0.4.4.5 modifier-to-MOVE pointer-offset preservation after live-test preference. Releasing Ctrl/Shift now returns remote placement to the established/default Sequencer cursor-centered MOVE behavior: the next mouse movement reacquires cursor XY directly.

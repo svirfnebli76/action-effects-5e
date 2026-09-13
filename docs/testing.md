@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.6
+# Current infrastructure acceptance — v0.4.4.7
 
 ## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
 
@@ -18,7 +18,7 @@ v0.4.4.3 adds regressions for remote elevation continuing through vertical on th
 
 v0.4.4.4 adds regressions for cyclic remote elevation, reverse wrap from phase zero, and repeated full-circle travel without losing wheel intent.
 
-v0.4.4.6 retains the v0.4.4.5 constant one-grid-distance orbital arc travel and retained in-place Entangle/Fireball dark-grey source tracer, but restores the default cursor-centered MOVE handoff after modifier release by live-test preference. Manual absolute Z remains preserved when MOVE reacquires cursor XY. Accepted remote elevation revisions expose both `elevationPhase` and `elevationRadius` so live diagnostics can directly calculate orbital arc travel.
+v0.4.4.7 changes remote ELEVATE to authoritative Scene-grid Z snapping: each Ctrl-wheel notch advances to the next horizontal Z grid plane encountered around the retained construction circle, while XY is solved continuously from the circle rather than snapped to map-grid XY coordinates. This keeps accepted elevations on exact grid-distance values even when zenith/nadir falls between grid planes. The click-to-confirm label is now AE5E-owned and follows accepted authoritative placement rather than Sequencer's raw cursor carrier, eliminating boundary flicker. Default cursor-centered MOVE after modifier release, manual absolute-Z preservation, cyclic 360-degree travel, and the retained Entangle/Fireball dark-grey tracer remain unchanged.
 
 Checkpoint 2 requires live Foundry acceptance because browser input interception, Sequencer CanvasEffect updates, PIXI guide placement, Token target highlighting/secrecy, Foundry surface resolution, and optional LOS cannot be accepted from Node tests alone. Checkpoint 3 must not begin until the focused live placement suite passes or any discovered runtime incompatibility is corrected.
 
