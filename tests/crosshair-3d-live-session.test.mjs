@@ -26,7 +26,7 @@ function fakeWindow() {
   };
 }
 
-function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride = null } = {}) {
+function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride = null, carrierPosition = null } = {}) {
   const geometry = new Crosshair3dGeometryService();
   const cells = new Crosshair3dCellRasterizerService({ geometry });
   const tokens = new Crosshair3dTokenVolumeService();
@@ -44,9 +44,11 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
   const outside = token({ id: "outside", x: 600, y: 600, elevation: 0 });
   const targetHistory = [];
   const window = fakeWindow();
+  const carrierX = carrierPosition?.x ?? 150;
+  const carrierY = carrierPosition?.y ?? 150;
   const carrier = {
-    x: 150, y: 150, direction: 0, elevation: 0, distance: 10,
-    document: { x: 150, y: 150, direction: 0, elevation: 0, updateSource(update) { Object.assign(this, update); Object.assign(carrier, update); } },
+    x: carrierX, y: carrierY, direction: 0, elevation: 0, distance: 10,
+    document: { x: carrierX, y: carrierY, direction: 0, elevation: 0, updateSource(update) { Object.assign(this, update); Object.assign(carrier, update); } },
     updateCrosshair(update) { Object.assign(this, update); Object.assign(this.document, update); },
     refresh() {}
   };
@@ -154,15 +156,56 @@ test("rapid wheel input preserves every accepted rotation notch while resolution
   assert.equal(result.yaw, 15);
 });
 
-test("remote elevation crosses vertical on the retained construction arc even across Ctrl release/re-entry", async () => {
+test("remote elevation carries the full grid-distance step through a construction-circle pole", async () => {
+  const revisions = [];
+  const h = harness({
+    carrierPosition: { x: 410, y: 100 },
+    onShow: ({ window }) => {
+      for (let i = 0; i < 4; i += 1) window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: false, los: false },
+    onRevision: revision => revisions.push(revision)
+  });
+
+  assert.equal(result.cancelled, false);
+  assert.equal(result.revision.manualElevation, true);
+  assert.ok(result.revision.elevationPhase > 90 && result.revision.elevationPhase < 180, "a step larger than the remaining rise carries through zenith in the same notch");
+  assert.ok(result.placementPoint.x < 7.5 && result.placementPoint.y < 7.5, "the accepted point is already on the far side of the pole");
+  assert.equal(h.service.getStats().wheelEvents, 4);
+});
+
+test("remote elevation wraps backward from phase zero instead of clamping", async () => {
+  const h = harness({
+    carrierPosition: { x: 400, y: 100 },
+    onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: 100 })
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: false, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  assert.ok(result.revision.elevationPhase > 270 && result.revision.elevationPhase < 360, "negative travel wraps into the 270-360 degree quadrant");
+  assert.ok(result.placementPoint.z < 0, "the first reverse notch moves below the starting plane instead of sticking at zero");
+});
+
+test("remote elevation remains cyclic across repeated full-circle travel and Ctrl release/re-entry", async () => {
   const h = harness({
     onShow: ({ window }) => {
-      window.dispatch("keydown", { key: "Control" });
-      window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
-      window.dispatch("keyup", { key: "Control" });
-      window.dispatch("keydown", { key: "Control" });
-      window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
-      window.dispatch("keyup", { key: "Control" });
+      for (let i = 0; i < 8; i += 1) {
+        window.dispatch("keydown", { key: "Control" });
+        window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
+        window.dispatch("keyup", { key: "Control" });
+      }
     }
   });
   const result = await h.service.show({
@@ -174,10 +217,8 @@ test("remote elevation crosses vertical on the retained construction arc even ac
   });
 
   assert.equal(result.cancelled, false);
-  assert.equal(result.revision.manualElevation, true);
-  assert.ok(result.placementPoint.x < 5 && result.placementPoint.y < 5, "continued elevation passes the top of the arc onto the opposite horizontal side");
-  assert.ok(Math.abs(result.placementPoint.z) < 1e-6, "two large arc steps complete the upper semicircle rather than clamping at 90 degrees");
-  assert.equal(h.service.getStats().wheelEvents, 2);
+  assert.ok(result.revision.elevationPhase >= 0 && result.revision.elevationPhase < 360);
+  assert.equal(h.service.getStats().wheelEvents, 8);
 });
 
 test("Self Cone/ Ray pitch crosses vertical by handing the apex to the opposite source boundary", async () => {

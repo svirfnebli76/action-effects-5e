@@ -1,3 +1,12 @@
+## 0.4.4.4 — Action Effects 3D Crosshairs — cyclic remote elevation
+
+- Corrected remote construction-plane elevation so every Ctrl-wheel notch contributes the full one-grid-distance manipulation amount even when that step crosses zenith or nadir; unused distance is carried through the pole instead of being discarded by a clamp.
+- Remote construction-plane elevation now uses a cyclic 0–360° phase. Reverse input from phase 0 wraps into the previous quadrant rather than sticking at zero/±180°, and repeated travel may continue around the circle in either direction.
+- Added `elevationPhase` to accepted remote elevation revisions for flat live diagnostics; actual XY MOVE resets the temporary construction-plane phase as designed.
+- Kept Self Cone/Ray pitch/apex behavior unchanged pending its dedicated live acceptance tests.
+- Added deterministic regressions for pole carry-through, reverse-direction wrapping, repeated cyclic travel, and Ctrl release/re-entry.
+- No Checkpoint 3 propagation, persistent Region, compendium, or Item behavior was added or changed.
+
 ## 0.4.4.3 — Action Effects 3D Crosshairs — Checkpoint 2 live acceptance corrections
 
 - Corrected remote ELEVATE construction-plane travel so Sphere/Prism-style remote placements continue naturally through vertical and onto the opposite side of the source instead of clamping at ±90 degrees. The retained arc survives Ctrl release/re-entry and resets when actual XY MOVE changes the placement plane.

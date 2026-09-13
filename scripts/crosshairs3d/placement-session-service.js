@@ -102,6 +102,7 @@ export class Crosshair3dPlacementSessionService {
         ? initialPoint.z + (Math.sin((initialPitch * Math.PI) / 180) * baseShape.length)
         : null,
       selectedAbsoluteZ: initialPoint.z,
+      elevationPhase: null,
       manualElevation: false,
       shape: baseShape,
       targets: Object.freeze([]),
@@ -127,6 +128,7 @@ export class Crosshair3dPlacementSessionService {
         arcPitch: initialArcPitch,
         endpointZ: initialState.endpointZ,
         selectedAbsoluteZ: initialPoint.z,
+        elevationPhase: null,
         manualElevation: false
       },
       requestedSerial: 0,
@@ -340,7 +342,7 @@ export class Crosshair3dPlacementSessionService {
     }
     const arc = session.elevationArc;
     if (arc.radius <= 1e-9) return;
-    const phase = this.#stepArcPitch(arc.phase, step, arc.radius, session.metrics.distance);
+    const phase = this.#stepRemoteElevationPhase(arc.phase, step, arc.radius, session.metrics.distance);
     arc.phase = phase;
     const radians = (phase * Math.PI) / 180;
     const signedHorizontal = arc.radius * Math.cos(radians);
@@ -350,9 +352,9 @@ export class Crosshair3dPlacementSessionService {
       y: arc.anchor.y + (arc.unit.y * signedHorizontal),
       z
     };
-    Object.assign(session.intent, { point, selectedAbsoluteZ: z, manualElevation: true });
+    Object.assign(session.intent, { point, selectedAbsoluteZ: z, elevationPhase: phase, manualElevation: true });
     this.#requestResolution(session, {
-      statePatch: { point, selectedAbsoluteZ: z, manualElevation: true },
+      statePatch: { point, selectedAbsoluteZ: z, elevationPhase: phase, manualElevation: true },
       reason: "wheel-elevate",
       force: true
     });
@@ -412,8 +414,9 @@ export class Crosshair3dPlacementSessionService {
         const point = this.#resolveRemoteMovePoint(session, pixelPoint, previous.point.z);
         patch.point = point;
         patch.selectedAbsoluteZ = intended.manualElevation ? intended.selectedAbsoluteZ : point.z;
+        patch.elevationPhase = null;
         patch.yaw = normalizeDegrees(intended.yaw);
-        Object.assign(session.intent, { point: patch.point, selectedAbsoluteZ: patch.selectedAbsoluteZ, yaw: patch.yaw });
+        Object.assign(session.intent, { point: patch.point, selectedAbsoluteZ: patch.selectedAbsoluteZ, elevationPhase: null, yaw: patch.yaw });
         session.elevationArc = null;
       }
     }
@@ -426,6 +429,7 @@ export class Crosshair3dPlacementSessionService {
       arcPitch: finiteNumber(patch.arcPitch ?? intended.arcPitch ?? patch.pitch ?? intended.pitch),
       endpointZ: patch.endpointZ ?? intended.endpointZ,
       selectedAbsoluteZ: patch.selectedAbsoluteZ ?? intended.selectedAbsoluteZ,
+      elevationPhase: patch.elevationPhase ?? intended.elevationPhase ?? null,
       manualElevation: patch.manualElevation ?? intended.manualElevation
     };
     if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
@@ -570,6 +574,43 @@ export class Crosshair3dPlacementSessionService {
     if (arc > 90) return { yaw: normalizeDegrees(heading + 180), pitch: 180 - arc, flipped: true };
     if (arc < -90) return { yaw: normalizeDegrees(heading + 180), pitch: -180 - arc, flipped: true };
     return { yaw: heading, pitch: arc, flipped: false };
+  }
+
+  #stepRemoteElevationPhase(currentInput, step, radiusInput, distanceInput) {
+    const radius = Math.max(1e-9, finiteNumber(radiusInput));
+    const distance = Math.max(0, finiteNumber(distanceInput));
+    const current = normalizeDegrees(currentInput);
+    if (!step || distance <= 0) return current;
+
+    // Remote ELEVATE uses one full Scene grid-distance of vertical manipulation
+    // intent per wheel notch while remaining on the fixed-radius construction
+    // circle. Represent that intent as a cyclic four-radius travel coordinate:
+    //   0 -> +R -> 0 -> -R -> 0
+    // so any unused portion of a step carries through a pole instead of being
+    // discarded, and either wheel direction wraps continuously through 360°.
+    const radians = (current * Math.PI) / 180;
+    const z = radius * Math.sin(radians);
+    let travel;
+    if (current <= 90) travel = z;
+    else if (current <= 270) travel = (2 * radius) - z;
+    else travel = (4 * radius) + z;
+
+    const period = 4 * radius;
+    let nextTravel = (travel + (Math.sign(step) * distance)) % period;
+    if (nextTravel < 0) nextTravel += period;
+
+    const ratioToDegrees = value => (Math.asin(Math.max(-1, Math.min(1, value / radius))) * 180) / Math.PI;
+    let phase;
+    if (nextTravel <= radius) {
+      phase = ratioToDegrees(nextTravel);
+    } else if (nextTravel <= 3 * radius) {
+      const nextZ = (2 * radius) - nextTravel;
+      phase = 180 - ratioToDegrees(nextZ);
+    } else {
+      const nextZ = nextTravel - (4 * radius);
+      phase = 360 + ratioToDegrees(nextZ);
+    }
+    return normalizeDegrees(phase);
   }
 
   #stepArcPitch(currentInput, step, lengthInput, distanceInput) {
