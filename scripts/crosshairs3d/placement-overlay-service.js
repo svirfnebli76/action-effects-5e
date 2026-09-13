@@ -1,7 +1,8 @@
 import { finiteNumber } from "./geometry-utils.js";
 
 const ROOT_ID = "action-effects-5e-3d-crosshair-overlay";
-const ELEVATION_FONT_SIZE = 20;
+const ELEVATION_FONT_SIZE = 22;
+const ELEVATION_OFFSET_PX = ELEVATION_FONT_SIZE * 2;
 const CONFIRM_FONT_SIZE = 18;
 const MODE_FONT_SIZE = 16;
 const MODE_BOUNDARY_MARGIN = 22;
@@ -38,9 +39,9 @@ export class Crosshair3dPlacementOverlayService {
     const elevation = this.#createText(PIXI, "", {
       fontFamily: "Arial",
       fontSize: ELEVATION_FONT_SIZE,
-      fill: 0xffffff,
+      fill: "#FFFFFF",
       fontWeight: "700",
-      stroke: { color: 0x000000, width: 4 }
+      stroke: { color: "#000000", width: 4 }
     });
     elevation.name = "action-effects-5e-3d-crosshair-elevation";
     elevation.eventMode = "none";
@@ -52,9 +53,9 @@ export class Crosshair3dPlacementOverlayService {
     const confirm = this.#createText(PIXI, "Action Effects 3D Crosshairs — click to confirm", {
       fontFamily: "Arial",
       fontSize: CONFIRM_FONT_SIZE,
-      fill: 0xffffff,
+      fill: "#FFFFFF",
       fontWeight: "600",
-      stroke: { color: 0x000000, width: 4 }
+      stroke: { color: "#000000", width: 4 }
     });
     confirm.name = "action-effects-5e-3d-crosshair-confirm";
     confirm.eventMode = "none";
@@ -81,10 +82,10 @@ export class Crosshair3dPlacementOverlayService {
     if (this.#elevationText) {
       this.#elevationText.text = `${this.#formatElevation(elevation)} ft`;
       // Anchor the readout to the actual accepted crosshair center, then move
-      // it down by exactly one text-size unit. This remains centered for both
+      // it down by exactly two text-size units. This remains centered for both
       // odd- and even-grid-diameter crosshairs and never depends on a nearby
       // map-grid square center.
-      this.#elevationText.position.set(x, y + ELEVATION_FONT_SIZE);
+      this.#elevationText.position.set(x, y + ELEVATION_OFFSET_PX);
       this.#elevationText.visible = true;
     }
 
@@ -116,18 +117,32 @@ export class Crosshair3dPlacementOverlayService {
   }
 
   #createText(PIXI, text, style) {
-    // Foundry v14 currently exposes the classic PIXI.Text(text, style)
-    // signature. Passing a v8-style { text, style } object here renders as
-    // "[object Object]" on that runtime and also drops the intended style.
-    // Assign text explicitly after construction as an additional compatibility
-    // guard for runtimes which normalize the constructor differently.
+    // Foundry v14's PIXI Text compatibility layer accepts the text string but
+    // can silently ignore the second constructor argument. That is why the
+    // v0.4.4.8 overlay rendered the correct strings while retaining PIXI's
+    // default black style. Construct the display first, then apply an explicit
+    // TextStyle (or direct style assignment as a compatibility fallback).
+    const content = String(text ?? "");
     let display;
     try {
-      display = new PIXI.Text(String(text ?? ""), style);
+      display = new PIXI.Text(content);
     } catch (_error) {
-      display = new PIXI.Text({ text: String(text ?? ""), style });
+      display = new PIXI.Text({ text: content });
     }
-    display.text = String(text ?? "");
+
+    let resolvedStyle = style;
+    if (PIXI.TextStyle) {
+      try { resolvedStyle = new PIXI.TextStyle(style); }
+      catch (_error) { /* direct style assignment below remains available */ }
+    }
+
+    try { display.style = resolvedStyle; }
+    catch (_error) {
+      try { Object.assign(display.style ?? {}, style); }
+      catch (_nestedError) { /* noop */ }
+    }
+
+    display.text = content;
     return display;
   }
 
@@ -135,10 +150,10 @@ export class Crosshair3dPlacementOverlayService {
     const text = this.#createText(PIXI, mode, {
       fontFamily: "Arial",
       fontSize: MODE_FONT_SIZE,
-      fill: 0xffffff,
+      fill: "#FFFFFF",
       fontWeight: "700",
       letterSpacing: 1.25,
-      stroke: { color: 0x000000, width: 2 }
+      stroke: { color: "#000000", width: 2 }
     });
     text.name = "action-effects-5e-3d-crosshair-mode-text";
     text.eventMode = "none";
@@ -221,5 +236,5 @@ export const CROSSHAIR_3D_OVERLAY_PRESENTATION = Object.freeze({
   elevationFontSize: ELEVATION_FONT_SIZE,
   confirmFontSize: CONFIRM_FONT_SIZE,
   modeFontSize: MODE_FONT_SIZE,
-  elevationOffsetPx: ELEVATION_FONT_SIZE
+  elevationOffsetPx: ELEVATION_OFFSET_PX
 });

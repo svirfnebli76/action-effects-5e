@@ -10,13 +10,17 @@ function displayPosition(target) {
   target.position = { x: 0, y: 0, set: (x, y) => { target.position.x = x; target.position.y = y; } };
 }
 
+class FakeTextStyle {
+  constructor(style = {}) { Object.assign(this, style); }
+}
+
 class FakeText {
-  constructor(text = "", style = {}) {
-    // Deliberately model Foundry's classic PIXI.Text(text, style) signature.
-    // Passing { text, style } as the first argument would become
-    // "[object Object]", reproducing the v0.4.4.7 live bug.
+  constructor(text = "", _ignoredStyle = {}) {
+    // Model the v0.4.4.8 live Foundry behavior: the text string is accepted,
+    // but a second constructor style argument is silently ignored and the
+    // display retains the default black style until .style is assigned.
     this._text = String(text);
-    this.style = style;
+    this.style = { fontSize: 16, fill: "#000000" };
     this.visible = false;
     this.anchor = { x: 0, y: 0, set: (x, y) => { this.anchor.x = x; this.anchor.y = y; } };
     this.destroyed = false;
@@ -66,7 +70,7 @@ test("AE5E crosshair overlay uses authoritative centered text and a moving mode 
   const previousDocument = globalThis.document;
   try {
     globalThis.canvas = { interface: parent };
-    globalThis.PIXI = { Text: FakeText, Graphics: FakeGraphics, Container: FakeContainer };
+    globalThis.PIXI = { Text: FakeText, TextStyle: FakeTextStyle, Graphics: FakeGraphics, Container: FakeContainer };
     globalThis.document = undefined;
 
     const overlay = new Crosshair3dPlacementOverlayService();
@@ -82,15 +86,17 @@ test("AE5E crosshair overlay uses authoritative centered text and a moving mode 
     assert.ok(mode && modeText, "AE5E owns a mode badge that can move with the crosshair");
 
     assert.equal(confirm.text, "Action Effects 3D Crosshairs — click to confirm", "classic PIXI constructor never receives a text options object");
-    assert.equal(elevation.style.fontSize, 20);
-    assert.equal(elevation.style.fill, 0xffffff);
+    assert.equal(elevation.style.fontSize, 22);
+    assert.equal(elevation.style.fill, "#FFFFFF");
+    assert.equal(confirm.style.fill, "#FFFFFF", "confirmation text receives the explicit white TextStyle after construction");
+    assert.equal(modeText.style.fill, "#FFFFFF", "mode text receives the explicit white TextStyle after construction");
     assert.deepEqual([elevation.anchor.x, elevation.anchor.y], [0.5, 0.5], "elevation text is centered on the authoritative point before applying Y offset");
-    assert.equal(CROSSHAIR_3D_OVERLAY_PRESENTATION.elevationOffsetPx, 20);
+    assert.equal(CROSSHAIR_3D_OVERLAY_PRESENTATION.elevationOffsetPx, 44);
 
     overlay.update({ mode: "ELEVATE", elevation: 15, point: { x: 300, y: 400 }, gridSize: 100, footprintRadiusPx: 200 });
     assert.equal(elevation.text, "15 ft");
     assert.equal(elevation.position.x, 300);
-    assert.equal(elevation.position.y, 420, "20 px text receives a 20 px downward offset from the true crosshair center");
+    assert.equal(elevation.position.y, 444, "22 px text receives a 44 px downward offset (2x text height) from the true crosshair center");
     assert.equal(confirm.position.x, 300);
     assert.equal(confirm.position.y, 365);
     assert.equal(modeText.text, "ELEVATE");

@@ -1,3 +1,11 @@
+## 0.4.4.9 — Action Effects 3D Crosshairs — deterministic PIXI text styling
+
+- Corrected the live Foundry v14/PIXI overlay styling path discovered in v0.4.4.8. AE5E now constructs the text display first and then assigns an explicit `PIXI.TextStyle`, avoiding runtimes that accept the text string but silently ignore a second constructor style argument and leave the display at PIXI's default black styling.
+- Kept pure white (`#FFFFFF`) as the intended overlay text color and applies it explicitly to the elevation readout, authoritative click-to-confirm label, and MOVE / ROTATE / ELEVATE badge text.
+- Increased the elevation readout from 20 px to 22 px and changed its center-relative downward offset to 44 px (exactly two text-height units). The anchor remains the authoritative crosshair center and does not depend on map-grid-square centers.
+- Preserved all accepted v0.4.4.8 geometry, exact Scene-grid Z snapping, 360-degree cyclic elevation travel, wheel-direction preference, cursor-centered MOVE handoff, targeting/range behavior, mode-badge placement, authoritative confirmation-label placement, and dark-grey source tracer behavior.
+- Updated the overlay regression to emulate the v0.4.4.8 Foundry failure mode where constructor styling is ignored, proving explicit post-construction TextStyle assignment and the new 22 px / 44 px elevation presentation.
+
 ## 0.4.4.8 — Action Effects 3D Crosshairs — placement HUD polish and ELEVATE wheel preference
 
 - Corrected Foundry/PIXI text construction for the AE5E placement overlay. The authoritative confirmation label now renders its intended text instead of `[object Object]`, and overlay text styling is applied reliably.

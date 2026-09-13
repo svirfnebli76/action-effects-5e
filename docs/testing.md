@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.8
+# Current infrastructure acceptance — v0.4.4.9
 
 ## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
 
@@ -21,6 +21,8 @@ v0.4.4.4 adds regressions for cyclic remote elevation, reverse wrap from phase z
 v0.4.4.7 changes remote ELEVATE to authoritative Scene-grid Z snapping: each Ctrl-wheel notch advances to the next horizontal Z grid plane encountered around the retained construction circle, while XY is solved continuously from the circle rather than snapped to map-grid XY coordinates. This keeps accepted elevations on exact grid-distance values even when zenith/nadir falls between grid planes. The click-to-confirm label is now AE5E-owned and follows accepted authoritative placement rather than Sequencer's raw cursor carrier, eliminating boundary flicker. Default cursor-centered MOVE after modifier release, manual absolute-Z preservation, cyclic 360-degree travel, and the retained Entangle/Fireball dark-grey tracer remain unchanged.
 
 v0.4.4.8 is a presentation/input-preference pass only: the elevation readout is explicitly rendered with Foundry-compatible PIXI Text construction at 20 px white, centered on the accepted crosshair center with a 20 px downward offset; the MOVE/ROTATE/ELEVATE badge now follows the crosshair above its footprint; and the AE5E-owned confirmation label uses the same compatible text construction instead of rendering `[object Object]`. A new client setting, enabled by default, reverses Ctrl+mouse-wheel direction in ELEVATE mode without changing Shift+wheel ROTATE direction.
+
+v0.4.4.9 updates the overlay regression to model the live Foundry v14 behavior where a text string is accepted but constructor styling is ignored. AE5E now assigns an explicit post-construction `PIXI.TextStyle`, keeping elevation/confirmation/mode text at pure white (`#FFFFFF`). The elevation readout is 22 px and its authoritative-center Y offset is 44 px. No geometry or input-rule behavior changes from v0.4.4.8.
 
 Checkpoint 2 requires live Foundry acceptance because browser input interception, Sequencer CanvasEffect updates, PIXI guide placement, Token target highlighting/secrecy, Foundry surface resolution, and optional LOS cannot be accepted from Node tests alone. Checkpoint 3 must not begin until the focused live placement suite passes or any discovered runtime incompatibility is corrected.
 
