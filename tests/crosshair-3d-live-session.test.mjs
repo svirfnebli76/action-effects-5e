@@ -26,7 +26,7 @@ function fakeWindow() {
   };
 }
 
-function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride = null, carrierPosition = null } = {}) {
+function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride = null, carrierPosition = null, reverseElevationWheel = false } = {}) {
   const geometry = new Crosshair3dGeometryService();
   const cells = new Crosshair3dCellRasterizerService({ geometry });
   const tokens = new Crosshair3dTokenVolumeService();
@@ -62,7 +62,7 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
     dimensions: { distance: 5, sceneRect: { x: 0, y: 0 } },
     tokens: { placeables: [source, inside, outside], setTargets(ids) { targetHistory.push([...ids]); } }
   };
-  globalThis.game = { user: { targets: new Set() } };
+  globalThis.game = { user: { targets: new Set() }, settings: { get: () => reverseElevationWheel } };
   globalThis.MidiQOL = { isTargetable: () => true };
   globalThis.Sequencer = {
     Crosshair: {
@@ -139,6 +139,24 @@ test("Self Ray Ctrl-wheel changes pitch while preserving fixed centerline length
   });
   assert.equal(Math.round(result.pitch * 1000) / 1000, Math.round((Math.asin(5 / 20) * 180 / Math.PI) * 1000) / 1000);
   assert.equal(result.shape.length, 20);
+});
+
+test("ELEVATE mouse-wheel direction can be reversed by the client setting without changing Shift rotation", async () => {
+  const h = harness({
+    reverseElevationWheel: true,
+    carrierPosition: { x: 300, y: 100 },
+    onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 })
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: false, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  assert.equal(result.placementPoint.z, -5, "default reversed ELEVATE input sends an upward wheel notch toward the opposite construction-circle direction");
 });
 
 test("rapid wheel input preserves every accepted rotation notch while resolution coalesces", async () => {

@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.4.7";
+export const MODULE_VERSION = "0.4.4.8";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -28,7 +28,8 @@ export const SETTINGS = Object.freeze({
   DEBUG_LOGGING: "debugLogging",
   CAPTURE_DIAGNOSTICS: "captureMovementDiagnostics",
   OVERLAP_POLICY: "overlapPolicy",
-  REACTION_AUTHORITY_LEDGER: "reactionAuthorityLedger"
+  REACTION_AUTHORITY_LEDGER: "reactionAuthorityLedger",
+  CROSSHAIR_3D_REVERSE_ELEVATION_WHEEL: "crosshair3dReverseElevationWheel"
 });
 
 export const OVERLAP_POLICIES = Object.freeze({

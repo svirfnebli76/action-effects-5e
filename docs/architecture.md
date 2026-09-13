@@ -1,6 +1,6 @@
 # Action Effects 5E architecture
 
-## v0.4.4.7 Action Effects 3D Crosshairs — live placement and targeting
+## v0.4.4.8 Action Effects 3D Crosshairs — live placement and targeting
 
 The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
 
@@ -9,6 +9,8 @@ v0.4.4.3 is the first live-acceptance correction pass: remote construction-plane
 v0.4.4.4 makes remote construction-plane elevation fully cyclic: the temporary construction-plane phase wraps continuously through 0–360° in either direction instead of stopping at the original plane or vertical poles.
 
 v0.4.4.7 keeps the cyclic construction-plane model but makes the Scene vertical grid authoritative during remote ELEVATE. Each Ctrl-wheel notch advances to the next horizontal Scene-grid Z plane encountered in the selected travel direction; XY is solved continuously from the fixed-radius construction circle, so accepted world-Z remains exactly grid-snapped while horizontal construction coordinates are not artificially quantized. If a pole lies between two Z planes, traversal continues across it to the matching snapped intersection on the far side without publishing an unsnapped zenith/nadir point. By live-test preference, releasing ELEVATE/ROTATE still returns to Sequencer's default cursor-centered MOVE behavior while AE5E preserves manually selected absolute Z. The dark-grey Entangle/Fireball source tracer remains retained temporary placement presentation. The click-to-confirm label is AE5E-owned and follows only accepted authoritative placement, not the raw Sequencer cursor carrier. Self Cone/Ray pitch remains on its prior implementation pending dedicated live acceptance.
+
+v0.4.4.8 keeps all accepted geometry/range/targeting behavior from v0.4.4.7 and refines only placement presentation and input preference. PIXI text creation now uses the Foundry-compatible `Text(text, style)` path, the elevation readout is 20 px white and center-anchored with a 20 px visual Y offset, the mode badge follows accepted placement above the crosshair footprint, and the click-to-confirm label remains authoritative without the prior object-string rendering bug. The client-scoped `Reverse mouse wheel direction in ELEVATE mode` setting defaults on and inverts only Ctrl-wheel ELEVATE/PITCH travel; Shift-wheel yaw rotation remains unchanged.
 
 The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
 

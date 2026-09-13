@@ -1,4 +1,5 @@
 import { Logger } from "../core/logger.js";
+import { MODULE_ID, SETTINGS } from "../core/constants.js";
 import { CROSSHAIR_3D_SHAPES } from "./geometry-service.js";
 import { finiteNumber, normalizeDegrees } from "./geometry-utils.js";
 
@@ -291,7 +292,8 @@ export class Crosshair3dPlacementSessionService {
       }
       if ((event.ctrlKey || session.modifier.ctrl) && session.capabilities.elevation) {
         session.mode = "ELEVATE"; this.#overlay.update({ mode: "ELEVATE" });
-        this.#requestElevationStep(session, step);
+        const elevationStep = this.#reverseElevationWheelEnabled() ? -step : step;
+        this.#requestElevationStep(session, elevationStep);
       }
     };
     window.addEventListener("keydown", keydown, true);
@@ -547,7 +549,13 @@ export class Crosshair3dPlacementSessionService {
     else this.#guide.clearDrawing?.();
 
     const pixel = this.#metrics.distanceToPixels(revision.point, session.metrics);
-    this.#overlay.update({ mode: session.mode, elevation: revision.point.z, point: pixel, gridSize: session.metrics.size });
+    this.#overlay.update({
+      mode: session.mode,
+      elevation: revision.point.z,
+      point: pixel,
+      gridSize: session.metrics.size,
+      footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics)
+    });
     this.#syncCarrierToRevision(session, session.carrier, revision);
     if (typeof session.options.onRevision === "function") {
       try { session.options.onRevision(revision); } catch (error) { Logger.warn("3D Crosshairs onRevision callback failed.", error); }
@@ -570,6 +578,33 @@ export class Crosshair3dPlacementSessionService {
       carrier.refresh?.();
     } catch (error) {
       Logger.debug("Could not fully synchronize Sequencer crosshair carrier to accepted 3D revision.", error);
+    }
+  }
+
+  #reverseElevationWheelEnabled() {
+    try {
+      const value = globalThis.game?.settings?.get?.(MODULE_ID, SETTINGS.CROSSHAIR_3D_REVERSE_ELEVATION_WHEEL);
+      return typeof value === "boolean" ? value : true;
+    } catch (_error) {
+      return true;
+    }
+  }
+
+  #overlayFootprintRadiusPixels(shape, metrics) {
+    const toPixels = distance => (Math.max(0, finiteNumber(distance)) / Math.max(1e-9, finiteNumber(metrics?.distance, 5))) * Math.max(1, finiteNumber(metrics?.size, 100));
+    switch (shape?.type) {
+      case CROSSHAIR_3D_SHAPES.SPHERE:
+      case CROSSHAIR_3D_SHAPES.CYLINDER:
+        return toPixels(shape.radius);
+      case CROSSHAIR_3D_SHAPES.PRISM:
+        return toPixels(Math.hypot(finiteNumber(shape.width), finiteNumber(shape.length)) / 2);
+      case CROSSHAIR_3D_SHAPES.LINE:
+      case CROSSHAIR_3D_SHAPES.RAY:
+        return toPixels(Math.max(finiteNumber(shape.width) / 2, finiteNumber(metrics?.distance, 5) / 2));
+      case CROSSHAIR_3D_SHAPES.CONE:
+        return toPixels(finiteNumber(metrics?.distance, 5) / 2);
+      default:
+        return Math.max(1, finiteNumber(metrics?.size, 100) / 2);
     }
   }
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-test("v0.4.4.7 exposes the opt-in Action Effects 3D Crosshairs live placement API without replacing legacy crosshairs", () => {
+test("v0.4.4.8 exposes the opt-in Action Effects 3D Crosshairs live placement API without replacing legacy crosshairs", () => {
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
   assert.match(apiSource, /this\.crosshairs3d\s*=\s*Object\.freeze/);

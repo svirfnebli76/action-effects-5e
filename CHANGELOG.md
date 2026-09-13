@@ -1,3 +1,12 @@
+## 0.4.4.8 — Action Effects 3D Crosshairs — placement HUD polish and ELEVATE wheel preference
+
+- Corrected Foundry/PIXI text construction for the AE5E placement overlay. The authoritative confirmation label now renders its intended text instead of `[object Object]`, and overlay text styling is applied reliably.
+- Centered the elevation readout on the authoritative crosshair point, then applies a fixed 20 px downward visual offset. The readout is explicitly white, bold, and increased from the intended v0.4.4.7 18 px size to 20 px.
+- Moved the MOVE / ROTATE / ELEVATE badge from the top of the screen to an AE5E canvas badge that follows accepted placement and sits above the crosshair footprint while retaining the dark rounded presentation.
+- Added a client-scoped **3D Crosshair Settings** option: `Reverse mouse wheel direction in ELEVATE mode`. It defaults enabled and reverses only Ctrl+mouse-wheel ELEVATE/PITCH travel; Shift+wheel ROTATE direction is unchanged.
+- Preserved the accepted v0.4.4.7 exact Scene-grid Z snapping, free XY construction-circle solving, 360-degree cyclic travel, cursor-centered MOVE handoff, targeting, range, and dark-grey source tracer behavior.
+- Added deterministic regressions for Foundry-compatible overlay text, 20 px centered elevation placement, moving mode badge, setting registration/default, and reversed ELEVATE wheel input.
+
 ## 0.4.4.7 — Action Effects 3D Crosshairs — grid-Z elevation snapping and authoritative confirm label
 
 - Corrected remote ELEVATE snapping to match the intended vertical-grid UX. Ctrl-wheel now advances to the next horizontal Scene-grid Z plane encountered around the retained construction circle, so accepted elevations stay on exact grid-distance values (for example `0, 5, 10, 15...` on a 5-ft Scene) regardless of construction-circle radius. XY is solved continuously from the fixed-radius circle during ELEVATE rather than being quantized to map-grid XY coordinates.
