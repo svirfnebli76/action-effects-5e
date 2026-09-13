@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.2
+# Current infrastructure acceptance — v0.4.4.3
 
 ## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
 
@@ -13,6 +13,8 @@ node tests/crosshair-3d-public-api.test.mjs
 ```
 
 The Checkpoint 2 suites additionally verify confirm/cancel target ownership, exact five-degree Shift-wheel increments, one-grid-unit Ctrl-wheel intent, rapid-input coalescing without dropped notches, fixed-length Self Ray/Cone pitch, vertical opposite-apex handoff, current-Level surface preference, manual absolute-Z preservation under true-3D range clamping, and retained accepted-state Eskie artwork with AE5E guide fallback.
+
+v0.4.4.3 adds regressions for remote elevation continuing through vertical on the retained construction arc, non-destructive in-place accepted-state Sequencer presentation updates, and confirmation waiting for the newest pending manipulation revision before final carrier reconciliation.
 
 Checkpoint 2 requires live Foundry acceptance because browser input interception, Sequencer CanvasEffect updates, PIXI guide placement, Token target highlighting/secrecy, Foundry surface resolution, and optional LOS cannot be accepted from Node tests alone. Checkpoint 3 must not begin until the focused live placement suite passes or any discovered runtime incompatibility is corrected.
 

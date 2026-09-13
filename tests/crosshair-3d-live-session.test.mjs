@@ -154,6 +154,32 @@ test("rapid wheel input preserves every accepted rotation notch while resolution
   assert.equal(result.yaw, 15);
 });
 
+test("remote elevation crosses vertical on the retained construction arc even across Ctrl release/re-entry", async () => {
+  const h = harness({
+    onShow: ({ window }) => {
+      window.dispatch("keydown", { key: "Control" });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
+      window.dispatch("keyup", { key: "Control" });
+      window.dispatch("keydown", { key: "Control" });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
+      window.dispatch("keyup", { key: "Control" });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: false, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  assert.equal(result.revision.manualElevation, true);
+  assert.ok(result.placementPoint.x < 5 && result.placementPoint.y < 5, "continued elevation passes the top of the arc onto the opposite horizontal side");
+  assert.ok(Math.abs(result.placementPoint.z) < 1e-6, "two large arc steps complete the upper semicircle rather than clamping at 90 degrees");
+  assert.equal(h.service.getStats().wheelEvents, 2);
+});
+
 test("Self Cone/ Ray pitch crosses vertical by handing the apex to the opposite source boundary", async () => {
   const h = harness({
     onShow: ({ window }) => {

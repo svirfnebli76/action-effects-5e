@@ -1,8 +1,10 @@
 # Action Effects 5E architecture
 
-## v0.4.4.2 Action Effects 3D Crosshairs — live placement and targeting
+## v0.4.4.3 Action Effects 3D Crosshairs — live placement and targeting
 
 The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
+
+v0.4.4.3 is the first live-acceptance correction pass: remote construction-plane elevation can continue through vertical, accepted-state Sequencer art is transformed in place rather than using the destructive effect-update/reinitialize path, and confirmation synchronizes with the newest pending revision before reconciling the carrier.
 
 The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
 

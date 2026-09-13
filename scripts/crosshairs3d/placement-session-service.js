@@ -164,6 +164,7 @@ export class Crosshair3dPlacementSessionService {
         return Object.freeze({ cancelled: true, revision: session.current, targets: Object.freeze([]), shape: session.current.shape });
       }
 
+      await session.finalBarrier;
       await this.#requestResolution(session, { carrier: result.position, reason: "final-confirm", force: true });
       await session.finalBarrier;
       if (!session.current?.valid) {
@@ -214,6 +215,10 @@ export class Crosshair3dPlacementSessionService {
       if (session.mode !== "MOVE") this.#syncCarrierToRevision(session, crosshair, session.current);
     };
     if (callbacks.PLACED) callbackConfig[callbacks.PLACED] = async crosshair => {
+      // A rapid wheel burst may still be resolving when the click arrives. Let
+      // the newest requested manipulation publish first so the invisible carrier
+      // is synchronized to that authoritative state before final reconciliation.
+      await session.finalBarrier;
       await this.#requestResolution(session, { carrier: crosshair, reason: "placed-callback", force: true });
       await session.finalBarrier;
       return session.current?.valid === false ? false : undefined;
@@ -249,7 +254,6 @@ export class Crosshair3dPlacementSessionService {
       const next = session.modifier.ctrl && session.modifier.shift ? "MOVE" : session.modifier.ctrl ? "ELEVATE" : session.modifier.shift ? "ROTATE" : "MOVE";
       session.mode = next;
       this.#overlay.update({ mode: next });
-      if (next !== "ELEVATE") session.elevationArc = null;
     };
     const keydown = event => {
       if (event.key === "Shift") session.modifier.shift = true;
@@ -326,17 +330,32 @@ export class Crosshair3dPlacementSessionService {
       const radius = this.#range.distanceBetweenPoints(anchor, point);
       const dx = point.x - anchor.x, dy = point.y - anchor.y;
       const horizontal = Math.hypot(dx, dy);
-      const unit = horizontal > 1e-9 ? { x: dx / horizontal, y: dy / horizontal } : { x: Math.cos((state.yaw * Math.PI) / 180), y: Math.sin((state.yaw * Math.PI) / 180) };
-      session.elevationArc = { anchor, radius, unit };
+      const unit = horizontal > 1e-9
+        ? { x: dx / horizontal, y: dy / horizontal }
+        : { x: Math.cos((state.yaw * Math.PI) / 180), y: Math.sin((state.yaw * Math.PI) / 180) };
+      const phase = radius > 1e-9
+        ? (Math.atan2(point.z - anchor.z, horizontal) * 180) / Math.PI
+        : 0;
+      session.elevationArc = { anchor, radius, unit, phase };
     }
     const arc = session.elevationArc;
-    let z = finiteNumber(state.selectedAbsoluteZ, state.point.z) + (step * session.metrics.distance);
-    z = Math.max(arc.anchor.z - arc.radius, Math.min(arc.anchor.z + arc.radius, z));
-    const dz = z - arc.anchor.z;
-    const horizontal = Math.sqrt(Math.max(0, (arc.radius * arc.radius) - (dz * dz)));
-    const point = { x: arc.anchor.x + arc.unit.x * horizontal, y: arc.anchor.y + arc.unit.y * horizontal, z };
+    if (arc.radius <= 1e-9) return;
+    const phase = this.#stepArcPitch(arc.phase, step, arc.radius, session.metrics.distance);
+    arc.phase = phase;
+    const radians = (phase * Math.PI) / 180;
+    const signedHorizontal = arc.radius * Math.cos(radians);
+    const z = arc.anchor.z + (arc.radius * Math.sin(radians));
+    const point = {
+      x: arc.anchor.x + (arc.unit.x * signedHorizontal),
+      y: arc.anchor.y + (arc.unit.y * signedHorizontal),
+      z
+    };
     Object.assign(session.intent, { point, selectedAbsoluteZ: z, manualElevation: true });
-    this.#requestResolution(session, { statePatch: { point, selectedAbsoluteZ: z, manualElevation: true }, reason: "wheel-elevate", force: true });
+    this.#requestResolution(session, {
+      statePatch: { point, selectedAbsoluteZ: z, manualElevation: true },
+      reason: "wheel-elevate",
+      force: true
+    });
   }
 
   async #requestResolution(session, request = {}) {

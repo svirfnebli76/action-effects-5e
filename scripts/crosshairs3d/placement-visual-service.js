@@ -106,6 +106,7 @@ export class Crosshair3dPlacementVisualService {
       visualShape: null,
       file: null,
       resolution: null,
+      effectId: null,
       updateSerial: 0,
       closed: false,
       options
@@ -168,14 +169,13 @@ export class Crosshair3dPlacementVisualService {
         state.file = resolution.file;
         state.visualShape = visualShape;
         state.resolution = resolution;
+        state.effectId = this.#findEffect(state)?.id ?? null;
       } else {
-        const updates = {
-          source: { x: pixel.x, y: pixel.y },
-          angle: yaw,
-          elevation: { elevation: shape.origin.z, absolute: true }
-        };
-        if (size) updates.size = size;
-        await globalThis.Sequencer?.EffectManager?.updateEffects?.({ name: state.effectName }, updates);
+        const updated = await this.#updateEffectInPlace(state, { pixel, yaw, elevation: shape.origin.z, size });
+        if (!updated) {
+          await this.#endEffect(state);
+          return Object.freeze({ artwork: false, guide: true, reason: "in-place-update-unavailable", resolution });
+        }
       }
       return Object.freeze({ artwork: true, guide: false, reason: "eskie", resolution });
     } catch (error) {
@@ -197,6 +197,43 @@ export class Crosshair3dPlacementVisualService {
     return Object.freeze({ sessions: this.#sessions.size, activeEffects: [...this.#sessions.values()].filter(session => session.active).length });
   }
 
+  #findEffect(state) {
+    const manager = globalThis.Sequencer?.EffectManager;
+    if (typeof manager?.getEffects !== "function") return null;
+    try {
+      const effects = manager.getEffects({ name: state.effectName }) ?? [];
+      if (state.effectId) return effects.find(effect => effect?.id === state.effectId) ?? effects[0] ?? null;
+      return effects[0] ?? null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async #updateEffectInPlace(state, { pixel, yaw, elevation, size }) {
+    const effect = this.#findEffect(state);
+    if (!effect?.data || typeof effect._transformSprite !== "function") return false;
+
+    // Sequencer 4.2.x EffectManager.updateEffects() intentionally reinitializes
+    // CanvasEffect media. That is correct for document-like persistent updates,
+    // but causes a visible one-frame-or-longer blink during interactive placement.
+    // The Checkpoint 2 artwork is local and session-owned, so update only the
+    // existing CanvasEffect transform data and re-run its transform pass without
+    // destroying/recreating the sprite or restarting its WebM playback.
+    const source = { x: pixel.x, y: pixel.y };
+    effect.data.source = source;
+    effect._source = source;
+    if (effect._cachedSourceData) effect._cachedSourceData.position = source;
+    effect.data.angle = yaw;
+    effect._customAngle = yaw;
+    effect.data.elevation = { elevation, absolute: true };
+    if ("elevation" in effect) effect.elevation = elevation;
+    if (size) effect.data.size = { width: size.width, height: size.height, gridUnits: true };
+
+    await effect._transformSprite();
+    state.effectId = effect.id ?? state.effectId;
+    return true;
+  }
+
   async #endEffect(state) {
     if (!state?.active) return;
     try {
@@ -208,5 +245,6 @@ export class Crosshair3dPlacementVisualService {
     state.file = null;
     state.visualShape = null;
     state.resolution = null;
+    state.effectId = null;
   }
 }

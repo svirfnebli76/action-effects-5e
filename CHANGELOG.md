@@ -1,3 +1,11 @@
+## 0.4.4.3 — Action Effects 3D Crosshairs — Checkpoint 2 live acceptance corrections
+
+- Corrected remote ELEVATE construction-plane travel so Sphere/Prism-style remote placements continue naturally through vertical and onto the opposite side of the source instead of clamping at ±90 degrees. The retained arc survives Ctrl release/re-entry and resets when actual XY MOVE changes the placement plane.
+- Corrected accepted-state Eskie/Sequencer presentation flicker. Session-owned placement artwork is now transformed in place instead of calling Sequencer 4.2.x `EffectManager.updateEffects()`, whose update path destroys and reinitializes CanvasEffect media. If the required live transform capability is unavailable, AE5E falls back to its retained guide instead of repeatedly rebuilding the effect.
+- Corrected final-confirm synchronization so a click cannot reconcile an older hidden-carrier position over a newer still-resolving wheel revision. Confirmation now waits for the newest authoritative revision before final carrier reconciliation and commit.
+- Added deterministic regressions for through-vertical remote elevation across modifier release/re-entry, retained non-destructive visual updates, and confirmation while manipulation work is still pending.
+- No Checkpoint 3 propagation, persistent Region, compendium, or Item behavior was added or changed.
+
 ## 0.4.4.2 — Action Effects 3D Crosshairs — live placement and targeting
 
 - Added the opt-in live `ae5e.crosshairs3d.show(...)` placement session on top of the v0.4.4.1 pure 3D geometry foundation. Existing `ae5e.crosshairs` Items remain unchanged.

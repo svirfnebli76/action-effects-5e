@@ -4,13 +4,14 @@ import assert from "node:assert/strict";
 import { Crosshair3dPlacementVisualService } from "../scripts/crosshairs3d/placement-visual-service.js";
 
 function installSequencerStub() {
-  const calls = { starts: [], updates: [], ends: [] };
+  const calls = { starts: [], transforms: [], destructiveUpdates: [], ends: [] };
+  const activeEffects = new Map();
   class EffectBuilder {
     constructor() { this.data = {}; }
     name(v) { this.data.name = v; return this; }
     file(v) { this.data.file = v; return this; }
     atLocation(v) { this.data.source = v; return this; }
-    elevation(v, options) { this.data.elevation = { value: v, options }; return this; }
+    elevation(v, options) { this.data.elevation = { elevation: v, ...options }; return this; }
     rotate(v) { this.data.angle = v; return this; }
     opacity(v) { this.data.opacity = v; return this; }
     locally() { this.data.local = true; return this; }
@@ -22,13 +23,43 @@ function installSequencerStub() {
   class SequenceStub {
     constructor() { this.builder = new EffectBuilder(); }
     effect() { return this.builder; }
-    async play() { calls.starts.push(structuredClone(this.builder.data)); }
+    async play() {
+      const data = structuredClone(this.builder.data);
+      calls.starts.push(data);
+      const effect = {
+        id: `effect-${data.name}`,
+        data,
+        _source: data.source,
+        _cachedSourceData: { position: data.source },
+        _customAngle: data.angle ?? 0,
+        elevation: data.elevation?.elevation ?? 0,
+        async _transformSprite() {
+          calls.transforms.push({
+            id: this.id,
+            source: structuredClone(this.data.source),
+            angle: this.data.angle,
+            elevation: structuredClone(this.data.elevation),
+            size: structuredClone(this.data.size)
+          });
+        }
+      };
+      activeEffects.set(data.name, effect);
+    }
   }
   globalThis.Sequence = SequenceStub;
   globalThis.Sequencer = {
     EffectManager: {
-      async updateEffects(filter, updates) { calls.updates.push({ filter: structuredClone(filter), updates: structuredClone(updates) }); },
-      async endEffects(filter) { calls.ends.push(structuredClone(filter)); }
+      getEffects({ name }) {
+        const effect = activeEffects.get(name);
+        return effect ? [effect] : [];
+      },
+      async updateEffects(filter, updates) {
+        calls.destructiveUpdates.push({ filter: structuredClone(filter), updates: structuredClone(updates) });
+      },
+      async endEffects(filter) {
+        calls.ends.push(structuredClone(filter));
+        if (filter?.name) activeEffects.delete(filter.name);
+      }
     }
   };
   globalThis.foundry = { utils: { randomID: () => "visual-test" } };
@@ -48,7 +79,7 @@ function crosshairs() {
   };
 }
 
-test("accepted-state Eskie artwork starts once and is subsequently updated by name", async () => {
+test("accepted-state Eskie artwork starts once and transforms the same live sprite in place", async () => {
   const calls = installSequencerStub();
   const service = new Crosshair3dPlacementVisualService({ crosshairs: crosshairs(), metrics: metrics() });
   const state = service.createSession({ id: "one" });
@@ -58,10 +89,10 @@ test("accepted-state Eskie artwork starts once and is subsequently updated by na
   assert.equal(first.artwork, true);
   assert.equal(second.artwork, true);
   assert.equal(calls.starts.length, 1, "one retained visual is started");
-  assert.equal(calls.updates.length, 1, "the retained effect is updated instead of recreated");
-  assert.equal(calls.updates[0].filter.name, "action-effects-5e.crosshair3d.accepted.one");
-  assert.deepEqual(calls.updates[0].updates.source, { x: 200, y: 200 });
-  assert.equal(calls.updates[0].updates.angle, 25);
+  assert.equal(calls.transforms.length, 1, "the retained CanvasEffect is transformed without media reinitialization");
+  assert.equal(calls.destructiveUpdates.length, 0, "Sequencer updateEffects is not used during interactive movement");
+  assert.deepEqual(calls.transforms[0].source, { x: 200, y: 200 });
+  assert.equal(calls.transforms[0].angle, 25);
   await service.clear(state);
   assert.equal(calls.ends.at(-1).name, "action-effects-5e.crosshair3d.accepted.one");
 });
