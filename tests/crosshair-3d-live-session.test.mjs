@@ -235,21 +235,19 @@ test("remote elevation remains cyclic across repeated full-circle travel and Ctr
   assert.equal(h.service.getStats().wheelEvents, 8);
 });
 
-test("releasing Ctrl preserves the elevated crosshair-to-pointer offset instead of snapping to the cursor", async () => {
-  let elevatedPoint = null;
+test("releasing Ctrl returns remote MOVE to the cursor position while preserving manual Z", async () => {
   const h = harness({
     carrierPosition: { x: 300, y: 100 },
     onShow: async ({ carrier, callbacks, window }) => {
       window.dispatch("keydown", { key: "Control" });
       window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
       await new Promise(resolve => setTimeout(resolve, 5));
-      elevatedPoint = { ...h.service.getStats() };
       window.dispatch("keyup", { key: "Control" });
       await new Promise(resolve => setTimeout(resolve, 70));
 
-      // Simulate the physical pointer moving 20 px right after Ctrl release.
-      // Sequencer presents the raw pointer-centered carrier to MOVE; AE5E must
-      // translate from the accepted elevated position rather than snap to it.
+      // Default Sequencer MOVE behavior is cursor-centered. After Ctrl release,
+      // the next raw carrier position therefore becomes authoritative XY again,
+      // while AE5E preserves the manually selected absolute Z.
       carrier.x = 320; carrier.document.x = 320;
       carrier.y = 100; carrier.document.y = 100;
       await callbacks.move?.(carrier);
@@ -268,9 +266,9 @@ test("releasing Ctrl preserves the elevated crosshair-to-pointer offset instead 
   const elevated = revisions.find(revision => revision.reason === "wheel-elevate");
   const moved = revisions.find(revision => revision.reason === "move" && revision.revision > elevated.revision);
   assert.ok(elevated && moved);
-  assert.ok(Math.abs((moved.point.x - elevated.point.x) - 1) < 0.05, "20 px pointer motion produces only the corresponding 1-ft XY translation");
-  assert.ok(Math.abs(moved.point.y - elevated.point.y) < 0.05, "handoff does not inject a Y snap");
-  assert.equal(moved.point.z, elevated.point.z, "manual Z is preserved during the smooth MOVE handoff");
+  assert.ok(Math.abs(moved.point.x - 16) < 0.05, "MOVE reacquires the raw 320 px cursor-centered X position");
+  assert.ok(Math.abs(moved.point.y - 5) < 0.05, "MOVE reacquires the raw 100 px cursor-centered Y position");
+  assert.equal(moved.point.z, elevated.point.z, "manual Z remains preserved when MOVE snaps back under the cursor");
   assert.equal(result.cancelled, false);
 });
 

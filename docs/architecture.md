@@ -1,6 +1,6 @@
 # Action Effects 5E architecture
 
-## v0.4.4.5 Action Effects 3D Crosshairs — live placement and targeting
+## v0.4.4.6 Action Effects 3D Crosshairs — live placement and targeting
 
 The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
 
@@ -8,7 +8,7 @@ v0.4.4.3 is the first live-acceptance correction pass: remote construction-plane
 
 v0.4.4.4 makes remote construction-plane elevation fully cyclic: the temporary construction-plane phase wraps continuously through 0–360° in either direction instead of stopping at the original plane or vertical poles.
 
-v0.4.4.5 refines that cyclic model so each Ctrl-wheel notch advances exactly one Scene grid-distance along the fixed-radius construction arc (`s = rθ`), eliminating the large spatial jumps that vertical-Z stepping produced near zenith/nadir. Returning from ELEVATE/ROTATE to MOVE now preserves the accepted crosshair-to-pointer XY offset so the first normal mouse movement begins smoothly from the authoritative placement rather than snapping back under the physical cursor. The established dark-grey Entangle/Fireball source tracer is also restored as retained temporary placement presentation. Self Cone/Ray pitch remains on its prior implementation pending dedicated live acceptance.
+v0.4.4.6 keeps the cyclic construction-plane model in which each Ctrl-wheel notch advances exactly one Scene grid-distance along the fixed-radius construction arc (`s = rθ`), eliminating the large spatial jumps that vertical-Z stepping produced near zenith/nadir. By live-test preference, releasing ELEVATE/ROTATE now returns to Sequencer's default cursor-centered MOVE behavior: the next mouse movement reacquires cursor XY while AE5E preserves the manually selected absolute Z. The established dark-grey Entangle/Fireball source tracer remains retained temporary placement presentation. Self Cone/Ray pitch remains on its prior implementation pending dedicated live acceptance.
 
 The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
 

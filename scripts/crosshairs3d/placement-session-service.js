@@ -142,8 +142,6 @@ export class Crosshair3dPlacementSessionService {
       listeners: [],
       modifier: { shift: false, ctrl: false },
       carrierSuppressionUntil: 0,
-      pointerPixel: null,
-      moveOffsetPixel: null,
       mode: "MOVE",
       lastTargetIds: [...originalTargetIds],
       elevationArc: null,
@@ -210,10 +208,6 @@ export class Crosshair3dPlacementSessionService {
     const callbackConfig = {};
     const request = crosshair => {
       if (Date.now() < session.carrierSuppressionUntil) return session.current;
-      const raw = crosshair?.document ?? crosshair;
-      if (Number.isFinite(Number(raw?.x)) && Number.isFinite(Number(raw?.y))) {
-        session.pointerPixel = { x: Number(raw.x), y: Number(raw.y) };
-      }
       return this.#requestResolution(session, { carrier: crosshair, reason: "move" });
     };
     if (callbacks.SHOW) callbackConfig[callbacks.SHOW] = async crosshair => {
@@ -222,12 +216,7 @@ export class Crosshair3dPlacementSessionService {
     };
     if (callbacks.MOVE) callbackConfig[callbacks.MOVE] = request;
     if (callbacks.MOUSE_MOVE) callbackConfig[callbacks.MOUSE_MOVE] = crosshair => {
-      if (session.mode === "MOVE") return;
-      const raw = crosshair?.document ?? crosshair;
-      if (Number.isFinite(Number(raw?.x)) && Number.isFinite(Number(raw?.y))) {
-        session.pointerPixel = { x: Number(raw.x), y: Number(raw.y) };
-      }
-      this.#syncCarrierToRevision(session, crosshair, session.current);
+      if (session.mode !== "MOVE") this.#syncCarrierToRevision(session, crosshair, session.current);
     };
     if (callbacks.PLACED) callbackConfig[callbacks.PLACED] = async crosshair => {
       // A rapid wheel burst may still be resolving when the click arrives. Let
@@ -266,22 +255,7 @@ export class Crosshair3dPlacementSessionService {
     const window = globalThis.window;
     if (!window?.addEventListener) return;
     const updateMode = () => {
-      const previous = session.mode;
       const next = session.modifier.ctrl && session.modifier.shift ? "MOVE" : session.modifier.ctrl ? "ELEVATE" : session.modifier.shift ? "ROTATE" : "MOVE";
-
-      // Modifier-driven 3D manipulation intentionally moves the authoritative
-      // crosshair away from the physical mouse pointer. When returning to MOVE,
-      // preserve that separation so the first mouse event translates from the
-      // accepted point instead of snapping the crosshair back under the cursor.
-      if (previous !== "MOVE" && next === "MOVE") {
-        const acceptedPixel = this.#metrics.distanceToPixels(session.intent.point, session.metrics);
-        const pointer = session.pointerPixel ?? acceptedPixel;
-        session.moveOffsetPixel = {
-          x: acceptedPixel.x - pointer.x,
-          y: acceptedPixel.y - pointer.y
-        };
-      }
-
       session.mode = next;
       this.#overlay.update({ mode: next });
     };
@@ -438,9 +412,7 @@ export class Crosshair3dPlacementSessionService {
         patch.point = this.#resolveSelfApex(session.source, patch.yaw, patch.pitch, session.metrics, session.sourceVolume);
         Object.assign(session.intent, { headingYaw, yaw: patch.yaw, pitch: patch.pitch, point: patch.point });
       } else {
-        const rawPixel = { x: finiteNumber(carrier.x), y: finiteNumber(carrier.y) };
-        const offset = session.moveOffsetPixel ?? { x: 0, y: 0 };
-        const pixelPoint = { x: rawPixel.x + offset.x, y: rawPixel.y + offset.y };
+        const pixelPoint = { x: finiteNumber(carrier.x), y: finiteNumber(carrier.y) };
         const point = this.#resolveRemoteMovePoint(session, pixelPoint, previous.point.z);
         patch.point = point;
         patch.selectedAbsoluteZ = intended.manualElevation ? intended.selectedAbsoluteZ : point.z;

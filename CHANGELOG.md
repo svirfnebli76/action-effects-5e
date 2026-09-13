@@ -1,3 +1,9 @@
+## 0.4.4.6 — Action Effects 3D Crosshairs — restore default cursor-centered MOVE handoff
+
+- Reverted only the v0.4.4.5 modifier-to-MOVE pointer-offset preservation after live-test preference. Releasing Ctrl/Shift now returns remote placement to the established/default Sequencer cursor-centered MOVE behavior: the next mouse movement reacquires cursor XY directly.
+- Manual absolute Z remains preserved across that MOVE transition. The v0.4.4.5 constant one-Scene-grid-distance orbital arc stepping, 360-degree cyclic travel, and retained dark-grey Entangle/Fireball source tracer remain unchanged.
+- Replaced the smooth-handoff regression with deterministic coverage proving cursor-centered XY reacquisition plus manual-Z preservation.
+
 ## 0.4.4.5 — Action Effects 3D Crosshairs — uniform orbital steps and smooth MOVE handoff
 
 - Corrected remote Ctrl-wheel elevation so each accepted notch advances exactly one Scene grid-distance along the fixed-radius construction arc (`s = rθ`). This removes the large spatial jumps near zenith/nadir while preserving continuous 360° travel in either direction.
