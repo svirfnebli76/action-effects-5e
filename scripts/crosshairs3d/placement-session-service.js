@@ -53,12 +53,13 @@ export class Crosshair3dPlacementSessionService {
   #metrics;
   #surfaces;
   #overlay;
+  #elevationGauge;
   #guide;
   #visuals;
   #active = null;
   #stats = { sessions: 0, confirmed: 0, cancelled: 0, errors: 0, revisions: 0, targetRecalculations: 0, staleDiscards: 0, wheelEvents: 0 };
 
-  constructor({ crosshairs, geometry, cells, tokens, range, revisions, targeting, metrics, surfaces, overlay, guide, visuals = null }) {
+  constructor({ crosshairs, geometry, cells, tokens, range, revisions, targeting, metrics, surfaces, overlay, elevationGauge = null, guide, visuals = null }) {
     this.#crosshairs = crosshairs;
     this.#geometry = geometry;
     this.#cells = cells;
@@ -69,6 +70,7 @@ export class Crosshair3dPlacementSessionService {
     this.#metrics = metrics;
     this.#surfaces = surfaces;
     this.#overlay = overlay;
+    this.#elevationGauge = elevationGauge;
     this.#guide = guide;
     this.#visuals = visuals;
   }
@@ -158,6 +160,7 @@ export class Crosshair3dPlacementSessionService {
     if (capabilities.elevation) hints.push("Hold Ctrl + Mousewheel to Elevate/Lower");
     hints.push("Right Click to Cancel");
     this.#overlay.show({ mode: "MOVE", hints });
+    this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
     this.#guide.show();
     this.#installInput(session);
 
@@ -552,14 +555,58 @@ export class Crosshair3dPlacementSessionService {
     this.#overlay.update({
       mode: session.mode,
       elevation: revision.point.z,
+      originElevation: session.sourceVolume?.bottom,
       point: pixel,
       gridSize: session.metrics.size,
       footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics)
     });
+    this.#elevationGauge?.update?.(this.#elevationGaugeState(session, revision));
     this.#syncCarrierToRevision(session, session.carrier, revision);
     if (typeof session.options.onRevision === "function") {
       try { session.options.onRevision(revision); } catch (error) { Logger.warn("3D Crosshairs onRevision callback failed.", error); }
     }
+  }
+
+  #elevationGaugeState(session, revision) {
+    const point = revision?.point ?? session.intent?.point ?? { x: 0, y: 0, z: 0 };
+    const configuredRange = finiteNumber(session.options?.range?.max ?? session.options?.maxRange, NaN);
+
+    // Self Cone/Ray uses the spell/effect endpoint as B. The apex remains A,
+    // while the pitch arc supplies the side-view angle.
+    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
+      const distance = Math.max(0, finiteNumber(session.baseShape.length));
+      const endpointZ = finiteNumber(revision?.endpointZ, point.z);
+      const elevationDelta = endpointZ - finiteNumber(point.z);
+      return Object.freeze({
+        distance,
+        maxRange: Number.isFinite(configuredRange) && configuredRange > 0 ? configuredRange : distance,
+        angle: normalizeDegrees(revision?.arcPitch ?? revision?.pitch),
+        elevationDelta,
+        belowOrigin: endpointZ < finiteNumber(point.z),
+        visible: Boolean(session.capabilities?.elevation)
+      });
+    }
+
+    // Remote placements use the same nearest-point source anchor that owns the
+    // retained construction circle and true-3D range measurement. While the
+    // user is actively travelling the elevation circle, elevationPhase keeps
+    // the far-side (181-359 degree) half of the side view unambiguous.
+    const anchor = session.elevationArc?.anchor ?? this.#range.nearestPointOnVolume(session.sourceVolume, point);
+    const distance = this.#range.distanceBetweenPoints(anchor, point);
+    const dx = finiteNumber(point.x) - finiteNumber(anchor.x);
+    const dy = finiteNumber(point.y) - finiteNumber(anchor.y);
+    const horizontal = Math.hypot(dx, dy);
+    const fallbackAngle = normalizeDegrees((Math.atan2(finiteNumber(point.z) - finiteNumber(anchor.z), horizontal) * 180) / Math.PI);
+    const angle = Number.isFinite(Number(revision?.elevationPhase)) ? normalizeDegrees(revision.elevationPhase) : fallbackAngle;
+    const elevationDelta = finiteNumber(point.z) - finiteNumber(anchor.z);
+    return Object.freeze({
+      distance,
+      maxRange: Number.isFinite(configuredRange) && configuredRange > 0 ? configuredRange : Math.max(distance, session.metrics?.distance ?? 5),
+      angle,
+      elevationDelta,
+      belowOrigin: elevationDelta < 0,
+      visible: Boolean(session.capabilities?.elevation)
+    });
   }
 
   #syncCarrierToRevision(session, carrierInput, revision) {
@@ -743,6 +790,7 @@ export class Crosshair3dPlacementSessionService {
     }
     session.listeners.length = 0;
     this.#overlay.clear();
+    this.#elevationGauge?.clear?.();
     this.#guide.clear();
     if (session.visualState && this.#visuals) await this.#visuals.clear(session.visualState);
     if (this.#active === session) this.#active = null;

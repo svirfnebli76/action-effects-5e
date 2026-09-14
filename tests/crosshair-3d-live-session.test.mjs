@@ -35,8 +35,10 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
   const targeting = new Crosshair3dTargetingGeometryService({ cells, tokens });
   const metrics = new Crosshair3dCanvasMetricsService();
   const overlayEvents = [];
+  const elevationGaugeEvents = [];
   const guideEvents = [];
   const overlay = { show: data => overlayEvents.push(["show", data]), update: data => overlayEvents.push(["update", data]), clear: () => overlayEvents.push(["clear"]) };
+  const elevationGauge = { show: data => elevationGaugeEvents.push(["show", data]), update: data => elevationGaugeEvents.push(["update", data]), clear: () => elevationGaugeEvents.push(["clear"]) };
   const guide = { show: () => true, update: shape => guideEvents.push(shape), clear: () => guideEvents.push("clear") };
   const surfaces = surfaceOverride ?? { resolveAt: ({ fallbackElevation = 0 }) => ({ elevation: fallbackElevation, surface: null, source: "test" }) };
   const source = token({ id: "source", x: 0, y: 0, elevation: 0 });
@@ -81,8 +83,8 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
   globalThis.CONST = { GRID_SNAPPING_MODES: { CENTER: 1 } };
   globalThis.foundry = { utils: { randomID: () => "session-test" } };
 
-  const service = new Crosshair3dPlacementSessionService({ crosshairs: {}, geometry, cells, tokens, range, revisions, targeting, metrics, surfaces, overlay, guide });
-  return { service, source, inside, outside, carrier, targetHistory, overlayEvents, guideEvents, crosshairConfigs, window };
+  const service = new Crosshair3dPlacementSessionService({ crosshairs: {}, geometry, cells, tokens, range, revisions, targeting, metrics, surfaces, overlay, elevationGauge, guide });
+  return { service, source, inside, outside, carrier, targetHistory, overlayEvents, elevationGaugeEvents, guideEvents, crosshairConfigs, window };
 }
 
 test("live 3D placement collects targets through the grid-cell rules and preserves confirmed targets", async () => {
@@ -208,6 +210,9 @@ test("remote elevation snaps Z to Scene grid planes while XY remains continuous 
     "ELEVATE solves XY continuously instead of forcing the construction circle onto map-grid XY coordinates"
   );
   assert.equal(h.service.getStats().wheelEvents, 4);
+  assert.ok(h.elevationGaugeEvents.some(([type, data]) => type === "show" && data?.enabled === true), "elevation-capable placement creates the Crosshair Elevation Gauge");
+  assert.ok(h.elevationGaugeEvents.some(([type, data]) => type === "update" && data?.maxRange === 60 && Number.isFinite(data?.distance)), "gauge receives authoritative range-scaled side-view state");
+  assert.equal(h.elevationGaugeEvents.at(-1)?.[0], "clear", "gauge cleans up with the placement session");
 });
 
 test("remote elevation stays grid-Z snapped across an unsnapped zenith", async () => {
@@ -255,6 +260,11 @@ test("remote elevation wraps backward from phase zero instead of clamping", asyn
   assert.equal(result.cancelled, false);
   assert.ok(result.revision.elevationPhase > 270 && result.revision.elevationPhase < 360, "negative travel wraps into the 270-360 degree quadrant");
   assert.ok(result.placementPoint.z < 0, "the first reverse notch moves below the starting plane instead of sticking at zero");
+  const redOverlay = h.overlayEvents.find(([type, data]) => type === "update" && Number(data?.elevation) < Number(data?.originElevation));
+  assert.ok(redOverlay, "accepted below-source elevation is explicitly identified to the overlay for red presentation");
+  const negativeGauge = h.elevationGaugeEvents.find(([type, data]) => type === "update" && data?.belowOrigin === true);
+  assert.ok(negativeGauge, "Crosshair Elevation Gauge receives the below-origin side-view state");
+  assert.ok(negativeGauge[1].angle > 270 && negativeGauge[1].angle < 360, "gauge preserves the far-side/reverse construction angle instead of flattening it to a right-half-plane angle");
 });
 
 test("remote elevation remains cyclic across repeated full-circle travel and Ctrl release/re-entry", async () => {

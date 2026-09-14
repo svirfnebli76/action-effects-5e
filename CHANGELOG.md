@@ -1,3 +1,12 @@
+## 0.4.4.10 — Action Effects 3D Crosshairs — Crosshair Elevation Gauge
+
+- Added the Checkpoint 2 **Crosshair Elevation Gauge**, a temporary retained PIXI/SmoothGraphics-style side-view HUD for elevation-capable Action Effects 3D Crosshairs placement. It is approximately 276 px in diameter, anchored near screen position 320×275 on a 1920×1080 canvas, remains fixed in screen space through Scene pan/zoom, and cleans up with the placement session.
+- The gauge uses a fixed visual diameter while its internal radial scale follows the spell/effect range with 10% visual headroom. It shows a source/origin center dot, dashed source-level horizontal axis, 0°/90°/180°/270° labels, 10-degree circumference ticks, stronger orientation ticks, an A→B radial vector, current source-to-destination distance, and the current side-view elevation at B.
+- The destination elevation label follows the accepted side-view angle: 181°–359° places the label below B; the remaining half places it above. Below-origin gauge elevation is red; otherwise it is white. Remote placement preserves the retained construction-circle phase so far-side 181°–359° travel remains visible instead of collapsing into a right-half-plane projection. Self Cone/Ray uses the fixed-length endpoint and pitch arc for the same side-view instrument.
+- Updated the existing crosshair elevation readout so accepted destination elevations below the source Token's base elevation render red (`#FF3B30`); elevations at or above the source base remain white. Text content/position remains unchanged from v0.4.4.9.
+- Preserved all accepted v0.4.4.9 geometry, exact Scene-grid Z snapping, cyclic 360-degree elevation travel, range/targeting rules, wheel preference, cursor-centered MOVE handoff, authoritative confirmation label, mode badge, and dark-grey source tracer.
+- Added deterministic regressions for fixed-size screen-space gauge anchoring, pan/zoom scale cancellation, gauge range/elevation/distance presentation, negative-elevation color, retained cleanup, session-state wiring, and red-below-source overlay behavior.
+
 ## 0.4.4.9 — Action Effects 3D Crosshairs — deterministic PIXI text styling
 
 - Corrected the live Foundry v14/PIXI overlay styling path discovered in v0.4.4.8. AE5E now constructs the text display first and then assigns an explicit `PIXI.TextStyle`, avoiding runtimes that accept the text string but silently ignore a second constructor style argument and leave the display at PIXI's default black styling.

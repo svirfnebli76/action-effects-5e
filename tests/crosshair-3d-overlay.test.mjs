@@ -93,7 +93,7 @@ test("AE5E crosshair overlay uses authoritative centered text and a moving mode 
     assert.deepEqual([elevation.anchor.x, elevation.anchor.y], [0.5, 0.5], "elevation text is centered on the authoritative point before applying Y offset");
     assert.equal(CROSSHAIR_3D_OVERLAY_PRESENTATION.elevationOffsetPx, 44);
 
-    overlay.update({ mode: "ELEVATE", elevation: 15, point: { x: 300, y: 400 }, gridSize: 100, footprintRadiusPx: 200 });
+    overlay.update({ mode: "ELEVATE", elevation: 15, originElevation: 0, point: { x: 300, y: 400 }, gridSize: 100, footprintRadiusPx: 200 });
     assert.equal(elevation.text, "15 ft");
     assert.equal(elevation.position.x, 300);
     assert.equal(elevation.position.y, 444, "22 px text receives a 44 px downward offset (2x text height) from the true crosshair center");
@@ -102,8 +102,14 @@ test("AE5E crosshair overlay uses authoritative centered text and a moving mode 
     assert.equal(modeText.text, "ELEVATE");
     assert.equal(mode.position.x, 300);
     assert.equal(mode.position.y, 178, "mode badge sits above the crosshair footprint rather than at the top of the screen");
+    assert.equal(elevation.style.fill, "#FFFFFF", "elevation at/above the source base remains white");
 
-    overlay.update({ mode: "MOVE", elevation: 15, point: { x: 125, y: 250 }, gridSize: 100, footprintRadiusPx: 200 });
+    overlay.update({ mode: "ELEVATE", elevation: -5, originElevation: 0, point: { x: 300, y: 400 }, gridSize: 100, footprintRadiusPx: 200 });
+    assert.equal(elevation.text, "-5 ft");
+    assert.equal(elevation.style.fill, "#FF3B30", "elevation below the source base turns red");
+
+    overlay.update({ mode: "MOVE", elevation: 15, originElevation: 0, point: { x: 125, y: 250 }, gridSize: 100, footprintRadiusPx: 200 });
+    assert.equal(elevation.style.fill, "#FFFFFF", "returning above the source base restores white text");
     assert.equal(confirm.position.x, 125, "label follows accepted crosshair X, not raw cursor X");
     assert.equal(confirm.position.y, 215, "label follows accepted crosshair Y, not raw cursor Y");
     assert.equal(mode.position.x, 125);

@@ -43,6 +43,7 @@ import { Crosshair3dTargetingGeometryService } from "./crosshairs3d/targeting-ge
 import { Crosshair3dCanvasMetricsService } from "./crosshairs3d/canvas-metrics-service.js";
 import { Crosshair3dSurfaceService } from "./crosshairs3d/surface-service.js";
 import { Crosshair3dPlacementOverlayService } from "./crosshairs3d/placement-overlay-service.js";
+import { CrosshairElevationGaugeService } from "./crosshairs3d/crosshair-elevation-gauge-service.js";
 import { Crosshair3dPlacementGuideService } from "./crosshairs3d/placement-guide-service.js";
 import { Crosshair3dPlacementVisualService } from "./crosshairs3d/placement-visual-service.js";
 import { Crosshair3dPlacementSessionService } from "./crosshairs3d/placement-session-service.js";
@@ -130,6 +131,7 @@ const crosshairs3dTargeting = new Crosshair3dTargetingGeometryService({ cells: c
 const crosshairs3dMetrics = new Crosshair3dCanvasMetricsService();
 const crosshairs3dSurfaces = new Crosshair3dSurfaceService();
 const crosshairs3dOverlay = new Crosshair3dPlacementOverlayService();
+const crosshairs3dElevationGauge = new CrosshairElevationGaugeService();
 const crosshairs3dGuide = new Crosshair3dPlacementGuideService({ geometry: crosshairs3dGeometry, metrics: crosshairs3dMetrics });
 const crosshairs3dVisuals = new Crosshair3dPlacementVisualService({ crosshairs, metrics: crosshairs3dMetrics });
 const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
@@ -143,6 +145,7 @@ const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
   metrics: crosshairs3dMetrics,
   surfaces: crosshairs3dSurfaces,
   overlay: crosshairs3dOverlay,
+  elevationGauge: crosshairs3dElevationGauge,
   guide: crosshairs3dGuide,
   visuals: crosshairs3dVisuals
 });

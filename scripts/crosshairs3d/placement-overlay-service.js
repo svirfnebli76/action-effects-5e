@@ -67,7 +67,7 @@ export class Crosshair3dPlacementOverlayService {
     this.#createModeBadge(PIXI, parent, mode);
   }
 
-  update({ mode = null, elevation = null, point = null, gridSize = null, footprintRadiusPx = null } = {}) {
+  update({ mode = null, elevation = null, originElevation = null, point = null, gridSize = null, footprintRadiusPx = null } = {}) {
     if (mode && this.#modeText) {
       this.#modeText.text = String(mode);
       this.#refreshModeBackground();
@@ -81,6 +81,7 @@ export class Crosshair3dPlacementOverlayService {
 
     if (this.#elevationText) {
       this.#elevationText.text = `${this.#formatElevation(elevation)} ft`;
+      this.#setTextFill(this.#elevationText, finiteNumber(elevation) < finiteNumber(originElevation, elevation) ? "#FF3B30" : "#FFFFFF");
       // Anchor the readout to the actual accepted crosshair center, then move
       // it down by exactly two text-size units. This remains centered for both
       // odd- and even-grid-diameter crosshairs and never depends on a nearby
@@ -144,6 +145,16 @@ export class Crosshair3dPlacementOverlayService {
 
     display.text = content;
     return display;
+  }
+
+
+  #setTextFill(display, fill) {
+    if (!display) return;
+    try { display.style.fill = fill; }
+    catch (_error) {
+      try { Object.assign(display.style ?? {}, { fill }); }
+      catch (_nestedError) { /* noop */ }
+    }
   }
 
   #createModeBadge(PIXI, parent, mode) {
