@@ -9,6 +9,9 @@ const GAUGE_RANGE_PADDING_FACTOR = 1.10;
 const GAUGE_LINE_COLOR = 0xD35BFF;
 const GAUGE_WHITE = 0xFFFFFF;
 const GAUGE_BLACK = 0x000000;
+const GAUGE_BACKGROUND = 0x484848;
+const GAUGE_BACKGROUND_ALPHA = 0.50;
+const GAUGE_TICK_INCREMENT_DEGREES = 5;
 const GAUGE_NEGATIVE = "#FF3B30";
 const GAUGE_POSITIVE = "#FFFFFF";
 const CARDINAL_FONT_SIZE = 16;
@@ -226,7 +229,13 @@ export class CrosshairElevationGaugeService {
 
     // Outer range dial: fixed physical size. Range changes only the internal
     // radial scale used for B, never the gauge diameter itself.
-    drawCircle(g, 0, 0, GAUGE_RADIUS_PX, { lineColor: GAUGE_BLACK, lineAlpha: 0.90, lineWidth: 5 });
+    drawCircle(g, 0, 0, GAUGE_RADIUS_PX, {
+      lineColor: GAUGE_BLACK,
+      lineAlpha: 0.90,
+      lineWidth: 5,
+      fillColor: GAUGE_BACKGROUND,
+      fillAlpha: GAUGE_BACKGROUND_ALPHA
+    });
     drawCircle(g, 0, 0, GAUGE_RADIUS_PX, { lineColor: GAUGE_WHITE, lineAlpha: 0.92, lineWidth: 2 });
 
     // Source-level horizontal axis, intentionally dashed like the user's
@@ -239,15 +248,17 @@ export class CrosshairElevationGaugeService {
       drawLine(g, x, 0, x2, 0, { color: GAUGE_WHITE, alpha: 0.72, width: 1.5 });
     }
 
-    // 10-degree ticks, plus longer 45-degree orientation ticks and cardinal
-    // axes. 0° points right, 90° up, 180° left, 270° down.
-    for (let degrees = 0; degrees < 360; degrees += 10) {
+    // 5-degree ticks. Cardinal axes remain strongest, 45-degree orientation
+    // ticks stay prominent, and each 10-degree interval is longer than the
+    // intervening 5-degree tick. 0° points right, 90° up, 180° left, 270° down.
+    for (let degrees = 0; degrees < 360; degrees += GAUGE_TICK_INCREMENT_DEGREES) {
       const cardinal = degrees % 90 === 0;
-      const major = degrees % 30 === 0;
-      const length = cardinal ? 20 : major ? 12 : 8;
-      this.#drawTick(degrees, length, cardinal ? 4 : major ? 3 : 2);
+      const orientation = degrees % 45 === 0;
+      const tenDegree = degrees % 10 === 0;
+      const length = cardinal ? 20 : orientation ? 15 : tenDegree ? 10 : 6;
+      const width = cardinal ? 4 : orientation ? 3 : tenDegree ? 2 : 1.5;
+      this.#drawTick(degrees, length, width);
     }
-    for (const degrees of [45, 135, 225, 315]) this.#drawTick(degrees, 15, 3);
   }
 
   #drawTick(degrees, length, width) {
@@ -416,6 +427,9 @@ export const CROSSHAIR_ELEVATION_GAUGE_PRESENTATION = Object.freeze({
   targetCenterY: GAUGE_TARGET_CENTER_Y,
   rangePaddingFactor: GAUGE_RANGE_PADDING_FACTOR,
   lineColor: GAUGE_LINE_COLOR,
+  backgroundColor: GAUGE_BACKGROUND,
+  backgroundAlpha: GAUGE_BACKGROUND_ALPHA,
+  tickIncrementDegrees: GAUGE_TICK_INCREMENT_DEGREES,
   negativeColor: GAUGE_NEGATIVE,
   positiveColor: GAUGE_POSITIVE
 });

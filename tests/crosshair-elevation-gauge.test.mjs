@@ -102,9 +102,19 @@ test("Crosshair Elevation Gauge is a fixed-size screen-space PIXI side view with
     const title = findRecursive(container, "action-effects-5e-crosshair-elevation-gauge-title");
     const elevation = findRecursive(container, "action-effects-5e-crosshair-elevation-gauge-elevation");
     const distance = findRecursive(container, "action-effects-5e-crosshair-elevation-gauge-distance");
+    const staticGraphics = findRecursive(container, "action-effects-5e-crosshair-elevation-gauge-static");
     const dynamic = findRecursive(container, "action-effects-5e-crosshair-elevation-gauge-dynamic");
     assert.equal(title?.text, "SIDE VIEW");
-    assert.ok(elevation && distance && dynamic);
+    assert.ok(elevation && distance && staticGraphics && dynamic);
+    assert.equal(CROSSHAIR_ELEVATION_GAUGE_PRESENTATION.tickIncrementDegrees, 5);
+    assert.equal(CROSSHAIR_ELEVATION_GAUGE_PRESENTATION.backgroundColor, 0x484848);
+    assert.equal(CROSSHAIR_ELEVATION_GAUGE_PRESENTATION.backgroundAlpha, 0.50);
+    assert.ok(
+      staticGraphics.calls.some(([type, style]) => type === "fill" && style?.color === 0x484848 && style?.alpha === 0.50),
+      "gauge circle has the requested #484848 50% background fill"
+    );
+    const staticStrokes = staticGraphics.calls.filter(([type]) => type === "stroke");
+    assert.ok(staticStrokes.length >= 74, "5-degree circumference ticks produce at least 72 tick strokes plus the dial outlines");
 
     gauge.update({ distance: 50, maxRange: 60, angle: 45, elevationDelta: 35, belowOrigin: false });
     assert.equal(container.visible, true);

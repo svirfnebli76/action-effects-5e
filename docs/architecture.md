@@ -1,6 +1,6 @@
 # Action Effects 5E architecture
 
-## v0.4.4.10 Action Effects 3D Crosshairs — live placement and targeting
+## v0.4.4.11 Action Effects 3D Crosshairs — live placement and targeting
 
 The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
 
@@ -15,6 +15,7 @@ v0.4.4.8 keeps all accepted geometry/range/targeting behavior from v0.4.4.7 and 
 v0.4.4.9 corrects the remaining Foundry v14/PIXI presentation incompatibility without changing placement geometry. The runtime may accept `PIXI.Text(text)` while silently ignoring a separate constructor style argument, leaving text black; AE5E therefore assigns an explicit `PIXI.TextStyle` after constructing each overlay text object. Overlay text remains pure white (`#FFFFFF`). The elevation readout is 22 px, center-anchored to the authoritative crosshair point, and offset downward by 44 px (two text-height units).
 
 v0.4.4.10 adds the Checkpoint 2 **Crosshair Elevation Gauge** as retained temporary placement presentation. The gauge is a fixed-size screen-space PIXI HUD near the upper-left canvas, not a Scene object: a ticker compensates the parent canvas group's pan/zoom transform so the dial remains approximately 276 px across at the requested screen location. Its fixed circle represents 110% of the configured range, while authoritative placement state supplies the live A→B radial vector, distance, side-view angle, and elevation. Remote sessions use the same nearest-source anchor and retained `elevationPhase` that drive the construction circle, so far-side travel remains visually meaningful. The existing crosshair elevation readout also becomes red whenever accepted world Z falls below the source Token's base elevation.
+v0.4.4.11 refines that gauge for live use: the dial now has 5-degree graduations and a 50%-opacity `#484848` interior, is visible only during ELEVATE mode, and initializes the remote construction plane plus current side-view reading immediately on ELEVATE entry before any wheel movement. The retained gauge object remains session-scoped; mode changes toggle presentation rather than rebuilding the PIXI object.
 
 The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
 

@@ -257,10 +257,20 @@ export class Crosshair3dPlacementSessionService {
   #installInput(session) {
     const window = globalThis.window;
     if (!window?.addEventListener) return;
-    const updateMode = () => {
-      const next = session.modifier.ctrl && session.modifier.shift ? "MOVE" : session.modifier.ctrl ? "ELEVATE" : session.modifier.shift ? "ROTATE" : "MOVE";
+    const setMode = next => {
       session.mode = next;
       this.#overlay.update({ mode: next });
+
+      if (next === "ELEVATE" && session.capabilities.elevation) {
+        if (!session.self) this.#ensureRemoteElevationArc(session, session.current?.point ?? session.intent?.point);
+        this.#elevationGauge?.update?.(this.#elevationGaugeState(session, session.current));
+      } else {
+        this.#elevationGauge?.update?.({ visible: false });
+      }
+    };
+    const updateMode = () => {
+      const next = session.modifier.ctrl && session.modifier.shift ? "MOVE" : session.modifier.ctrl ? "ELEVATE" : session.modifier.shift ? "ROTATE" : "MOVE";
+      setMode(next);
     };
     const keydown = event => {
       if (event.key === "Shift") session.modifier.shift = true;
@@ -281,10 +291,13 @@ export class Crosshair3dPlacementSessionService {
       event.stopPropagation?.();
       event.stopImmediatePropagation?.();
       this.#stats.wheelEvents += 1;
-      if ((event.shiftKey || session.modifier.shift) && (event.ctrlKey || session.modifier.ctrl)) return;
+      if ((event.shiftKey || session.modifier.shift) && (event.ctrlKey || session.modifier.ctrl)) {
+        setMode("MOVE");
+        return;
+      }
       const step = event.deltaY < 0 ? 1 : -1;
       if ((event.shiftKey || session.modifier.shift) && session.capabilities.rotation) {
-        session.mode = "ROTATE"; this.#overlay.update({ mode: "ROTATE" });
+        setMode("ROTATE");
         const headingYaw = normalizeDegrees(finiteNumber(session.intent.headingYaw, session.intent.yaw) + (step * 5));
         const orientation = session.self
           ? this.#canonicalSelfOrientation(headingYaw, session.intent.arcPitch)
@@ -294,7 +307,7 @@ export class Crosshair3dPlacementSessionService {
         return;
       }
       if ((event.ctrlKey || session.modifier.ctrl) && session.capabilities.elevation) {
-        session.mode = "ELEVATE"; this.#overlay.update({ mode: "ELEVATE" });
+        setMode("ELEVATE");
         const elevationStep = this.#reverseElevationWheelEnabled() ? -step : step;
         this.#requestElevationStep(session, elevationStep);
       }
@@ -304,6 +317,27 @@ export class Crosshair3dPlacementSessionService {
     window.addEventListener("blur", blur, true);
     window.addEventListener("wheel", wheel, { capture: true, passive: false });
     session.listeners.push(["keydown", keydown, true], ["keyup", keyup, true], ["blur", blur, true], ["wheel", wheel, { capture: true }]);
+  }
+
+  #ensureRemoteElevationArc(session, pointInput = null) {
+    if (session.elevationArc) return session.elevationArc;
+    const state = session.intent;
+    const point = pointInput ?? state?.point;
+    if (!point) return null;
+
+    const anchor = this.#range.nearestPointOnVolume(session.sourceVolume, point);
+    const radius = this.#range.distanceBetweenPoints(anchor, point);
+    const dx = finiteNumber(point.x) - finiteNumber(anchor.x);
+    const dy = finiteNumber(point.y) - finiteNumber(anchor.y);
+    const horizontal = Math.hypot(dx, dy);
+    const unit = horizontal > 1e-9
+      ? { x: dx / horizontal, y: dy / horizontal }
+      : { x: Math.cos((finiteNumber(state?.yaw) * Math.PI) / 180), y: Math.sin((finiteNumber(state?.yaw) * Math.PI) / 180) };
+    const phase = radius > 1e-9
+      ? normalizeDegrees((Math.atan2(finiteNumber(point.z) - finiteNumber(anchor.z), horizontal) * 180) / Math.PI)
+      : 0;
+    session.elevationArc = { anchor, radius, unit, phase };
+    return session.elevationArc;
   }
 
   #requestElevationStep(session, step) {
@@ -332,22 +366,8 @@ export class Crosshair3dPlacementSessionService {
       return;
     }
 
-    if (!session.elevationArc) {
-      const point = state.point;
-      const anchor = this.#range.nearestPointOnVolume(session.sourceVolume, point);
-      const radius = this.#range.distanceBetweenPoints(anchor, point);
-      const dx = point.x - anchor.x, dy = point.y - anchor.y;
-      const horizontal = Math.hypot(dx, dy);
-      const unit = horizontal > 1e-9
-        ? { x: dx / horizontal, y: dy / horizontal }
-        : { x: Math.cos((state.yaw * Math.PI) / 180), y: Math.sin((state.yaw * Math.PI) / 180) };
-      const phase = radius > 1e-9
-        ? (Math.atan2(point.z - anchor.z, horizontal) * 180) / Math.PI
-        : 0;
-      session.elevationArc = { anchor, radius, unit, phase };
-    }
-    const arc = session.elevationArc;
-    if (arc.radius <= 1e-9) return;
+    const arc = this.#ensureRemoteElevationArc(session, state.point);
+    if (!arc || arc.radius <= 1e-9) return;
     const snapped = this.#stepRemoteElevationSnap(arc.phase, step, arc.anchor.z, arc.radius, session.metrics.distance);
     const phase = snapped.phase;
     arc.phase = phase;
@@ -583,7 +603,7 @@ export class Crosshair3dPlacementSessionService {
         angle: normalizeDegrees(revision?.arcPitch ?? revision?.pitch),
         elevationDelta,
         belowOrigin: endpointZ < finiteNumber(point.z),
-        visible: Boolean(session.capabilities?.elevation)
+        visible: Boolean(session.capabilities?.elevation) && session.mode === "ELEVATE"
       });
     }
 
@@ -597,7 +617,13 @@ export class Crosshair3dPlacementSessionService {
     const dy = finiteNumber(point.y) - finiteNumber(anchor.y);
     const horizontal = Math.hypot(dx, dy);
     const fallbackAngle = normalizeDegrees((Math.atan2(finiteNumber(point.z) - finiteNumber(anchor.z), horizontal) * 180) / Math.PI);
-    const angle = Number.isFinite(Number(revision?.elevationPhase)) ? normalizeDegrees(revision.elevationPhase) : fallbackAngle;
+    const revisionPhase = revision?.elevationPhase;
+    const retainedPhase = session.elevationArc?.phase;
+    const angle = revisionPhase !== null && revisionPhase !== undefined && Number.isFinite(Number(revisionPhase))
+      ? normalizeDegrees(revisionPhase)
+      : retainedPhase !== null && retainedPhase !== undefined && Number.isFinite(Number(retainedPhase))
+        ? normalizeDegrees(retainedPhase)
+        : fallbackAngle;
     const elevationDelta = finiteNumber(point.z) - finiteNumber(anchor.z);
     return Object.freeze({
       distance,
@@ -605,7 +631,7 @@ export class Crosshair3dPlacementSessionService {
       angle,
       elevationDelta,
       belowOrigin: elevationDelta < 0,
-      visible: Boolean(session.capabilities?.elevation)
+      visible: Boolean(session.capabilities?.elevation) && session.mode === "ELEVATE"
     });
   }
 

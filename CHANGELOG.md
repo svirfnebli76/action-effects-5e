@@ -1,3 +1,12 @@
+## 0.4.4.11 — Action Effects 3D Crosshairs — Elevation Gauge live UX refinement
+
+- Refined the Checkpoint 2 **Crosshair Elevation Gauge** after the first live Foundry acceptance pass. Circumference graduations now occur every **5 degrees**, with longer 10-degree, 45-degree, and cardinal orientation marks retained for readability.
+- Added a solid `#484848` gauge-circle background at **50% opacity** so the side-view instrument remains legible over bright or visually busy Scenes while still allowing the map to show through.
+- The Crosshair Elevation Gauge is now visible **only while ELEVATE mode is active**. MOVE, ROTATE, Ctrl release, Ctrl+Shift ambiguity, and other non-ELEVATE states hide it immediately without destroying the retained gauge object.
+- Entering ELEVATE now initializes the retained remote construction plane immediately and publishes the current A→B distance, side-view phase, and elevation before the first Ctrl-wheel notch. The initial gauge therefore reflects the authoritative crosshair position as soon as Ctrl is held instead of waiting for a Z change.
+- Preserved v0.4.4.10 gauge size/location, 10% range headroom, radial A→B presentation, below-origin red elevation behavior, screen-space pan/zoom compensation, exact grid-Z stepping, targeting/range behavior, and cleanup.
+- Added deterministic regressions for the 5-degree tick interval, `#484848`/50% background, ELEVATE-only visibility, immediate pre-wheel gauge publication, and nonzero initial side-view phase.
+
 ## 0.4.4.10 — Action Effects 3D Crosshairs — Crosshair Elevation Gauge
 
 - Added the Checkpoint 2 **Crosshair Elevation Gauge**, a temporary retained PIXI/SmoothGraphics-style side-view HUD for elevation-capable Action Effects 3D Crosshairs placement. It is approximately 276 px in diameter, anchored near screen position 320×275 on a 1920×1080 canvas, remains fixed in screen space through Scene pan/zoom, and cleans up with the placement session.

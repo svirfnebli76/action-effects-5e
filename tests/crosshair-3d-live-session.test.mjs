@@ -129,6 +129,35 @@ test("every accepted Shift-wheel increment rotates the authoritative revision by
   assert.equal(result.revision.revision > 0, true);
 });
 
+test("Crosshair Elevation Gauge is visible only in ELEVATE and publishes an immediate pre-wheel side-view reading", async () => {
+  const h = harness({
+    carrierPosition: { x: 300, y: 100 },
+    surfaces: { resolveAt: () => ({ elevation: 10, surface: null, source: "test" }) },
+    onShow: ({ window }) => {
+      window.dispatch("keydown", { key: "Control" });
+      window.dispatch("keyup", { key: "Control" });
+      window.dispatch("keydown", { key: "Shift" });
+      window.dispatch("keyup", { key: "Shift" });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  assert.equal(h.service.getStats().wheelEvents, 0, "entering ELEVATE does not require a wheel notch");
+  const updates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
+  const immediateElevate = updates.find(data => data?.visible === true);
+  assert.ok(immediateElevate, "Ctrl entry immediately publishes a visible gauge reading");
+  assert.ok(immediateElevate.angle > 0 && immediateElevate.angle < 90, "initial side-view angle is derived before any Z movement");
+  assert.ok(Number.isFinite(immediateElevate.distance) && immediateElevate.distance > 0, "initial A→B distance is available immediately");
+  assert.ok(updates.some(data => data?.visible === false), "MOVE/ROTATE mode transitions explicitly hide the gauge");
+});
+
 test("Self Ray Ctrl-wheel changes pitch while preserving fixed centerline length", async () => {
   const h = harness({
     onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 })

@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.10
+# Current infrastructure acceptance — v0.4.4.11
 
 ## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
 
@@ -25,6 +25,7 @@ v0.4.4.8 is a presentation/input-preference pass only: the elevation readout is 
 v0.4.4.9 updates the overlay regression to model the live Foundry v14 behavior where a text string is accepted but constructor styling is ignored. AE5E assigns an explicit post-construction `PIXI.TextStyle`, keeping elevation/confirmation/mode text at pure white (`#FFFFFF`). The elevation readout is 22 px and its authoritative-center Y offset is 44 px.
 
 v0.4.4.10 adds deterministic coverage for the **Crosshair Elevation Gauge**: fixed ~276 px screen-space size, requested 320×275 target position on a 1920×1080 canvas, inverse parent-scale compensation during pan/zoom, 10% range headroom, A→B distance/elevation publication, far-side angle preservation, negative/below-origin red text, and session cleanup. The existing crosshair elevation overlay is also covered for white-at/above-source and red-below-source behavior. Placement geometry/input rules remain unchanged from v0.4.4.9.
+v0.4.4.11 adds regressions for 5-degree dial graduations, the `#484848` 50%-opacity interior, ELEVATE-only gauge visibility, immediate gauge state publication on Ctrl/ELEVATE entry without a wheel event, and initialization of a nonzero side-view phase from the current authoritative placement. Geometry and snapping rules remain unchanged.
 
 Checkpoint 2 requires live Foundry acceptance because browser input interception, Sequencer CanvasEffect updates, PIXI guide placement, Token target highlighting/secrecy, Foundry surface resolution, and optional LOS cannot be accepted from Node tests alone. Checkpoint 3 must not begin until the focused live placement suite passes or any discovered runtime incompatibility is corrected.
 
