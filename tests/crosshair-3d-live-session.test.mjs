@@ -159,15 +159,22 @@ test("Crosshair Elevation Gauge is visible only in ELEVATE and publishes an imme
 });
 
 
-test("Alt input cannot latch ELEVATE after a swallowed Ctrl keyup", async () => {
+test("Alt is capture-suppressed during placement and cannot disturb a Ctrl ELEVATE cycle", async () => {
+  const altCalls = { down: { prevent: 0, stop: 0, immediate: 0 }, up: { prevent: 0, stop: 0, immediate: 0 } };
+  const altEvent = (phase, extra = {}) => ({
+    key: "Alt",
+    altKey: phase === "down",
+    preventDefault: () => { altCalls[phase].prevent += 1; },
+    stopPropagation: () => { altCalls[phase].stop += 1; },
+    stopImmediatePropagation: () => { altCalls[phase].immediate += 1; },
+    ...extra
+  });
   const h = harness({
-    carrierPosition: { x: 300, y: 100 },
     onShow: ({ window }) => {
-      window.dispatch("keydown", { key: "Control", ctrlKey: true });
-      window.dispatch("keydown", { key: "Alt", ctrlKey: true, altKey: true });
-      // Reproduce the Electron/browser edge case: Ctrl is physically released
-      // but its keyup is not delivered while Alt has altered focus/menu state.
-      window.dispatch("keyup", { key: "Alt", ctrlKey: false, altKey: false });
+      window.dispatch("keydown", { key: "Control", ctrlKey: true, shiftKey: false, altKey: false });
+      window.dispatch("keydown", altEvent("down", { ctrlKey: true }));
+      window.dispatch("keyup", altEvent("up", { ctrlKey: true, altKey: false }));
+      window.dispatch("keyup", { key: "Control", ctrlKey: false, shiftKey: false, altKey: false });
     }
   });
   const result = await h.service.show({
@@ -179,55 +186,22 @@ test("Alt input cannot latch ELEVATE after a swallowed Ctrl keyup", async () => 
   });
 
   assert.equal(result.cancelled, false);
+  assert.deepEqual(altCalls.down, { prevent: 1, stop: 1, immediate: 1 }, "Alt keydown is fully suppressed at capture");
+  assert.deepEqual(altCalls.up, { prevent: 1, stop: 1, immediate: 1 }, "Alt keyup is fully suppressed at capture");
   const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
-  assert.ok(modes.includes("ELEVATE"), "Ctrl still enters ELEVATE before Alt exposes the missed-keyup case");
-  assert.equal(modes.at(-1), "MOVE", "Alt keyup resynchronizes physical modifier state and releases ELEVATE");
+  assert.ok(modes.includes("ELEVATE"), "Ctrl still enters ELEVATE");
+  assert.equal(modes.at(-1), "MOVE", "Ctrl release returns normally to MOVE after Alt was suppressed");
   const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides when the recovered mode returns to MOVE");
+  assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides when Ctrl release returns to MOVE");
 });
 
-test("pointer movement cannot knock an active Ctrl-held session out of ELEVATE", async () => {
+test("a brief Alt press before ELEVATE cannot poison the later Ctrl release", async () => {
   const h = harness({
     onShow: ({ window }) => {
-      window.dispatch("keydown", { key: "Control", ctrlKey: true });
-      // Foundry/Sequencer may emit pointer activity without reliable modifier flags.
-      // It must not redefine the keyboard-selected ELEVATE mode or hide the gauge.
-      window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
-      window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
-    }
-  });
-  const result = await h.service.show({
-    source: h.source,
-    remote: true,
-    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
-    capabilities: { rotation: true, elevation: true, los: false }
-  });
-
-  assert.equal(result.cancelled, false);
-  assert.equal(h.window.count("pointermove"), 0, "Alt-recovery pointer listener is cleaned up with the placement session");
-  const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
-  const elevateIndex = modes.indexOf("ELEVATE");
-  assert.ok(elevateIndex >= 0, "Ctrl enters ELEVATE");
-  assert.equal(modes.slice(elevateIndex).every(mode => mode === "ELEVATE"), true, "pointer movement cannot inject MOVE while Ctrl remains held");
-  const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  const visibleIndex = gaugeUpdates.findIndex(data => data?.visible === true);
-  assert.ok(visibleIndex >= 0, "gauge becomes visible in ELEVATE");
-  assert.equal(gaugeUpdates.slice(visibleIndex).every(data => data?.visible !== false), true, "pointer movement cannot flicker the gauge off during ELEVATE");
-});
-
-test("Alt recovery ignores synthetic pointer activity but trusted pointer input repairs a swallowed Ctrl release", async () => {
-  const h = harness({
-    onShow: ({ window }) => {
-      window.dispatch("keydown", { key: "Control", ctrlKey: true });
-      window.dispatch("keydown", { key: "Alt", ctrlKey: true, altKey: true });
-      // Reproduce the live Electron case where Alt's own keyup still reports the
-      // stale Ctrl latch and the real Ctrl keyup never reaches AE5E.
-      window.dispatch("keyup", { key: "Alt", ctrlKey: true, altKey: false });
-      // Foundry/Sequencer synthetic pointer activity must not repair or redefine
-      // the mode; this is the v0.4.4.12 flicker regression boundary.
-      window.dispatch("pointermove", { isTrusted: false, ctrlKey: false, shiftKey: false, altKey: false });
-      // The next genuine physical pointer event may repair the stale latch.
-      window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
+      window.dispatch("keydown", { key: "Alt", ctrlKey: false, shiftKey: false, altKey: true });
+      window.dispatch("keyup", { key: "Alt", ctrlKey: false, shiftKey: false, altKey: false });
+      window.dispatch("keydown", { key: "Control", ctrlKey: true, shiftKey: false, altKey: false });
+      window.dispatch("keyup", { key: "Control", ctrlKey: false, shiftKey: false, altKey: false });
     }
   });
   const result = await h.service.show({
@@ -241,27 +215,30 @@ test("Alt recovery ignores synthetic pointer activity but trusted pointer input 
   assert.equal(result.cancelled, false);
   const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
   const elevateIndex = modes.indexOf("ELEVATE");
-  assert.ok(elevateIndex >= 0, "Ctrl enters ELEVATE before Alt interferes with keyup delivery");
-  assert.equal(modes.at(-1), "MOVE", "trusted pointer recovery clears the stale Ctrl latch after Alt");
+  assert.ok(elevateIndex >= 0, "Ctrl enters ELEVATE after the earlier Alt press");
+  assert.equal(modes.at(-1), "MOVE", "Ctrl release exits ELEVATE normally after the earlier Alt press");
   const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides after trusted pointer recovery returns to MOVE");
+  assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides after the normal Ctrl release");
 });
 
-test("trusted pointer recovery remains armed while a physical modifier is still held", async () => {
-  let modesAfterHeldPointer = [];
-  let gaugeAfterHeldPointer = [];
+test("pointer activity remains non-authoritative and cannot flicker a Ctrl-held ELEVATE gauge", async () => {
+  let pointerListenerCount = null;
+  let modeEventsBeforePointer = null;
+  let modeEventsAfterPointer = null;
+  let gaugeEventsBeforePointer = null;
+  let gaugeEventsAfterPointer = null;
   let h;
   h = harness({
     onShow: ({ window }) => {
-      window.dispatch("keydown", { key: "Control", ctrlKey: true });
-      window.dispatch("keydown", { key: "Alt", ctrlKey: true, altKey: true });
-      window.dispatch("keyup", { key: "Alt", ctrlKey: true, altKey: false });
-      // Genuine mouse motion while Ctrl is still held must keep ELEVATE and keep
-      // recovery armed for the later swallowed release.
-      window.dispatch("pointermove", { isTrusted: true, ctrlKey: true, shiftKey: false, altKey: false });
-      modesAfterHeldPointer = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
-      gaugeAfterHeldPointer = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
+      pointerListenerCount = window.count("pointermove") + window.count("pointerdown");
+      window.dispatch("keydown", { key: "Control", ctrlKey: true, shiftKey: false, altKey: false });
+      modeEventsBeforePointer = h.overlayEvents.length;
+      gaugeEventsBeforePointer = h.elevationGaugeEvents.length;
       window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
+      window.dispatch("pointerdown", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
+      modeEventsAfterPointer = h.overlayEvents.length;
+      gaugeEventsAfterPointer = h.elevationGaugeEvents.length;
+      window.dispatch("keyup", { key: "Control", ctrlKey: false, shiftKey: false, altKey: false });
     }
   });
   const result = await h.service.show({
@@ -273,44 +250,15 @@ test("trusted pointer recovery remains armed while a physical modifier is still 
   });
 
   assert.equal(result.cancelled, false);
-  assert.equal(modesAfterHeldPointer.at(-1), "ELEVATE", "trusted pointer motion while Ctrl remains held stays in ELEVATE");
-  assert.notEqual(gaugeAfterHeldPointer.at(-1)?.visible, false, "trusted pointer motion while Ctrl remains held does not hide the gauge");
+  assert.equal(pointerListenerCount, 0, "placement installs no modifier-recovery pointer listeners");
+  assert.equal(modeEventsAfterPointer, modeEventsBeforePointer, "pointer activity cannot publish a mode transition while Ctrl is held");
+  assert.equal(gaugeEventsAfterPointer, gaugeEventsBeforePointer, "pointer activity cannot hide/rebuild the ELEVATE gauge");
   const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
   assert.ok(modes.includes("ELEVATE"), "Ctrl enters ELEVATE");
-  assert.equal(modes.at(-1), "MOVE", "later trusted pointer input still repairs the swallowed Ctrl release");
-});
-
-test("Alt-before-ELEVATE recovery survives a completely missing Alt keyup and intervening pointer motion", async () => {
-  const h = harness({
-    onShow: ({ window }) => {
-      // Live reproduction: Alt is pressed briefly, but Chromium/Electron never
-      // delivers Alt keyup to AE5E. A later trusted pointer event reports the
-      // real current Alt state and must NOT disarm recovery before Ctrl is used.
-      window.dispatch("keydown", { key: "Alt", ctrlKey: false, shiftKey: false, altKey: true });
-      window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
-
-      // Later the user enters ELEVATE. Reproduce the second swallowed-keyup edge
-      // by omitting Ctrl keyup too; trusted physical pointer input must recover.
-      window.dispatch("keydown", { key: "Control", ctrlKey: true, shiftKey: false, altKey: false });
-      window.dispatch("pointermove", { isTrusted: true, ctrlKey: true, shiftKey: false, altKey: false });
-      window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
-    }
-  });
-  const result = await h.service.show({
-    source: h.source,
-    remote: true,
-    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
-    range: { max: 60 },
-    capabilities: { rotation: true, elevation: true, los: false }
-  });
-
-  assert.equal(result.cancelled, false);
-  const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
-  const elevateIndex = modes.indexOf("ELEVATE");
-  assert.ok(elevateIndex >= 0, "Ctrl still enters ELEVATE after an earlier Alt press whose keyup was never delivered");
-  assert.equal(modes.at(-1), "MOVE", "trusted pointer state repairs the later swallowed Ctrl release and exits ELEVATE");
+  assert.equal(modes.at(-1), "MOVE", "Ctrl keyup remains the normal route back to MOVE");
   const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides after Alt-before-ELEVATE recovery returns to MOVE");
+  assert.ok(gaugeUpdates.some(data => data?.visible === true), "gauge becomes visible in ELEVATE");
+  assert.equal(gaugeUpdates.at(-1)?.visible, false, "Ctrl release hides the gauge");
 });
 
 test("an unmodified wheel event is never captured by stale cached Ctrl state", async () => {

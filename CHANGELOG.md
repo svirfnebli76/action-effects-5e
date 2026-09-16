@@ -1,3 +1,11 @@
+## 0.4.4.16 — Action Effects 3D Crosshairs — Alt capture suppression experiment
+
+- Removed the v0.4.4.14–0.4.4.15 Alt modifier-recovery state and all placement-session pointer recovery listeners. Those recovery paths could not reliably overcome Chromium/Electron Alt focus behavior without risking the already-fixed Crosshair Elevation Gauge flicker.
+- Alt has no Action Effects 3D Crosshairs control function, so an active 3D placement session now intercepts both Alt keydown and Alt keyup at the capture stage with `preventDefault()`, `stopPropagation()`, and `stopImmediatePropagation()`. The intent is to prevent Alt from entering Chromium/Electron menu/focus handling before it can disturb later Ctrl/Shift keyup delivery.
+- Ctrl/Shift keyboard events and wheel events remain the only authoritative modifier-state sources. Ordinary pointermove/pointerdown input cannot alter MOVE / ROTATE / ELEVATE and no modifier-recovery pointer listeners are installed.
+- Preserved the accepted v0.4.4.15 Crosshair Elevation Gauge presentation, exact grid-Z stepping, 360-degree construction-plane travel, red-below-origin readouts, targeting/range behavior, wheel-direction preference, and cleanup.
+- Added deterministic regressions proving Alt is fully capture-suppressed during placement, a brief Alt press before ELEVATE does not alter the later normal Ctrl-release path, and pointer activity remains unable to flicker a Ctrl-held gauge.
+
 ## 0.4.4.15 — Action Effects 3D Crosshairs — Alt recovery without persistent Alt state
 
 - Removed the persistent `altActive` placement-session latch introduced in v0.4.4.14. Chromium/Electron can omit Alt keyup entirely after menu/focus handling, so AE5E no longer requires that event to prove Alt was released.
