@@ -1,3 +1,12 @@
+## 0.4.4.14 — Action Effects 3D Crosshairs — targeted Alt modifier recovery
+
+- Corrected the remaining Foundry/Electron Alt edge case without restoring the v0.4.4.12 Crosshair Elevation Gauge flicker. Pressing Alt now arms a short-lived modifier-recovery state instead of making ordinary pointer movement authoritative for the whole placement session.
+- During normal placement, pointer movement still cannot change MOVE / ROTATE / ELEVATE. After Alt has been observed, only a **trusted physical** `pointermove` or `pointerdown` event may resynchronize Ctrl/Shift; synthetic/programmatic Foundry or Sequencer pointer events are ignored.
+- Recovery remains armed while Ctrl or Shift is physically held, so a real pointer event that still reports Ctrl does not prematurely end recovery. If the later modifier keyup is swallowed, the next trusted pointer event that reports the modifier released restores MOVE and hides the Crosshair Elevation Gauge.
+- Keyboard and wheel events remain authoritative, blur still clears modifier state, Ctrl+Shift remains intentionally non-operative/MOVE, and Alt itself still has no AE5E placement action.
+- Preserved the accepted v0.4.4.13 gauge appearance, ELEVATE-only visibility, immediate initial reading, exact grid-Z stepping, 360-degree construction-plane travel, red-below-origin readouts, targeting/range behavior, and cleanup.
+- Added deterministic regressions for stale Alt/Ctrl recovery through trusted pointer input, rejection of synthetic pointer recovery, continued recovery while Ctrl remains held, and no-flicker pointer behavior when Alt recovery is not active.
+
 ## 0.4.4.13 — Action Effects 3D Crosshairs — Elevation Gauge mode-stability fix
 
 - Corrected a live Checkpoint 2 regression introduced by v0.4.4.12 where Foundry/Sequencer pointer activity could repeatedly resynchronize Ctrl/Shift from unreliable `pointermove` modifier flags, briefly forcing ELEVATE back to MOVE and making the Crosshair Elevation Gauge flicker on first appearance.

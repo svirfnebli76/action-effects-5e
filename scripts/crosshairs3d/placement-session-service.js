@@ -144,6 +144,7 @@ export class Crosshair3dPlacementSessionService {
       carrier: null,
       listeners: [],
       modifier: { shift: false, ctrl: false },
+      modifierRecovery: { pending: false, altActive: false },
       carrierSuppressionUntil: 0,
       mode: "MOVE",
       lastTargetIds: [...originalTargetIds],
@@ -273,9 +274,11 @@ export class Crosshair3dPlacementSessionService {
       setMode(next);
     };
     // Browser/Electron modifier keyup events can be swallowed when Alt changes
-    // focus/menu state. Keyboard and wheel events are authoritative modifier
-    // sources; pointer movement is deliberately ignored because Foundry/Sequencer
-    // can emit pointer activity whose modifier flags do not reflect held keys.
+    // focus/menu state. Keyboard and wheel events remain authoritative modifier
+    // sources. Pointer input is *normally ignored* because Foundry/Sequencer can
+    // synthesize pointer activity with unreliable modifier flags. After Alt is
+    // observed, however, a short-lived recovery state allows only trusted physical
+    // pointer input to repair a stale Ctrl/Shift latch.
     const syncModifiers = (event, keyIsDown = null) => {
       let shift = Boolean(event?.shiftKey);
       let ctrl = Boolean(event?.ctrlKey);
@@ -286,20 +289,48 @@ export class Crosshair3dPlacementSessionService {
       session.modifier.ctrl = ctrl;
       return changed;
     };
+    const finishRecoveryIfReleased = () => {
+      if (!session.modifier.ctrl && !session.modifier.shift) session.modifierRecovery.pending = false;
+    };
     const keydown = event => {
+      if (event?.key === "Alt") {
+        session.modifierRecovery.pending = true;
+        session.modifierRecovery.altActive = true;
+      }
       syncModifiers(event, true);
       updateMode();
+      if (event?.key !== "Alt" && !event?.altKey) finishRecoveryIfReleased();
     };
     const keyup = event => {
+      if (event?.key === "Alt") session.modifierRecovery.altActive = false;
       syncModifiers(event, false);
       updateMode();
+      // Do not clear recovery from Alt's own keyup: Chromium/Electron can report
+      // stale Ctrl/Shift flags on that exact event. A later explicit modifier
+      // event, wheel event, or trusted pointer event completes recovery instead.
+      if (event?.key !== "Alt" && !event?.altKey) finishRecoveryIfReleased();
     };
-    const blur = () => { session.modifier.shift = false; session.modifier.ctrl = false; updateMode(); };
+    const blur = () => {
+      session.modifier.shift = false;
+      session.modifier.ctrl = false;
+      session.modifierRecovery.pending = false;
+      session.modifierRecovery.altActive = false;
+      updateMode();
+    };
+    const recoverFromPointer = event => {
+      if (session.closed || !session.modifierRecovery.pending || session.modifierRecovery.altActive) return;
+      // Native user pointer input is trusted. Programmatic/Foundry/Sequencer
+      // dispatches are not, so they cannot reproduce the v0.4.4.12 gauge flicker.
+      if (event?.isTrusted !== true || event?.altKey) return;
+      if (syncModifiers(event)) updateMode();
+      finishRecoveryIfReleased();
+    };
     const wheel = event => {
       if (session.closed) return;
       // Wheel modifier flags describe the physical state for this exact input.
       // Resynchronize before deciding whether AE5E should intercept the wheel.
       if (syncModifiers(event)) updateMode();
+      if (!event?.altKey) finishRecoveryIfReleased();
       const modified = session.modifier.shift || session.modifier.ctrl;
       if (!modified) return;
       event.preventDefault?.();
@@ -330,8 +361,17 @@ export class Crosshair3dPlacementSessionService {
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("keyup", keyup, true);
     window.addEventListener("blur", blur, true);
+    window.addEventListener("pointermove", recoverFromPointer, true);
+    window.addEventListener("pointerdown", recoverFromPointer, true);
     window.addEventListener("wheel", wheel, { capture: true, passive: false });
-    session.listeners.push(["keydown", keydown, true], ["keyup", keyup, true], ["blur", blur, true], ["wheel", wheel, { capture: true }]);
+    session.listeners.push(
+      ["keydown", keydown, true],
+      ["keyup", keyup, true],
+      ["blur", blur, true],
+      ["pointermove", recoverFromPointer, true],
+      ["pointerdown", recoverFromPointer, true],
+      ["wheel", wheel, { capture: true }]
+    );
   }
 
   #ensureRemoteElevationArc(session, pointInput = null) {
