@@ -1,6 +1,6 @@
 # Action Effects 5E architecture
 
-## v0.4.4.14 Action Effects 3D Crosshairs — live placement and targeting
+## v0.4.4.15 Action Effects 3D Crosshairs — live placement and targeting
 
 The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
 
@@ -19,7 +19,7 @@ v0.4.4.11 refines that gauge for live use: the dial now has 5-degree graduations
 
 The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
 
-v0.4.4.14 keeps pointer movement non-authoritative during ordinary placement, preserving the v0.4.4.13 no-flicker behavior, while adding a targeted Alt recovery window for the Foundry/Electron missed-keyup edge case. Alt arms recovery; after Alt is no longer active, only trusted physical `pointermove`/`pointerdown` input may resynchronize Ctrl/Shift. Synthetic Foundry/Sequencer pointer events are ignored, and recovery stays armed while a physical modifier remains held so a later swallowed release can still self-heal. Keyboard and wheel events remain authoritative and blur clears all modifier/recovery state.
+v0.4.4.15 keeps pointer movement non-authoritative during ordinary placement while hardening the targeted Alt recovery window for Foundry/Electron missed-keyup behavior. AE5E no longer stores a persistent Alt-down latch: Alt only arms recovery, and trusted physical `pointermove`/`pointerdown` events inspect their own live `altKey` flag. Recovery remains armed until a later Ctrl/Shift cycle has actually been observed and released, so an Alt press that occurs before ELEVATE cannot be disarmed by intervening pointer motion. Synthetic Foundry/Sequencer pointer events remain ignored; keyboard and wheel events remain authoritative, and blur clears all modifier/recovery state.
 
 The live `ae5e.crosshairs3d.show(...)` session owns temporary input interception and accepted-state synchronization only for the duration of an opted-in placement. Normal mouse movement resolves XY/surfaces, Shift-wheel changes yaw by five degrees, Ctrl-wheel advances remote elevation to the next Scene-grid Z-plane intersection on the retained construction circle (Self Cone/Ray retain their existing pitch-step model), rapid input coalesces without dropping notches, and final confirmation waits for the newest authoritative revision. Accepted target state, presentation, and the hidden Sequencer carrier are published together after geometry/legality/target resolution rather than exposing raw cursor state as rules state.
 

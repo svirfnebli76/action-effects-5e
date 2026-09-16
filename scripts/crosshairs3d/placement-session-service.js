@@ -144,7 +144,7 @@ export class Crosshair3dPlacementSessionService {
       carrier: null,
       listeners: [],
       modifier: { shift: false, ctrl: false },
-      modifierRecovery: { pending: false, altActive: false },
+      modifierRecovery: { pending: false, sawTrackedModifier: false },
       carrierSuppressionUntil: 0,
       mode: "MOVE",
       lastTargetIds: [...originalTargetIds],
@@ -289,40 +289,56 @@ export class Crosshair3dPlacementSessionService {
       session.modifier.ctrl = ctrl;
       return changed;
     };
+    const noteTrackedModifier = () => {
+      if (session.modifierRecovery.pending && (session.modifier.ctrl || session.modifier.shift)) {
+        session.modifierRecovery.sawTrackedModifier = true;
+      }
+    };
     const finishRecoveryIfReleased = () => {
-      if (!session.modifier.ctrl && !session.modifier.shift) session.modifierRecovery.pending = false;
+      if (!session.modifierRecovery.pending) return;
+      if (!session.modifierRecovery.sawTrackedModifier) return;
+      if (!session.modifier.ctrl && !session.modifier.shift) {
+        session.modifierRecovery.pending = false;
+        session.modifierRecovery.sawTrackedModifier = false;
+      }
     };
     const keydown = event => {
       if (event?.key === "Alt") {
+        // Chromium/Electron may never deliver Alt keyup after menu/focus handling.
+        // Arm recovery, but do not persist an Alt-down boolean that can become
+        // permanently stale. The current event's altKey flag is sufficient.
         session.modifierRecovery.pending = true;
-        session.modifierRecovery.altActive = true;
+        session.modifierRecovery.sawTrackedModifier = false;
       }
       syncModifiers(event, true);
+      noteTrackedModifier();
       updateMode();
       if (event?.key !== "Alt" && !event?.altKey) finishRecoveryIfReleased();
     };
     const keyup = event => {
-      if (event?.key === "Alt") session.modifierRecovery.altActive = false;
       syncModifiers(event, false);
+      noteTrackedModifier();
       updateMode();
-      // Do not clear recovery from Alt's own keyup: Chromium/Electron can report
-      // stale Ctrl/Shift flags on that exact event. A later explicit modifier
-      // event, wheel event, or trusted pointer event completes recovery instead.
+      // Do not clear recovery from Alt's own keyup: Chromium/Electron can omit
+      // that event entirely or report stale Ctrl/Shift flags on it. Recovery is
+      // completed only after a later tracked modifier cycle is observed released.
       if (event?.key !== "Alt" && !event?.altKey) finishRecoveryIfReleased();
     };
     const blur = () => {
       session.modifier.shift = false;
       session.modifier.ctrl = false;
       session.modifierRecovery.pending = false;
-      session.modifierRecovery.altActive = false;
+      session.modifierRecovery.sawTrackedModifier = false;
       updateMode();
     };
     const recoverFromPointer = event => {
-      if (session.closed || !session.modifierRecovery.pending || session.modifierRecovery.altActive) return;
+      if (session.closed || !session.modifierRecovery.pending) return;
       // Native user pointer input is trusted. Programmatic/Foundry/Sequencer
       // dispatches are not, so they cannot reproduce the v0.4.4.12 gauge flicker.
+      // Never cache Alt state: inspect only this event's live altKey flag.
       if (event?.isTrusted !== true || event?.altKey) return;
       if (syncModifiers(event)) updateMode();
+      noteTrackedModifier();
       finishRecoveryIfReleased();
     };
     const wheel = event => {
@@ -330,6 +346,7 @@ export class Crosshair3dPlacementSessionService {
       // Wheel modifier flags describe the physical state for this exact input.
       // Resynchronize before deciding whether AE5E should intercept the wheel.
       if (syncModifiers(event)) updateMode();
+      noteTrackedModifier();
       if (!event?.altKey) finishRecoveryIfReleased();
       const modified = session.modifier.shift || session.modifier.ctrl;
       if (!modified) return;

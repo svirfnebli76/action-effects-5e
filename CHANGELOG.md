@@ -1,3 +1,13 @@
+## 0.4.4.15 — Action Effects 3D Crosshairs — Alt recovery without persistent Alt state
+
+- Removed the persistent `altActive` placement-session latch introduced in v0.4.4.14. Chromium/Electron can omit Alt keyup entirely after menu/focus handling, so AE5E no longer requires that event to prove Alt was released.
+- Alt now only **arms** modifier recovery. Recovery checks the live `event.altKey` value on each trusted physical pointer event instead of remembering an Alt-down boolean that can become stale.
+- Added a tracked-modifier phase to the recovery window. A brief Alt press before ELEVATE keeps recovery armed until a later Ctrl/Shift cycle has actually been observed, preventing ordinary pointer movement between Alt and Ctrl from prematurely disarming recovery.
+- If the subsequent Ctrl/Shift keyup is swallowed, the next trusted pointer event with `altKey=false` can resynchronize the physical modifier state and return to MOVE. Synthetic/programmatic pointer events remain ignored, preserving the accepted no-flicker behavior.
+- Wheel input remains authoritative, so an ordinary unmodified wheel still immediately clears stale Ctrl/Shift state and passes through to Foundry canvas zoom. Blur still clears all placement modifier/recovery state.
+- Preserved the accepted v0.4.4.14 Crosshair Elevation Gauge rendering, geometry, mode visibility, 5-degree ticks, 50% `#484848` background, immediate initial reading, exact grid-Z stepping, red-below-origin readouts, targeting/range behavior, and cleanup.
+- Added a deterministic regression for the exact live sequence: Alt keydown with **no Alt keyup delivered**, trusted pointer activity before ELEVATE, later Ctrl/ELEVATE with swallowed Ctrl keyup, then trusted pointer recovery to MOVE.
+
 ## 0.4.4.14 — Action Effects 3D Crosshairs — targeted Alt modifier recovery
 
 - Corrected the remaining Foundry/Electron Alt edge case without restoring the v0.4.4.12 Crosshair Elevation Gauge flicker. Pressing Alt now arms a short-lived modifier-recovery state instead of making ordinary pointer movement authoritative for the whole placement session.
