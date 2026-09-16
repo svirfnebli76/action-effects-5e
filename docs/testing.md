@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.17
+# Current infrastructure acceptance — v0.4.4.18
 
 ## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
 
@@ -28,6 +28,8 @@ v0.4.4.10 adds deterministic coverage for the **Crosshair Elevation Gauge**: fix
 v0.4.4.11 adds regressions for 5-degree dial graduations, the `#484848` 50%-opacity interior, ELEVATE-only gauge visibility, immediate gauge state publication on Ctrl/ELEVATE entry without a wheel event, and initialization of a nonzero side-view phase from the current authoritative placement. Geometry and snapping rules remain unchanged.
 
 v0.4.4.17 adds overlay regressions for the crosshair-local instruction stack: no center confirmation label, same 16 px font size as the mode badge, one dark rounded badge per instruction line, authoritative placement below the crosshair footprint, and capability-conditional ordering of rotation, elevation, and cancel instructions. Alt suppression and all accepted gauge/geometry behavior from v0.4.4.16 remain unchanged.
+
+v0.4.4.18 strengthens the accepted-state visual regression to model Sequencer 4.2.3's real rotation lifecycle: `.rotate()` initializes `spriteContainer.rotation`, but `_transformSprite()` does not update it when `data.angle` later changes. The retained visual test now requires the same live CanvasEffect's `spriteContainer.rotation` to match the accepted yaw after an in-place update, while still forbidding destructive `EffectManager.updateEffects()` calls.
 
 Checkpoint 2 requires live Foundry acceptance because browser input interception, Sequencer CanvasEffect updates, PIXI guide placement, Token target highlighting/secrecy, Foundry surface resolution, and optional LOS cannot be accepted from Node tests alone. Checkpoint 3 must not begin until the focused live placement suite passes or any discovered runtime incompatibility is corrected.
 
@@ -1386,4 +1388,4 @@ v0.4.4.13 retains the Alt/focus and unmodified-wheel regressions from v0.4.4.12 
 v0.4.4.16 replaces the unsuccessful Alt modifier-recovery experiment with capture-stage Alt suppression for active Action Effects 3D Crosshairs sessions. The focused regressions prove both Alt keydown and Alt keyup invoke `preventDefault()`, `stopPropagation()`, and `stopImmediatePropagation()`, a brief Alt press before ELEVATE leaves the later normal Ctrl-release path intact, and placement installs no pointer modifier-recovery listeners so pointer activity cannot flicker a Ctrl-held Crosshair Elevation Gauge. The unmodified-wheel stale-state regression remains in place. The accepted gauge rendering, geometry, and placement behavior are otherwise unchanged.
 
 
-v0.4.4.17 moves the placement control hints from the bottom-screen HUD to retained PIXI badges directly below the authoritative crosshair, removes the center click-to-confirm label, and verifies exact capability-conditional wording/order plus mode-badge font-size parity. The v0.4.4.16 Alt suppression regression remains intact.
+v0.4.4.18 moves the placement control hints from the bottom-screen HUD to retained PIXI badges directly below the authoritative crosshair, removes the center click-to-confirm label, and verifies exact capability-conditional wording/order plus mode-badge font-size parity. The v0.4.4.16 Alt suppression regression remains intact.

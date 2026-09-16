@@ -306,6 +306,20 @@ export class Crosshair3dPlacementVisualService {
     if (size) effect.data.size = { width: size.width, height: size.height, gridUnits: true };
 
     await effect._transformSprite();
+
+    // Sequencer 4.2.3 applies `.rotate()` / `data.angle` to
+    // `spriteContainer.rotation` when the sprite is CREATED, but its private
+    // `_transformSprite()` pass does not re-apply a changed `data.angle`.
+    // Keep the same retained CanvasEffect (avoiding media reinitialization /
+    // flicker) and mirror Sequencer's creation-time rotation directly onto the
+    // existing sprite container after the transform pass. PIXI rotation is in
+    // radians and Sequencer's `.rotate()` direction is the negative angle here.
+    if (effect.spriteContainer) {
+      const radians = (finiteNumber(yaw, 0) * Math.PI) / 180;
+      const normalizedRadians = Math.atan2(Math.sin(radians), Math.cos(radians));
+      effect.spriteContainer.rotation = -normalizedRadians;
+    }
+
     state.effectId = effect.id ?? state.effectId;
     return true;
   }

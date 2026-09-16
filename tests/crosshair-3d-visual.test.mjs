@@ -28,6 +28,7 @@ function installSequencerStub() {
     async play() {
       const data = structuredClone(this.builder.data);
       calls.starts.push(structuredClone(data));
+      const initialRadians = ((data.angle ?? 0) * Math.PI) / 180;
       const effect = {
         id: `effect-${data.name}`,
         data,
@@ -37,6 +38,10 @@ function installSequencerStub() {
         _cachedTargetData: { position: data.target },
         _customAngle: data.angle ?? 0,
         elevation: data.elevation?.elevation ?? 0,
+        // Model Sequencer 4.2.3: creation-time `.rotate()` writes the actual
+        // visual rotation to spriteContainer, while `_transformSprite()` does
+        // not re-apply later changes to data.angle.
+        spriteContainer: { rotation: -Math.atan2(Math.sin(initialRadians), Math.cos(initialRadians)) },
         async _transformSprite() {
           calls.transforms.push({
             id: this.id,
@@ -44,7 +49,8 @@ function installSequencerStub() {
             angle: this.data.angle,
             target: structuredClone(this.data.target),
             elevation: structuredClone(this.data.elevation),
-            size: structuredClone(this.data.size)
+            size: structuredClone(this.data.size),
+            visualRotation: this.spriteContainer.rotation
           });
         }
       };
@@ -109,6 +115,9 @@ test("accepted-state Eskie artwork starts once and transforms the same live spri
   assert.equal(calls.destructiveUpdates.length, 0, "Sequencer updateEffects is not used during interactive movement");
   assert.deepEqual(artworkTransforms[0].source, { x: 200, y: 200 });
   assert.equal(artworkTransforms[0].angle, 25);
+  const liveArtwork = globalThis.Sequencer.EffectManager.getEffects({ name: "action-effects-5e.crosshair3d.accepted.one" })[0];
+  const expectedRadians = -(25 * Math.PI / 180);
+  assert.ok(Math.abs(liveArtwork.spriteContainer.rotation - expectedRadians) < 1e-12, "retained visual sprite rotates to the accepted yaw");
   assert.deepEqual(tracerStarts[0].target, { x: 100, y: 200 });
   assert.deepEqual(tracerTransforms[0].target, { x: 200, y: 200 });
   assert.equal(tracerStarts[0].opacity, 0.8);

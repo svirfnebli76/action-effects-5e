@@ -1,3 +1,10 @@
+## 0.4.4.18 — Action Effects 3D Crosshairs — retained Prism artwork rotation
+
+- Fixes retained Sequencer placement artwork so accepted yaw changes rotate the existing live `spriteContainer` in place instead of only updating `data.angle`.
+- Preserves the no-flicker retained CanvasEffect path: no `EffectManager.updateEffects()` or effect recreation during interactive rotation.
+- Geometry, targeting, 5-degree yaw accounting, elevation, gauge, overlay UX, and Alt suppression are unchanged from v0.4.4.17.
+- Adds a regression that models Sequencer 4.2.3's split between creation-time `.rotate()` handling and `_transformSprite()` updates.
+
 ## 0.4.4.17 — Action Effects 3D Crosshairs — crosshair-local control instructions
 
 - Removed the AE5E-owned `Action Effects 3D Crosshairs — click to confirm` label from the center of the placement visual. Confirmation remains the normal left-click interaction; the redundant center text is no longer created.
