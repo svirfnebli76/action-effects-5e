@@ -272,31 +272,49 @@ export class Crosshair3dPlacementSessionService {
       const next = session.modifier.ctrl && session.modifier.shift ? "MOVE" : session.modifier.ctrl ? "ELEVATE" : session.modifier.shift ? "ROTATE" : "MOVE";
       setMode(next);
     };
+    // Browser/Electron modifier keyup events can be swallowed when Alt changes
+    // focus/menu state. Treat the modifier flags on each fresh input event as
+    // authoritative so a missed keyup cannot latch AE5E in ELEVATE/ROTATE.
+    const syncModifiers = (event, keyIsDown = null) => {
+      let shift = Boolean(event?.shiftKey);
+      let ctrl = Boolean(event?.ctrlKey);
+      if (event?.key === "Shift" && keyIsDown !== null) shift = keyIsDown;
+      if (event?.key === "Control" && keyIsDown !== null) ctrl = keyIsDown;
+      const changed = shift !== session.modifier.shift || ctrl !== session.modifier.ctrl;
+      session.modifier.shift = shift;
+      session.modifier.ctrl = ctrl;
+      return changed;
+    };
     const keydown = event => {
-      if (event.key === "Shift") session.modifier.shift = true;
-      if (event.key === "Control") session.modifier.ctrl = true;
+      syncModifiers(event, true);
       updateMode();
     };
     const keyup = event => {
-      if (event.key === "Shift") session.modifier.shift = false;
-      if (event.key === "Control") session.modifier.ctrl = false;
+      syncModifiers(event, false);
       updateMode();
+    };
+    const pointermove = event => {
+      if (session.closed) return;
+      if (syncModifiers(event)) updateMode();
     };
     const blur = () => { session.modifier.shift = false; session.modifier.ctrl = false; updateMode(); };
     const wheel = event => {
       if (session.closed) return;
-      const modified = event.shiftKey || event.ctrlKey || session.modifier.shift || session.modifier.ctrl;
+      // Wheel modifier flags describe the physical state for this exact input.
+      // Resynchronize before deciding whether AE5E should intercept the wheel.
+      if (syncModifiers(event)) updateMode();
+      const modified = session.modifier.shift || session.modifier.ctrl;
       if (!modified) return;
       event.preventDefault?.();
       event.stopPropagation?.();
       event.stopImmediatePropagation?.();
       this.#stats.wheelEvents += 1;
-      if ((event.shiftKey || session.modifier.shift) && (event.ctrlKey || session.modifier.ctrl)) {
+      if (session.modifier.shift && session.modifier.ctrl) {
         setMode("MOVE");
         return;
       }
       const step = event.deltaY < 0 ? 1 : -1;
-      if ((event.shiftKey || session.modifier.shift) && session.capabilities.rotation) {
+      if (session.modifier.shift && session.capabilities.rotation) {
         setMode("ROTATE");
         const headingYaw = normalizeDegrees(finiteNumber(session.intent.headingYaw, session.intent.yaw) + (step * 5));
         const orientation = session.self
@@ -306,7 +324,7 @@ export class Crosshair3dPlacementSessionService {
         this.#requestResolution(session, { statePatch: { headingYaw, yaw: orientation.yaw, pitch: orientation.pitch }, reason: "wheel-rotate", force: true });
         return;
       }
-      if ((event.ctrlKey || session.modifier.ctrl) && session.capabilities.elevation) {
+      if (session.modifier.ctrl && session.capabilities.elevation) {
         setMode("ELEVATE");
         const elevationStep = this.#reverseElevationWheelEnabled() ? -step : step;
         this.#requestElevationStep(session, elevationStep);
@@ -314,9 +332,10 @@ export class Crosshair3dPlacementSessionService {
     };
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("keyup", keyup, true);
+    window.addEventListener("pointermove", pointermove, true);
     window.addEventListener("blur", blur, true);
     window.addEventListener("wheel", wheel, { capture: true, passive: false });
-    session.listeners.push(["keydown", keydown, true], ["keyup", keyup, true], ["blur", blur, true], ["wheel", wheel, { capture: true }]);
+    session.listeners.push(["keydown", keydown, true], ["keyup", keyup, true], ["pointermove", pointermove, true], ["blur", blur, true], ["wheel", wheel, { capture: true }]);
   }
 
   #ensureRemoteElevationArc(session, pointInput = null) {

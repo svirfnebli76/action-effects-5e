@@ -1,3 +1,12 @@
+## 0.4.4.12 — Action Effects 3D Crosshairs — modifier-state hardening
+
+- Corrected a live Foundry/Electron input edge case where pressing **Alt** could cause a missed Ctrl/Shift keyup to leave Action Effects 3D Crosshairs latched in ELEVATE or ROTATE. AE5E no longer allows its cached modifier booleans to overrule fresh browser input state.
+- Keyboard events now resynchronize Ctrl/Shift from each event's physical modifier flags while still handling the modifier key currently going down/up explicitly. Alt is not assigned any Action Effects 3D Crosshairs behavior; it merely provides another fresh event that can repair stale modifier state.
+- Added lightweight `pointermove` resynchronization so the next ordinary mouse movement self-heals a swallowed modifier keyup and restores MOVE without requiring another wheel notch or key press. Blur continues to clear all session modifier state.
+- Wheel interception now trusts the wheel event's current Ctrl/Shift state. An ordinary unmodified wheel can no longer be captured because a previous Ctrl/Shift value remained cached. Ctrl+Shift remains intentionally non-operative/MOVE.
+- Preserved all accepted v0.4.4.11 Crosshair Elevation Gauge presentation, exact grid-Z stepping, 360-degree construction-plane travel, targeting/range behavior, wheel-direction preference, and cleanup.
+- Added deterministic regressions for Alt-associated swallowed Ctrl keyup recovery, pointer-move self-healing, and rejecting unmodified wheel input when cached Ctrl had become stale.
+
 ## 0.4.4.11 — Action Effects 3D Crosshairs — Elevation Gauge live UX refinement
 
 - Refined the Checkpoint 2 **Crosshair Elevation Gauge** after the first live Foundry acceptance pass. Circumference graduations now occur every **5 degrees**, with longer 10-degree, 45-degree, and cardinal orientation marks retained for readability.

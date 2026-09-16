@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.11
+# Current infrastructure acceptance — v0.4.4.12
 
 ## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
 
@@ -1378,3 +1378,4 @@ For live Foundry acceptance, establish a real Grapple (or the existing `grappleF
 
 Also confirm forced movement and teleport behavior remain unchanged. Relationship diagnostics are available through `ae5e.relationships.getMovementStats()` and `ae5e.relationships.getRotationStats()`. No compendium or asset content is modified by this release.
 
+v0.4.4.12 adds modifier-state regressions covering Alt/focus-associated swallowed Ctrl keyup recovery, pointer-move recovery from stale Ctrl state, and proof that an unmodified wheel is not intercepted by an older cached modifier. These are Checkpoint 2 input-state tests only; placement geometry and the accepted elevation gauge are unchanged.

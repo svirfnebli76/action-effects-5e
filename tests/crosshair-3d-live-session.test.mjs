@@ -158,6 +158,76 @@ test("Crosshair Elevation Gauge is visible only in ELEVATE and publishes an imme
   assert.ok(updates.some(data => data?.visible === false), "MOVE/ROTATE mode transitions explicitly hide the gauge");
 });
 
+
+test("Alt input cannot latch ELEVATE after a swallowed Ctrl keyup", async () => {
+  const h = harness({
+    carrierPosition: { x: 300, y: 100 },
+    onShow: ({ window }) => {
+      window.dispatch("keydown", { key: "Control", ctrlKey: true });
+      window.dispatch("keydown", { key: "Alt", ctrlKey: true, altKey: true });
+      // Reproduce the Electron/browser edge case: Ctrl is physically released
+      // but its keyup is not delivered while Alt has altered focus/menu state.
+      window.dispatch("keyup", { key: "Alt", ctrlKey: false, altKey: false });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
+  assert.ok(modes.includes("ELEVATE"), "Ctrl still enters ELEVATE before Alt exposes the missed-keyup case");
+  assert.equal(modes.at(-1), "MOVE", "Alt keyup resynchronizes physical modifier state and releases ELEVATE");
+  const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
+  assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides when the recovered mode returns to MOVE");
+});
+
+test("pointer movement self-heals a stale Ctrl latch after Alt/focus interference", async () => {
+  const h = harness({
+    onShow: ({ window }) => {
+      window.dispatch("keydown", { key: "Alt", altKey: true, ctrlKey: false });
+      window.dispatch("keyup", { key: "Alt", altKey: false, ctrlKey: false });
+      window.dispatch("keydown", { key: "Control", ctrlKey: true });
+      // Simulate a swallowed Ctrl keyup, then the user's next ordinary mouse move.
+      window.dispatch("pointermove", { ctrlKey: false, shiftKey: false, altKey: false });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
+  assert.equal(modes.at(-1), "MOVE", "a no-modifier pointer event clears stale cached Ctrl state");
+});
+
+test("an unmodified wheel event is never captured by stale cached Ctrl state", async () => {
+  const h = harness({
+    onShow: ({ window }) => {
+      window.dispatch("keydown", { key: "Control", ctrlKey: true });
+      // No Ctrl keyup arrives; the wheel event itself says Ctrl is physically up.
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: false, altKey: false, deltaY: -100 });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    capabilities: { rotation: false, elevation: true, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  assert.equal(h.service.getStats().wheelEvents, 0, "AE5E does not intercept an unmodified wheel because an older Ctrl state was cached");
+  assert.equal(result.placementPoint.z, 0, "stale Ctrl cannot apply an elevation step");
+});
+
 test("Self Ray Ctrl-wheel changes pitch while preserving fixed centerline length", async () => {
   const h = harness({
     onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 })
@@ -301,8 +371,8 @@ test("remote elevation remains cyclic across repeated full-circle travel and Ctr
     onShow: ({ window }) => {
       for (let i = 0; i < 8; i += 1) {
         window.dispatch("keydown", { key: "Control" });
-        window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
-        window.dispatch("keyup", { key: "Control" });
+        window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+        window.dispatch("keyup", { key: "Control", ctrlKey: false });
       }
     }
   });
@@ -324,9 +394,9 @@ test("releasing Ctrl returns remote MOVE to the cursor position while preserving
     carrierPosition: { x: 300, y: 100 },
     onShow: async ({ carrier, callbacks, window }) => {
       window.dispatch("keydown", { key: "Control" });
-      window.dispatch("wheel", { shiftKey: false, ctrlKey: false, deltaY: -100 });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
       await new Promise(resolve => setTimeout(resolve, 5));
-      window.dispatch("keyup", { key: "Control" });
+      window.dispatch("keyup", { key: "Control", ctrlKey: false });
       await new Promise(resolve => setTimeout(resolve, 70));
 
       // Default Sequencer MOVE behavior is cursor-centered. After Ctrl release,
