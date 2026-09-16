@@ -1,6 +1,6 @@
 # Action Effects 5E architecture
 
-## v0.4.4.16 Action Effects 3D Crosshairs — live placement and targeting
+## v0.4.4.17 Action Effects 3D Crosshairs — live placement and targeting
 
 The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
 
@@ -20,6 +20,8 @@ v0.4.4.11 refines that gauge for live use: the dial now has 5-degree graduations
 The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
 
 v0.4.4.16 removes the unsuccessful Alt-recovery machinery from the placement session and instead performs one final targeted browser-level mitigation: because Alt has no AE5E placement function, active Action Effects 3D Crosshairs sessions capture-suppress Alt keydown/keyup before Chromium/Electron menu/focus handling can consume or reroute later modifier transitions. Ctrl/Shift keyboard events and wheel events remain authoritative. No pointermove/pointerdown modifier-recovery listeners are installed, preserving the accepted no-flicker Crosshair Elevation Gauge behavior. Blur clears cached Ctrl/Shift state as before.
+
+v0.4.4.17 finalizes the current Checkpoint 2 instruction presentation. The redundant center click-to-confirm label is removed. Capability-conditional control instructions are retained PIXI badges that follow the authoritative crosshair below its footprint, with rotation first when available, elevation second when available, and Right Click to Cancel last. Each instruction has its own line and uses the same 16 px bold white-on-dark visual scale as the moving mode badge.
 
 The live `ae5e.crosshairs3d.show(...)` session owns temporary input interception and accepted-state synchronization only for the duration of an opted-in placement. Normal mouse movement resolves XY/surfaces, Shift-wheel changes yaw by five degrees, Ctrl-wheel advances remote elevation to the next Scene-grid Z-plane intersection on the retained construction circle (Self Cone/Ray retain their existing pitch-step model), rapid input coalesces without dropping notches, and final confirmation waits for the newest authoritative revision. Accepted target state, presentation, and the hidden Sequencer carrier are published together after geometry/legality/target resolution rather than exposing raw cursor state as rules state.
 

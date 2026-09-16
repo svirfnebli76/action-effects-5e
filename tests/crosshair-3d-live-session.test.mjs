@@ -102,6 +102,37 @@ test("live 3D placement collects targets through the grid-cell rules and preserv
   assert.equal(h.window.count("wheel"), 0, "wheel interception is cleaned up");
 });
 
+
+
+test("placement control hints are capability-conditional and ordered rotation, elevation, cancel", async () => {
+  const sphere = harness();
+  await sphere.service.show({
+    source: sphere.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    capabilities: { rotation: false, elevation: true, los: false }
+  });
+  const sphereShow = sphere.overlayEvents.find(([type]) => type === "show")?.[1];
+  assert.deepEqual(sphereShow?.hints, [
+    "Hold Ctrl+Mousewheel to change Elevation",
+    "Right Click to Cancel"
+  ], "Sphere omits the unavailable rotation instruction");
+
+  const prism = harness();
+  await prism.service.show({
+    source: prism.source,
+    remote: true,
+    shape: { type: "prism", origin: { x: 0, y: 0, z: 0 }, width: 5, length: 10, height: 5, yaw: 0 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+  const prismShow = prism.overlayEvents.find(([type]) => type === "show")?.[1];
+  assert.deepEqual(prismShow?.hints, [
+    "Hold Shift+Mousewheel to change Rotation",
+    "Hold Ctrl+Mousewheel to change Elevation",
+    "Right Click to Cancel"
+  ], "rotation-capable placements list rotation first, then elevation, then cancel");
+});
+
 test("cancel restores the target set that existed before placement", async () => {
   const h = harness({ cancelled: true });
   globalThis.game.user.targets = new Set([{ id: "outside" }]);

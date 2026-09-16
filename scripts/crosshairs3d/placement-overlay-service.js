@@ -1,36 +1,23 @@
 import { finiteNumber } from "./geometry-utils.js";
 
-const ROOT_ID = "action-effects-5e-3d-crosshair-overlay";
 const ELEVATION_FONT_SIZE = 22;
 const ELEVATION_OFFSET_PX = ELEVATION_FONT_SIZE * 2;
-const CONFIRM_FONT_SIZE = 18;
 const MODE_FONT_SIZE = 16;
+const HINT_FONT_SIZE = MODE_FONT_SIZE;
 const MODE_BOUNDARY_MARGIN = 22;
-const CONFIRM_OFFSET_GRID_FACTOR = 0.35;
+const HINT_BOUNDARY_MARGIN = 18;
+const HINT_ROW_GAP = 4;
 
 export class Crosshair3dPlacementOverlayService {
-  #root = null;
   #elevationText = null;
-  #confirmText = null;
   #modeContainer = null;
   #modeText = null;
   #modeBackground = null;
+  #hintsContainer = null;
+  #hintRows = [];
 
   show({ mode = "MOVE", hints = [] } = {}) {
     this.clear();
-    const doc = globalThis.document;
-    if (doc?.body) {
-      const root = doc.createElement("div");
-      root.id = ROOT_ID;
-      root.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:100000;font-family:var(--font-primary, sans-serif);text-shadow:0 1px 3px #000;";
-      const hintsEl = doc.createElement("div");
-      hintsEl.dataset.ae5e3d = "hints";
-      hintsEl.style.cssText = "position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:6px 10px;border-radius:6px;background:rgba(0,0,0,.66);color:white;font-size:13px;white-space:nowrap;";
-      hintsEl.textContent = hints.join("   •   ");
-      root.append(hintsEl);
-      doc.body.appendChild(root);
-      this.#root = root;
-    }
 
     const PIXI = globalThis.PIXI;
     const parent = globalThis.canvas?.interface ?? globalThis.canvas?.controls;
@@ -50,21 +37,8 @@ export class Crosshair3dPlacementOverlayService {
     parent.addChild(elevation);
     this.#elevationText = elevation;
 
-    const confirm = this.#createText(PIXI, "Action Effects 3D Crosshairs — click to confirm", {
-      fontFamily: "Arial",
-      fontSize: CONFIRM_FONT_SIZE,
-      fill: "#FFFFFF",
-      fontWeight: "600",
-      stroke: { color: "#000000", width: 4 }
-    });
-    confirm.name = "action-effects-5e-3d-crosshair-confirm";
-    confirm.eventMode = "none";
-    confirm.anchor?.set?.(0.5, 0.5);
-    confirm.visible = false;
-    parent.addChild(confirm);
-    this.#confirmText = confirm;
-
     this.#createModeBadge(PIXI, parent, mode);
+    this.#createHintStack(PIXI, parent, hints);
   }
 
   update({ mode = null, elevation = null, originElevation = null, point = null, gridSize = null, footprintRadiusPx = null } = {}) {
@@ -78,6 +52,7 @@ export class Crosshair3dPlacementOverlayService {
     const x = finiteNumber(point.x);
     const y = finiteNumber(point.y);
     const grid = Math.max(1, finiteNumber(gridSize, 100));
+    const footprint = Math.max(0, finiteNumber(footprintRadiusPx, grid * 0.5));
 
     if (this.#elevationText) {
       this.#elevationText.text = `${this.#formatElevation(elevation)} ft`;
@@ -90,39 +65,39 @@ export class Crosshair3dPlacementOverlayService {
       this.#elevationText.visible = true;
     }
 
-    if (this.#confirmText) {
-      this.#confirmText.position.set(x, y - (grid * CONFIRM_OFFSET_GRID_FACTOR));
-      this.#confirmText.visible = true;
-    }
-
     if (this.#modeContainer) {
-      const footprint = Math.max(0, finiteNumber(footprintRadiusPx, grid * 0.5));
       this.#modeContainer.position?.set?.(x, y - footprint - MODE_BOUNDARY_MARGIN);
       this.#modeContainer.visible = true;
+    }
+
+    if (this.#hintsContainer) {
+      // Keep the instruction stack attached to the authoritative crosshair and
+      // position it from the bottom edge of the actual placement footprint.
+      // Each instruction owns its own compact dark badge so larger/smaller
+      // crosshairs retain the same readable spacing.
+      this.#hintsContainer.position?.set?.(x, y + footprint + HINT_BOUNDARY_MARGIN);
+      this.#hintsContainer.visible = this.#hintRows.length > 0;
     }
   }
 
   clear() {
-    try { this.#root?.remove?.(); } catch (_error) { /* noop */ }
-    this.#root = null;
-
     this.#removeDisplayObject(this.#elevationText);
-    this.#removeDisplayObject(this.#confirmText);
     this.#removeDisplayObject(this.#modeContainer);
+    this.#removeDisplayObject(this.#hintsContainer);
 
     this.#elevationText = null;
-    this.#confirmText = null;
     this.#modeContainer = null;
     this.#modeText = null;
     this.#modeBackground = null;
+    this.#hintsContainer = null;
+    this.#hintRows = [];
   }
 
   #createText(PIXI, text, style) {
     // Foundry v14's PIXI Text compatibility layer accepts the text string but
-    // can silently ignore the second constructor argument. That is why the
-    // v0.4.4.8 overlay rendered the correct strings while retaining PIXI's
-    // default black style. Construct the display first, then apply an explicit
-    // TextStyle (or direct style assignment as a compatibility fallback).
+    // can silently ignore the second constructor argument. Construct the
+    // display first, then apply an explicit TextStyle (or direct style
+    // assignment as a compatibility fallback).
     const content = String(text ?? "");
     let display;
     try {
@@ -146,7 +121,6 @@ export class Crosshair3dPlacementOverlayService {
     display.text = content;
     return display;
   }
-
 
   #setTextFill(display, fill) {
     if (!display) return;
@@ -201,13 +175,98 @@ export class Crosshair3dPlacementOverlayService {
     this.#modeText = text;
   }
 
+  #createHintStack(PIXI, parent, hints) {
+    const lines = Array.isArray(hints)
+      ? hints.map(line => String(line ?? "").trim()).filter(Boolean)
+      : [];
+    if (!lines.length) return;
+
+    if (!PIXI.Container) {
+      // Minimal PIXI fallback: a single retained multiline text still follows
+      // the crosshair. Normal Foundry v14 uses the individual badge path below.
+      const text = this.#createText(PIXI, lines.join("\n"), {
+        fontFamily: "Arial",
+        fontSize: HINT_FONT_SIZE,
+        fill: "#FFFFFF",
+        fontWeight: "700",
+        align: "center",
+        stroke: { color: "#000000", width: 2 }
+      });
+      text.name = "action-effects-5e-3d-crosshair-hints";
+      text.eventMode = "none";
+      text.anchor?.set?.(0.5, 0);
+      text.visible = false;
+      parent.addChild(text);
+      this.#hintsContainer = text;
+      this.#hintRows = [{ container: text, text, background: null }];
+      return;
+    }
+
+    const stack = new PIXI.Container();
+    stack.name = "action-effects-5e-3d-crosshair-hints";
+    stack.eventMode = "none";
+    stack.visible = false;
+
+    let cursorY = 0;
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const row = new PIXI.Container();
+      row.name = `action-effects-5e-3d-crosshair-hint-${index}`;
+      row.eventMode = "none";
+
+      const text = this.#createText(PIXI, line, {
+        fontFamily: "Arial",
+        fontSize: HINT_FONT_SIZE,
+        fill: "#FFFFFF",
+        fontWeight: "700",
+        stroke: { color: "#000000", width: 2 }
+      });
+      text.name = `action-effects-5e-3d-crosshair-hint-text-${index}`;
+      text.eventMode = "none";
+      text.anchor?.set?.(0.5, 0.5);
+
+      let background = null;
+      if (PIXI.Graphics) {
+        background = new PIXI.Graphics();
+        background.name = `action-effects-5e-3d-crosshair-hint-background-${index}`;
+        background.eventMode = "none";
+        row.addChild(background);
+      }
+      row.addChild(text);
+
+      const dimensions = this.#badgeDimensions(text, { minWidth: 48, minHeight: 28, horizontalPadding: 12, verticalPadding: 8 });
+      this.#drawBadgeBackground(background, dimensions);
+      row.position?.set?.(0, cursorY + (dimensions.height / 2));
+      cursorY += dimensions.height + HINT_ROW_GAP;
+
+      stack.addChild(row);
+      this.#hintRows.push({ container: row, text, background });
+    }
+
+    parent.addChild(stack);
+    this.#hintsContainer = stack;
+  }
+
   #refreshModeBackground() {
     const background = this.#modeBackground;
     const text = this.#modeText;
     if (!background || !text) return;
+    this.#drawBadgeBackground(background, this.#badgeDimensions(text, {
+      minWidth: 48,
+      minHeight: 28,
+      horizontalPadding: 24,
+      verticalPadding: 10
+    }));
+  }
 
-    const width = Math.max(48, finiteNumber(text.width, 48) + 24);
-    const height = Math.max(28, finiteNumber(text.height, MODE_FONT_SIZE) + 10);
+  #badgeDimensions(text, { minWidth = 48, minHeight = 28, horizontalPadding = 24, verticalPadding = 10 } = {}) {
+    const width = Math.max(minWidth, finiteNumber(text?.width, minWidth) + horizontalPadding);
+    const height = Math.max(minHeight, finiteNumber(text?.height, MODE_FONT_SIZE) + verticalPadding);
+    return { width, height };
+  }
+
+  #drawBadgeBackground(background, { width, height }) {
+    if (!background) return;
     const x = -width / 2;
     const y = -height / 2;
 
@@ -245,7 +304,9 @@ export class Crosshair3dPlacementOverlayService {
 
 export const CROSSHAIR_3D_OVERLAY_PRESENTATION = Object.freeze({
   elevationFontSize: ELEVATION_FONT_SIZE,
-  confirmFontSize: CONFIRM_FONT_SIZE,
   modeFontSize: MODE_FONT_SIZE,
-  elevationOffsetPx: ELEVATION_OFFSET_PX
+  hintFontSize: HINT_FONT_SIZE,
+  elevationOffsetPx: ELEVATION_OFFSET_PX,
+  hintBoundaryMarginPx: HINT_BOUNDARY_MARGIN,
+  hintRowGapPx: HINT_ROW_GAP
 });

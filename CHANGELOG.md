@@ -1,3 +1,12 @@
+## 0.4.4.17 — Action Effects 3D Crosshairs — crosshair-local control instructions
+
+- Removed the AE5E-owned `Action Effects 3D Crosshairs — click to confirm` label from the center of the placement visual. Confirmation remains the normal left-click interaction; the redundant center text is no longer created.
+- Replaced the bottom-screen control HUD with retained PIXI control badges attached directly below the authoritative crosshair footprint. The instruction stack follows accepted placement instead of covering Foundry's hotbar.
+- Control instructions are capability-conditional and use the locked order and wording: rotation first (`Hold Shift+Mousewheel to change Rotation`) when enabled, elevation second (`Hold Ctrl+Mousewheel to change Elevation`) when enabled, and `Right Click to Cancel` last. Each instruction occupies its own line/badge.
+- Instruction text uses the same 16 px size, bold white treatment, and dark rounded presentation as the MOVE / ROTATE / ELEVATE mode badge. The accepted elevation readout and mode badge positions remain unchanged.
+- Preserved v0.4.4.16 Alt capture suppression, Crosshair Elevation Gauge behavior, exact grid-Z stepping, cyclic elevation travel, targeting/range behavior, and cleanup.
+- Added deterministic regressions for removal of the center confirmation label, crosshair-local hint placement, per-line badge presentation, font-size parity with the mode badge, and capability-conditional rotation/elevation/cancel ordering.
+
 ## 0.4.4.16 — Action Effects 3D Crosshairs — Alt capture suppression experiment
 
 - Removed the v0.4.4.14–0.4.4.15 Alt modifier-recovery state and all placement-session pointer recovery listeners. Those recovery paths could not reliably overcome Chromium/Electron Alt focus behavior without risking the already-fixed Crosshair Elevation Gauge flicker.

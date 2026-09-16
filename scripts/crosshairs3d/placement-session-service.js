@@ -156,8 +156,8 @@ export class Crosshair3dPlacementSessionService {
     this.#stats.sessions += 1;
 
     const hints = [];
-    if (capabilities.rotation) hints.push("Hold Shift + Mousewheel to Rotate");
-    if (capabilities.elevation) hints.push("Hold Ctrl + Mousewheel to Elevate/Lower");
+    if (capabilities.rotation) hints.push("Hold Shift+Mousewheel to change Rotation");
+    if (capabilities.elevation) hints.push("Hold Ctrl+Mousewheel to change Elevation");
     hints.push("Right Click to Cancel");
     this.#overlay.show({ mode: "MOVE", hints });
     this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
