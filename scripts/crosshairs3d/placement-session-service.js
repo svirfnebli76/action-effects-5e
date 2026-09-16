@@ -273,8 +273,9 @@ export class Crosshair3dPlacementSessionService {
       setMode(next);
     };
     // Browser/Electron modifier keyup events can be swallowed when Alt changes
-    // focus/menu state. Treat the modifier flags on each fresh input event as
-    // authoritative so a missed keyup cannot latch AE5E in ELEVATE/ROTATE.
+    // focus/menu state. Keyboard and wheel events are authoritative modifier
+    // sources; pointer movement is deliberately ignored because Foundry/Sequencer
+    // can emit pointer activity whose modifier flags do not reflect held keys.
     const syncModifiers = (event, keyIsDown = null) => {
       let shift = Boolean(event?.shiftKey);
       let ctrl = Boolean(event?.ctrlKey);
@@ -292,10 +293,6 @@ export class Crosshair3dPlacementSessionService {
     const keyup = event => {
       syncModifiers(event, false);
       updateMode();
-    };
-    const pointermove = event => {
-      if (session.closed) return;
-      if (syncModifiers(event)) updateMode();
     };
     const blur = () => { session.modifier.shift = false; session.modifier.ctrl = false; updateMode(); };
     const wheel = event => {
@@ -332,10 +329,9 @@ export class Crosshair3dPlacementSessionService {
     };
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("keyup", keyup, true);
-    window.addEventListener("pointermove", pointermove, true);
     window.addEventListener("blur", blur, true);
     window.addEventListener("wheel", wheel, { capture: true, passive: false });
-    session.listeners.push(["keydown", keydown, true], ["keyup", keyup, true], ["pointermove", pointermove, true], ["blur", blur, true], ["wheel", wheel, { capture: true }]);
+    session.listeners.push(["keydown", keydown, true], ["keyup", keyup, true], ["blur", blur, true], ["wheel", wheel, { capture: true }]);
   }
 
   #ensureRemoteElevationArc(session, pointInput = null) {

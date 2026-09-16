@@ -186,13 +186,13 @@ test("Alt input cannot latch ELEVATE after a swallowed Ctrl keyup", async () => 
   assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides when the recovered mode returns to MOVE");
 });
 
-test("pointer movement self-heals a stale Ctrl latch after Alt/focus interference", async () => {
+test("pointer movement cannot knock an active Ctrl-held session out of ELEVATE", async () => {
   const h = harness({
     onShow: ({ window }) => {
-      window.dispatch("keydown", { key: "Alt", altKey: true, ctrlKey: false });
-      window.dispatch("keyup", { key: "Alt", altKey: false, ctrlKey: false });
       window.dispatch("keydown", { key: "Control", ctrlKey: true });
-      // Simulate a swallowed Ctrl keyup, then the user's next ordinary mouse move.
+      // Foundry/Sequencer may emit pointer activity without reliable modifier flags.
+      // It must not redefine the keyboard-selected ELEVATE mode or hide the gauge.
+      window.dispatch("pointermove", { ctrlKey: false, shiftKey: false, altKey: false });
       window.dispatch("pointermove", { ctrlKey: false, shiftKey: false, altKey: false });
     }
   });
@@ -204,8 +204,15 @@ test("pointer movement self-heals a stale Ctrl latch after Alt/focus interferenc
   });
 
   assert.equal(result.cancelled, false);
+  assert.equal(h.window.count("pointermove"), 0, "AE5E does not install pointermove as a modifier authority");
   const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
-  assert.equal(modes.at(-1), "MOVE", "a no-modifier pointer event clears stale cached Ctrl state");
+  const elevateIndex = modes.indexOf("ELEVATE");
+  assert.ok(elevateIndex >= 0, "Ctrl enters ELEVATE");
+  assert.equal(modes.slice(elevateIndex).every(mode => mode === "ELEVATE"), true, "pointer movement cannot inject MOVE while Ctrl remains held");
+  const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
+  const visibleIndex = gaugeUpdates.findIndex(data => data?.visible === true);
+  assert.ok(visibleIndex >= 0, "gauge becomes visible in ELEVATE");
+  assert.equal(gaugeUpdates.slice(visibleIndex).every(data => data?.visible !== false), true, "pointer movement cannot flicker the gauge off during ELEVATE");
 });
 
 test("an unmodified wheel event is never captured by stale cached Ctrl state", async () => {

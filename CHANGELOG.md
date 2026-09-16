@@ -1,3 +1,10 @@
+## 0.4.4.13 — Action Effects 3D Crosshairs — Elevation Gauge mode-stability fix
+
+- Corrected a live Checkpoint 2 regression introduced by v0.4.4.12 where Foundry/Sequencer pointer activity could repeatedly resynchronize Ctrl/Shift from unreliable `pointermove` modifier flags, briefly forcing ELEVATE back to MOVE and making the Crosshair Elevation Gauge flicker on first appearance.
+- Removed `pointermove` as an authoritative modifier-state source. Keyboard keydown/keyup, wheel events, and window blur remain responsible for modifier synchronization; the accepted Alt recovery from v0.4.4.12 is preserved.
+- Preserved the accepted Crosshair Elevation Gauge appearance and geometry, ELEVATE-only visibility, immediate initial reading, exact grid-Z stepping, 360-degree construction-plane travel, red-below-origin readouts, targeting/range behavior, and cleanup.
+- Replaced the pointer self-heal regression with a deterministic no-flicker regression proving pointer movement cannot knock a Ctrl-held session out of ELEVATE or hide the gauge, while Ctrl keyup still returns cleanly to MOVE.
+
 ## 0.4.4.12 — Action Effects 3D Crosshairs — modifier-state hardening
 
 - Corrected a live Foundry/Electron input edge case where pressing **Alt** could cause a missed Ctrl/Shift keyup to leave Action Effects 3D Crosshairs latched in ELEVATE or ROTATE. AE5E no longer allows its cached modifier booleans to overrule fresh browser input state.
