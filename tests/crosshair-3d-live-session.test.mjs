@@ -115,8 +115,9 @@ test("placement control hints are capability-conditional and ordered rotation, e
   const sphereShow = sphere.overlayEvents.find(([type]) => type === "show")?.[1];
   assert.deepEqual(sphereShow?.hints, [
     "Hold Ctrl+Mousewheel to change Elevation",
+    "Hold Ctrl+Shift+Mousewheel to Orbit Elevation",
     "Right Click to Cancel"
-  ], "Sphere omits the unavailable rotation instruction");
+  ], "Sphere advertises direct elevation and orbital elevation but omits unavailable rotation");
 
   const prism = harness();
   await prism.service.show({
@@ -129,8 +130,9 @@ test("placement control hints are capability-conditional and ordered rotation, e
   assert.deepEqual(prismShow?.hints, [
     "Hold Shift+Mousewheel to change Rotation",
     "Hold Ctrl+Mousewheel to change Elevation",
+    "Hold Ctrl+Shift+Mousewheel to Orbit Elevation",
     "Right Click to Cancel"
-  ], "rotation-capable placements list rotation first, then elevation, then cancel");
+  ], "rotation-capable rigid placements list rotation, direct elevation, orbit, then cancel");
 });
 
 test("cancel restores the target set that existed before placement", async () => {
@@ -160,15 +162,15 @@ test("every accepted Shift-wheel increment rotates the authoritative revision by
   assert.equal(result.revision.revision > 0, true);
 });
 
-test("Crosshair Elevation Gauge is visible only in ELEVATE and publishes an immediate pre-wheel side-view reading", async () => {
+test("Crosshair Elevation Gauge is visible only in ORBIT for remote rigid shapes and initializes before the first wheel notch", async () => {
   const h = harness({
     carrierPosition: { x: 300, y: 100 },
     surfaces: { resolveAt: () => ({ elevation: 10, surface: null, source: "test" }) },
     onShow: ({ window }) => {
-      window.dispatch("keydown", { key: "Control" });
-      window.dispatch("keyup", { key: "Control" });
-      window.dispatch("keydown", { key: "Shift" });
-      window.dispatch("keyup", { key: "Shift" });
+      window.dispatch("keydown", { key: "Control", ctrlKey: true, shiftKey: false });
+      window.dispatch("keydown", { key: "Shift", ctrlKey: true, shiftKey: true });
+      window.dispatch("keyup", { key: "Shift", ctrlKey: true, shiftKey: false });
+      window.dispatch("keyup", { key: "Control", ctrlKey: false, shiftKey: false });
     }
   });
   const result = await h.service.show({
@@ -180,13 +182,13 @@ test("Crosshair Elevation Gauge is visible only in ELEVATE and publishes an imme
   });
 
   assert.equal(result.cancelled, false);
-  assert.equal(h.service.getStats().wheelEvents, 0, "entering ELEVATE does not require a wheel notch");
+  assert.equal(h.service.getStats().wheelEvents, 0, "entering ORBIT does not require a wheel notch");
   const updates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  const immediateElevate = updates.find(data => data?.visible === true);
-  assert.ok(immediateElevate, "Ctrl entry immediately publishes a visible gauge reading");
-  assert.ok(immediateElevate.angle > 0 && immediateElevate.angle < 90, "initial side-view angle is derived before any Z movement");
-  assert.ok(Number.isFinite(immediateElevate.distance) && immediateElevate.distance > 0, "initial A→B distance is available immediately");
-  assert.ok(updates.some(data => data?.visible === false), "MOVE/ROTATE mode transitions explicitly hide the gauge");
+  const immediateOrbit = updates.find(data => data?.visible === true);
+  assert.ok(immediateOrbit, "Ctrl+Shift entry immediately publishes a visible gauge reading");
+  assert.ok(immediateOrbit.angle > 0 && immediateOrbit.angle < 90, "initial side-view angle is derived before any orbital movement");
+  assert.ok(Number.isFinite(immediateOrbit.distance) && immediateOrbit.distance > 0, "initial A→B distance is available immediately");
+  assert.ok(updates.some(data => data?.visible === false), "direct ELEVATE and MOVE explicitly hide the orbital gauge");
 });
 
 
@@ -252,7 +254,7 @@ test("a brief Alt press before ELEVATE cannot poison the later Ctrl release", as
   assert.equal(gaugeUpdates.at(-1)?.visible, false, "gauge hides after the normal Ctrl release");
 });
 
-test("pointer activity remains non-authoritative and cannot flicker a Ctrl-held ELEVATE gauge", async () => {
+test("pointer activity remains non-authoritative and cannot flicker a Ctrl+Shift ORBIT gauge", async () => {
   let pointerListenerCount = null;
   let modeEventsBeforePointer = null;
   let modeEventsAfterPointer = null;
@@ -263,12 +265,14 @@ test("pointer activity remains non-authoritative and cannot flicker a Ctrl-held 
     onShow: ({ window }) => {
       pointerListenerCount = window.count("pointermove") + window.count("pointerdown");
       window.dispatch("keydown", { key: "Control", ctrlKey: true, shiftKey: false, altKey: false });
+      window.dispatch("keydown", { key: "Shift", ctrlKey: true, shiftKey: true, altKey: false });
       modeEventsBeforePointer = h.overlayEvents.length;
       gaugeEventsBeforePointer = h.elevationGaugeEvents.length;
       window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
       window.dispatch("pointerdown", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false });
       modeEventsAfterPointer = h.overlayEvents.length;
       gaugeEventsAfterPointer = h.elevationGaugeEvents.length;
+      window.dispatch("keyup", { key: "Shift", ctrlKey: true, shiftKey: false, altKey: false });
       window.dispatch("keyup", { key: "Control", ctrlKey: false, shiftKey: false, altKey: false });
     }
   });
@@ -282,14 +286,14 @@ test("pointer activity remains non-authoritative and cannot flicker a Ctrl-held 
 
   assert.equal(result.cancelled, false);
   assert.equal(pointerListenerCount, 0, "placement installs no modifier-recovery pointer listeners");
-  assert.equal(modeEventsAfterPointer, modeEventsBeforePointer, "pointer activity cannot publish a mode transition while Ctrl is held");
-  assert.equal(gaugeEventsAfterPointer, gaugeEventsBeforePointer, "pointer activity cannot hide/rebuild the ELEVATE gauge");
+  assert.equal(modeEventsAfterPointer, modeEventsBeforePointer, "pointer activity cannot publish a mode transition while Ctrl+Shift is held");
+  assert.equal(gaugeEventsAfterPointer, gaugeEventsBeforePointer, "pointer activity cannot hide/rebuild the ORBIT gauge");
   const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
-  assert.ok(modes.includes("ELEVATE"), "Ctrl enters ELEVATE");
-  assert.equal(modes.at(-1), "MOVE", "Ctrl keyup remains the normal route back to MOVE");
+  assert.ok(modes.includes("ORBIT"), "Ctrl+Shift enters ORBIT");
+  assert.equal(modes.at(-1), "MOVE", "modifier release remains the normal route back to MOVE");
   const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  assert.ok(gaugeUpdates.some(data => data?.visible === true), "gauge becomes visible in ELEVATE");
-  assert.equal(gaugeUpdates.at(-1)?.visible, false, "Ctrl release hides the gauge");
+  assert.ok(gaugeUpdates.some(data => data?.visible === true), "gauge becomes visible in ORBIT");
+  assert.equal(gaugeUpdates.at(-1)?.visible, false, "modifier release hides the gauge");
 });
 
 test("an unmodified wheel event is never captured by stale cached Ctrl state", async () => {
@@ -312,6 +316,88 @@ test("an unmodified wheel event is never captured by stale cached Ctrl state", a
   assert.equal(result.placementPoint.z, 0, "stale Ctrl cannot apply an elevation step");
 });
 
+test("remote rigid Ctrl-wheel translates only Z by one Scene grid unit", async () => {
+  const revisions = [];
+  const h = harness({
+    carrierPosition: { x: 300, y: 100 },
+    onShow: async ({ window }) => {
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 5 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: false, los: false },
+    onRevision: revision => revisions.push(revision)
+  });
+
+  const elevated = revisions.filter(revision => revision.reason === "wheel-elevate");
+  assert.equal(elevated.length, 2);
+  assert.deepEqual(elevated.map(revision => revision.point.z), [5, 10]);
+  assert.ok(elevated.every(revision => revision.point.x === 15 && revision.point.y === 5), "direct elevation preserves exact authoritative X/Y");
+  assert.equal(result.placementPoint.z, 10);
+  const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
+  assert.equal(gaugeUpdates.some(data => data?.visible === true), false, "direct elevation does not show the orbital construction gauge");
+});
+
+test("remote rigid Ctrl-wheel rejects a whole grid step that would exceed true 3D range", async () => {
+  const revisions = [];
+  const h = harness({
+    carrierPosition: { x: 300, y: 100 },
+    onShow: async ({ window }) => {
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      await new Promise(resolve => setTimeout(resolve, 0));
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "prism", origin: { x: 0, y: 0, z: 0 }, width: 5, length: 10, height: 5, yaw: 0 },
+    range: { max: 10 },
+    capabilities: { elevation: true, rotation: true, los: false },
+    onRevision: revision => revisions.push(revision)
+  });
+
+  const elevated = revisions.filter(revision => revision.reason === "wheel-elevate");
+  assert.equal(elevated.length, 1, "only the in-range grid step becomes an accepted revision");
+  assert.deepEqual(elevated.map(revision => revision.point.z), [5]);
+  assert.equal(result.placementPoint.x, 15);
+  assert.equal(result.placementPoint.y, 5);
+  assert.equal(result.placementPoint.z, 5, "the rejected notch leaves the last legal XYZ unchanged");
+  assert.equal(h.service.getStats().wheelEvents, 2, "both physical wheel inputs are observed even though one requested move is rejected");
+});
+
+test("rapid remote rigid Ctrl-wheel input preserves every legal vertical grid step", async () => {
+  const h = harness({
+    carrierPosition: { x: 300, y: 100 },
+    onShow: ({ window }) => {
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "prism", origin: { x: 0, y: 0, z: 0 }, width: 5, length: 10, height: 5, yaw: 0 },
+    range: { max: 60 },
+    capabilities: { elevation: true, rotation: true, los: false }
+  });
+
+  assert.equal(result.placementPoint.x, 15);
+  assert.equal(result.placementPoint.y, 5);
+  assert.equal(result.placementPoint.z, 20, "four rapid accepted notches preserve four complete 5-ft Z steps");
+  assert.equal(h.service.getStats().wheelEvents, 4);
+});
+
 test("Self Ray Ctrl-wheel changes pitch while preserving fixed centerline length", async () => {
   const h = harness({
     onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 })
@@ -324,6 +410,32 @@ test("Self Ray Ctrl-wheel changes pitch while preserving fixed centerline length
   });
   assert.equal(Math.round(result.pitch * 1000) / 1000, Math.round((Math.asin(5 / 20) * 180 / Math.PI) * 1000) / 1000);
   assert.equal(result.shape.length, 20);
+});
+
+test("Self Cone and Ray keep their existing Ctrl pitch path and do not expose remote ORBIT", async () => {
+  const h = harness({
+    onShow: ({ window }) => {
+      window.dispatch("wheel", { shiftKey: true, ctrlKey: true, deltaY: -100 });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    self: true,
+    shape: { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 0 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  const show = h.overlayEvents.find(([type]) => type === "show")?.[1];
+  assert.deepEqual(show?.hints, [
+    "Hold Shift+Mousewheel to change Rotation",
+    "Hold Ctrl+Mousewheel to change Elevation",
+    "Right Click to Cancel"
+  ], "self Cone retains its existing controls without the remote ORBIT instruction");
+  assert.equal(Math.round(result.pitch * 1000) / 1000, Math.round((Math.asin(5 / 15) * 180 / Math.PI) * 1000) / 1000, "only the ordinary Ctrl notch changes self Cone pitch");
+  assert.equal(result.revision.reason, "final-confirm");
+  const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
+  assert.equal(modes.includes("ORBIT"), false, "Ctrl+Shift remains non-operative for self Cone/Ray");
 });
 
 test("ELEVATE mouse-wheel direction can be reversed by the client setting without changing Shift rotation", async () => {
@@ -361,13 +473,13 @@ test("rapid wheel input preserves every accepted rotation notch while resolution
   assert.equal(result.yaw, 15);
 });
 
-test("remote elevation snaps Z to Scene grid planes while XY remains continuous on the construction circle", async () => {
+test("remote ORBIT snaps Z to Scene grid planes while XY remains continuous on the construction circle", async () => {
   const revisions = [];
   const h = harness({
     carrierPosition: { x: 300, y: 100 },
     onShow: async ({ window }) => {
       for (let i = 0; i < 4; i += 1) {
-        window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+        window.dispatch("wheel", { shiftKey: true, ctrlKey: true, deltaY: -100 });
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
@@ -382,7 +494,7 @@ test("remote elevation snaps Z to Scene grid planes while XY remains continuous 
   });
 
   assert.equal(result.cancelled, false);
-  const elevated = revisions.filter(revision => revision.reason === "wheel-elevate");
+  const elevated = revisions.filter(revision => revision.reason === "wheel-orbit");
   assert.equal(elevated.length, 4);
   assert.deepEqual(elevated.map(revision => revision.point.z), [5, 10, 5, 0]);
   for (const revision of elevated) {
@@ -390,7 +502,7 @@ test("remote elevation snaps Z to Scene grid planes while XY remains continuous 
   }
   assert.ok(
     elevated.some(revision => Math.abs(revision.point.x / 5 - Math.round(revision.point.x / 5)) > 1e-3),
-    "ELEVATE solves XY continuously instead of forcing the construction circle onto map-grid XY coordinates"
+    "ORBIT solves XY continuously instead of forcing the construction circle onto map-grid XY coordinates"
   );
   assert.equal(h.service.getStats().wheelEvents, 4);
   assert.ok(h.elevationGaugeEvents.some(([type, data]) => type === "show" && data?.enabled === true), "elevation-capable placement creates the Crosshair Elevation Gauge");
@@ -398,13 +510,13 @@ test("remote elevation snaps Z to Scene grid planes while XY remains continuous 
   assert.equal(h.elevationGaugeEvents.at(-1)?.[0], "clear", "gauge cleans up with the placement session");
 });
 
-test("remote elevation stays grid-Z snapped across an unsnapped zenith", async () => {
+test("remote ORBIT stays grid-Z snapped across an unsnapped zenith", async () => {
   const revisions = [];
   const h = harness({
     carrierPosition: { x: 616.854, y: 100 },
     onShow: async ({ window }) => {
       for (let i = 0; i < 7; i += 1) {
-        window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+        window.dispatch("wheel", { shiftKey: true, ctrlKey: true, deltaY: -100 });
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
@@ -419,7 +531,7 @@ test("remote elevation stays grid-Z snapped across an unsnapped zenith", async (
   });
 
   assert.equal(result.cancelled, false);
-  const elevated = revisions.filter(revision => revision.reason === "wheel-elevate");
+  const elevated = revisions.filter(revision => revision.reason === "wheel-orbit");
   assert.deepEqual(elevated.map(revision => revision.point.z), [5, 10, 15, 20, 25, 25, 20]);
   assert.ok(
     elevated[5].elevationPhase > 90,
@@ -427,10 +539,10 @@ test("remote elevation stays grid-Z snapped across an unsnapped zenith", async (
   );
 });
 
-test("remote elevation wraps backward from phase zero instead of clamping", async () => {
+test("remote ORBIT wraps backward from phase zero instead of clamping", async () => {
   const h = harness({
     carrierPosition: { x: 400, y: 100 },
-    onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: 100 })
+    onShow: ({ window }) => window.dispatch("wheel", { shiftKey: true, ctrlKey: true, deltaY: 100 })
   });
   const result = await h.service.show({
     source: h.source,
@@ -450,13 +562,15 @@ test("remote elevation wraps backward from phase zero instead of clamping", asyn
   assert.ok(negativeGauge[1].angle > 270 && negativeGauge[1].angle < 360, "gauge preserves the far-side/reverse construction angle instead of flattening it to a right-half-plane angle");
 });
 
-test("remote elevation remains cyclic across repeated full-circle travel and Ctrl release/re-entry", async () => {
+test("remote ORBIT remains cyclic across repeated full-circle travel and modifier release/re-entry", async () => {
   const h = harness({
     onShow: ({ window }) => {
       for (let i = 0; i < 8; i += 1) {
-        window.dispatch("keydown", { key: "Control" });
-        window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
-        window.dispatch("keyup", { key: "Control", ctrlKey: false });
+        window.dispatch("keydown", { key: "Control", ctrlKey: true, shiftKey: false });
+        window.dispatch("keydown", { key: "Shift", ctrlKey: true, shiftKey: true });
+        window.dispatch("wheel", { shiftKey: true, ctrlKey: true, deltaY: -100 });
+        window.dispatch("keyup", { key: "Shift", ctrlKey: true, shiftKey: false });
+        window.dispatch("keyup", { key: "Control", ctrlKey: false, shiftKey: false });
       }
     }
   });

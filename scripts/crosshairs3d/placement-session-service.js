@@ -158,6 +158,9 @@ export class Crosshair3dPlacementSessionService {
     const hints = [];
     if (capabilities.rotation) hints.push("Hold Shift+Mousewheel to change Rotation");
     if (capabilities.elevation) hints.push("Hold Ctrl+Mousewheel to change Elevation");
+    if (capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
+      hints.push("Hold Ctrl+Shift+Mousewheel to Orbit Elevation");
+    }
     hints.push("Right Click to Cancel");
     this.#overlay.show({ mode: "MOVE", hints });
     this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
@@ -261,15 +264,25 @@ export class Crosshair3dPlacementSessionService {
       session.mode = next;
       this.#overlay.update({ mode: next });
 
-      if (next === "ELEVATE" && session.capabilities.elevation) {
-        if (!session.self) this.#ensureRemoteElevationArc(session, session.current?.point ?? session.intent?.point);
+      const selfPitch = session.self
+        && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)
+        && next === "ELEVATE";
+      const remoteOrbit = this.#usesRemoteRigidElevation(session) && next === "ORBIT";
+      if (session.capabilities.elevation && (selfPitch || remoteOrbit)) {
+        if (remoteOrbit) this.#ensureRemoteElevationArc(session, session.current?.point ?? session.intent?.point);
         this.#elevationGauge?.update?.(this.#elevationGaugeState(session, session.current));
       } else {
         this.#elevationGauge?.update?.({ visible: false });
       }
     };
     const updateMode = () => {
-      const next = session.modifier.ctrl && session.modifier.shift ? "MOVE" : session.modifier.ctrl ? "ELEVATE" : session.modifier.shift ? "ROTATE" : "MOVE";
+      const next = session.modifier.ctrl && session.modifier.shift
+        ? session.capabilities.elevation && this.#usesRemoteRigidElevation(session) ? "ORBIT" : "MOVE"
+        : session.modifier.ctrl
+          ? session.capabilities.elevation ? "ELEVATE" : "MOVE"
+          : session.modifier.shift
+            ? session.capabilities.rotation ? "ROTATE" : "MOVE"
+            : "MOVE";
       setMode(next);
     };
     // Alt has no Action Effects 3D Crosshairs function. On Windows/Chromium,
@@ -321,11 +334,15 @@ export class Crosshair3dPlacementSessionService {
       event.stopPropagation?.();
       event.stopImmediatePropagation?.();
       this.#stats.wheelEvents += 1;
+      const step = event.deltaY < 0 ? 1 : -1;
       if (session.modifier.shift && session.modifier.ctrl) {
-        setMode("MOVE");
+        if (session.capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
+          setMode("ORBIT");
+          const elevationStep = this.#reverseElevationWheelEnabled() ? -step : step;
+          this.#requestElevationStep(session, elevationStep, { reason: "wheel-orbit" });
+        } else setMode("MOVE");
         return;
       }
-      const step = event.deltaY < 0 ? 1 : -1;
       if (session.modifier.shift && session.capabilities.rotation) {
         setMode("ROTATE");
         const headingYaw = normalizeDegrees(finiteNumber(session.intent.headingYaw, session.intent.yaw) + (step * 5));
@@ -339,7 +356,8 @@ export class Crosshair3dPlacementSessionService {
       if (session.modifier.ctrl && session.capabilities.elevation) {
         setMode("ELEVATE");
         const elevationStep = this.#reverseElevationWheelEnabled() ? -step : step;
-        this.#requestElevationStep(session, elevationStep);
+        if (this.#usesRemoteRigidElevation(session)) this.#requestVerticalTranslationStep(session, elevationStep);
+        else this.#requestElevationStep(session, elevationStep);
       }
     };
     window.addEventListener("keydown", keydown, true);
@@ -375,7 +393,7 @@ export class Crosshair3dPlacementSessionService {
     return session.elevationArc;
   }
 
-  #requestElevationStep(session, step) {
+  #requestElevationStep(session, step, { reason = "wheel-elevate" } = {}) {
     const state = session.intent;
     if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
       const length = session.baseShape.length;
@@ -418,6 +436,42 @@ export class Crosshair3dPlacementSessionService {
     Object.assign(session.intent, { point, selectedAbsoluteZ: z, elevationPhase: phase, elevationRadius: arc.radius, manualElevation: true });
     this.#requestResolution(session, {
       statePatch: { point, selectedAbsoluteZ: z, elevationPhase: phase, elevationRadius: arc.radius, manualElevation: true },
+      reason,
+      force: true
+    });
+  }
+
+  #requestVerticalTranslationStep(session, step) {
+    const state = session.intent;
+    const distance = Math.max(0, finiteNumber(session.metrics?.distance));
+    if (!step || distance <= 0 || !state?.point) return;
+
+    const point = {
+      x: finiteNumber(state.point.x),
+      y: finiteNumber(state.point.y),
+      z: finiteNumber(state.point.z) + (Math.sign(step) * distance)
+    };
+    const max = finiteNumber(session.options.range?.max ?? session.options.maxRange, Infinity);
+    if (Number.isFinite(max) && max > 0 && this.#range.distanceFromVolumeToPoint(session.sourceVolume, point) > max + 1e-9) {
+      return;
+    }
+
+    session.elevationArc = null;
+    Object.assign(session.intent, {
+      point,
+      selectedAbsoluteZ: point.z,
+      elevationPhase: null,
+      elevationRadius: null,
+      manualElevation: true
+    });
+    this.#requestResolution(session, {
+      statePatch: {
+        point,
+        selectedAbsoluteZ: point.z,
+        elevationPhase: null,
+        elevationRadius: null,
+        manualElevation: true
+      },
       reason: "wheel-elevate",
       force: true
     });
@@ -666,7 +720,7 @@ export class Crosshair3dPlacementSessionService {
       angle,
       elevationDelta,
       belowOrigin: elevationDelta < 0,
-      visible: Boolean(session.capabilities?.elevation) && session.mode === "ELEVATE"
+      visible: Boolean(session.capabilities?.elevation) && session.mode === "ORBIT"
     });
   }
 
@@ -714,6 +768,11 @@ export class Crosshair3dPlacementSessionService {
       default:
         return Math.max(1, finiteNumber(metrics?.size, 100) / 2);
     }
+  }
+
+  #usesRemoteRigidElevation(session) {
+    return !session.self
+      && ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type);
   }
 
   #canonicalSelfOrientation(headingYaw, arcPitch) {
