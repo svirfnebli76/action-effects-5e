@@ -162,7 +162,7 @@ test("every accepted Shift-wheel increment rotates the authoritative revision by
   assert.equal(result.revision.revision > 0, true);
 });
 
-test("Crosshair Elevation Gauge is visible only in ORBIT for remote rigid shapes and initializes before the first wheel notch", async () => {
+test("Crosshair Elevation Gauge initializes before the first wheel notch in direct ELEVATE and remains available in ORBIT", async () => {
   const h = harness({
     carrierPosition: { x: 300, y: 100 },
     surfaces: { resolveAt: () => ({ elevation: 10, surface: null, source: "test" }) },
@@ -182,13 +182,13 @@ test("Crosshair Elevation Gauge is visible only in ORBIT for remote rigid shapes
   });
 
   assert.equal(result.cancelled, false);
-  assert.equal(h.service.getStats().wheelEvents, 0, "entering ORBIT does not require a wheel notch");
+  assert.equal(h.service.getStats().wheelEvents, 0, "entering ELEVATE or ORBIT does not require a wheel notch");
   const updates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  const immediateOrbit = updates.find(data => data?.visible === true);
-  assert.ok(immediateOrbit, "Ctrl+Shift entry immediately publishes a visible gauge reading");
-  assert.ok(immediateOrbit.angle > 0 && immediateOrbit.angle < 90, "initial side-view angle is derived before any orbital movement");
-  assert.ok(Number.isFinite(immediateOrbit.distance) && immediateOrbit.distance > 0, "initial A→B distance is available immediately");
-  assert.ok(updates.some(data => data?.visible === false), "direct ELEVATE and MOVE explicitly hide the orbital gauge");
+  const visible = updates.filter(data => data?.visible === true);
+  assert.ok(visible.length >= 3, "Ctrl ELEVATE, Ctrl+Shift ORBIT, and return-to-ELEVATE each publish a visible gauge reading");
+  assert.ok(visible[0].angle > 0 && visible[0].angle < 90, "direct ELEVATE derives the initial side-view angle before any wheel movement");
+  assert.ok(Number.isFinite(visible[0].distance) && visible[0].distance > 0, "direct ELEVATE immediately supplies the A→B distance");
+  assert.equal(updates.at(-1)?.visible, false, "returning to MOVE hides the gauge");
 });
 
 
@@ -342,7 +342,10 @@ test("remote rigid Ctrl-wheel translates only Z by one Scene grid unit", async (
   assert.ok(elevated.every(revision => revision.point.x === 15 && revision.point.y === 5), "direct elevation preserves exact authoritative X/Y");
   assert.equal(result.placementPoint.z, 10);
   const gaugeUpdates = h.elevationGaugeEvents.filter(([type]) => type === "update").map(([, data]) => data);
-  assert.equal(gaugeUpdates.some(data => data?.visible === true), false, "direct elevation does not show the orbital construction gauge");
+  const visibleGaugeUpdates = gaugeUpdates.filter(data => data?.visible === true);
+  assert.ok(visibleGaugeUpdates.length >= 2, "direct elevation keeps the Crosshair Elevation Gauge visible while Z changes");
+  assert.equal(visibleGaugeUpdates.at(-1)?.maxRange, 60, "direct elevation gauge retains the configured true-3D range scale");
+  assert.ok(visibleGaugeUpdates.at(-1)?.elevationDelta > 0, "direct elevation gauge reports the final positive destination elevation");
 });
 
 test("remote rigid Ctrl-wheel rejects a whole grid step that would exceed true 3D range", async () => {

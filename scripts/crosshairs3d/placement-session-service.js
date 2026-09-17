@@ -267,8 +267,9 @@ export class Crosshair3dPlacementSessionService {
       const selfPitch = session.self
         && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)
         && next === "ELEVATE";
+      const remoteElevation = this.#usesRemoteRigidElevation(session) && next === "ELEVATE";
       const remoteOrbit = this.#usesRemoteRigidElevation(session) && next === "ORBIT";
-      if (session.capabilities.elevation && (selfPitch || remoteOrbit)) {
+      if (session.capabilities.elevation && (selfPitch || remoteElevation || remoteOrbit)) {
         if (remoteOrbit) this.#ensureRemoteElevationArc(session, session.current?.point ?? session.intent?.point);
         this.#elevationGauge?.update?.(this.#elevationGaugeState(session, session.current));
       } else {
@@ -696,10 +697,11 @@ export class Crosshair3dPlacementSessionService {
       });
     }
 
-    // Remote placements use the same nearest-point source anchor that owns the
-    // retained construction circle and true-3D range measurement. While the
-    // user is actively travelling the elevation circle, elevationPhase keeps
-    // the far-side (181-359 degree) half of the side view unambiguous.
+    // Remote placements use the same nearest-point source anchor as true-3D
+    // range measurement. ORBIT retains a construction-circle anchor/phase;
+    // direct ELEVATE derives its side view from the current authoritative XYZ.
+    // During ORBIT, elevationPhase keeps the far-side (181-359 degree) half of
+    // the side view unambiguous.
     const anchor = session.elevationArc?.anchor ?? this.#range.nearestPointOnVolume(session.sourceVolume, point);
     const distance = this.#range.distanceBetweenPoints(anchor, point);
     const dx = finiteNumber(point.x) - finiteNumber(anchor.x);
@@ -720,7 +722,7 @@ export class Crosshair3dPlacementSessionService {
       angle,
       elevationDelta,
       belowOrigin: elevationDelta < 0,
-      visible: Boolean(session.capabilities?.elevation) && session.mode === "ORBIT"
+      visible: Boolean(session.capabilities?.elevation) && ["ELEVATE", "ORBIT"].includes(session.mode)
     });
   }
 
