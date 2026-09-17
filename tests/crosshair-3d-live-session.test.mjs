@@ -415,6 +415,60 @@ test("Self Ray Ctrl-wheel changes pitch while preserving fixed centerline length
   assert.equal(result.shape.length, 20);
 });
 
+test("per-placement controls.elevationStep changes self Cone endpoint height without changing centerline length", async () => {
+  const h = harness({
+    onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 })
+  });
+  const result = await h.service.show({
+    source: h.source,
+    self: true,
+    shape: { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 0 },
+    controls: { elevationStep: 2.5 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  const expectedPitch = (Math.asin(2.5 / 15) * 180) / Math.PI;
+  assert.equal(Math.round(result.pitch * 1000) / 1000, Math.round(expectedPitch * 1000) / 1000);
+  assert.equal(Math.round((result.revision.endpointZ - result.placementPoint.z) * 1000) / 1000, 2.5);
+  assert.equal(result.shape.length, 15, "custom endpoint-height stepping never changes authoritative Cone length");
+});
+
+test("per-placement controls.elevationStep scales cleanly for a long self Cone", async () => {
+  const h = harness({
+    onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 })
+  });
+  const result = await h.service.show({
+    source: h.source,
+    self: true,
+    shape: { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 100, yaw: 0, pitch: 0 },
+    controls: { elevationStep: 10 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  assert.equal(Math.round((result.revision.endpointZ - result.placementPoint.z) * 1000) / 1000, 10);
+  assert.equal(result.shape.length, 100);
+});
+
+test("per-placement controls.elevationStep also governs remote direct elevation", async () => {
+  const h = harness({
+    carrierPosition: { x: 300, y: 100 },
+    onShow: ({ window }) => {
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "prism", origin: { x: 0, y: 0, z: 0 }, width: 5, length: 10, height: 5, yaw: 0 },
+    range: { max: 60 },
+    controls: { elevationStep: 2.5 },
+    capabilities: { elevation: true, rotation: true, los: false }
+  });
+
+  assert.equal(result.placementPoint.z, 5, "two rapid notches preserve two complete custom 2.5-ft steps");
+});
+
 test("Self Cone and Ray keep their existing Ctrl pitch path and do not expose remote ORBIT", async () => {
   const h = harness({
     onShow: ({ window }) => {

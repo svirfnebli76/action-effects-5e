@@ -4,7 +4,6 @@ import { finiteNumber } from "./geometry-utils.js";
 
 const DEFAULT_COLOR = "#7fefef";
 const DEFAULT_TRACER_COLOR = "#4A4A4A";
-const PITCH_EPSILON = 1e-6;
 
 function randomId() {
   try {
@@ -23,7 +22,10 @@ function visualShapeFor(shape) {
     case CROSSHAIR_3D_SHAPES.LINE:
       return "rectangle";
     case CROSSHAIR_3D_SHAPES.CONE:
-      return Math.abs(finiteNumber(shape.pitch)) <= PITCH_EPSILON ? "cone" : null;
+      // Action Effects owns the authoritative retained Cone presentation at
+      // every pitch. Keeping one guide path avoids asset-origin offsets and
+      // eliminates the flat-art/3D-guide handoff flicker at pitch zero.
+      return null;
     case CROSSHAIR_3D_SHAPES.RAY:
       return "ray";
     default:

@@ -396,9 +396,10 @@ export class Crosshair3dPlacementSessionService {
 
   #requestElevationStep(session, step, { reason = "wheel-elevate" } = {}) {
     const state = session.intent;
+    const elevationStep = this.#elevationStep(session);
     if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
       const length = session.baseShape.length;
-      const arcPitch = this.#stepArcPitch(finiteNumber(state.arcPitch, state.pitch), step, length, session.metrics.distance);
+      const arcPitch = this.#stepArcPitch(finiteNumber(state.arcPitch, state.pitch), step, length, elevationStep);
       const headingYaw = finiteNumber(state.headingYaw, state.yaw);
       const orientation = this.#canonicalSelfOrientation(headingYaw, arcPitch);
       const point = this.#resolveSelfApex(session.source, orientation.yaw, orientation.pitch, session.metrics, session.sourceVolume);
@@ -422,7 +423,7 @@ export class Crosshair3dPlacementSessionService {
 
     const arc = this.#ensureRemoteElevationArc(session, state.point);
     if (!arc || arc.radius <= 1e-9) return;
-    const snapped = this.#stepRemoteElevationSnap(arc.phase, step, arc.anchor.z, arc.radius, session.metrics.distance);
+    const snapped = this.#stepRemoteElevationSnap(arc.phase, step, arc.anchor.z, arc.radius, elevationStep);
     const phase = snapped.phase;
     arc.phase = phase;
     const radians = (phase * Math.PI) / 180;
@@ -444,7 +445,7 @@ export class Crosshair3dPlacementSessionService {
 
   #requestVerticalTranslationStep(session, step) {
     const state = session.intent;
-    const distance = Math.max(0, finiteNumber(session.metrics?.distance));
+    const distance = this.#elevationStep(session);
     if (!step || distance <= 0 || !state?.point) return;
 
     const point = {
@@ -775,6 +776,12 @@ export class Crosshair3dPlacementSessionService {
   #usesRemoteRigidElevation(session) {
     return !session.self
       && ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type);
+  }
+
+  #elevationStep(session) {
+    const configured = finiteNumber(session.options?.controls?.elevationStep, NaN);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+    return Math.max(0, finiteNumber(session.metrics?.distance));
   }
 
   #canonicalSelfOrientation(headingYaw, arcPitch) {

@@ -129,15 +129,17 @@ test("accepted-state Eskie artwork starts once and transforms the same live spri
   );
 });
 
-test("pitched Cone suppresses flat Eskie artwork and requests the AE5E 3D guide", async () => {
+test("Cone always suppresses flat Eskie artwork and requests one retained AE5E guide path", async () => {
   const calls = installSequencerStub();
   const service = new Crosshair3dPlacementVisualService({ crosshairs: crosshairs(), metrics: metrics() });
   const state = service.createSession({ id: "cone" });
   const horizontal = await service.update(state, { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 0 });
-  assert.equal(horizontal.artwork, true);
-  assert.equal(calls.starts.length, 1);
+  assert.equal(horizontal.artwork, false);
+  assert.equal(horizontal.guide, true);
+  assert.equal(horizontal.reason, "3d-guide-required");
+  assert.equal(calls.starts.length, 0, "pitch-zero Cone never starts offset Eskie artwork");
   const pitched = await service.update(state, { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 30 });
   assert.equal(pitched.artwork, false);
   assert.equal(pitched.guide, true);
-  assert.equal(calls.ends.length >= 1, true, "flat Cone artwork ends when pitch becomes non-zero");
+  assert.equal(calls.starts.length, 0, "changing pitch never creates a second presentation path");
 });
