@@ -330,10 +330,11 @@ export class Crosshair3dPlacementGuideService {
 
     if (this.#endpointText) {
       this.#endpointText.text = formatElevation(endpoint.z);
-      try { this.#endpointText.style.fill = downward ? "#FF4D4D" : "#FFFFFF"; }
+      try { this.#endpointText.style.fill = "#FFFFFF"; }
       catch (_error) { /* style remains readable through its black stroke */ }
       this.#endpointText.position?.set?.(terminal.center.x, terminal.center.y + 20);
       this.#endpointText.visible = true;
     }
+
   }
 }

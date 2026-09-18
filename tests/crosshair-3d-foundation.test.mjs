@@ -123,6 +123,36 @@ test("Pitched Cone point tests use the finite right-cone rule r=s/2", () => {
   assert.equal(geometry.containsPoint(cone, { x: 10.01, y: 0, z: 0 }), false);
 });
 
+test("horizontal Cone apex cells acquire all four cardinal neighbors without lowering later-cell coverage", () => {
+  const cases = [
+    { yaw: 0, origin: { x: 5, y: 5, z: 0 }, cardinal: { x: 1, y: 0, z: 0 } },
+    { yaw: 90, origin: { x: 5, y: 5, z: 0 }, cardinal: { x: 0, y: 1, z: 0 } },
+    { yaw: 180, origin: { x: 0, y: 5, z: 0 }, cardinal: { x: -1, y: 0, z: 0 } },
+    { yaw: 270, origin: { x: 5, y: 0, z: 0 }, cardinal: { x: 0, y: -1, z: 0 } }
+  ];
+
+  for (const { yaw, origin, cardinal } of cases) {
+    const cone = { type: "cone", origin, length: 15, yaw, pitch: 0 };
+    assert.equal(cells.isCellAffected(cone, cardinal, grid), true, `${yaw} degree Cone acquires its cardinal neighbor`);
+  }
+
+  const east = { type: "cone", origin: { x: 5, y: 5, z: 0 }, length: 15, yaw: 0, pitch: 0 };
+  assert.equal(cells.isCellAffected(east, { x: 3, y: -1, z: 0 }, grid), false, "a non-apex 25% perimeter sliver still fails the normal 50% rule");
+});
+
+test("Cone apex qualification still requires positive 3D interior and does not alter pitched Cone cells", () => {
+  const horizontal = { type: "cone", origin: { x: 5, y: 5, z: 0 }, length: 15, yaw: 0, pitch: 0 };
+  assert.equal(cells.isCellAffected(horizontal, { x: 1, y: 0, z: 2 }, grid), false, "a vertically separated cell cannot qualify from the XY apex rule");
+
+  const pitched = { ...horizontal, pitch: 30 };
+  const candidate = { x: 1, y: 0, z: 0 };
+  assert.equal(
+    cells.isCellAffected(pitched, candidate, grid),
+    geometry.xyCoverageAtZ(pitched, { minX: 5, maxX: 10, minY: 0, maxY: 5 }, 2.5) >= 0.5,
+    "pitched Cone cells remain governed by the existing full 3D coverage path"
+  );
+});
+
 test("Free Line keeps one horizontal bottom plane while yaw changes its XY footprint", () => {
   const line = geometry.normalizeShape({ type: "line", origin: { x: 0, y: 0, z: 15 }, length: 20, width: 5, height: 10, yaw: 90 });
   assert.equal(geometry.containsPoint(line, { x: 0, y: 10, z: 20 }), true);
@@ -232,4 +262,14 @@ test("large Token targeting succeeds when any one overlapped affected cell quali
   const inspection = targeting.inspectVolume(shape, large, { grid });
   assert.equal(inspection.affected, true);
   assert.deepEqual(inspection.affectedCells, [{ x: 0, y: 0, z: 0 }]);
+});
+
+test("live-style Cone targeting acquires a Token in the cardinal apex-adjacent cell", async () => {
+  const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
+  const targeting = new Crosshair3dTargetingGeometryService({ cells, tokens });
+  const cone = { type: "cone", origin: { x: 5, y: 5, z: 0 }, length: 15, yaw: 0, pitch: 0 };
+  const eastToken = { minX: 5, maxX: 10, minY: 0, maxY: 5, bottom: 0, top: 5 };
+  const inspection = targeting.inspectVolume(cone, eastToken, { grid });
+  assert.equal(inspection.affected, true);
+  assert.deepEqual(inspection.affectedCells, [{ x: 1, y: 0, z: 0 }]);
 });

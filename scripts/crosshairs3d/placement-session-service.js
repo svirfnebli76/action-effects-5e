@@ -162,7 +162,11 @@ export class Crosshair3dPlacementSessionService {
       hints.push("Hold Ctrl+Shift+Mousewheel to Orbit Elevation");
     }
     hints.push("Right Click to Cancel");
-    this.#overlay.show({ mode: "MOVE", hints });
+    this.#overlay.show({
+      mode: "MOVE",
+      hints,
+      fixedHud: baseShape.type === CROSSHAIR_3D_SHAPES.CONE
+    });
     this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
     this.#guide.show();
     this.#installInput(session);
@@ -346,7 +350,10 @@ export class Crosshair3dPlacementSessionService {
       }
       if (session.modifier.shift && session.capabilities.rotation) {
         setMode("ROTATE");
-        const headingYaw = normalizeDegrees(finiteNumber(session.intent.headingYaw, session.intent.yaw) + (step * 5));
+        const headingYaw = normalizeDegrees(
+          finiteNumber(session.intent.headingYaw, session.intent.yaw)
+          + (step * this.#rotationStep(session))
+        );
         const orientation = session.self
           ? this.#canonicalSelfOrientation(headingYaw, session.intent.arcPitch)
           : { yaw: headingYaw, pitch: session.intent.pitch };
@@ -675,7 +682,8 @@ export class Crosshair3dPlacementSessionService {
       gridSize: session.metrics.size,
       footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics),
       footprintTopPx: overlayExtents?.top,
-      footprintBottomPx: overlayExtents?.bottom
+      footprintBottomPx: overlayExtents?.bottom,
+      fixedHud: revision.shape?.type === CROSSHAIR_3D_SHAPES.CONE
     });
     this.#elevationGauge?.update?.(this.#elevationGaugeState(session, revision));
     this.#syncCarrierToRevision(session, session.carrier, revision);
@@ -826,6 +834,12 @@ export class Crosshair3dPlacementSessionService {
     const configured = finiteNumber(session.options?.controls?.elevationStep, NaN);
     if (Number.isFinite(configured) && configured > 0) return configured;
     return Math.max(0, finiteNumber(session.metrics?.distance));
+  }
+
+  #rotationStep(session) {
+    const configured = finiteNumber(session.options?.controls?.rotationStep, NaN);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+    return 5;
   }
 
   #canonicalSelfOrientation(headingYaw, arcPitch) {

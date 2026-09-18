@@ -7,6 +7,9 @@ const HINT_FONT_SIZE = MODE_FONT_SIZE;
 const MODE_BOUNDARY_MARGIN = 22;
 const HINT_BOUNDARY_MARGIN = 18;
 const HINT_ROW_GAP = 4;
+const FIXED_HUD_X_RATIO = 0.5;
+const FIXED_HUD_MODE_Y_PX = 106;
+const FIXED_HUD_HINTS_Y_PX = 136;
 
 export class Crosshair3dPlacementOverlayService {
   #elevationText = null;
@@ -15,13 +18,19 @@ export class Crosshair3dPlacementOverlayService {
   #modeBackground = null;
   #hintsContainer = null;
   #hintRows = [];
+  #hudParent = null;
+  #fixedHud = false;
 
-  show({ mode = "MOVE", hints = [] } = {}) {
+  show({ mode = "MOVE", hints = [], fixedHud = false } = {}) {
     this.clear();
 
     const PIXI = globalThis.PIXI;
     const parent = globalThis.canvas?.interface ?? globalThis.canvas?.controls;
     if (!PIXI?.Text || !parent?.addChild) return;
+    const fixedParent = fixedHud ? globalThis.canvas?.app?.stage : null;
+    const hudParent = fixedParent?.addChild ? fixedParent : parent;
+    this.#hudParent = hudParent;
+    this.#fixedHud = fixedHud === true;
 
     const elevation = this.#createText(PIXI, "", {
       fontFamily: "Arial",
@@ -37,11 +46,11 @@ export class Crosshair3dPlacementOverlayService {
     parent.addChild(elevation);
     this.#elevationText = elevation;
 
-    this.#createModeBadge(PIXI, parent, mode);
-    this.#createHintStack(PIXI, parent, hints);
+    this.#createModeBadge(PIXI, hudParent, mode);
+    this.#createHintStack(PIXI, hudParent, hints);
   }
 
-  update({ mode = null, elevation = null, originElevation = null, elevationVisible = true, point = null, gridSize = null, footprintRadiusPx = null, footprintTopPx = null, footprintBottomPx = null } = {}) {
+  update({ mode = null, elevation = null, originElevation = null, elevationVisible = true, point = null, gridSize = null, footprintRadiusPx = null, footprintTopPx = null, footprintBottomPx = null, fixedHud = this.#fixedHud } = {}) {
     if (mode && this.#modeText) {
       this.#modeText.text = String(mode);
       this.#refreshModeBackground();
@@ -76,8 +85,15 @@ export class Crosshair3dPlacementOverlayService {
       }
     }
 
+    const useFixedHud = fixedHud === true;
+    const fixedMode = useFixedHud ? this.#fixedHudPoint(FIXED_HUD_MODE_Y_PX) : null;
+    const fixedHints = useFixedHud ? this.#fixedHudPoint(FIXED_HUD_HINTS_Y_PX) : null;
+
     if (this.#modeContainer) {
-      this.#modeContainer.position?.set?.(x, y - footprintTop - MODE_BOUNDARY_MARGIN);
+      this.#modeContainer.position?.set?.(
+        fixedMode?.x ?? x,
+        fixedMode?.y ?? (y - footprintTop - MODE_BOUNDARY_MARGIN)
+      );
       this.#modeContainer.visible = true;
     }
 
@@ -86,7 +102,10 @@ export class Crosshair3dPlacementOverlayService {
       // position it from the bottom edge of the actual placement footprint.
       // Each instruction owns its own compact dark badge so larger/smaller
       // crosshairs retain the same readable spacing.
-      this.#hintsContainer.position?.set?.(x, y + footprintBottom + HINT_BOUNDARY_MARGIN);
+      this.#hintsContainer.position?.set?.(
+        fixedHints?.x ?? x,
+        fixedHints?.y ?? (y + footprintBottom + HINT_BOUNDARY_MARGIN)
+      );
       this.#hintsContainer.visible = this.#hintRows.length > 0;
     }
   }
@@ -102,6 +121,24 @@ export class Crosshair3dPlacementOverlayService {
     this.#modeBackground = null;
     this.#hintsContainer = null;
     this.#hintRows = [];
+    this.#hudParent = null;
+    this.#fixedHud = false;
+  }
+
+  #fixedHudPoint(screenY) {
+    const screen = globalThis.canvas?.app?.renderer?.screen ?? globalThis.canvas?.app?.screen;
+    const width = Math.max(1, finiteNumber(screen?.width, globalThis.innerWidth ?? 1));
+    const globalPoint = { x: width * FIXED_HUD_X_RATIO, y: screenY };
+    const parent = this.#hudParent;
+    if (typeof parent?.toLocal !== "function") return globalPoint;
+    try {
+      const PIXI = globalThis.PIXI;
+      const point = PIXI?.Point ? new PIXI.Point(globalPoint.x, globalPoint.y) : globalPoint;
+      const local = parent.toLocal(point);
+      return { x: finiteNumber(local?.x, globalPoint.x), y: finiteNumber(local?.y, globalPoint.y) };
+    } catch (_error) {
+      return globalPoint;
+    }
   }
 
   #createText(PIXI, text, style) {
@@ -319,5 +356,7 @@ export const CROSSHAIR_3D_OVERLAY_PRESENTATION = Object.freeze({
   hintFontSize: HINT_FONT_SIZE,
   elevationOffsetPx: ELEVATION_OFFSET_PX,
   hintBoundaryMarginPx: HINT_BOUNDARY_MARGIN,
-  hintRowGapPx: HINT_ROW_GAP
+  hintRowGapPx: HINT_ROW_GAP,
+  fixedHudModeYPx: FIXED_HUD_MODE_Y_PX,
+  fixedHudHintsYPx: FIXED_HUD_HINTS_Y_PX
 });

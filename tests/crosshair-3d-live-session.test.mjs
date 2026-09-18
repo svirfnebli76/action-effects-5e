@@ -162,6 +162,20 @@ test("every accepted Shift-wheel increment rotates the authoritative revision by
   assert.equal(result.revision.revision > 0, true);
 });
 
+test("controls.rotationStep configures the accepted per-placement Shift-wheel increment", async () => {
+  const h = harness({
+    onShow: ({ window }) => window.dispatch("wheel", { shiftKey: true, ctrlKey: false, deltaY: -100 })
+  });
+  const result = await h.service.show({
+    source: h.source,
+    remote: true,
+    shape: { type: "prism", origin: { x: 0, y: 0, z: 0 }, width: 5, length: 10, height: 5, yaw: 0 },
+    controls: { rotationStep: 2.5 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+  assert.equal(result.yaw, 2.5);
+});
+
 test("Crosshair Elevation Gauge initializes before the first wheel notch in direct ELEVATE and remains available in ORBIT", async () => {
   const h = harness({
     carrierPosition: { x: 300, y: 100 },
@@ -519,7 +533,7 @@ test("Self Cone pitch remains cyclic beyond one complete 360-degree elevation re
   assert.equal(Math.round((result.revision.endpointZ - result.placementPoint.z) * 1000) / 1000, 5);
 });
 
-test("Self Cone overlay encloses its complete projection and suppresses duplicate apex elevation text", async () => {
+test("Self Cone uses a fixed viewport HUD and suppresses duplicate apex elevation text", async () => {
   const h = harness();
   const result = await h.service.show({
     source: h.source,
@@ -529,9 +543,10 @@ test("Self Cone overlay encloses its complete projection and suppresses duplicat
   });
 
   assert.equal(result.cancelled, false);
+  const shownOverlay = h.overlayEvents.find(([type]) => type === "show");
   const acceptedOverlay = h.overlayEvents.find(([type, data]) => type === "update" && data?.footprintRadiusPx);
-  assert.equal(Math.round(acceptedOverlay?.[1]?.footprintTopPx), 150, "mode badge clears the exact upper Cone/source projection");
-  assert.equal(Math.round(acceptedOverlay?.[1]?.footprintBottomPx), 150, "instruction stack clears the exact lower Cone/source projection");
+  assert.equal(shownOverlay?.[1]?.fixedHud, true, "Cone requests a fixed screen-space control HUD at session start");
+  assert.equal(acceptedOverlay?.[1]?.fixedHud, true, "every accepted Cone revision retains the fixed HUD anchor");
   assert.equal(acceptedOverlay?.[1]?.elevationVisible, false, "terminal-center label replaces the overlapping generic apex elevation label");
 });
 
@@ -565,9 +580,10 @@ test("rapid wheel input preserves every accepted rotation notch while resolution
     source: h.source,
     remote: true,
     shape: { type: "prism", origin: { x: 0, y: 0, z: 0 }, width: 5, length: 10, height: 5, yaw: 0 },
+    controls: { rotationStep: 2.5 },
     capabilities: { rotation: true, elevation: true, los: false }
   });
-  assert.equal(result.yaw, 15);
+  assert.equal(result.yaw, 7.5, "three rapid notches preserve every configured 2.5 degree increment");
 });
 
 test("remote ORBIT snaps Z to Scene grid planes while XY remains continuous on the construction circle", async () => {

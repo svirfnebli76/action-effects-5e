@@ -74,6 +74,19 @@ export class Crosshair3dCellRasterizerService {
     if (!(zHigh - zLow > epsilon)) return false;
     const rect = { minX: world.minX, maxX: world.maxX, minY: world.minY, maxY: world.maxY };
 
+    // A horizontal self Cone begins on a legal source-boundary grid
+    // intersection. On an exact cardinal heading, its first grid-distance
+    // wedge is divided equally between the two cells that share the centerline:
+    // each owns 25% of a cell, so the general 50% rule would create an
+    // unintuitive untargetable gap immediately beside the source. Qualify only
+    // those apex-adjacent wedges at half the normal threshold. The positive
+    // interior-slice check below still excludes mere point/face contact, and
+    // every cell beyond the apex retains the normal threshold.
+    if (shape.type === CROSSHAIR_3D_SHAPES.CONE
+      && this.#isHorizontalConeApexCellAffected(shape, world, rect, zLow, zHigh, threshold, epsilon, options)) {
+      return true;
+    }
+
     const constantByZ = [
       CROSSHAIR_3D_SHAPES.PRISM,
       CROSSHAIR_3D_SHAPES.CYLINDER,
@@ -144,6 +157,31 @@ export class Crosshair3dCellRasterizerService {
 
   worldCells(mask) {
     return mask.cells.map(cell => this.cellToWorld(cell, mask.grid));
+  }
+
+  #isHorizontalConeApexCellAffected(shape, world, rect, zLow, zHigh, threshold, epsilon, options) {
+    const direction = this.#geometry.direction(shape);
+    if (Math.abs(direction.z) > epsilon) return false;
+    if (shape.origin.x < world.minX - epsilon || shape.origin.x > world.maxX + epsilon) return false;
+    if (shape.origin.y < world.minY - epsilon || shape.origin.y > world.maxY + epsilon) return false;
+    if (shape.origin.z < world.minZ - epsilon || shape.origin.z > world.maxZ + epsilon) return false;
+
+    const apexThreshold = Math.max(0, threshold / 2);
+    const boundaryCoverage = this.#geometry.xyCoverageAtZ(shape, rect, shape.origin.z, {
+      ...options,
+      thresholdHint: apexThreshold
+    });
+    if (boundaryCoverage < apexThreshold - epsilon) return false;
+
+    const delta = Math.min((zHigh - zLow) / 1000, (world.maxZ - world.minZ) / 1000);
+    if (!(delta > epsilon)) return false;
+    const interiorZ = [];
+    if (shape.origin.z + delta < zHigh - epsilon) interiorZ.push(shape.origin.z + delta);
+    if (shape.origin.z - delta > zLow + epsilon) interiorZ.push(shape.origin.z - delta);
+    return interiorZ.some(z => this.#geometry.xyCoverageAtZ(shape, rect, z, {
+      ...options,
+      thresholdHint: null
+    }) > epsilon);
   }
 
   #boundsFromCells(cells) {

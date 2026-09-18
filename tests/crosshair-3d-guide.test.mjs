@@ -63,6 +63,7 @@ test("retained Cone guide renders the accepted teal silhouette, contour depths, 
   assert.equal(records.texts.length, 1, "the endpoint label is retained instead of recreated on every revision");
   assert.equal(records.texts[0].text, "5 ft");
   assert.equal(records.texts[0].visible, true);
+  assert.equal(records.texts[0].style.fill, "#FFFFFF");
   assert.ok(records.strokes.some(stroke => stroke.color === 0x7fefef && stroke.width === 2.25), "approved teal silhouette is rendered");
   assert.ok(records.strokes.some(stroke => stroke.color === 0x000000 && stroke.width === 4.5), "approved black under-outline is rendered");
   assert.ok(records.strokes.some(stroke => stroke.color === 0x7fefef && stroke.width === 1.875), "flat circular terminal face uses the approved outline");
@@ -71,14 +72,14 @@ test("retained Cone guide renders the accepted teal silhouette, contour depths, 
   assert.equal(parent.children.length, 0, "guide cleanup removes the complete retained presentation");
 });
 
-test("downward Cone turns red and uses darker, higher-contrast internal grid lines", () => {
+test("downward Cone turns red with darker grid lines while its elevation text remains white", () => {
   const { records } = installPixiStub();
   const service = new Crosshair3dPlacementGuideService({ geometry: new Crosshair3dGeometryService(), metrics: metrics() });
   service.show();
   service.update({ type: "cone", origin: { x: 0, y: 0, z: 5 }, length: 15, yaw: 0, pitch: -30 });
 
   assert.equal(records.texts[0].text, "-2.5 ft");
-  assert.equal(records.texts[0].style.fill, "#FF4D4D");
+  assert.equal(records.texts[0].style.fill, "#FFFFFF");
   assert.ok(records.strokes.some(stroke => stroke.color === 0xFF4D4D && stroke.width === 2.25), "downward silhouette is red");
   assert.ok(records.strokes.some(stroke => stroke.color === 0x921F27 && stroke.alpha === 0.82), "downward generator lines use the approved dark red contrast");
   assert.ok(records.strokes.some(stroke => stroke.color === 0x921F27 && stroke.alpha === 0.78), "downward contour lines use the approved dark red contrast");

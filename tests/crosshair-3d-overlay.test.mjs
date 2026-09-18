@@ -147,3 +147,47 @@ test("AE5E crosshair overlay keeps the accepted readout/mode and moves condition
     globalThis.PIXI = previousPIXI;
   }
 });
+
+test("Cone HUD remains fixed at the top-center viewport anchor across yaw and pitch revisions", () => {
+  const world = installCanvas();
+  const hud = installCanvas();
+  const previousCanvas = globalThis.canvas;
+  const previousPIXI = globalThis.PIXI;
+  try {
+    globalThis.canvas = {
+      interface: world.parent,
+      app: { renderer: { screen: { width: 1200, height: 800 } }, stage: hud.parent }
+    };
+    globalThis.PIXI = { Text: FakeText, TextStyle: FakeTextStyle, Graphics: FakeGraphics, Container: FakeContainer };
+
+    const overlay = new Crosshair3dPlacementOverlayService();
+    overlay.show({
+      mode: "MOVE",
+      fixedHud: true,
+      hints: [
+        "Hold Shift+Mousewheel to change Rotation",
+        "Hold Ctrl+Mousewheel to change Elevation",
+        "Right Click to Cancel"
+      ]
+    });
+
+    const mode = hud.children.find(child => child.name === "action-effects-5e-3d-crosshair-mode");
+    const hints = hud.children.find(child => child.name === "action-effects-5e-3d-crosshair-hints");
+    assert.ok(mode && hints, "fixed Cone controls render in the screen-space HUD parent");
+
+    overlay.update({ mode: "ROTATE", point: { x: 100, y: 700 }, footprintTopPx: 500, footprintBottomPx: 20, fixedHud: true });
+    assert.deepEqual([mode.position.x, mode.position.y], [600, CROSSHAIR_3D_OVERLAY_PRESENTATION.fixedHudModeYPx]);
+    assert.deepEqual([hints.position.x, hints.position.y], [600, CROSSHAIR_3D_OVERLAY_PRESENTATION.fixedHudHintsYPx]);
+
+    overlay.update({ mode: "ELEVATE", point: { x: 1100, y: 50 }, footprintTopPx: 10, footprintBottomPx: 600, fixedHud: true });
+    assert.deepEqual([mode.position.x, mode.position.y], [600, CROSSHAIR_3D_OVERLAY_PRESENTATION.fixedHudModeYPx], "Cone mode never follows the rotating footprint");
+    assert.deepEqual([hints.position.x, hints.position.y], [600, CROSSHAIR_3D_OVERLAY_PRESENTATION.fixedHudHintsYPx], "Cone instructions never follow the rotating footprint");
+
+    overlay.clear();
+    assert.equal(world.children.length, 0);
+    assert.equal(hud.children.length, 0);
+  } finally {
+    globalThis.canvas = previousCanvas;
+    globalThis.PIXI = previousPIXI;
+  }
+});
