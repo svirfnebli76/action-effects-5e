@@ -160,6 +160,7 @@ test("every accepted Shift-wheel increment rotates the authoritative revision by
   });
   assert.equal(result.yaw, 5);
   assert.equal(result.revision.revision > 0, true);
+  assert.equal(h.crosshairConfigs[0]?.snap?.direction, 5, "MOVE-mode yaw retains the five-degree compatibility default");
 });
 
 test("controls.rotationStep configures the accepted per-placement Shift-wheel increment", async () => {
@@ -174,6 +175,7 @@ test("controls.rotationStep configures the accepted per-placement Shift-wheel in
     capabilities: { rotation: true, elevation: true, los: false }
   });
   assert.equal(result.yaw, 2.5);
+  assert.equal(h.crosshairConfigs[0]?.snap?.direction, 2.5, "the same per-placement increment configures MOVE-mode yaw snapping");
 });
 
 test("Crosshair Elevation Gauge initializes before the first wheel notch in direct ELEVATE and remains available in ORBIT", async () => {

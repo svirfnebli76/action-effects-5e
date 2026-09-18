@@ -256,7 +256,7 @@ export class Crosshair3dPlacementSessionService {
       fillAlpha: 0,
       gridHighlight: false,
       location,
-      snap: { resolution: 8, direction: 5 }
+      snap: { resolution: 8, direction: this.#rotationStep(session) }
     };
     return globalThis.Sequencer.Crosshair.show(crosshairConfig, callbackConfig).then(position => ({ position, cancelled: !position }));
   }
