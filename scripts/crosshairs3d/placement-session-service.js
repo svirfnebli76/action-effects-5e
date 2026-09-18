@@ -663,13 +663,19 @@ export class Crosshair3dPlacementSessionService {
     else this.#guide.clearDrawing?.();
 
     const pixel = this.#metrics.distanceToPixels(revision.point, session.metrics);
+    const overlayExtents = this.#overlayFootprintVerticalPixels(revision.shape, session.metrics, session.sourceVolume);
     this.#overlay.update({
       mode: session.mode,
       elevation: revision.point.z,
       originElevation: session.sourceVolume?.bottom,
+      // Cone already owns a terminal-center absolute-elevation label. Hiding
+      // the generic apex readout prevents duplicate text over the source Token.
+      elevationVisible: revision.shape?.type !== CROSSHAIR_3D_SHAPES.CONE,
       point: pixel,
       gridSize: session.metrics.size,
-      footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics)
+      footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics),
+      footprintTopPx: overlayExtents?.top,
+      footprintBottomPx: overlayExtents?.bottom
     });
     this.#elevationGauge?.update?.(this.#elevationGaugeState(session, revision));
     this.#syncCarrierToRevision(session, session.carrier, revision);
@@ -767,10 +773,48 @@ export class Crosshair3dPlacementSessionService {
       case CROSSHAIR_3D_SHAPES.RAY:
         return toPixels(Math.max(finiteNumber(shape.width) / 2, finiteNumber(metrics?.distance, 5) / 2));
       case CROSSHAIR_3D_SHAPES.CONE:
-        return toPixels(finiteNumber(metrics?.distance, 5) / 2);
+        return toPixels(Math.hypot(finiteNumber(shape.length), finiteNumber(shape.length) / 2));
       default:
         return Math.max(1, finiteNumber(metrics?.size, 100) / 2);
     }
+  }
+
+  #overlayFootprintVerticalPixels(shape, metrics, sourceVolume = null) {
+    if (shape?.type !== CROSSHAIR_3D_SHAPES.CONE) return null;
+    const apex = this.#metrics.distanceToPixels(shape.origin, metrics);
+    let minY = apex.y;
+    let maxY = apex.y;
+    const includeY = value => {
+      const y = finiteNumber(value, apex.y);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    };
+
+    const direction = this.#geometry.direction(shape);
+    const basis = this.#geometry.rayBasis(shape);
+    const radius = finiteNumber(shape.length) / 2;
+    const center = {
+      x: finiteNumber(shape.origin.x) + direction.x * finiteNumber(shape.length),
+      y: finiteNumber(shape.origin.y) + direction.y * finiteNumber(shape.length),
+      z: finiteNumber(shape.origin.z) + direction.z * finiteNumber(shape.length)
+    };
+    for (let index = 0; index < 48; index += 1) {
+      const angle = (index / 48) * Math.PI * 2;
+      const point = this.#metrics.distanceToPixels({
+        x: center.x + radius * ((basis.widthAxis.x * Math.cos(angle)) + (basis.heightAxis.x * Math.sin(angle))),
+        y: center.y + radius * ((basis.widthAxis.y * Math.cos(angle)) + (basis.heightAxis.y * Math.sin(angle))),
+        z: center.z + radius * ((basis.widthAxis.z * Math.cos(angle)) + (basis.heightAxis.z * Math.sin(angle)))
+      }, metrics);
+      includeY(point.y);
+    }
+
+    // Self Cone apexes sit on a legal source boundary. Include the complete
+    // source footprint so the mode badge never covers the casting Token.
+    if (sourceVolume) {
+      includeY(this.#metrics.distanceToPixels({ x: sourceVolume.minX, y: sourceVolume.minY, z: sourceVolume.bottom }, metrics).y);
+      includeY(this.#metrics.distanceToPixels({ x: sourceVolume.maxX, y: sourceVolume.maxY, z: sourceVolume.bottom }, metrics).y);
+    }
+    return Object.freeze({ top: Math.max(0, apex.y - minY), bottom: Math.max(0, maxY - apex.y) });
   }
 
   #usesRemoteRigidElevation(session) {
@@ -785,10 +829,10 @@ export class Crosshair3dPlacementSessionService {
   }
 
   #canonicalSelfOrientation(headingYaw, arcPitch) {
-    const arc = Math.max(-180, Math.min(180, finiteNumber(arcPitch)));
+    const arc = normalizeDegrees(arcPitch);
     const heading = normalizeDegrees(headingYaw);
-    if (arc > 90) return { yaw: normalizeDegrees(heading + 180), pitch: 180 - arc, flipped: true };
-    if (arc < -90) return { yaw: normalizeDegrees(heading + 180), pitch: -180 - arc, flipped: true };
+    if (arc > 90 && arc < 270) return { yaw: normalizeDegrees(heading + 180), pitch: 180 - arc, flipped: true };
+    if (arc >= 270) return { yaw: heading, pitch: arc - 360, flipped: false };
     return { yaw: heading, pitch: arc, flipped: false };
   }
 
@@ -845,37 +889,39 @@ export class Crosshair3dPlacementSessionService {
   #stepArcPitch(currentInput, step, lengthInput, distanceInput) {
     const length = Math.max(1e-9, finiteNumber(lengthInput));
     const distance = Math.max(0, finiteNumber(distanceInput));
-    const current = Math.max(-180, Math.min(180, finiteNumber(currentInput)));
+    const current = normalizeDegrees(currentInput);
     if (!step || distance <= 0) return current;
-    const dz = length * Math.sin((current * Math.PI) / 180);
-    const ratioToDegrees = value => (Math.asin(Math.max(-1, Math.min(1, value / length))) * 180) / Math.PI;
-    const epsilon = 1e-7;
+    const direction = Math.sign(step);
+    const candidates = [];
+    const addCandidate = (phase, z) => {
+      const normalized = normalizeDegrees(phase);
+      if (candidates.some(candidate => Math.abs((((candidate.phase - normalized + 540) % 360) - 180)) < 1e-7)) return;
+      candidates.push({ phase: normalized, z });
+    };
 
-    if (step > 0) {
-      if (current >= 180 - epsilon) return 180;
-      if (current >= 90 - epsilon) {
-        const nextDz = Math.max(0, dz - distance);
-        return Math.min(180, 180 - ratioToDegrees(nextDz));
-      }
-      if (current < -90 - epsilon) {
-        const nextDz = Math.max(-length, dz - distance);
-        return Math.min(-90, -180 - ratioToDegrees(nextDz));
-      }
-      const nextDz = Math.min(length, dz + distance);
-      return ratioToDegrees(nextDz);
+    // Endpoint height remains the snapped user intent. Always include both
+    // vertical poles even when Cone length is not divisible by the requested
+    // increment, so pitch can cross vertical without stalling or shortening.
+    const firstLevel = Math.ceil((-length - 1e-9) / distance);
+    const lastLevel = Math.floor((length + 1e-9) / distance);
+    for (let level = firstLevel; level <= lastLevel; level += 1) {
+      const z = Math.max(-length, Math.min(length, level * distance));
+      const alpha = (Math.asin(Math.max(-1, Math.min(1, z / length))) * 180) / Math.PI;
+      addCandidate(alpha, z);
+      addCandidate(180 - alpha, z);
     }
+    addCandidate(90, length);
+    addCandidate(270, -length);
 
-    if (current <= -180 + epsilon) return -180;
-    if (current <= -90 + epsilon) {
-      const nextDz = Math.min(0, dz + distance);
-      return Math.max(-180, -180 - ratioToDegrees(nextDz));
+    let best = null;
+    for (const candidate of candidates) {
+      const delta = direction > 0
+        ? (candidate.phase - current + 360) % 360
+        : (current - candidate.phase + 360) % 360;
+      if (delta <= 1e-7) continue;
+      if (!best || delta < best.delta) best = { ...candidate, delta };
     }
-    if (current > 90 + epsilon) {
-      const nextDz = Math.min(length, dz + distance);
-      return Math.max(90, 180 - ratioToDegrees(nextDz));
-    }
-    const nextDz = Math.max(-length, dz - distance);
-    return ratioToDegrees(nextDz);
+    return best?.phase ?? current;
   }
 
   #resolveSelfApex(source, yaw, pitch, metrics, sourceVolume) {

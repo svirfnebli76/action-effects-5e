@@ -41,7 +41,7 @@ export class Crosshair3dPlacementOverlayService {
     this.#createHintStack(PIXI, parent, hints);
   }
 
-  update({ mode = null, elevation = null, originElevation = null, point = null, gridSize = null, footprintRadiusPx = null } = {}) {
+  update({ mode = null, elevation = null, originElevation = null, elevationVisible = true, point = null, gridSize = null, footprintRadiusPx = null, footprintTopPx = null, footprintBottomPx = null } = {}) {
     if (mode && this.#modeText) {
       this.#modeText.text = String(mode);
       this.#refreshModeBackground();
@@ -53,20 +53,31 @@ export class Crosshair3dPlacementOverlayService {
     const y = finiteNumber(point.y);
     const grid = Math.max(1, finiteNumber(gridSize, 100));
     const footprint = Math.max(0, finiteNumber(footprintRadiusPx, grid * 0.5));
+    const hasFootprintTop = footprintTopPx !== null
+      && footprintTopPx !== undefined
+      && Number.isFinite(Number(footprintTopPx));
+    const hasFootprintBottom = footprintBottomPx !== null
+      && footprintBottomPx !== undefined
+      && Number.isFinite(Number(footprintBottomPx));
+    const footprintTop = hasFootprintTop ? Math.max(0, Number(footprintTopPx)) : footprint;
+    const footprintBottom = hasFootprintBottom ? Math.max(0, Number(footprintBottomPx)) : footprint;
 
     if (this.#elevationText) {
-      this.#elevationText.text = `${this.#formatElevation(elevation)} ft`;
-      this.#setTextFill(this.#elevationText, finiteNumber(elevation) < finiteNumber(originElevation, elevation) ? "#FF3B30" : "#FFFFFF");
-      // Anchor the readout to the actual accepted crosshair center, then move
-      // it down by exactly two text-size units. This remains centered for both
-      // odd- and even-grid-diameter crosshairs and never depends on a nearby
-      // map-grid square center.
-      this.#elevationText.position.set(x, y + ELEVATION_OFFSET_PX);
-      this.#elevationText.visible = true;
+      if (elevationVisible === false) this.#elevationText.visible = false;
+      else {
+        this.#elevationText.text = `${this.#formatElevation(elevation)} ft`;
+        this.#setTextFill(this.#elevationText, finiteNumber(elevation) < finiteNumber(originElevation, elevation) ? "#FF3B30" : "#FFFFFF");
+        // Anchor the readout to the actual accepted crosshair center, then move
+        // it down by exactly two text-size units. This remains centered for both
+        // odd- and even-grid-diameter crosshairs and never depends on a nearby
+        // map-grid square center.
+        this.#elevationText.position.set(x, y + ELEVATION_OFFSET_PX);
+        this.#elevationText.visible = true;
+      }
     }
 
     if (this.#modeContainer) {
-      this.#modeContainer.position?.set?.(x, y - footprint - MODE_BOUNDARY_MARGIN);
+      this.#modeContainer.position?.set?.(x, y - footprintTop - MODE_BOUNDARY_MARGIN);
       this.#modeContainer.visible = true;
     }
 
@@ -75,7 +86,7 @@ export class Crosshair3dPlacementOverlayService {
       // position it from the bottom edge of the actual placement footprint.
       // Each instruction owns its own compact dark badge so larger/smaller
       // crosshairs retain the same readable spacing.
-      this.#hintsContainer.position?.set?.(x, y + footprint + HINT_BOUNDARY_MARGIN);
+      this.#hintsContainer.position?.set?.(x, y + footprintBottom + HINT_BOUNDARY_MARGIN);
       this.#hintsContainer.visible = this.#hintRows.length > 0;
     }
   }

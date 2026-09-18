@@ -495,6 +495,46 @@ test("Self Cone and Ray keep their existing Ctrl pitch path and do not expose re
   assert.equal(modes.includes("ORBIT"), false, "Ctrl+Shift remains non-operative for self Cone/Ray");
 });
 
+test("Self Cone pitch remains cyclic beyond one complete 360-degree elevation revolution", async () => {
+  const h = harness({
+    onShow: ({ window }) => {
+      // A 10-ft centerline with 5-ft endpoint-height stepping visits eight
+      // accepted phases per revolution. The ninth notch must begin turn two.
+      for (let index = 0; index < 9; index += 1) {
+        window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
+      }
+    }
+  });
+  const result = await h.service.show({
+    source: h.source,
+    self: true,
+    shape: { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 10, yaw: 0, pitch: 0 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  assert.equal(h.service.getStats().wheelEvents, 9);
+  assert.equal(Math.round(result.revision.arcPitch), 30, "the ninth notch advances into a second revolution instead of stopping at 180 degrees");
+  assert.equal(Math.round(result.pitch), 30);
+  assert.equal(Math.round(result.yaw), 0);
+  assert.equal(Math.round((result.revision.endpointZ - result.placementPoint.z) * 1000) / 1000, 5);
+});
+
+test("Self Cone overlay encloses its complete projection and suppresses duplicate apex elevation text", async () => {
+  const h = harness();
+  const result = await h.service.show({
+    source: h.source,
+    self: true,
+    shape: { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 0 },
+    capabilities: { rotation: true, elevation: true, los: false }
+  });
+
+  assert.equal(result.cancelled, false);
+  const acceptedOverlay = h.overlayEvents.find(([type, data]) => type === "update" && data?.footprintRadiusPx);
+  assert.equal(Math.round(acceptedOverlay?.[1]?.footprintTopPx), 150, "mode badge clears the exact upper Cone/source projection");
+  assert.equal(Math.round(acceptedOverlay?.[1]?.footprintBottomPx), 150, "instruction stack clears the exact lower Cone/source projection");
+  assert.equal(acceptedOverlay?.[1]?.elevationVisible, false, "terminal-center label replaces the overlapping generic apex elevation label");
+});
+
 test("ELEVATE mouse-wheel direction can be reversed by the client setting without changing Shift rotation", async () => {
   const h = harness({
     reverseElevationWheel: true,

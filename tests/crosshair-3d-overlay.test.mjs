@@ -120,11 +120,19 @@ test("AE5E crosshair overlay keeps the accepted readout/mode and moves condition
     assert.deepEqual(hints.children.map(row => row.position.y), [14, 46, 78], "each instruction occupies its own vertically stacked badge row");
     assert.equal(elevation.style.fill, "#FFFFFF", "elevation at/above the source base remains white");
 
+    overlay.update({ mode: "MOVE", elevation: 0, originElevation: 0, elevationVisible: false, point: { x: 300, y: 400 }, gridSize: 100, footprintRadiusPx: 200, footprintTopPx: 90, footprintBottomPx: 310 });
+    assert.equal(mode.position.y, 288, "mode badge uses the exact projected top extent when supplied");
+    assert.equal(hints.position.y, 728, "instruction stack uses the exact projected bottom extent when supplied");
+
     overlay.update({ mode: "ELEVATE", elevation: -5, originElevation: 0, point: { x: 300, y: 400 }, gridSize: 100, footprintRadiusPx: 200 });
     assert.equal(elevation.text, "-5 ft");
     assert.equal(elevation.style.fill, "#FF3B30", "elevation below the source base turns red");
 
+    overlay.update({ mode: "ELEVATE", elevation: 0, originElevation: 0, elevationVisible: false, point: { x: 300, y: 400 }, gridSize: 100, footprintRadiusPx: 200 });
+    assert.equal(elevation.visible, false, "shape-owned endpoint elevation can suppress the redundant generic origin label");
+
     overlay.update({ mode: "MOVE", elevation: 15, originElevation: 0, point: { x: 125, y: 250 }, gridSize: 100, footprintRadiusPx: 200 });
+    assert.equal(elevation.visible, true, "generic elevation presentation returns for shapes that do not own an endpoint label");
     assert.equal(elevation.style.fill, "#FFFFFF", "returning above the source base restores white text");
     assert.equal(mode.position.x, 125);
     assert.equal(mode.position.y, 28, "mode badge follows the accepted crosshair position");
