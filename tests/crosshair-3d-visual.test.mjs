@@ -143,3 +143,25 @@ test("Cone always suppresses flat Eskie artwork and requests one retained AE5E g
   assert.equal(pitched.guide, true);
   assert.equal(calls.starts.length, 0, "changing pitch never creates a second presentation path");
 });
+
+test("Ray artwork center follows the projected beam while the authoritative origin remains its near-face apex", async () => {
+  const calls = installSequencerStub();
+  const service = new Crosshair3dPlacementVisualService({ crosshairs: crosshairs(), metrics: metrics() });
+  const state = service.createSession({ id: "ray-anchor" });
+  const base = { type: "ray", origin: { x: 5, y: 10, z: 15 }, length: 20, width: 5, yaw: 0 };
+
+  await service.update(state, { ...base, pitch: 0 });
+  await service.update(state, { ...base, pitch: 60 });
+  await service.update(state, { ...base, pitch: 90 });
+
+  const start = calls.starts.find(entry => entry.name === "action-effects-5e.crosshair3d.accepted.ray-anchor");
+  const transforms = calls.transforms.filter(entry => entry.id === "effect-action-effects-5e.crosshair3d.accepted.ray-anchor");
+  assert.deepEqual(start.source, { x: 300, y: 200 }, "horizontal artwork is centered halfway along the 20-ft Ray");
+  assert.ok(Math.abs(transforms[0].source.x - 200) < 1e-9, "pitched artwork follows half of the shortened XY centerline projection");
+  assert.equal(transforms[0].source.y, 200);
+  assert.ok(Math.abs(transforms[1].source.x - 100) < 1e-9, "vertical artwork is centered on the authoritative apex");
+  assert.equal(transforms[1].source.y, 200);
+  assert.equal(start.size.width, 4, "horizontal artwork retains the full 20-ft projected length");
+  assert.ok(Math.abs(transforms[0].size.width - ((10 + (5 * Math.sin(Math.PI / 3))) / 5)) < 1e-9);
+  assert.ok(Math.abs(transforms[1].size.width - 1) < 1e-9, "vertical artwork retains one 5-ft square footprint");
+});

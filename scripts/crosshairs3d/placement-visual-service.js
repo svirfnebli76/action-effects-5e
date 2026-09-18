@@ -56,6 +56,18 @@ function projectedRayLength(shape) {
   return Math.max(shape.width, Math.abs(shape.length * Math.cos(pitch)) + Math.abs(shape.width * Math.sin(pitch)));
 }
 
+function visualCenterFor(shape) {
+  if (shape.type !== CROSSHAIR_3D_SHAPES.RAY) return shape.origin;
+  const yaw = (finiteNumber(shape.yaw) * Math.PI) / 180;
+  const pitch = (finiteNumber(shape.pitch) * Math.PI) / 180;
+  const projectedCenterlineHalf = Math.abs(shape.length * Math.cos(pitch)) / 2;
+  return {
+    x: finiteNumber(shape.origin?.x) + (Math.cos(yaw) * projectedCenterlineHalf),
+    y: finiteNumber(shape.origin?.y) + (Math.sin(yaw) * projectedCenterlineHalf),
+    z: finiteNumber(shape.origin?.z)
+  };
+}
+
 function sizeDataFor(shape, metrics) {
   const gridDistance = finiteNumber(metrics?.distance, 5);
   const toGrid = value => finiteNumber(value) / gridDistance;
@@ -146,7 +158,13 @@ export class Crosshair3dPlacementVisualService {
     }
 
     const metrics = this.#metrics.resolve();
-    const pixel = this.#metrics.distanceToPixels(shape.origin, metrics);
+    // Sequencer positions unstretched artwork by its center. A Ray's
+    // authoritative origin is instead the center of its near face, so place
+    // the visual at the midpoint of the projected centerline. The projected
+    // square cross-section is already included symmetrically in sizeDataFor(),
+    // which leaves pitch zero beginning at the legal apex and vertical pitch
+    // centered on its W x W footprint.
+    const pixel = this.#metrics.distanceToPixels(visualCenterFor(shape), metrics);
     const size = sizeDataFor(shape, metrics);
     const yaw = finiteNumber(shape.yaw, 0) + finiteNumber(options.rotationOffset ?? state.options.rotationOffset, 0);
     const serial = ++state.updateSerial;
