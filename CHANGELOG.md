@@ -1,3 +1,12 @@
+## 0.4.4.29 — Line anchor, filleted presentation, Alt recovery
+
+- Source-bound Line near-face center slides continuously along the source perimeter instead of inheriting Cone grid-corner snapping. Cone apex selection remains unchanged. This removes the cardinal-heading anchor jump without changing the 50% cell-coverage rule.
+- Implements the approved rounded longitudinal edges and flat end planes: visual width is 70% of rules width (3.5 ft for a 5-ft Line), fillet radius is 0.17 Scene grid-distance units (0.85 ft on a 5-ft grid), capped for narrow Lines. Retained shaded teal/red surfaces, always-white endpoint label, no Eskie artwork. Targeting keeps the full unfilleted W×W volume.
+- Retains Alt capture suppression and adds session-scoped, Alt-armed trusted pointer recovery for swallowed Ctrl/Shift releases. No persistent Alt-down latch; pre-Ctrl pointer motion does not disarm recovery. Synthetic events and ordinary pointer activity outside recovery cannot change modes. Native browser/Electron behavior still requires live acceptance.
+- Fixes initial Line HUD creation to use the fixed viewport position immediately.
+- Adds cardinal continuity, west-target angular coverage, Alt recovery across four shapes, fillet dimensions, and unchanged targeting-volume regressions.
+- Retest: west-heading rotation/targeting, Alt before and during ELEVATE/ROTATE, gauge stability, tube graphics at horizontal/pitched/vertical orientations, confirm/cancel cleanup. No compendium, Item, propagation, or freely placed Line changes.
+
 ## 0.4.4.28 — Source-bound Line
 
 - Replaces the experimental 3D `ray` shape and `rayBasis` API with `line` and `lineBasis`; no deprecated alias. Existing 2D crosshairs are unchanged.

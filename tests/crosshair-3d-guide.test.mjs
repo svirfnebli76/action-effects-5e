@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { Crosshair3dGeometryService } from "../scripts/crosshairs3d/geometry-service.js";
+import { Crosshair3dCellRasterizerService } from "../scripts/crosshairs3d/cell-rasterizer-service.js";
 import { Crosshair3dPlacementGuideService } from "../scripts/crosshairs3d/placement-guide-service.js";
 
 function installPixiStub() {
@@ -52,7 +53,7 @@ function metrics() {
   };
 }
 
-test("Line tube projects its full square section at vertical and keeps white endpoint text below source", () => {
+test("Line filleted visual retains 3.5-ft vertical footprint and white endpoint text", () => {
   const { records, parent } = installPixiStub();
   const service = new Crosshair3dPlacementGuideService({ geometry: new Crosshair3dGeometryService(), metrics: metrics() });
   service.show();
@@ -61,8 +62,9 @@ test("Line tube projects its full square section at vertical and keeps white end
     const polygon = records.polygons[0];
     const xs = polygon.filter((_, i) => i % 2 === 0);
     const ys = polygon.filter((_, i) => i % 2 === 1);
-    assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 100) < 1e-8);
-    assert.ok(Math.abs(Math.max(...ys) - Math.min(...ys) - 100) < 1e-8);
+    assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 70) < 1e-8);
+    assert.ok(Math.abs(Math.max(...ys) - Math.min(...ys) - 70) < 1e-8);
+    assert.equal(polygon.length, 88, "44 perimeter vertices describe rounded corners, not a square cap");
     assert.equal(records.texts[0].text, pitch > 0 ? "25 ft" : "-15 ft");
     assert.equal(records.texts[0].style.fill, "#FFFFFF");
     assert.equal(records.texts.length, 1);
@@ -70,6 +72,40 @@ test("Line tube projects its full square section at vertical and keeps white end
   }
   service.clear();
   assert.equal(parent.children.length, 0);
+});
+
+test("filleted presentation never changes rules width, occupied cells, or terminal elevation", () => {
+  const { records } = installPixiStub();
+  const geometry = new Crosshair3dGeometryService();
+  const cells = new Crosshair3dCellRasterizerService({ geometry });
+  const service = new Crosshair3dPlacementGuideService({ geometry, metrics: metrics() });
+  service.show();
+  for (const width of [0.5, 5, 10]) {
+    for (const pitch of [-90, -30, 0, 30, 90]) {
+      const shape = geometry.normalizeShape({ type: "line", origin: { x: 0, y: 2.5, z: 5 }, width, length: 20, yaw: 37, pitch });
+      const before = cells.rasterize(shape, { grid: { distance: 5 } }).cells;
+      service.update(shape);
+      assert.equal(shape.width, width);
+      assert.deepEqual(cells.rasterize(shape, { grid: { distance: 5 } }).cells, before);
+      assert.ok(records.polygons.every(polygon => polygon.every(Number.isFinite)));
+      assert.equal(records.texts[0].style.fill, "#FFFFFF");
+      assert.ok(records.fills.length > 0, "tube remains visible at every tested pitch");
+    }
+  }
+  service.clear();
+});
+
+test("Line uses the approved 0.17-grid fillet with flat end planes", () => {
+  const { records } = installPixiStub();
+  const service = new Crosshair3dPlacementGuideService({ geometry: new Crosshair3dGeometryService(), metrics: metrics() });
+  service.show();
+  service.update({ type: "line", origin: { x: 0, y: 0, z: 0 }, width: 5, length: 20, yaw: 0, pitch: 90 });
+  // At vertical, the first rendered polygon is the flat terminal cap.
+  const cap = records.polygons[0];
+  assert.ok(Math.abs(cap[0] + 18) < 1e-8, "corner inset is (1.75 - 0.85) ft");
+  assert.ok(Math.abs(cap[1] - 35) < 1e-8, "outer half-width is 1.75 ft");
+  assert.ok(Math.abs(Math.hypot(cap[10] + 18, cap[11] - 18) - 17) < 1e-8, "arc radius is 0.85 ft / 17 pixels");
+  service.clear();
 });
 
 test("retained Cone guide renders the accepted teal silhouette, contour depths, endpoint, and absolute elevation", () => {

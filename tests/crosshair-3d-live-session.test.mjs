@@ -106,6 +106,75 @@ test("source-bound Line keeps source Z fixed through positive and negative pitch
   }
 });
 
+test("Line anchor is continuous across all cardinal headings for small and large sources", async () => {
+  for (const width of [1, 2]) {
+    for (const cardinal of [0, 90, 180, 270]) {
+      let previous;
+      for (const offset of [-2.5, 0, 2.5]) {
+        const h = harness({ onShow: ({ carrier }) => { carrier.direction = carrier.document.direction = cardinal + offset; } });
+        h.source.document.width = width;
+        const result = await h.service.show({ source: h.source,
+          shape: { type: "line", length: 20, width: 5, yaw: cardinal + offset, pitch: 0 } });
+        const p = result.placementPoint;
+        if (previous) assert.ok(Math.hypot(p.x-previous.x, p.y-previous.y) < 0.5, "no grid-sized anchor jump");
+        if (offset === 0 && cardinal === 180) {
+          assert.ok(Math.abs(p.x) < 1e-8);
+          assert.ok(Math.abs(p.y - 2.5) < 1e-8, "west begins at the left-face midpoint");
+        }
+        previous = p;
+      }
+    }
+  }
+});
+
+test("west target stays affected on both sides of the exact west wheel tick", async () => {
+  for (const yaw of [175, 177.5, 180, 182.5, 185]) {
+    const h = harness({ onShow: ({ carrier }) => { carrier.direction = carrier.document.direction = yaw; } });
+    Object.assign(h.inside.document, { x: -300, y: 0 });
+    Object.assign(h.inside, { x: -300, y: 0 });
+    const result = await h.service.show({ source: h.source,
+      shape: { type: "line", length: 20, width: 5, yaw, pitch: 0 } });
+    assert.ok(result.targetIds.includes("inside"), `west target at ${yaw} degrees`);
+    assert.equal(result.shape.width, 5, "rules width remains unchanged");
+  }
+});
+
+test("Alt recovery survives missing Alt/Ctrl keyup without disturbing held modifiers or leaking listeners", async () => {
+  for (const type of ["sphere", "prism", "cone", "line"]) {
+    let h;
+    h = harness({ onShow: ({ window }) => {
+      const mode = () => h.overlayEvents.filter(([kind, data]) => kind === "update" && data.mode).at(-1)[1].mode;
+      const pointer = extra => window.dispatch("pointermove", { isTrusted: true, ctrlKey: false, shiftKey: false, altKey: false, ...extra });
+      window.dispatch("keydown", { key: "Alt", altKey: true });
+      pointer({}); // Must not disarm before the subsequent modifier cycle.
+      window.dispatch("keydown", { key: "Control", ctrlKey: true });
+      assert.equal(mode(), "ELEVATE");
+      pointer({ isTrusted: false });
+      assert.equal(mode(), "ELEVATE", "synthetic input cannot recover");
+      pointer({ ctrlKey: true });
+      assert.equal(mode(), "ELEVATE", "held Ctrl is preserved");
+      pointer({ altKey: true });
+      assert.equal(mode(), "ELEVATE", "Alt-held input cannot recover");
+      pointer({}); // No Ctrl keyup has arrived.
+      assert.equal(mode(), "MOVE");
+      window.dispatch("keydown", { key: "Control", ctrlKey: true });
+      pointer({});
+      assert.equal(mode(), "ELEVATE", "ordinary pointer input is inert after recovery");
+      window.dispatch("keyup", { key: "Control", ctrlKey: false });
+      window.dispatch("keydown", { key: "Alt", altKey: true });
+      window.dispatch("keydown", { key: "Shift", shiftKey: true });
+      pointer({ shiftKey: true });
+      assert.equal(mode(), "ROTATE");
+      pointer({});
+      assert.equal(mode(), "MOVE", "missing Shift release also recovers");
+    }});
+    await h.service.show({ source: h.source,
+      shape: { type, radius: 10, length: 20, width: 5, height: 5 },
+      capabilities: { elevation: true, rotation: true } });
+    for (const event of ["keydown", "keyup", "pointermove", "pointerdown", "wheel", "blur"]) assert.equal(h.window.count(event), 0);
+  }
+});
+
 test("old ray API and deferred free placement fail before session side effects", async () => {
   for (const options of [
     { shape: { type: "ray", length: 20, width: 5 } },
@@ -335,7 +404,7 @@ test("pointer activity remains non-authoritative and cannot flicker a Ctrl+Shift
   });
 
   assert.equal(result.cancelled, false);
-  assert.equal(pointerListenerCount, 0, "placement installs no modifier-recovery pointer listeners");
+  assert.equal(pointerListenerCount, 2, "session-scoped pointer recovery is installed but inert until Alt");
   assert.equal(modeEventsAfterPointer, modeEventsBeforePointer, "pointer activity cannot publish a mode transition while Ctrl+Shift is held");
   assert.equal(gaugeEventsAfterPointer, gaugeEventsBeforePointer, "pointer activity cannot hide/rebuild the ORBIT gauge");
   const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);

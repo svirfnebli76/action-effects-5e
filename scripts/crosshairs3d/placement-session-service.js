@@ -170,7 +170,7 @@ export class Crosshair3dPlacementSessionService {
     this.#overlay.show({
       mode: "MOVE",
       hints,
-      fixedHud: baseShape.type === CROSSHAIR_3D_SHAPES.CONE
+      fixedHud: [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
     });
     this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
     this.#guide.show();
@@ -295,14 +295,15 @@ export class Crosshair3dPlacementSessionService {
             : "MOVE";
       setMode(next);
     };
-    // Alt has no Action Effects 3D Crosshairs function. On Windows/Chromium,
-    // allowing Alt to reach the host menu/focus machinery can disturb later
-    // modifier keyup delivery. During an active placement session AE5E therefore
-    // suppresses Alt itself at the capture stage instead of trying to reconstruct
-    // modifier state afterward. Ctrl/Shift keyboard events and wheel events remain
-    // authoritative; ordinary pointer movement never changes placement mode.
+    // Keep prevention, but also recover when native Alt handling swallows a
+    // later modifier release. No persistent Alt-down latch: its keyup can also
+    // be lost. Recovery survives pointer movement BEFORE the next Ctrl cycle.
+    let altRecoveryArmed = false;
+    let recoverySawModifier = false;
     const suppressAlt = event => {
-      if (event?.key !== "Alt") return false;
+      if (event?.key !== "Alt" && event?.key !== "AltGraph") return false;
+      altRecoveryArmed = true;
+      recoverySawModifier ||= session.modifier.ctrl || session.modifier.shift || Boolean(event.ctrlKey || event.shiftKey);
       event.preventDefault?.();
       event.stopPropagation?.();
       event.stopImmediatePropagation?.();
@@ -316,7 +317,20 @@ export class Crosshair3dPlacementSessionService {
       const changed = shift !== session.modifier.shift || ctrl !== session.modifier.ctrl;
       session.modifier.shift = shift;
       session.modifier.ctrl = ctrl;
+      if (altRecoveryArmed && (shift || ctrl)) recoverySawModifier = true;
       return changed;
+    };
+    const recoverFromPointer = event => {
+      if (session.closed || !altRecoveryArmed || event.isTrusted !== true || event.altKey !== false) return;
+      if (typeof event.ctrlKey !== "boolean" || typeof event.shiftKey !== "boolean") return;
+      // Do not use synthesized renderer events, and do not disarm just because
+      // an Alt tap was followed by movement before the next modifier cycle.
+      if (!recoverySawModifier) return;
+      if (syncModifiers(event)) updateMode();
+      if (!event.ctrlKey && !event.shiftKey) {
+        altRecoveryArmed = false;
+        recoverySawModifier = false;
+      }
     };
     const keydown = event => {
       if (suppressAlt(event)) return;
@@ -329,6 +343,8 @@ export class Crosshair3dPlacementSessionService {
       updateMode();
     };
     const blur = () => {
+      altRecoveryArmed = false;
+      recoverySawModifier = false;
       session.modifier.shift = false;
       session.modifier.ctrl = false;
       updateMode();
@@ -376,11 +392,15 @@ export class Crosshair3dPlacementSessionService {
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("keyup", keyup, true);
     window.addEventListener("blur", blur, true);
+    window.addEventListener("pointermove", recoverFromPointer, true);
+    window.addEventListener("pointerdown", recoverFromPointer, true);
     window.addEventListener("wheel", wheel, { capture: true, passive: false });
     session.listeners.push(
       ["keydown", keydown, true],
       ["keyup", keyup, true],
       ["blur", blur, true],
+      ["pointermove", recoverFromPointer, true],
+      ["pointerdown", recoverFromPointer, true],
       ["wheel", wheel, { capture: true }]
     );
   }
@@ -955,10 +975,13 @@ export class Crosshair3dPlacementSessionService {
     const ty = Math.abs(dy) > 1e-9 ? (heightPx / 2) / Math.abs(dy) : Infinity;
     const t = Math.min(tx, ty);
     let x = cx + dx * t, y = cy + dy * t;
-    // Legal source-boundary apex: snap the free boundary coordinate to a grid intersection.
-    if (tx < ty) y = y0 + Math.round((y - y0) / metrics.size) * metrics.size;
-    else if (ty < tx) x = x0 + Math.round((x - x0) / metrics.size) * metrics.size;
-    else { x = dx >= 0 ? x0 + widthPx : x0; y = dy >= 0 ? y0 + heightPx : y0; }
+    // Cone retains its legal grid-intersection apex. A Line's near-face
+    // center instead slides continuously along the source perimeter.
+    if (shapeType !== CROSSHAIR_3D_SHAPES.LINE) {
+      if (tx < ty) y = y0 + Math.round((y - y0) / metrics.size) * metrics.size;
+      else if (ty < tx) x = x0 + Math.round((x - x0) / metrics.size) * metrics.size;
+      else { x = dx >= 0 ? x0 + widthPx : x0; y = dy >= 0 ? y0 + heightPx : y0; }
+    }
     x = Math.max(x0, Math.min(x0 + widthPx, x));
     y = Math.max(y0, Math.min(y0 + heightPx, y));
     const z = shapeType === CROSSHAIR_3D_SHAPES.LINE

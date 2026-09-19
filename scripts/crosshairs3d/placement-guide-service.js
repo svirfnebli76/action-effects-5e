@@ -208,43 +208,80 @@ export class Crosshair3dPlacementGuideService {
 
     if (shape.type === CROSSHAIR_3D_SHAPES.LINE) {
       const basis = this.#geometry.lineBasis(shape);
-      const half = shape.width / 2;
+      // Presentation only: 5-ft rules width becomes the approved 3.5-ft tube.
+      // Never pass this reduced/filleted cross-section to targeting geometry.
+      const half = shape.width * 0.7 / 2;
+      const fillet = Math.min(metrics.distance * 0.17, half * 0.95);
+      const inset = half - fillet;
+      const perimeter = [];
+      for (let corner = 0; corner < 4; corner++) {
+        const midpoint = degreesToRadians(corner * 90 + 45);
+        const u = Math.sign(Math.cos(midpoint)) * inset;
+        const v = Math.sign(Math.sin(midpoint)) * inset;
+        for (let step = 0; step <= 10; step++) {
+          const angle = degreesToRadians(corner * 90 + step * 9);
+          perimeter.push({ u: u + fillet * Math.cos(angle), v: v + fillet * Math.sin(angle) });
+        }
+      }
       const end = {
         x: shape.origin.x + basis.direction.x * shape.length,
         y: shape.origin.y + basis.direction.y * shape.length,
         z: shape.origin.z + basis.direction.z * shape.length
       };
-      // Project all eight authoritative vertices, including the height axis.
-      // Projecting only a center-plane rectangle would collapse at vertical.
+      // Extrude a rounded-square section, keeping both terminal planes flat.
+      // Include the height axis so the vertical projection never collapses.
       const section = fraction => {
         const center = {
           x: shape.origin.x + basis.direction.x * shape.length * fraction,
           y: shape.origin.y + basis.direction.y * shape.length * fraction,
           z: shape.origin.z + basis.direction.z * shape.length * fraction
         };
-        return [[-1,-1],[1,-1],[1,1],[-1,1]].map(([w,h]) => toPixel({
-          x: center.x + half * (w*basis.widthAxis.x + h*basis.heightAxis.x),
-          y: center.y + half * (w*basis.widthAxis.y + h*basis.heightAxis.y),
-          z: center.z + half * (w*basis.widthAxis.z + h*basis.heightAxis.z)
-        }));
+        return perimeter.map(({ u, v }) => {
+          const world = {
+            x: center.x + u*basis.widthAxis.x + v*basis.heightAxis.x,
+            y: center.y + u*basis.widthAxis.y + v*basis.heightAxis.y,
+            z: center.z + u*basis.widthAxis.z + v*basis.heightAxis.z
+          };
+          return { ...toPixel(world), z: world.z };
+        });
       };
       const near = section(0), far = section(1);
       const downward = end.z < shape.origin.z - 1e-7;
       const bodyColor = downward ? CONE_NEGATIVE_COLOR : color;
       const edgeColor = downward ? CONE_NEGATIVE_GRID_COLOR : 0x287878;
       const silhouette = convexHull([...near, ...far]);
-      drawPolygon(graphics, silhouette, { color: 0x000000, alpha: CONE_UNDERLAY_ALPHA, width: CONE_UNDER_OUTLINE_WIDTH });
-      drawPolygon(graphics, silhouette, { color: bodyColor, alpha: CONE_BODY_ALPHA, width: CONE_OUTLINE_WIDTH });
-      for (let i = 0; i < 4; i++) {
-        drawLine(graphics, near[i], far[i], { color: edgeColor, alpha: 0.82, width: 1.5 });
+      const shade = normal => {
+        const t = 0.25 + 0.75 * Math.max(0, -0.35*normal.x - 0.45*normal.y + 0.82*normal.z);
+        const low = downward ? [100, 24, 30] : [31, 100, 105];
+        const high = downward ? [255, 158, 158] : [166, 255, 245];
+        const rgb = low.map((value, i) => Math.round(value + (high[i] - value) * t));
+        return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+      };
+      const faces = [];
+      for (let i = 0; i < perimeter.length; i++) {
+        const j = (i + 1) % perimeter.length;
+        const du = perimeter[j].u - perimeter[i].u, dv = perimeter[j].v - perimeter[i].v;
+        const magnitude = Math.hypot(du, dv);
+        if (magnitude < 1e-8) continue;
+        const normal = Object.fromEntries(["x", "y", "z"].map(axis => [axis,
+          (dv*basis.widthAxis[axis] - du*basis.heightAxis[axis]) / magnitude]));
+        if (normal.z > 1e-8) faces.push({ points: [near[i], near[j], far[j], far[i]], normal, alpha: 0.34 });
       }
-      for (const fraction of [0, ...CONE_CONTOUR_FRACTIONS, 1]) {
-        drawPolygon(graphics, section(fraction), {
-          color: bodyColor, alpha: fraction === 1 ? CONE_TERMINAL_ALPHA : 0,
-          lineColor: edgeColor, lineAlpha: 0.78, width: CONE_TERMINAL_OUTLINE_WIDTH
-        });
+      if (Math.abs(basis.direction.z) > 1e-8) {
+        const sign = Math.sign(basis.direction.z);
+        faces.push({ points: sign > 0 ? far : near,
+          normal: Object.fromEntries(["x", "y", "z"].map(axis => [axis, sign*basis.direction[axis]])), alpha: 0.22 });
       }
-      drawLine(graphics, toPixel(shape.origin), toPixel(end), { color: bodyColor, alpha: 0.95, width: 2 });
+      const meanZ = face => face.points.reduce((sum, point) => sum + point.z, 0) / face.points.length;
+      faces.sort((a, b) => meanZ(a) - meanZ(b));
+      for (const face of faces) drawPolygon(graphics, face.points, { color: shade(face.normal), alpha: face.alpha, width: 0 });
+      drawPolygon(graphics, silhouette, { color: 0x000000, alpha: 0, lineAlpha: 0.4, width: CONE_UNDER_OUTLINE_WIDTH });
+      drawPolygon(graphics, silhouette, { color: bodyColor, alpha: 0, lineAlpha: 0.9, width: CONE_OUTLINE_WIDTH });
+      drawPolygon(graphics, near, { color: edgeColor, alpha: 0, lineAlpha: downward ? 0.8 : 0.3, width: 1.5 });
+      drawPolygon(graphics, far, { color: bodyColor, alpha: 0, lineAlpha: downward ? 0.3 : 0.8, width: 1.5 });
+      for (const i of [10, 11]) drawLine(graphics, near[i], far[i], {
+        color: downward ? 0xffbaba : 0xc4fff7, alpha: 0.45, width: 1
+      });
       const terminal = toPixel(end);
       drawCircle(graphics, terminal, CONE_ENDPOINT_RADIUS, { fillColor: bodyColor });
       if (this.#endpointText) {
