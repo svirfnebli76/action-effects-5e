@@ -1,3 +1,11 @@
+## 0.4.4.30 — Freely placed Line test build
+
+- Adds midpoint-based free Line placement. Plain wheel rotates, Shift+wheel resizes symmetrically up to the initial length, Ctrl+wheel translates elevation, and Ctrl+Shift+wheel does nothing.
+- Requires an explicit center, designated origin, or endpoint range policy; validates XYZ distance against the source occupied volume. Shows a faint horizontal range boundary at the current base elevation.
+- Keeps the authoritative geometry start-based with separate height and thickness. Preview shows footprint, center, endpoints, dimensions, and elevation; origin policy highlights its designated endpoint.
+- Adds control-burst, range-policy, elevation, resize-limit, rotation-boundary, and cleanup tests. Includes a standalone free Line test macro.
+- Source-bound Line behavior, compendium content, and assets are unchanged. Live Foundry acceptance remains required. This adds placement infrastructure, not automatic conversion of spell activities or persistent walls/Regions.
+
 ## 0.4.4.29 — Line anchor, filleted presentation, Alt recovery
 
 - Source-bound Line near-face center slides continuously along the source perimeter instead of inheriting Cone grid-corner snapping. Cone apex selection remains unchanged. This removes the cardinal-heading anchor jump without changing the 50% cell-coverage rule.

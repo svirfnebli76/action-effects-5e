@@ -1,3 +1,4 @@
+import { freeLineEndpoints, freeLineWithinRange, constrainFreeLineChange, freeLineRangeBoundary } from "./free-line-placement.js";
 import { Logger } from "../core/logger.js";
 import { MODULE_ID, SETTINGS } from "../core/constants.js";
 import { CROSSHAIR_3D_SHAPES } from "./geometry-service.js";
@@ -82,15 +83,22 @@ export class Crosshair3dPlacementSessionService {
 
     const source = sourceTokenOf(options.source);
     if (!source?.document) throw new Error("Action Effects 3D Crosshairs requires a source Token.");
-    const baseShape = this.#geometry.normalizeShape(options.shape ?? {});
-    if (baseShape.type === CROSSHAIR_3D_SHAPES.FREE_LINE ||
-        (baseShape.type === CROSSHAIR_3D_SHAPES.LINE &&
-        (options.remote === true || (options.placement?.mode != null && options.placement.mode !== "source")))) {
-      throw new Error("Freely placed Line placement is deferred; use placement.mode = 'source'.");
+    const shapeInput = { ...(options.shape ?? {}) };
+    if (shapeInput.type === "line" && (options.placement?.mode === "free" || options.remote === true)) {
+      shapeInput.type = CROSSHAIR_3D_SHAPES.FREE_LINE;
+      shapeInput.height ??= shapeInput.width;
+    }
+    const baseShape = this.#geometry.normalizeShape(shapeInput);
+    const freeLine = baseShape.type === CROSSHAIR_3D_SHAPES.FREE_LINE;
+    if (freeLine && !["center", "origin", "endpoints"].includes(options.range?.policy)) {
+      throw new Error("Freely placed Line requires range.policy: center, origin, or endpoints.");
+    }
+    if (freeLine && !(Number.isFinite(options.range?.max) && options.range.max > 0)) {
+      throw new Error("Freely placed Line requires a positive finite range.max.");
     }
     const metrics = this.#metrics.resolve();
-    const capabilities = Object.freeze({ ...defaultCapabilities(baseShape.type), ...(options.capabilities ?? {}) });
-    const self = options.self === true || options.originMode === "self" || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type) && options.remote !== true;
+    const capabilities = Object.freeze({ ...defaultCapabilities(baseShape.type), resize: freeLine, ...(options.capabilities ?? {}) });
+    const self = !freeLine && (options.self === true || options.originMode === "self" || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type) && options.remote !== true);
     const originalTargetIds = tokenIds(globalThis.game?.user?.targets);
     const sourceVolume = this.#tokens.resolve(source, { grid: metrics, coordinateSpace: "pixels" });
     const initialHeadingYaw = normalizeDegrees(baseShape.yaw ?? source.document.rotation ?? 0);
@@ -99,8 +107,23 @@ export class Crosshair3dPlacementSessionService {
     const initialYaw = self ? initialOrientation.yaw : initialHeadingYaw;
     const initialPitch = self ? initialOrientation.pitch : finiteNumber(baseShape.pitch);
     const initialApex = self ? this.#resolveSelfApex(source, initialYaw, initialPitch, metrics, sourceVolume, baseShape.type) : null;
-    const initialPoint = self ? initialApex : { ...baseShape.origin };
+    let initialPoint = self ? initialApex : { ...baseShape.origin };
+    if (freeLine) {
+      const initial = { point: initialPoint, yaw: initialYaw, length: baseShape.length };
+      const valid = state => freeLineWithinRange(state, sourceVolume, options.range.max, options.range.policy, this.#range);
+      if (!valid(initial)) {
+        initialPoint = { x: (sourceVolume.minX + sourceVolume.maxX) / 2,
+          y: (sourceVolume.minY + sourceVolume.maxY) / 2, z: sourceVolume.bottom };
+        if (options.range.policy === "origin") {
+          const a = initialYaw * Math.PI / 180;
+          initialPoint.x += Math.cos(a) * baseShape.length / 2;
+          initialPoint.y += Math.sin(a) * baseShape.length / 2;
+        }
+        if (!valid({ ...initial, point: initialPoint })) throw new Error("Full-length Line cannot fit within the configured casting range.");
+      }
+    }
     const initialState = this.#revisions.create({
+      length: baseShape.length,
       point: initialPoint,
       yaw: initialYaw,
       pitch: initialPitch,
@@ -121,6 +144,7 @@ export class Crosshair3dPlacementSessionService {
     const session = {
       id: globalThis.foundry?.utils?.randomID?.(12) ?? `${Date.now()}-${Math.random()}`,
       options,
+      freeLine,
       source,
       sourceVolume,
       metrics,
@@ -130,6 +154,7 @@ export class Crosshair3dPlacementSessionService {
       originalTargetIds,
       current: initialState,
       intent: {
+        length: baseShape.length,
         point: initialPoint,
         yaw: initialYaw,
         headingYaw: initialHeadingYaw,
@@ -161,16 +186,17 @@ export class Crosshair3dPlacementSessionService {
     this.#stats.sessions += 1;
 
     const hints = [];
-    if (capabilities.rotation) hints.push("Hold Shift+Mousewheel to change Rotation");
+    if (capabilities.rotation) hints.push(freeLine ? "Mousewheel to Rotate" : "Hold Shift+Mousewheel to change Rotation");
+    if (freeLine && capabilities.resize) hints.push("Hold Shift+Mousewheel to change Length");
     if (capabilities.elevation) hints.push("Hold Ctrl+Mousewheel to change Elevation");
-    if (capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
+    if (!freeLine && capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
       hints.push("Hold Ctrl+Shift+Mousewheel to Orbit Elevation");
     }
     hints.push("Right Click to Cancel");
     this.#overlay.show({
       mode: "MOVE",
       hints,
-      fixedHud: [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
+      fixedHud: freeLine || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
     });
     this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
     this.#guide.show();
@@ -286,6 +312,12 @@ export class Crosshair3dPlacementSessionService {
       }
     };
     const updateMode = () => {
+      if (session.freeLine) {
+        setMode(session.modifier.ctrl && session.modifier.shift ? "MOVE"
+          : session.modifier.ctrl && session.capabilities.elevation ? "ELEVATE"
+          : session.modifier.shift && session.capabilities.resize ? "RESIZE" : "MOVE");
+        return;
+      }
       const next = session.modifier.ctrl && session.modifier.shift
         ? session.capabilities.elevation && this.#usesRemoteRigidElevation(session) ? "ORBIT" : "MOVE"
         : session.modifier.ctrl
@@ -355,12 +387,43 @@ export class Crosshair3dPlacementSessionService {
       // Resynchronize before deciding whether AE5E should intercept the wheel.
       if (syncModifiers(event)) updateMode();
       const modified = session.modifier.shift || session.modifier.ctrl;
-      if (!modified) return;
+      if (!modified && !session.freeLine) return;
       event.preventDefault?.();
       event.stopPropagation?.();
       event.stopImmediatePropagation?.();
       this.#stats.wheelEvents += 1;
+      if (!event.deltaY) return;
       const step = event.deltaY < 0 ? 1 : -1;
+      if (session.freeLine) {
+        if (session.modifier.ctrl && session.modifier.shift) return;
+        const from = session.intent;
+        const to = { ...from, point: { ...from.point } };
+        let reason, yawDelta = 0;
+        if (session.modifier.ctrl) {
+          if (!session.capabilities.elevation) return;
+          to.point.z += (this.#reverseElevationWheelEnabled() ? -step : step) * this.#elevationStep(session);
+          to.manualElevation = true;
+          reason = "wheel-elevate";
+        } else if (session.modifier.shift) {
+          if (!session.capabilities.resize) return;
+          const increment = Math.max(0.001, finiteNumber(session.options.controls?.lengthStep, session.metrics.distance));
+          const minimum = Math.min(session.baseShape.length, Math.max(0.001, finiteNumber(session.options.controls?.minLength, session.metrics.distance)));
+          to.length = Math.max(minimum, Math.min(session.baseShape.length, from.length + step * increment));
+          reason = "wheel-resize";
+        } else {
+          if (!session.capabilities.rotation) return;
+          yawDelta = step * this.#rotationStep(session);
+          to.yaw += yawDelta;
+          reason = "wheel-rotate";
+        }
+        const accepted = constrainFreeLineChange(from, to, state => this.#freeLineValid(session, state), yawDelta);
+        accepted.yaw = normalizeDegrees(accepted.yaw);
+        accepted.headingYaw = accepted.yaw;
+        accepted.selectedAbsoluteZ = accepted.point.z;
+        Object.assign(session.intent, accepted);
+        this.#requestResolution(session, { statePatch: { ...accepted }, reason, force: true });
+        return;
+      }
       if (session.modifier.shift && session.modifier.ctrl) {
         if (session.capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
           setMode("ORBIT");
@@ -574,6 +637,7 @@ export class Crosshair3dPlacementSessionService {
     }
 
     const merged = {
+      length: patch.length ?? intended.length ?? session.baseShape.length,
       point: patch.point ?? intended.point,
       headingYaw: normalizeDegrees(patch.headingYaw ?? intended.headingYaw ?? patch.yaw ?? intended.yaw),
       yaw: normalizeDegrees(patch.yaw ?? intended.yaw),
@@ -595,7 +659,7 @@ export class Crosshair3dPlacementSessionService {
     Object.assign(session.intent, merged);
 
     const shape = this.#shapeForState(session.baseShape, merged);
-    const valid = this.#validateLos(session, merged.point);
+    const valid = session.freeLine ? this.#freeLineValid(session, merged) : this.#validateLos(session, merged.point);
     let targets = previous.targets;
     if (valid) {
       targets = await this.#collectTargets(session, shape);
@@ -609,6 +673,10 @@ export class Crosshair3dPlacementSessionService {
 
   #shapeForState(base, state) {
     const common = { ...base, origin: state.point };
+    if (base.type === CROSSHAIR_3D_SHAPES.FREE_LINE) {
+      common.length = state.length ?? base.length;
+      common.origin = freeLineEndpoints({ ...state, length: common.length })[0];
+    }
     if ([CROSSHAIR_3D_SHAPES.PRISM, CROSSHAIR_3D_SHAPES.FREE_LINE].includes(base.type)) common.yaw = state.yaw;
     if ([CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(base.type)) { common.yaw = state.yaw; common.pitch = state.pitch; }
     return this.#geometry.normalizeShape(common);
@@ -625,6 +693,11 @@ export class Crosshair3dPlacementSessionService {
     };
 
     const requested = pointAt(pixelPoint);
+    if (session.freeLine) {
+      const from = session.intent;
+      const to = { ...from, point: requested };
+      return constrainFreeLineChange(from, to, state => this.#freeLineValid(session, state)).point;
+    }
     if (!Number.isFinite(max) || max <= 0 || this.#range.distanceFromVolumeToPoint(session.sourceVolume, requested) <= max) return requested;
 
     // Range is true XYZ, but MOVE remains constrained to the currently selected
@@ -655,6 +728,11 @@ export class Crosshair3dPlacementSessionService {
       } else high = t;
     }
     return best;
+  }
+
+  #freeLineValid(session, state) {
+    return freeLineWithinRange(state, session.sourceVolume, session.options.range.max, session.options.range.policy, this.#range)
+      && this.#validateLos(session, session.options.range.policy === "origin" ? freeLineEndpoints(state)[0] : state.point);
   }
 
   #validateLos(session, point) {
@@ -691,7 +769,10 @@ export class Crosshair3dPlacementSessionService {
       session.lastTargetIds = [...targetIds];
     }
 
-    if (visualResult.guide !== false) this.#guide.update(revision.shape, { color: session.options.guideColor ?? 0x7fefef });
+    if (visualResult.guide !== false) this.#guide.update(revision.shape, { color: session.options.guideColor ?? 0x7fefef,
+      rangeBoundary: session.freeLine && session.options.range.showBoundary !== false
+        ? freeLineRangeBoundary(session.sourceVolume, session.options.range.max, revision.point.z) : null,
+      rangePolicy: session.options.range?.policy });
     else this.#guide.clearDrawing?.();
 
     const pixel = this.#metrics.distanceToPixels(revision.point, session.metrics);
@@ -708,7 +789,7 @@ export class Crosshair3dPlacementSessionService {
       footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics),
       footprintTopPx: overlayExtents?.top,
       footprintBottomPx: overlayExtents?.bottom,
-      fixedHud: [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type)
+      fixedHud: session.freeLine || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type)
     });
     this.#elevationGauge?.update?.(this.#elevationGaugeState(session, revision));
     this.#syncCarrierToRevision(session, session.carrier, revision);
@@ -723,6 +804,7 @@ export class Crosshair3dPlacementSessionService {
 
     // Self Cone/Line uses the spell/effect endpoint as B. The apex remains A,
     // while the pitch arc supplies the side-view angle.
+    if (session.freeLine) return { visible: false };
     if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
       const distance = Math.max(0, finiteNumber(session.baseShape.length));
       const endpointZ = finiteNumber(revision?.endpointZ, point.z);

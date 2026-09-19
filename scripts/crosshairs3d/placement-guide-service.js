@@ -161,7 +161,7 @@ export class Crosshair3dPlacementGuideService {
     return true;
   }
 
-  update(shapeInput, { color = 0x7fefef, alpha = 0.12 } = {}) {
+  update(shapeInput, { color = 0x7fefef, alpha = 0.12, rangeBoundary = null, rangePolicy = null } = {}) {
     if (!this.#graphics) return;
     const shape = this.#geometry.normalizeShape(shapeInput);
     const metrics = this.#metrics.resolve();
@@ -169,6 +169,10 @@ export class Crosshair3dPlacementGuideService {
     const graphics = this.#graphics;
     graphics.clear?.();
     if (this.#endpointText) this.#endpointText.visible = false;
+
+    if (rangeBoundary?.length) drawPolygon(graphics, rangeBoundary.map(toPixel), {
+      color, alpha: 0.015, lineAlpha: 0.22, width: 1.5
+    });
 
     if ([CROSSHAIR_3D_SHAPES.SPHERE, CROSSHAIR_3D_SHAPES.CYLINDER].includes(shape.type)) {
       const center = toPixel(shape.origin);
@@ -203,6 +207,15 @@ export class Crosshair3dPlacementGuideService {
         { x: shape.origin.x - lateral.x*half, y: shape.origin.y - lateral.y*half, z: shape.origin.z }
       ].map(toPixel);
       drawPolygon(graphics, points, { color, alpha });
+      const center = toPixel({ x: (shape.origin.x + end.x) / 2, y: (shape.origin.y + end.y) / 2, z: shape.origin.z });
+      drawCircle(graphics, center, 4, { fillColor: color, fillAlpha: 0.8 });
+      for (const endpoint of [shape.origin, end]) drawCircle(graphics, toPixel(endpoint), 4, { fillColor: color });
+      if (rangePolicy === "origin") drawCircle(graphics, toPixel(shape.origin), 7, { fillColor: 0xffffff });
+      if (this.#endpointText) {
+        this.#endpointText.text = `Length ${formatElevation(shape.length)} · Height ${formatElevation(shape.height)}`;
+        this.#endpointText.position?.set?.(center.x, center.y - 25);
+        this.#endpointText.visible = true;
+      }
       return;
     }
 

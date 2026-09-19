@@ -19,8 +19,9 @@ function visualShapeFor(shape) {
     case CROSSHAIR_3D_SHAPES.CYLINDER:
       return "circle";
     case CROSSHAIR_3D_SHAPES.PRISM:
-    case CROSSHAIR_3D_SHAPES.FREE_LINE:
       return "rectangle";
+    case CROSSHAIR_3D_SHAPES.FREE_LINE:
+      return null;
     case CROSSHAIR_3D_SHAPES.CONE:
       // Action Effects owns the authoritative retained Cone presentation at
       // every pitch. Keeping one guide path avoids asset-origin offsets and
@@ -209,7 +210,7 @@ export class Crosshair3dPlacementVisualService {
   }
 
   async #updateTracer(state, shape, options = {}) {
-    if (shape.type === CROSSHAIR_3D_SHAPES.LINE || (options.tracer ?? state.options.tracer) === false || !state.options.source) {
+    if ([CROSSHAIR_3D_SHAPES.LINE, CROSSHAIR_3D_SHAPES.FREE_LINE].includes(shape.type) || (options.tracer ?? state.options.tracer) === false || !state.options.source) {
       await this.#endTracer(state);
       return false;
     }

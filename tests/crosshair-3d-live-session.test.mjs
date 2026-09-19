@@ -934,3 +934,84 @@ test("remote MOVE preserves the manually selected absolute Z plane while true-3D
     "the clamped revision remains a normal target-recalculated placement revision"
   );
 });
+
+const freeLineOptions = source => ({ source,
+  shape: { type: "free-line", length: 20, width: 5, height: 10 },
+  range: { max: 120, policy: "endpoints" }
+});
+
+test("free Line wheel burst preserves midpoint, resizes, rotates and elevates before confirmation", async () => {
+  const h = harness({ onShow: ({ window }) => {
+    window.dispatch("wheel", { deltaY: 125, shiftKey: true });
+    window.dispatch("wheel", { deltaY: -125 });
+    window.dispatch("wheel", { deltaY: -125, ctrlKey: true });
+    window.dispatch("wheel", { deltaY: -125, ctrlKey: true, shiftKey: true });
+  } });
+  const result = await h.service.show(freeLineOptions(h.source));
+  assert.equal(result.cancelled, false);
+  assert.equal(result.shape.length, 15);
+  assert.equal(result.shape.yaw, 5);
+  assert.equal(result.shape.height, 10);
+  assert.equal(result.shape.width, 5);
+  assert.equal(result.shape.origin.z, 5);
+  const angle = result.shape.yaw * Math.PI / 180;
+  assert.ok(Math.abs(result.shape.origin.x + Math.cos(angle)*7.5 - result.placementPoint.x) < 1e-8);
+  assert.ok(Math.abs(result.shape.origin.y + Math.sin(angle)*7.5 - result.placementPoint.y) < 1e-8);
+  assert.equal(h.window.count("wheel"), 0);
+});
+
+test("free Line starts at maximum length and wheel resize respects both limits", async () => {
+  const h = harness({ onShow: ({ window }) => {
+    for (let i=0; i<10; i++) window.dispatch("wheel", { deltaY: -125, shiftKey: true });
+  } });
+  const result = await h.service.show(freeLineOptions(h.source));
+  assert.equal(result.shape.length, 20);
+  assert.equal(h.guideEvents.find(e => typeof e === "object").length, 20);
+  const h2 = harness({ onShow: ({ window }) => {
+    for (let i=0; i<10; i++) window.dispatch("wheel", { deltaY: 125, shiftKey: true });
+  } });
+  assert.equal((await h2.service.show(freeLineOptions(h2.source))).shape.length, 5);
+});
+
+test("free Line endpoint range clamps far movement while center policy allows endpoints beyond range", async () => {
+  for (const policy of ["center", "origin", "endpoints"]) {
+    const h = harness({ carrierPosition: { x: 2000, y: 50 } });
+    const options = freeLineOptions(h.source);
+    options.range = { max: 15, policy };
+    const result = await h.service.show(options);
+    const range = new Crosshair3dRangeService();
+    const volume = { minX: 0, maxX: 5, minY: 0, maxY: 5, bottom: 0, top: 5 };
+    const start = result.shape.origin;
+    const end = { ...start, x: start.x + result.shape.length };
+    const points = policy === "center" ? [result.placementPoint] : policy === "origin" ? [start] : [start, end];
+    for (const p of points) assert.ok(range.distanceFromVolumeToPoint(volume, p) <= 15.000001);
+    if (policy !== "endpoints") assert.ok(range.distanceFromVolumeToPoint(volume, end) > 15);
+  }
+});
+
+test("free Line elevation clamps both ends in XYZ and disabled controls do nothing", async () => {
+  const h = harness({ onShow: ({ window }) => {
+    for (let i=0; i<20; i++) window.dispatch("wheel", { deltaY: -125, ctrlKey: true });
+  } });
+  const options = freeLineOptions(h.source);
+  options.range.max = 20;
+  const result = await h.service.show(options);
+  assert.ok(result.placementPoint.z > 5 && result.placementPoint.z < 25);
+  assert.equal(result.shape.origin.z, result.placementPoint.z);
+  const h2 = harness({ onShow: ({ window }) => {
+    window.dispatch("wheel", { deltaY: 125, shiftKey: true });
+    window.dispatch("wheel", { deltaY: -125 });
+    window.dispatch("wheel", { deltaY: -125, ctrlKey: true });
+  } });
+  const second = await h2.service.show({ ...freeLineOptions(h2.source), capabilities: { rotation: false, resize: false, elevation: false } });
+  assert.equal(second.shape.length, 20);
+  assert.equal(second.shape.yaw, 0);
+  assert.equal(second.shape.origin.z, 0);
+});
+
+test("free Line rejects impossible full length before installing listeners", async () => {
+  const h = harness();
+  await assert.rejects(h.service.show({ ...freeLineOptions(h.source), range: { max: 1, policy: "endpoints" } }), /cannot fit/);
+  assert.equal(h.window.count("wheel"), 0);
+  assert.equal(h.overlayEvents.length, 0);
+});
