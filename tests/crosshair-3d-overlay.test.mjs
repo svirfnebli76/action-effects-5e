@@ -191,3 +191,20 @@ test("Cone HUD remains fixed at the top-center viewport anchor across yaw and pi
     globalThis.PIXI = previousPIXI;
   }
 });
+
+test("free Line elevation label rotates and offsets together, then resets for other shapes", () => {
+  const { parent, children } = installCanvas();
+  globalThis.canvas = { interface: parent };
+  globalThis.PIXI = { Text: FakeText, TextStyle: FakeTextStyle, Graphics: FakeGraphics, Container: FakeContainer };
+  const overlay = new Crosshair3dPlacementOverlayService();
+  overlay.show();
+  const text = children.find(child => child.name === "action-effects-5e-3d-crosshair-elevation");
+  overlay.update({ point: { x: 100, y: 100 }, elevation: 15, labelRotation: Math.PI/4 });
+  assert.equal(text.rotation, Math.PI/4);
+  assert.ok(text.position.x < 100 && text.position.y > 100);
+  assert.ok(Math.abs((100-text.position.x)-(text.position.y-100)) < 1e-8);
+  overlay.update({ point: { x: 100, y: 100 }, elevation: 15 });
+  assert.equal(text.rotation, 0);
+  assert.equal(text.position.x, 100);
+  overlay.clear();
+});

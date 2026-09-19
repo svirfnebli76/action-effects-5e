@@ -1015,3 +1015,21 @@ test("free Line rejects impossible full length before installing listeners", asy
   assert.equal(h.window.count("wheel"), 0);
   assert.equal(h.overlayEvents.length, 0);
 });
+
+test("free Line range ceiling and floor reject partial elevation ticks and preserve descent snapping", async () => {
+  for (const policy of ["center", "origin", "endpoints"]) {
+    for (const direction of [-1, 1]) {
+      let cap;
+      const h = harness({ onShow: async ({ window }) => {
+        for (let i=0; i<30; i++) window.dispatch("wheel", { deltaY: direction*125, ctrlKey: true });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        cap = h.guideEvents.filter(e => typeof e === "object").at(-1).origin.z;
+        assert.ok(Math.abs(cap % 5) < 1e-8);
+        for (let i=0; i<3; i++) window.dispatch("wheel", { deltaY: -direction*125, ctrlKey: true });
+      } });
+      const result = await h.service.show({ ...freeLineOptions(h.source), range: { max: 22, policy } });
+      assert.equal(result.placementPoint.z, cap + direction*15);
+      for (const shape of h.guideEvents.filter(e => typeof e === "object")) assert.ok(Math.abs(shape.origin.z % 5) < 1e-8);
+    }
+  }
+});

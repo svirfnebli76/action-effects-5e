@@ -149,3 +149,21 @@ test("non-Cone guide updates hide the Cone endpoint elevation label", () => {
   service.update({ type: "sphere", origin: { x: 0, y: 0, z: 0 }, radius: 10 });
   assert.equal(records.texts[0].visible, false);
 });
+
+test("free Line dimension label follows orientation with upright text and perpendicular offset", () => {
+  const { records } = installPixiStub();
+  const service = new Crosshair3dPlacementGuideService({ geometry: new Crosshair3dGeometryService(), metrics: metrics() });
+  service.show();
+  for (const yaw of [0, 40, 90, 140, 180, 220, 270, 320]) {
+    service.update({ type: "free-line", length: 20, width: 5, height: 10, yaw, origin: { x: 0, y: 0, z: 0 } });
+    const label = records.texts[0];
+    const a = yaw * Math.PI / 180;
+    assert.ok(Math.abs(label.rotation) <= Math.PI/2);
+    assert.ok(Math.abs(Math.sin(label.rotation-a)) < 1e-8);
+    const dx = label.position.x - 200*Math.cos(a), dy = label.position.y - 200*Math.sin(a);
+    assert.ok(Math.abs(dx*Math.cos(a)+dy*Math.sin(a)) < 1e-8);
+    assert.ok(Math.abs(Math.hypot(dx,dy)-25) < 1e-8);
+  }
+  service.update({ type: "line", length: 20, width: 5, yaw: 0, pitch: 0 });
+  assert.equal(records.texts[0].rotation, 0);
+});

@@ -416,7 +416,10 @@ export class Crosshair3dPlacementSessionService {
           to.yaw += yawDelta;
           reason = "wheel-rotate";
         }
-        const accepted = constrainFreeLineChange(from, to, state => this.#freeLineValid(session, state), yawDelta);
+        // Elevation is discrete: never accept a fractional step at the range cap.
+        const accepted = session.modifier.ctrl
+          ? (this.#freeLineValid(session, to) ? to : { ...from, point: { ...from.point } })
+          : constrainFreeLineChange(from, to, state => this.#freeLineValid(session, state), yawDelta);
         accepted.yaw = normalizeDegrees(accepted.yaw);
         accepted.headingYaw = accepted.yaw;
         accepted.selectedAbsoluteZ = accepted.point.z;
@@ -780,6 +783,7 @@ export class Crosshair3dPlacementSessionService {
     this.#overlay.update({
       mode: session.mode,
       elevation: revision.point.z,
+      labelRotation: session.freeLine ? this.#freeLineLabelAngle(revision.yaw) : 0,
       originElevation: session.sourceVolume?.bottom,
       // Cone already owns a terminal-center absolute-elevation label. Hiding
       // the generic apex readout prevents duplicate text over the source Token.
@@ -935,6 +939,11 @@ export class Crosshair3dPlacementSessionService {
   #usesRemoteRigidElevation(session) {
     return !session.self
       && ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type);
+  }
+
+  #freeLineLabelAngle(yaw) {
+    const angle = ((yaw + 90) % 180 + 180) % 180 - 90;
+    return angle * Math.PI / 180;
   }
 
   #elevationStep(session) {

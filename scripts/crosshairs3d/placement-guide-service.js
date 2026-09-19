@@ -168,7 +168,7 @@ export class Crosshair3dPlacementGuideService {
     const toPixel = point => this.#metrics.distanceToPixels(point, metrics);
     const graphics = this.#graphics;
     graphics.clear?.();
-    if (this.#endpointText) this.#endpointText.visible = false;
+    if (this.#endpointText) { this.#endpointText.visible = false; this.#endpointText.rotation = 0; }
 
     if (rangeBoundary?.length) drawPolygon(graphics, rangeBoundary.map(toPixel), {
       color, alpha: 0.015, lineAlpha: 0.22, width: 1.5
@@ -213,7 +213,9 @@ export class Crosshair3dPlacementGuideService {
       if (rangePolicy === "origin") drawCircle(graphics, toPixel(shape.origin), 7, { fillColor: 0xffffff });
       if (this.#endpointText) {
         this.#endpointText.text = `Length ${formatElevation(shape.length)} · Height ${formatElevation(shape.height)}`;
-        this.#endpointText.position?.set?.(center.x, center.y - 25);
+        const labelAngle = ((((shape.yaw + 90) % 180 + 180) % 180) - 90) * Math.PI / 180;
+        this.#endpointText.rotation = labelAngle;
+        this.#endpointText.position?.set?.(center.x + Math.sin(labelAngle) * 25, center.y - Math.cos(labelAngle) * 25);
         this.#endpointText.visible = true;
       }
       return;
@@ -310,7 +312,7 @@ export class Crosshair3dPlacementGuideService {
 
   clearDrawing() {
     this.#graphics?.clear?.();
-    if (this.#endpointText) this.#endpointText.visible = false;
+    if (this.#endpointText) { this.#endpointText.visible = false; this.#endpointText.rotation = 0; }
   }
 
   clear() {

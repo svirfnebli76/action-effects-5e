@@ -1,3 +1,10 @@
+## 0.4.4.31 — Free Line elevation steps and rotating labels
+
+- Free Line elevation now accepts a whole configured step or stays at the last valid elevation. Range limits no longer introduce a fractional height that shifts all subsequent wheel increments.
+- Free Line dimension and elevation labels rotate with the line. Their offsets rotate together and text flips by 180 degrees when needed to remain upright. Fixed HUD controls stay horizontal.
+- Thickness remains configurable per spell/item; the 5-ft test value is not a universal rule.
+- Tests cover upper/lower limits under all three range policies, reversing direction after blocked ticks, and label rotation/offset/reset. Source-bound geometry, packs and assets unchanged.
+
 ## 0.4.4.30 — Freely placed Line test build
 
 - Adds midpoint-based free Line placement. Plain wheel rotates, Shift+wheel resizes symmetrically up to the initial length, Ctrl+wheel translates elevation, and Ctrl+Shift+wheel does nothing.

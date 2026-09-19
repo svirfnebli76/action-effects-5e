@@ -50,7 +50,7 @@ export class Crosshair3dPlacementOverlayService {
     this.#createHintStack(PIXI, hudParent, hints);
   }
 
-  update({ mode = null, elevation = null, originElevation = null, elevationVisible = true, point = null, gridSize = null, footprintRadiusPx = null, footprintTopPx = null, footprintBottomPx = null, fixedHud = this.#fixedHud } = {}) {
+  update({ mode = null, labelRotation = 0, elevation = null, originElevation = null, elevationVisible = true, point = null, gridSize = null, footprintRadiusPx = null, footprintTopPx = null, footprintBottomPx = null, fixedHud = this.#fixedHud } = {}) {
     if (mode && this.#modeText) {
       this.#modeText.text = String(mode);
       this.#refreshModeBackground();
@@ -80,7 +80,9 @@ export class Crosshair3dPlacementOverlayService {
         // it down by exactly two text-size units. This remains centered for both
         // odd- and even-grid-diameter crosshairs and never depends on a nearby
         // map-grid square center.
-        this.#elevationText.position.set(x, y + ELEVATION_OFFSET_PX);
+        const angle = finiteNumber(labelRotation);
+        this.#elevationText.rotation = angle;
+        this.#elevationText.position.set(x - Math.sin(angle) * ELEVATION_OFFSET_PX, y + Math.cos(angle) * ELEVATION_OFFSET_PX);
         this.#elevationText.visible = true;
       }
     }
