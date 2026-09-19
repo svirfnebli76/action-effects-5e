@@ -1,3 +1,9 @@
-2026/09/09-18:47:42.416 1a74 Recovering log #171
-2026/09/09-18:47:42.419 1a74 Delete type=0 #171
-2026/09/09-18:47:42.419 1a74 Delete type=3 #169
+2026/09/19-07:37:30.155 8ff8 Recovering log #179
+2026/09/19-07:37:30.155 8ff8 Recovering log #184
+2026/09/19-07:37:30.158 8ff8 Delete type=0 #179
+2026/09/19-07:37:30.158 8ff8 Delete type=0 #184
+2026/09/19-07:37:30.158 8ff8 Delete type=3 #175
+2026/09/19-07:37:41.642 84d4 Level-0 table #187: started
+2026/09/19-07:37:41.642 84d4 Level-0 table #187: 0 bytes OK
+2026/09/19-07:37:41.643 84d4 Delete type=0 #185
+2026/09/19-07:37:41.645 84d4 Manual compaction at level-0 from '!items!ppGrayHuPUJMowO4' @ 72057594037927935 : 1 .. '!items.effects!ppGrayHuPUJMowO4.w7fuXpJWxanwMtM0' @ 0 : 0; will stop at (end)
