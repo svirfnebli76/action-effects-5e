@@ -5,7 +5,7 @@ import { Crosshair3dGeometryService } from "../scripts/crosshairs3d/geometry-ser
 import { Crosshair3dPlacementGuideService } from "../scripts/crosshairs3d/placement-guide-service.js";
 
 function installPixiStub() {
-  const records = { strokes: [], fills: [], texts: [] };
+  const records = { strokes: [], fills: [], texts: [], polygons: [] };
 
   class Container {
     constructor() { this.children = []; this.parent = null; this.position = { set() {} }; }
@@ -15,8 +15,8 @@ function installPixiStub() {
   }
 
   class Graphics {
-    clear() { records.strokes.length = 0; records.fills.length = 0; return this; }
-    poly() { return this; }
+    clear() { records.strokes.length = 0; records.fills.length = 0; records.polygons.length = 0; return this; }
+    poly(points) { records.polygons.push(points); return this; }
     circle() { return this; }
     fill(options) { records.fills.push({ ...options }); return this; }
     stroke(options) { records.strokes.push({ ...options }); return this; }
@@ -51,6 +51,26 @@ function metrics() {
     distanceToPixels: point => ({ x: point.x * 20, y: point.y * 20, elevation: point.z })
   };
 }
+
+test("Line tube projects its full square section at vertical and keeps white endpoint text below source", () => {
+  const { records, parent } = installPixiStub();
+  const service = new Crosshair3dPlacementGuideService({ geometry: new Crosshair3dGeometryService(), metrics: metrics() });
+  service.show();
+  for (const pitch of [90, -90]) {
+    service.update({ type: "line", origin: { x: 5, y: 5, z: 5 }, length: 20, width: 5, yaw: 0, pitch });
+    const polygon = records.polygons[0];
+    const xs = polygon.filter((_, i) => i % 2 === 0);
+    const ys = polygon.filter((_, i) => i % 2 === 1);
+    assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 100) < 1e-8);
+    assert.ok(Math.abs(Math.max(...ys) - Math.min(...ys) - 100) < 1e-8);
+    assert.equal(records.texts[0].text, pitch > 0 ? "25 ft" : "-15 ft");
+    assert.equal(records.texts[0].style.fill, "#FFFFFF");
+    assert.equal(records.texts.length, 1);
+    assert.ok(records.strokes.some(stroke => stroke.color === (pitch > 0 ? 0x7fefef : 0xFF4D4D)));
+  }
+  service.clear();
+  assert.equal(parent.children.length, 0);
+});
 
 test("retained Cone guide renders the accepted teal silhouette, contour depths, endpoint, and absolute elevation", () => {
   const { records, parent } = installPixiStub();

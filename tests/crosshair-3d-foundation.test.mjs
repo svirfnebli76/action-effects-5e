@@ -19,8 +19,8 @@ test("3D geometry normalizes the six accepted authoritative shape families", () 
   assert.equal(geometry.normalizeShape({ type: "cylinder", origin: {}, radius: 5, height: 10 }).type, CROSSHAIR_3D_SHAPES.CYLINDER);
   assert.equal(geometry.normalizeShape({ type: "sphere", origin: {}, radius: 5 }).type, CROSSHAIR_3D_SHAPES.SPHERE);
   assert.equal(geometry.normalizeShape({ type: "cone", origin: {}, length: 15 }).type, CROSSHAIR_3D_SHAPES.CONE);
-  assert.equal(geometry.normalizeShape({ type: "ray", origin: {}, length: 30, width: 5 }).type, CROSSHAIR_3D_SHAPES.RAY);
-  assert.equal(geometry.normalizeShape({ type: "line", origin: {}, length: 30, width: 5, height: 5 }).type, CROSSHAIR_3D_SHAPES.LINE);
+  assert.equal(geometry.normalizeShape({ type: "line", origin: {}, length: 30, width: 5 }).type, CROSSHAIR_3D_SHAPES.LINE);
+  assert.equal(geometry.normalizeShape({ type: "free-line", origin: {}, length: 30, width: 5, height: 5 }).type, CROSSHAIR_3D_SHAPES.FREE_LINE);
 });
 
 test("3D range uses true Euclidean XYZ distance", () => {
@@ -63,13 +63,13 @@ test("Token/cell intersection requires positive XY and Z overlap", () => {
   assert.equal(tokens.intersectsCell(volume, { minX: 0, maxX: 5, minY: 0, maxY: 5, minZ: 5, maxZ: 10 }), false);
 });
 
-test("Ray zero-roll basis remains deterministic when the beam is vertical", () => {
-  const basis = geometry.rayBasis({ yaw: 37, pitch: 90 });
+test("Line zero-roll basis remains deterministic when the beam is vertical", () => {
+  const basis = geometry.lineBasis({ yaw: 37, pitch: 90 });
   assert.ok(Math.abs(basis.direction.z - 1) < 1e-12);
   assert.ok(Math.abs(basis.widthAxis.z) < 1e-12);
-  const second = geometry.rayBasis({ yaw: 37, pitch: 90 });
+  const second = geometry.lineBasis({ yaw: 37, pitch: 90 });
   assert.deepEqual(second, basis);
-  const changedYaw = geometry.rayBasis({ yaw: 127, pitch: 90 });
+  const changedYaw = geometry.lineBasis({ yaw: 127, pitch: 90 });
   assert.notDeepEqual(changedYaw.widthAxis, basis.widthAxis);
 });
 
@@ -106,8 +106,8 @@ test("Sphere tangent contact at a cell face has zero positive Z thickness", () =
   assert.equal(cells.isCellAffected(shape, { x: 0, y: 0, z: 1 }, grid), false);
 });
 
-test("Vertical Ray remains a W by W column in XY and occupies its positive-length Z cells", () => {
-  const shape = { type: "ray", origin: { x: 2.5, y: 2.5, z: 0 }, length: 10, width: 5, yaw: 0, pitch: 90 };
+test("Vertical Line remains a W by W column in XY and occupies its positive-length Z cells", () => {
+  const shape = { type: "line", origin: { x: 2.5, y: 2.5, z: 0 }, length: 10, width: 5, yaw: 0, pitch: 90 };
   const mask = cells.rasterize(shape, { grid });
   assert.deepEqual(mask.cells, [
     { x: 0, y: 0, z: 0 },
@@ -154,7 +154,7 @@ test("Cone apex qualification still requires positive 3D interior and does not a
 });
 
 test("Free Line keeps one horizontal bottom plane while yaw changes its XY footprint", () => {
-  const line = geometry.normalizeShape({ type: "line", origin: { x: 0, y: 0, z: 15 }, length: 20, width: 5, height: 10, yaw: 90 });
+  const line = geometry.normalizeShape({ type: "free-line", origin: { x: 0, y: 0, z: 15 }, length: 20, width: 5, height: 10, yaw: 90 });
   assert.equal(geometry.containsPoint(line, { x: 0, y: 10, z: 20 }), true);
   assert.equal(geometry.containsPoint(line, { x: 0, y: 10, z: 25 }), true);
   assert.equal(geometry.containsPoint(line, { x: 10, y: 0, z: 20 }), false);
@@ -183,7 +183,7 @@ test("shape origins preserve the locked bottom-face, center, apex, and start-poi
     minX: -5, maxX: 5, minY: -5, maxY: 5, minZ: 5, maxZ: 15
   });
   assert.equal(geometry.containsPoint({ type: "cone", origin: { x: 0, y: 0, z: 10 }, length: 10 }, { x: 0, y: 0, z: 10 }), true);
-  assert.equal(geometry.containsPoint({ type: "line", origin: { x: 0, y: 0, z: 10 }, length: 10, width: 5, height: 5 }, { x: 0, y: 0, z: 10 }), true);
+  assert.equal(geometry.containsPoint({ type: "free-line", origin: { x: 0, y: 0, z: 10 }, length: 10, width: 5, height: 5 }, { x: 0, y: 0, z: 10 }), true);
 });
 
 test("rotated Prism coverage is derived from the rotated continuous footprint", () => {
@@ -220,8 +220,8 @@ test("negative elevations rasterize into negative Z cell indices", () => {
   assert.deepEqual(mask.cells.map(cell => cell.z), [-2, -1]);
 });
 
-test("pitched Ray bounds and point containment use the same zero-roll geometry", () => {
-  const ray = { type: "ray", origin: { x: 0, y: 0, z: 0 }, length: 20, width: 5, yaw: 0, pitch: 45 };
+test("pitched Line bounds and point containment use the same zero-roll geometry", () => {
+  const ray = { type: "line", origin: { x: 0, y: 0, z: 0 }, length: 20, width: 5, yaw: 0, pitch: 45 };
   const direction = geometry.direction(ray);
   const midpoint = { x: direction.x * 10, y: direction.y * 10, z: direction.z * 10 };
   assert.equal(geometry.containsPoint(ray, midpoint), true);

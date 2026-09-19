@@ -190,7 +190,7 @@ export class Crosshair3dPlacementGuideService {
       return;
     }
 
-    if (shape.type === CROSSHAIR_3D_SHAPES.LINE) {
+    if (shape.type === CROSSHAIR_3D_SHAPES.FREE_LINE) {
       const radians = degreesToRadians(shape.yaw);
       const direction = { x: Math.cos(radians), y: Math.sin(radians) };
       const lateral = { x: -direction.y, y: direction.x };
@@ -206,22 +206,52 @@ export class Crosshair3dPlacementGuideService {
       return;
     }
 
-    if (shape.type === CROSSHAIR_3D_SHAPES.RAY) {
-      const basis = this.#geometry.rayBasis(shape);
+    if (shape.type === CROSSHAIR_3D_SHAPES.LINE) {
+      const basis = this.#geometry.lineBasis(shape);
       const half = shape.width / 2;
       const end = {
         x: shape.origin.x + basis.direction.x * shape.length,
         y: shape.origin.y + basis.direction.y * shape.length,
         z: shape.origin.z + basis.direction.z * shape.length
       };
-      const projected = [
-        { x: shape.origin.x + basis.widthAxis.x*half, y: shape.origin.y + basis.widthAxis.y*half, z: shape.origin.z },
-        { x: end.x + basis.widthAxis.x*half, y: end.y + basis.widthAxis.y*half, z: end.z },
-        { x: end.x - basis.widthAxis.x*half, y: end.y - basis.widthAxis.y*half, z: end.z },
-        { x: shape.origin.x - basis.widthAxis.x*half, y: shape.origin.y - basis.widthAxis.y*half, z: shape.origin.z }
-      ].map(toPixel);
-      drawPolygon(graphics, projected, { color, alpha });
-      drawLine(graphics, toPixel(shape.origin), toPixel(end), { color, alpha: 0.95, width: 2 });
+      // Project all eight authoritative vertices, including the height axis.
+      // Projecting only a center-plane rectangle would collapse at vertical.
+      const section = fraction => {
+        const center = {
+          x: shape.origin.x + basis.direction.x * shape.length * fraction,
+          y: shape.origin.y + basis.direction.y * shape.length * fraction,
+          z: shape.origin.z + basis.direction.z * shape.length * fraction
+        };
+        return [[-1,-1],[1,-1],[1,1],[-1,1]].map(([w,h]) => toPixel({
+          x: center.x + half * (w*basis.widthAxis.x + h*basis.heightAxis.x),
+          y: center.y + half * (w*basis.widthAxis.y + h*basis.heightAxis.y),
+          z: center.z + half * (w*basis.widthAxis.z + h*basis.heightAxis.z)
+        }));
+      };
+      const near = section(0), far = section(1);
+      const downward = end.z < shape.origin.z - 1e-7;
+      const bodyColor = downward ? CONE_NEGATIVE_COLOR : color;
+      const edgeColor = downward ? CONE_NEGATIVE_GRID_COLOR : 0x287878;
+      const silhouette = convexHull([...near, ...far]);
+      drawPolygon(graphics, silhouette, { color: 0x000000, alpha: CONE_UNDERLAY_ALPHA, width: CONE_UNDER_OUTLINE_WIDTH });
+      drawPolygon(graphics, silhouette, { color: bodyColor, alpha: CONE_BODY_ALPHA, width: CONE_OUTLINE_WIDTH });
+      for (let i = 0; i < 4; i++) {
+        drawLine(graphics, near[i], far[i], { color: edgeColor, alpha: 0.82, width: 1.5 });
+      }
+      for (const fraction of [0, ...CONE_CONTOUR_FRACTIONS, 1]) {
+        drawPolygon(graphics, section(fraction), {
+          color: bodyColor, alpha: fraction === 1 ? CONE_TERMINAL_ALPHA : 0,
+          lineColor: edgeColor, lineAlpha: 0.78, width: CONE_TERMINAL_OUTLINE_WIDTH
+        });
+      }
+      drawLine(graphics, toPixel(shape.origin), toPixel(end), { color: bodyColor, alpha: 0.95, width: 2 });
+      const terminal = toPixel(end);
+      drawCircle(graphics, terminal, CONE_ENDPOINT_RADIUS, { fillColor: bodyColor });
+      if (this.#endpointText) {
+        this.#endpointText.text = formatElevation(end.z);
+        this.#endpointText.position?.set?.(terminal.x, terminal.y + 20);
+        this.#endpointText.visible = true;
+      }
       return;
     }
 
@@ -244,7 +274,7 @@ export class Crosshair3dPlacementGuideService {
 
   #drawCone(shape, { color, toPixel }) {
     const direction = this.#geometry.direction(shape);
-    const basis = this.#geometry.rayBasis(shape);
+    const basis = this.#geometry.lineBasis(shape);
     const endpoint = {
       x: shape.origin.x + direction.x * shape.length,
       y: shape.origin.y + direction.y * shape.length,

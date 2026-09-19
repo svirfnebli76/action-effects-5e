@@ -27,9 +27,9 @@ function shapeFunctionalType(type) {
     case CROSSHAIR_3D_SHAPES.SPHERE:
     case CROSSHAIR_3D_SHAPES.CYLINDER: return "circle";
     case CROSSHAIR_3D_SHAPES.CONE: return "cone";
-    case CROSSHAIR_3D_SHAPES.RAY: return "ray";
-    case CROSSHAIR_3D_SHAPES.PRISM:
     case CROSSHAIR_3D_SHAPES.LINE: return "ray";
+    case CROSSHAIR_3D_SHAPES.PRISM:
+    case CROSSHAIR_3D_SHAPES.FREE_LINE: return "ray";
     default: return "circle";
   }
 }
@@ -37,7 +37,7 @@ function shapeFunctionalType(type) {
 function defaultCapabilities(type) {
   return Object.freeze({
     elevation: true,
-    rotation: [CROSSHAIR_3D_SHAPES.PRISM, CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY, CROSSHAIR_3D_SHAPES.LINE].includes(type),
+    rotation: [CROSSHAIR_3D_SHAPES.PRISM, CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE, CROSSHAIR_3D_SHAPES.FREE_LINE].includes(type),
     los: false
   });
 }
@@ -83,9 +83,14 @@ export class Crosshair3dPlacementSessionService {
     const source = sourceTokenOf(options.source);
     if (!source?.document) throw new Error("Action Effects 3D Crosshairs requires a source Token.");
     const baseShape = this.#geometry.normalizeShape(options.shape ?? {});
+    if (baseShape.type === CROSSHAIR_3D_SHAPES.FREE_LINE ||
+        (baseShape.type === CROSSHAIR_3D_SHAPES.LINE &&
+        (options.remote === true || (options.placement?.mode != null && options.placement.mode !== "source")))) {
+      throw new Error("Freely placed Line placement is deferred; use placement.mode = 'source'.");
+    }
     const metrics = this.#metrics.resolve();
     const capabilities = Object.freeze({ ...defaultCapabilities(baseShape.type), ...(options.capabilities ?? {}) });
-    const self = options.self === true || options.originMode === "self" || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(baseShape.type) && options.remote !== true;
+    const self = options.self === true || options.originMode === "self" || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type) && options.remote !== true;
     const originalTargetIds = tokenIds(globalThis.game?.user?.targets);
     const sourceVolume = this.#tokens.resolve(source, { grid: metrics, coordinateSpace: "pixels" });
     const initialHeadingYaw = normalizeDegrees(baseShape.yaw ?? source.document.rotation ?? 0);
@@ -93,7 +98,7 @@ export class Crosshair3dPlacementSessionService {
     const initialOrientation = this.#canonicalSelfOrientation(initialHeadingYaw, initialArcPitch);
     const initialYaw = self ? initialOrientation.yaw : initialHeadingYaw;
     const initialPitch = self ? initialOrientation.pitch : finiteNumber(baseShape.pitch);
-    const initialApex = self ? this.#resolveSelfApex(source, initialYaw, initialPitch, metrics, sourceVolume) : null;
+    const initialApex = self ? this.#resolveSelfApex(source, initialYaw, initialPitch, metrics, sourceVolume, baseShape.type) : null;
     const initialPoint = self ? initialApex : { ...baseShape.origin };
     const initialState = this.#revisions.create({
       point: initialPoint,
@@ -101,7 +106,7 @@ export class Crosshair3dPlacementSessionService {
       pitch: initialPitch,
       headingYaw: initialHeadingYaw,
       arcPitch: initialArcPitch,
-      endpointZ: self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(baseShape.type)
+      endpointZ: self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
         ? initialPoint.z + (Math.sin((initialPitch * Math.PI) / 180) * baseShape.length)
         : null,
       selectedAbsoluteZ: initialPoint.z,
@@ -269,7 +274,7 @@ export class Crosshair3dPlacementSessionService {
       this.#overlay.update({ mode: next });
 
       const selfPitch = session.self
-        && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)
+        && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)
         && next === "ELEVATE";
       const remoteElevation = this.#usesRemoteRigidElevation(session) && next === "ELEVATE";
       const remoteOrbit = this.#usesRemoteRigidElevation(session) && next === "ORBIT";
@@ -404,12 +409,12 @@ export class Crosshair3dPlacementSessionService {
   #requestElevationStep(session, step, { reason = "wheel-elevate" } = {}) {
     const state = session.intent;
     const elevationStep = this.#elevationStep(session);
-    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
+    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
       const length = session.baseShape.length;
       const arcPitch = this.#stepArcPitch(finiteNumber(state.arcPitch, state.pitch), step, length, elevationStep);
       const headingYaw = finiteNumber(state.headingYaw, state.yaw);
       const orientation = this.#canonicalSelfOrientation(headingYaw, arcPitch);
-      const point = this.#resolveSelfApex(session.source, orientation.yaw, orientation.pitch, session.metrics, session.sourceVolume);
+      const point = this.#resolveSelfApex(session.source, orientation.yaw, orientation.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
       const endpointZ = point.z + (Math.sin((orientation.pitch * Math.PI) / 180) * length);
       Object.assign(session.intent, {
         point,
@@ -525,7 +530,7 @@ export class Crosshair3dPlacementSessionService {
     const intended = session.intent;
 
     if (carrier && session.mode === "MOVE" && !request.statePatch?.point) {
-      if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
+      if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
         const effectiveYaw = normalizeDegrees(carrier.direction ?? intended.yaw);
         const flipped = Math.abs(finiteNumber(intended.arcPitch, intended.pitch)) > 90;
         const headingYaw = normalizeDegrees(effectiveYaw - (flipped ? 180 : 0));
@@ -533,7 +538,7 @@ export class Crosshair3dPlacementSessionService {
         patch.headingYaw = headingYaw;
         patch.yaw = orientation.yaw;
         patch.pitch = orientation.pitch;
-        patch.point = this.#resolveSelfApex(session.source, patch.yaw, patch.pitch, session.metrics, session.sourceVolume);
+        patch.point = this.#resolveSelfApex(session.source, patch.yaw, patch.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
         Object.assign(session.intent, { headingYaw, yaw: patch.yaw, pitch: patch.pitch, point: patch.point });
       } else {
         const pixelPoint = { x: finiteNumber(carrier.x), y: finiteNumber(carrier.y) };
@@ -560,11 +565,11 @@ export class Crosshair3dPlacementSessionService {
       elevationRadius: patch.elevationRadius ?? intended.elevationRadius ?? null,
       manualElevation: patch.manualElevation ?? intended.manualElevation
     };
-    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
+    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
       const orientation = this.#canonicalSelfOrientation(merged.headingYaw, merged.arcPitch);
       merged.yaw = orientation.yaw;
       merged.pitch = orientation.pitch;
-      merged.point = this.#resolveSelfApex(session.source, merged.yaw, merged.pitch, session.metrics, session.sourceVolume);
+      merged.point = this.#resolveSelfApex(session.source, merged.yaw, merged.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
       merged.endpointZ = merged.point.z + (Math.sin((merged.pitch * Math.PI) / 180) * session.baseShape.length);
     }
     Object.assign(session.intent, merged);
@@ -584,8 +589,8 @@ export class Crosshair3dPlacementSessionService {
 
   #shapeForState(base, state) {
     const common = { ...base, origin: state.point };
-    if ([CROSSHAIR_3D_SHAPES.PRISM, CROSSHAIR_3D_SHAPES.LINE].includes(base.type)) common.yaw = state.yaw;
-    if ([CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(base.type)) { common.yaw = state.yaw; common.pitch = state.pitch; }
+    if ([CROSSHAIR_3D_SHAPES.PRISM, CROSSHAIR_3D_SHAPES.FREE_LINE].includes(base.type)) common.yaw = state.yaw;
+    if ([CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(base.type)) { common.yaw = state.yaw; common.pitch = state.pitch; }
     return this.#geometry.normalizeShape(common);
   }
 
@@ -677,13 +682,13 @@ export class Crosshair3dPlacementSessionService {
       originElevation: session.sourceVolume?.bottom,
       // Cone already owns a terminal-center absolute-elevation label. Hiding
       // the generic apex readout prevents duplicate text over the source Token.
-      elevationVisible: revision.shape?.type !== CROSSHAIR_3D_SHAPES.CONE,
+      elevationVisible: ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type),
       point: pixel,
       gridSize: session.metrics.size,
       footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics),
       footprintTopPx: overlayExtents?.top,
       footprintBottomPx: overlayExtents?.bottom,
-      fixedHud: revision.shape?.type === CROSSHAIR_3D_SHAPES.CONE
+      fixedHud: [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type)
     });
     this.#elevationGauge?.update?.(this.#elevationGaugeState(session, revision));
     this.#syncCarrierToRevision(session, session.carrier, revision);
@@ -696,9 +701,9 @@ export class Crosshair3dPlacementSessionService {
     const point = revision?.point ?? session.intent?.point ?? { x: 0, y: 0, z: 0 };
     const configuredRange = finiteNumber(session.options?.range?.max ?? session.options?.maxRange, NaN);
 
-    // Self Cone/Ray uses the spell/effect endpoint as B. The apex remains A,
+    // Self Cone/Line uses the spell/effect endpoint as B. The apex remains A,
     // while the pitch arc supplies the side-view angle.
-    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)) {
+    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
       const distance = Math.max(0, finiteNumber(session.baseShape.length));
       const endpointZ = finiteNumber(revision?.endpointZ, point.z);
       const elevationDelta = endpointZ - finiteNumber(point.z);
@@ -745,7 +750,7 @@ export class Crosshair3dPlacementSessionService {
     const carrier = carrierInput ?? session.carrier;
     if (!carrier || !revision) return;
     const pixel = this.#metrics.distanceToPixels(revision.point, session.metrics);
-    const projected = [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type)
+    const projected = [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)
       ? this.#projectedDistance(session.baseShape.length, revision.pitch, session.metrics.distance)
       : null;
     const update = { x: pixel.x, y: pixel.y, direction: revision.yaw, elevation: revision.point.z };
@@ -777,8 +782,8 @@ export class Crosshair3dPlacementSessionService {
         return toPixels(shape.radius);
       case CROSSHAIR_3D_SHAPES.PRISM:
         return toPixels(Math.hypot(finiteNumber(shape.width), finiteNumber(shape.length)) / 2);
+      case CROSSHAIR_3D_SHAPES.FREE_LINE:
       case CROSSHAIR_3D_SHAPES.LINE:
-      case CROSSHAIR_3D_SHAPES.RAY:
         return toPixels(Math.max(finiteNumber(shape.width) / 2, finiteNumber(metrics?.distance, 5) / 2));
       case CROSSHAIR_3D_SHAPES.CONE:
         return toPixels(Math.hypot(finiteNumber(shape.length), finiteNumber(shape.length) / 2));
@@ -799,7 +804,7 @@ export class Crosshair3dPlacementSessionService {
     };
 
     const direction = this.#geometry.direction(shape);
-    const basis = this.#geometry.rayBasis(shape);
+    const basis = this.#geometry.lineBasis(shape);
     const radius = finiteNumber(shape.length) / 2;
     const center = {
       x: finiteNumber(shape.origin.x) + direction.x * finiteNumber(shape.length),
@@ -827,7 +832,7 @@ export class Crosshair3dPlacementSessionService {
 
   #usesRemoteRigidElevation(session) {
     return !session.self
-      && ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.RAY].includes(session.baseShape.type);
+      && ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type);
   }
 
   #elevationStep(session) {
@@ -938,7 +943,7 @@ export class Crosshair3dPlacementSessionService {
     return best?.phase ?? current;
   }
 
-  #resolveSelfApex(source, yaw, pitch, metrics, sourceVolume) {
+  #resolveSelfApex(source, yaw, pitch, metrics, sourceVolume, shapeType) {
     const document = source.document;
     const x0 = finiteNumber(document.x), y0 = finiteNumber(document.y);
     const widthPx = finiteNumber(document.width, 1) * metrics.size;
@@ -956,7 +961,9 @@ export class Crosshair3dPlacementSessionService {
     else { x = dx >= 0 ? x0 + widthPx : x0; y = dy >= 0 ? y0 + heightPx : y0; }
     x = Math.max(x0, Math.min(x0 + widthPx, x));
     y = Math.max(y0, Math.min(y0 + heightPx, y));
-    const z = finiteNumber(pitch) < 0 ? sourceVolume.top : sourceVolume.bottom;
+    const z = shapeType === CROSSHAIR_3D_SHAPES.LINE
+      ? sourceVolume.bottom
+      : finiteNumber(pitch) < 0 ? sourceVolume.top : sourceVolume.bottom;
     return this.#metrics.pixelsToDistance({ x, y, elevation: z }, metrics);
   }
 

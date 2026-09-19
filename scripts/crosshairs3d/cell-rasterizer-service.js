@@ -90,9 +90,9 @@ export class Crosshair3dCellRasterizerService {
     const constantByZ = [
       CROSSHAIR_3D_SHAPES.PRISM,
       CROSSHAIR_3D_SHAPES.CYLINDER,
-      CROSSHAIR_3D_SHAPES.LINE
+      CROSSHAIR_3D_SHAPES.FREE_LINE
     ].includes(shape.type)
-      || (shape.type === CROSSHAIR_3D_SHAPES.RAY && (Math.abs(this.#geometry.direction(shape).z) <= epsilon || Math.abs(Math.abs(this.#geometry.direction(shape).z) - 1) <= epsilon));
+      || (shape.type === CROSSHAIR_3D_SHAPES.LINE && (Math.abs(this.#geometry.direction(shape).z) <= epsilon || Math.abs(Math.abs(this.#geometry.direction(shape).z) - 1) <= epsilon));
 
     if (constantByZ) {
       const z = (zLow + zHigh) / 2;

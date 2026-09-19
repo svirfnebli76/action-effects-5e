@@ -19,15 +19,15 @@ function visualShapeFor(shape) {
     case CROSSHAIR_3D_SHAPES.CYLINDER:
       return "circle";
     case CROSSHAIR_3D_SHAPES.PRISM:
-    case CROSSHAIR_3D_SHAPES.LINE:
+    case CROSSHAIR_3D_SHAPES.FREE_LINE:
       return "rectangle";
     case CROSSHAIR_3D_SHAPES.CONE:
       // Action Effects owns the authoritative retained Cone presentation at
       // every pitch. Keeping one guide path avoids asset-origin offsets and
       // eliminates the flat-art/3D-guide handoff flicker at pitch zero.
       return null;
-    case CROSSHAIR_3D_SHAPES.RAY:
-      return "ray";
+    case CROSSHAIR_3D_SHAPES.LINE:
+      return null;
     default:
       return null;
   }
@@ -40,32 +40,15 @@ function requestedSizeFor(shape) {
       return shape.radius * 2;
     case CROSSHAIR_3D_SHAPES.CONE:
       return shape.length;
-    case CROSSHAIR_3D_SHAPES.RAY:
+    case CROSSHAIR_3D_SHAPES.LINE:
       return shape.length;
     case CROSSHAIR_3D_SHAPES.PRISM:
       return { width: shape.length, height: shape.width };
-    case CROSSHAIR_3D_SHAPES.LINE:
+    case CROSSHAIR_3D_SHAPES.FREE_LINE:
       return { width: shape.length, height: shape.width };
     default:
       return null;
   }
-}
-
-function projectedRayLength(shape) {
-  const pitch = (finiteNumber(shape.pitch) * Math.PI) / 180;
-  return Math.max(shape.width, Math.abs(shape.length * Math.cos(pitch)) + Math.abs(shape.width * Math.sin(pitch)));
-}
-
-function visualCenterFor(shape) {
-  if (shape.type !== CROSSHAIR_3D_SHAPES.RAY) return shape.origin;
-  const yaw = (finiteNumber(shape.yaw) * Math.PI) / 180;
-  const pitch = (finiteNumber(shape.pitch) * Math.PI) / 180;
-  const projectedCenterlineHalf = Math.abs(shape.length * Math.cos(pitch)) / 2;
-  return {
-    x: finiteNumber(shape.origin?.x) + (Math.cos(yaw) * projectedCenterlineHalf),
-    y: finiteNumber(shape.origin?.y) + (Math.sin(yaw) * projectedCenterlineHalf),
-    z: finiteNumber(shape.origin?.z)
-  };
 }
 
 function sizeDataFor(shape, metrics) {
@@ -84,10 +67,8 @@ function sizeDataFor(shape, metrics) {
       const extent = toGrid(shape.length);
       return { width: extent, height: extent, gridUnits: true };
     }
-    case CROSSHAIR_3D_SHAPES.RAY:
-      return { width: toGrid(projectedRayLength(shape)), height: toGrid(shape.width), gridUnits: true };
     case CROSSHAIR_3D_SHAPES.PRISM:
-    case CROSSHAIR_3D_SHAPES.LINE:
+    case CROSSHAIR_3D_SHAPES.FREE_LINE:
       return { width: toGrid(shape.length), height: toGrid(shape.width), gridUnits: true };
     default:
       return null;
@@ -158,13 +139,13 @@ export class Crosshair3dPlacementVisualService {
     }
 
     const metrics = this.#metrics.resolve();
-    // Sequencer positions unstretched artwork by its center. A Ray's
+    // Sequencer positions unstretched artwork by its center. A Line's
     // authoritative origin is instead the center of its near face, so place
     // the visual at the midpoint of the projected centerline. The projected
     // square cross-section is already included symmetrically in sizeDataFor(),
     // which leaves pitch zero beginning at the legal apex and vertical pitch
     // centered on its W x W footprint.
-    const pixel = this.#metrics.distanceToPixels(visualCenterFor(shape), metrics);
+    const pixel = this.#metrics.distanceToPixels(shape.origin, metrics);
     const size = sizeDataFor(shape, metrics);
     const yaw = finiteNumber(shape.yaw, 0) + finiteNumber(options.rotationOffset ?? state.options.rotationOffset, 0);
     const serial = ++state.updateSerial;
@@ -228,7 +209,7 @@ export class Crosshair3dPlacementVisualService {
   }
 
   async #updateTracer(state, shape, options = {}) {
-    if ((options.tracer ?? state.options.tracer) === false || !state.options.source) {
+    if (shape.type === CROSSHAIR_3D_SHAPES.LINE || (options.tracer ?? state.options.tracer) === false || !state.options.source) {
       await this.#endTracer(state);
       return false;
     }

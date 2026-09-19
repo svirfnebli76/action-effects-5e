@@ -73,7 +73,7 @@ export function directionFromYawPitch(yaw = 0, pitch = 0) {
 }
 
 /**
- * Deterministic zero-roll basis for a pitched square Ray.
+ * Deterministic zero-roll basis for a pitched square Line.
  * widthAxis remains horizontal and is driven by yaw. heightAxis is derived
  * from direction × widthAxis. Stored yaw therefore remains meaningful at a
  * vertical pitch rather than becoming mathematically undefined.

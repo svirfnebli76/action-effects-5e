@@ -552,7 +552,7 @@ export class ActionEffects5eApi {
         containsPoint: (shape, point, options) => crosshairs3dGeometry.containsPoint(shape, point, options),
         xyCoverageAtZ: (shape, rect, z, options) => crosshairs3dGeometry.xyCoverageAtZ(shape, rect, z, options),
         direction: (shapeOrYaw, pitch) => crosshairs3dGeometry.direction(shapeOrYaw, pitch),
-        rayBasis: (shapeOrYaw, pitch) => crosshairs3dGeometry.rayBasis(shapeOrYaw, pitch)
+        lineBasis: (shapeOrYaw, pitch) => crosshairs3dGeometry.lineBasis(shapeOrYaw, pitch)
       }),
       cells: Object.freeze({
         normalizeGrid: (grid) => crosshairs3dCells.normalizeGrid(grid),

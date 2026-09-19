@@ -1,3 +1,12 @@
+## 0.4.4.28 — Source-bound Line
+
+- Replaces the experimental 3D `ray` shape and `rayBasis` API with `line` and `lineBasis`; no deprecated alias. Existing 2D crosshairs are unchanged.
+- Source-bound Line uses a fixed-length, zero-roll W×W rectangular tube, with source Z fixed to Token elevation and endpoint elevation controlled by pitch.
+- AE5E retained guide replaces Eskie Line artwork and tracer: projected eight-vertex silhouette, section contours, terminal dot, white elevation label, and downward red styling.
+- Line uses the fixed viewport control HUD. Per-placement rotation/elevation steps, cyclic pitch, accepted-state targeting, and cleanup remain supported.
+- Freely placed live Line is explicitly deferred. Its pre-existing geometry foundation is retained as `free-line` but not exposed through live placement.
+- See `docs/source-bound-line-v0.4.4.28.md` for breaking API migration and live acceptance checks.
+
 ## 0.4.4.18 — Action Effects 3D Crosshairs — retained Prism artwork rotation
 
 - Fixes retained Sequencer placement artwork so accepted yaw changes rotate the existing live `spriteContainer` in place instead of only updating `data.angle`.

@@ -23,8 +23,8 @@ export const CROSSHAIR_3D_SHAPES = Object.freeze({
   CYLINDER: "cylinder",
   SPHERE: "sphere",
   CONE: "cone",
-  RAY: "ray",
-  LINE: "line"
+  LINE: "line",
+  FREE_LINE: "free-line"
 });
 
 const SHAPE_ALIASES = Object.freeze({
@@ -36,8 +36,8 @@ const SHAPE_ALIASES = Object.freeze({
   circle: CROSSHAIR_3D_SHAPES.CYLINDER,
   sphere: CROSSHAIR_3D_SHAPES.SPHERE,
   cone: CROSSHAIR_3D_SHAPES.CONE,
-  ray: CROSSHAIR_3D_SHAPES.RAY,
-  line: CROSSHAIR_3D_SHAPES.LINE
+  line: CROSSHAIR_3D_SHAPES.LINE,
+  "free-line": CROSSHAIR_3D_SHAPES.FREE_LINE
 });
 
 function positive(value, label, fallback = null) {
@@ -89,7 +89,7 @@ function aabbFromPoints(points) {
   });
 }
 
-function rayVertices(shape) {
+function lineVertices(shape) {
   const { direction, widthAxis, heightAxis } = zeroRollBasis(shape.yaw, shape.pitch);
   const half = shape.width / 2;
   const terminal = add3(shape.origin, scale3(direction, shape.length));
@@ -172,17 +172,17 @@ export class Crosshair3dGeometryService {
       case CROSSHAIR_3D_SHAPES.CONE:
         normalized = { type, origin, length: positive(input.length ?? input.distance, "Cone length"), yaw, pitch };
         break;
-      case CROSSHAIR_3D_SHAPES.RAY:
+      case CROSSHAIR_3D_SHAPES.LINE:
         normalized = {
           type,
           origin,
-          length: positive(input.length ?? input.distance, "Ray length"),
-          width: positive(input.width, "Ray width"),
+          length: positive(input.length ?? input.distance, "Line length"),
+          width: positive(input.width, "Line width"),
           yaw,
           pitch
         };
         break;
-      case CROSSHAIR_3D_SHAPES.LINE:
+      case CROSSHAIR_3D_SHAPES.FREE_LINE:
         normalized = {
           type,
           origin,
@@ -203,7 +203,7 @@ export class Crosshair3dGeometryService {
     return directionFromYawPitch(shapeOrYaw, pitch);
   }
 
-  rayBasis(shapeOrYaw, pitch = 0) {
+  lineBasis(shapeOrYaw, pitch = 0) {
     if (typeof shapeOrYaw === "object") return zeroRollBasis(shapeOrYaw.yaw ?? 0, shapeOrYaw.pitch ?? 0);
     return zeroRollBasis(shapeOrYaw, pitch);
   }
@@ -251,9 +251,9 @@ export class Crosshair3dGeometryService {
           maxZ: Math.max(shape.origin.z, center.z + extent("z"))
         };
       }
-      case CROSSHAIR_3D_SHAPES.RAY:
-        return aabbFromPoints(rayVertices(shape));
-      case CROSSHAIR_3D_SHAPES.LINE: {
+      case CROSSHAIR_3D_SHAPES.LINE:
+        return aabbFromPoints(lineVertices(shape));
+      case CROSSHAIR_3D_SHAPES.FREE_LINE: {
         const radians = degreesToRadians(shape.yaw);
         const direction = { x: Math.cos(radians), y: Math.sin(radians) };
         const lateral = { x: -direction.y, y: direction.x };
@@ -313,8 +313,8 @@ export class Crosshair3dGeometryService {
         const radius = s / 2;
         return radialSquared <= (radius * radius) + epsilon;
       }
-      case CROSSHAIR_3D_SHAPES.RAY: {
-        const { direction, widthAxis, heightAxis } = this.rayBasis(shape);
+      case CROSSHAIR_3D_SHAPES.LINE: {
+        const { direction, widthAxis, heightAxis } = this.lineBasis(shape);
         const delta = subtract3(p, shape.origin);
         const s = dot3(delta, direction);
         const half = shape.width / 2;
@@ -323,7 +323,7 @@ export class Crosshair3dGeometryService {
           && Math.abs(dot3(delta, widthAxis)) <= half + epsilon
           && Math.abs(dot3(delta, heightAxis)) <= half + epsilon;
       }
-      case CROSSHAIR_3D_SHAPES.LINE: {
+      case CROSSHAIR_3D_SHAPES.FREE_LINE: {
         const radians = degreesToRadians(shape.yaw);
         const dx = p.x - shape.origin.x;
         const dy = p.y - shape.origin.y;
@@ -365,12 +365,12 @@ export class Crosshair3dGeometryService {
         if (radius <= epsilon) return 0;
         return circleRectIntersectionArea({ x: shape.origin.x, y: shape.origin.y, radius }, rect, options) / cellArea;
       }
-      case CROSSHAIR_3D_SHAPES.RAY: {
-        const section = horizontalSectionOfConvexPrism(rayVertices(shape), z, epsilon);
+      case CROSSHAIR_3D_SHAPES.LINE: {
+        const section = horizontalSectionOfConvexPrism(lineVertices(shape), z, epsilon);
         if (section.length < 3) return 0;
         return polygonArea(clipPolygonToRect(section, rect, epsilon)) / cellArea;
       }
-      case CROSSHAIR_3D_SHAPES.LINE: {
+      case CROSSHAIR_3D_SHAPES.FREE_LINE: {
         if (z < shape.origin.z - epsilon || z > shape.origin.z + shape.height + epsilon) return 0;
         const radians = degreesToRadians(shape.yaw);
         const direction = { x: Math.cos(radians), y: Math.sin(radians) };

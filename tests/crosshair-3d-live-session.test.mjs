@@ -87,6 +87,40 @@ function harness({ cancelled = false, onShow = null, surfaces: surfaceOverride =
   return { service, source, inside, outside, carrier, targetHistory, overlayEvents, elevationGaugeEvents, guideEvents, crosshairConfigs, window };
 }
 
+test("source-bound Line keeps source Z fixed through positive and negative pitch", async () => {
+  for (const pitch of [-90, -30, 0, 30, 90]) {
+    const h = harness();
+    h.source.document.elevation = 5;
+    const result = await h.service.show({ source: h.source, placement: { mode: "source" },
+      shape: { type: "line", length: 20, width: 5, yaw: 0, pitch } });
+    assert.equal(result.cancelled, false);
+    assert.equal(result.placementPoint.z, 5);
+    const shape = h.guideEvents.filter(entry => typeof entry === "object").at(-1);
+    assert.equal(shape.length, 20);
+    assert.equal(shape.origin.z, 5);
+    assert.equal(shape.pitch, pitch);
+    const hud = h.overlayEvents.filter(([type]) => type === "update").at(-1)[1];
+    assert.equal(hud.fixedHud, true);
+    assert.equal(hud.elevationVisible, false);
+    assert.equal(h.window.count("wheel"), 0);
+  }
+});
+
+test("old ray API and deferred free placement fail before session side effects", async () => {
+  for (const options of [
+    { shape: { type: "ray", length: 20, width: 5 } },
+    { shape: { type: "free-line", length: 20, width: 5 } },
+    { shape: { type: "line", length: 20, width: 5 }, placement: { mode: "free" } },
+    { shape: { type: "line", length: 20, width: 5 }, remote: true }
+  ]) {
+    const h = harness();
+    await assert.rejects(h.service.show({ source: h.source, ...options }));
+    assert.equal(h.targetHistory.length, 0);
+    assert.equal(h.window.count("wheel"), 0);
+    assert.equal(h.crosshairConfigs.length, 0);
+  }
+});
+
 test("live 3D placement collects targets through the grid-cell rules and preserves confirmed targets", async () => {
   const h = harness();
   const result = await h.service.show({
@@ -417,14 +451,14 @@ test("rapid remote rigid Ctrl-wheel input preserves every legal vertical grid st
   assert.equal(h.service.getStats().wheelEvents, 4);
 });
 
-test("Self Ray Ctrl-wheel changes pitch while preserving fixed centerline length", async () => {
+test("Self Line Ctrl-wheel changes pitch while preserving fixed centerline length", async () => {
   const h = harness({
     onShow: ({ window }) => window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 })
   });
   const result = await h.service.show({
     source: h.source,
     self: true,
-    shape: { type: "ray", origin: { x: 0, y: 0, z: 0 }, length: 20, width: 5, yaw: 0, pitch: 0 },
+    shape: { type: "line", origin: { x: 0, y: 0, z: 0 }, length: 20, width: 5, yaw: 0, pitch: 0 },
     capabilities: { rotation: true, elevation: true, los: false }
   });
   assert.equal(Math.round(result.pitch * 1000) / 1000, Math.round((Math.asin(5 / 20) * 180 / Math.PI) * 1000) / 1000);
@@ -485,7 +519,7 @@ test("per-placement controls.elevationStep also governs remote direct elevation"
   assert.equal(result.placementPoint.z, 5, "two rapid notches preserve two complete custom 2.5-ft steps");
 });
 
-test("Self Cone and Ray keep their existing Ctrl pitch path and do not expose remote ORBIT", async () => {
+test("Self Cone and Line keep their existing Ctrl pitch path and do not expose remote ORBIT", async () => {
   const h = harness({
     onShow: ({ window }) => {
       window.dispatch("wheel", { shiftKey: true, ctrlKey: true, deltaY: -100 });
@@ -508,7 +542,7 @@ test("Self Cone and Ray keep their existing Ctrl pitch path and do not expose re
   assert.equal(Math.round(result.pitch * 1000) / 1000, Math.round((Math.asin(5 / 15) * 180 / Math.PI) * 1000) / 1000, "only the ordinary Ctrl notch changes self Cone pitch");
   assert.equal(result.revision.reason, "final-confirm");
   const modes = h.overlayEvents.filter(([type]) => type === "update").map(([, data]) => data?.mode).filter(Boolean);
-  assert.equal(modes.includes("ORBIT"), false, "Ctrl+Shift remains non-operative for self Cone/Ray");
+  assert.equal(modes.includes("ORBIT"), false, "Ctrl+Shift remains non-operative for self Cone/Line");
 });
 
 test("Self Cone pitch remains cyclic beyond one complete 360-degree elevation revolution", async () => {
@@ -755,7 +789,7 @@ test("functional Sequencer carrier does not own the click-to-confirm label", asy
   assert.ok(h.overlayEvents.some(([type, data]) => type === "update" && data?.point), "AE5E overlay is updated from accepted authoritative revisions");
 });
 
-test("Self Cone/ Ray pitch crosses vertical by handing the apex to the opposite source boundary", async () => {
+test("Self Cone/ Line pitch crosses vertical by handing the apex to the opposite source boundary", async () => {
   const h = harness({
     onShow: ({ window }) => {
       window.dispatch("wheel", { shiftKey: false, ctrlKey: true, deltaY: -100 });
@@ -766,7 +800,7 @@ test("Self Cone/ Ray pitch crosses vertical by handing the apex to the opposite 
   const result = await h.service.show({
     source: h.source,
     self: true,
-    shape: { type: "ray", origin: { x: 0, y: 0, z: 0 }, length: 10, width: 5, yaw: 0, pitch: 0 },
+    shape: { type: "line", origin: { x: 0, y: 0, z: 0 }, length: 10, width: 5, yaw: 0, pitch: 0 },
     capabilities: { rotation: true, elevation: true, los: false }
   });
   assert.equal(result.cancelled, false);
