@@ -173,7 +173,7 @@ export class Crosshair3dPlacementSessionService {
       closed: false,
       carrier: null,
       listeners: [],
-      modifier: { shift: false, ctrl: false },
+      modifier: { shift: false, ctrl: false, alt: false },
       carrierSuppressionUntil: 0,
       mode: "MOVE",
       lastTargetIds: [...originalTargetIds],
@@ -186,17 +186,19 @@ export class Crosshair3dPlacementSessionService {
     this.#stats.sessions += 1;
 
     const hints = [];
-    if (capabilities.rotation) hints.push(freeLine ? "Mousewheel to Rotate" : "Hold Shift+Mousewheel to change Rotation");
-    if (freeLine && capabilities.resize) hints.push("Hold Shift+Mousewheel to change Length");
-    if (capabilities.elevation) hints.push("Hold Ctrl+Mousewheel to change Elevation");
+    if (capabilities.rotation) hints.push(freeLine ? "Shift to Rotate" : "Hold Shift+Mousewheel to change Rotation");
+    
+    if (capabilities.elevation) hints.push(freeLine ? "Ctrl to Elevate" : "Hold Ctrl+Mousewheel to change Elevation");
+    if (freeLine && capabilities.resize) hints.push("Alt to Alter Length");
     if (!freeLine && capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
       hints.push("Hold Ctrl+Shift+Mousewheel to Orbit Elevation");
     }
-    hints.push("Right Click to Cancel");
+    if (!freeLine) hints.push("Right Click to Cancel");
     this.#overlay.show({
       mode: "MOVE",
-      hints,
-      fixedHud: freeLine || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
+      hints: freeLine ? [hints.join(", ")].filter(Boolean) : hints,
+      freeLineUI: freeLine,
+      fixedHud: !freeLine && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
     });
     this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
     this.#guide.show();
@@ -313,9 +315,10 @@ export class Crosshair3dPlacementSessionService {
     };
     const updateMode = () => {
       if (session.freeLine) {
-        setMode(session.modifier.ctrl && session.modifier.shift ? "MOVE"
+        setMode([session.modifier.ctrl, session.modifier.shift, session.modifier.alt].filter(Boolean).length > 1 ? "MOVE"
           : session.modifier.ctrl && session.capabilities.elevation ? "ELEVATE"
-          : session.modifier.shift && session.capabilities.resize ? "RESIZE" : "MOVE");
+          : session.modifier.shift && session.capabilities.rotation ? "ROTATE"
+          : session.modifier.alt && session.capabilities.resize ? "LENGTH" : "MOVE");
         return;
       }
       const next = session.modifier.ctrl && session.modifier.shift
@@ -344,15 +347,23 @@ export class Crosshair3dPlacementSessionService {
     const syncModifiers = (event, keyIsDown = null) => {
       let shift = Boolean(event?.shiftKey);
       let ctrl = Boolean(event?.ctrlKey);
+      let alt = session.freeLine && Boolean(event?.altKey);
+      if (session.freeLine && (event?.key === "Alt" || event?.key === "AltGraph") && keyIsDown !== null) alt = keyIsDown;
       if (event?.key === "Shift" && keyIsDown !== null) shift = keyIsDown;
       if (event?.key === "Control" && keyIsDown !== null) ctrl = keyIsDown;
-      const changed = shift !== session.modifier.shift || ctrl !== session.modifier.ctrl;
+      const changed = shift !== session.modifier.shift || ctrl !== session.modifier.ctrl || alt !== session.modifier.alt;
       session.modifier.shift = shift;
       session.modifier.ctrl = ctrl;
+      session.modifier.alt = alt;
       if (altRecoveryArmed && (shift || ctrl)) recoverySawModifier = true;
       return changed;
     };
     const recoverFromPointer = event => {
+      if (session.freeLine && !session.closed && event.isTrusted === true
+        && [event.ctrlKey, event.shiftKey, event.altKey].every(value => typeof value === "boolean")) {
+        if (syncModifiers(event)) updateMode();
+        return;
+      }
       if (session.closed || !altRecoveryArmed || event.isTrusted !== true || event.altKey !== false) return;
       if (typeof event.ctrlKey !== "boolean" || typeof event.shiftKey !== "boolean") return;
       // Do not use synthesized renderer events, and do not disarm just because
@@ -365,11 +376,13 @@ export class Crosshair3dPlacementSessionService {
       }
     };
     const keydown = event => {
+      if (session.freeLine) { syncModifiers(event, true); updateMode(); }
       if (suppressAlt(event)) return;
       syncModifiers(event, true);
       updateMode();
     };
     const keyup = event => {
+      if (session.freeLine) { syncModifiers(event, false); updateMode(); }
       if (suppressAlt(event)) return;
       syncModifiers(event, false);
       updateMode();
@@ -379,6 +392,7 @@ export class Crosshair3dPlacementSessionService {
       recoverySawModifier = false;
       session.modifier.shift = false;
       session.modifier.ctrl = false;
+      session.modifier.alt = false;
       updateMode();
     };
     const wheel = event => {
@@ -386,8 +400,8 @@ export class Crosshair3dPlacementSessionService {
       // Wheel modifier flags describe the physical state for this exact input.
       // Resynchronize before deciding whether AE5E should intercept the wheel.
       if (syncModifiers(event)) updateMode();
-      const modified = session.modifier.shift || session.modifier.ctrl;
-      if (!modified && !session.freeLine) return;
+      const modified = session.modifier.shift || session.modifier.ctrl || (session.freeLine && session.modifier.alt);
+      if (!modified) return; // Leave plain wheel to Foundry canvas zoom.
       event.preventDefault?.();
       event.stopPropagation?.();
       event.stopImmediatePropagation?.();
@@ -395,7 +409,7 @@ export class Crosshair3dPlacementSessionService {
       if (!event.deltaY) return;
       const step = event.deltaY < 0 ? 1 : -1;
       if (session.freeLine) {
-        if (session.modifier.ctrl && session.modifier.shift) return;
+        if ([session.modifier.ctrl, session.modifier.shift, session.modifier.alt].filter(Boolean).length > 1) return;
         const from = session.intent;
         const to = { ...from, point: { ...from.point } };
         let reason, yawDelta = 0;
@@ -404,7 +418,7 @@ export class Crosshair3dPlacementSessionService {
           to.point.z += (this.#reverseElevationWheelEnabled() ? -step : step) * this.#elevationStep(session);
           to.manualElevation = true;
           reason = "wheel-elevate";
-        } else if (session.modifier.shift) {
+        } else if (session.modifier.alt) {
           if (!session.capabilities.resize) return;
           const increment = Math.max(0.001, finiteNumber(session.options.controls?.lengthStep, session.metrics.distance));
           const minimum = Math.min(session.baseShape.length, Math.max(0.001, finiteNumber(session.options.controls?.minLength, session.metrics.distance)));
@@ -784,6 +798,7 @@ export class Crosshair3dPlacementSessionService {
       mode: session.mode,
       elevation: revision.point.z,
       labelRotation: session.freeLine ? this.#freeLineLabelAngle(revision.yaw) : 0,
+      lineHalfWidthPx: session.freeLine ? revision.shape.width / session.metrics.distance * session.metrics.size / 2 : null,
       originElevation: session.sourceVolume?.bottom,
       // Cone already owns a terminal-center absolute-elevation label. Hiding
       // the generic apex readout prevents duplicate text over the source Token.
@@ -793,7 +808,7 @@ export class Crosshair3dPlacementSessionService {
       footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics),
       footprintTopPx: overlayExtents?.top,
       footprintBottomPx: overlayExtents?.bottom,
-      fixedHud: session.freeLine || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type)
+      fixedHud: !session.freeLine && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type)
     });
     this.#elevationGauge?.update?.(this.#elevationGaugeState(session, revision));
     this.#syncCarrierToRevision(session, session.carrier, revision);

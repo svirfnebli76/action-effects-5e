@@ -20,9 +20,11 @@ export class Crosshair3dPlacementOverlayService {
   #hintRows = [];
   #hudParent = null;
   #fixedHud = false;
+  #freeLineUI = false;
 
-  show({ mode = "MOVE", hints = [], fixedHud = false } = {}) {
+  show({ mode = "MOVE", hints = [], fixedHud = false, freeLineUI = false } = {}) {
     this.clear();
+    this.#freeLineUI = freeLineUI;
 
     const PIXI = globalThis.PIXI;
     const parent = globalThis.canvas?.interface ?? globalThis.canvas?.controls;
@@ -46,13 +48,24 @@ export class Crosshair3dPlacementOverlayService {
     parent.addChild(elevation);
     this.#elevationText = elevation;
 
+    if (freeLineUI) {
+      const style = { fontFamily: "Arial", fontSize: MODE_FONT_SIZE, fill: "#FFFFFF", fontWeight: "600", stroke: { color: "#000000", width: 4 } };
+      const modeText = this.#createText(PIXI, "Move", style);
+      const hintText = this.#createText(PIXI, hints.join(", "), style);
+      for (const text of [modeText, hintText]) { text.anchor?.set?.(0.5, 0.5); text.eventMode = "none"; parent.addChild(text); }
+      modeText.name = "action-effects-5e-3d-crosshair-mode";
+      hintText.name = "action-effects-5e-3d-crosshair-instructions";
+      this.#modeContainer = this.#modeText = modeText;
+      this.#hintsContainer = hintText;
+      return;
+    }
     this.#createModeBadge(PIXI, hudParent, mode);
     this.#createHintStack(PIXI, hudParent, hints);
   }
 
-  update({ mode = null, labelRotation = 0, elevation = null, originElevation = null, elevationVisible = true, point = null, gridSize = null, footprintRadiusPx = null, footprintTopPx = null, footprintBottomPx = null, fixedHud = this.#fixedHud } = {}) {
+  update({ mode = null, lineHalfWidthPx = null, labelRotation = 0, elevation = null, originElevation = null, elevationVisible = true, point = null, gridSize = null, footprintRadiusPx = null, footprintTopPx = null, footprintBottomPx = null, fixedHud = this.#fixedHud } = {}) {
     if (mode && this.#modeText) {
-      this.#modeText.text = String(mode);
+      this.#modeText.text = this.#freeLineUI ? String(mode).slice(0, 1) + String(mode).slice(1).toLowerCase() : String(mode);
       this.#refreshModeBackground();
     }
 
@@ -87,6 +100,17 @@ export class Crosshair3dPlacementOverlayService {
       }
     }
 
+    if (this.#freeLineUI) {
+      const angle = finiteNumber(labelRotation);
+      const offset = Math.max(0, finiteNumber(lineHalfWidthPx, grid / 2)) + 24;
+      for (const [text, side] of [[this.#modeContainer, -1], [this.#hintsContainer, 1]]) {
+        if (!text) continue;
+        text.rotation = angle;
+        text.position?.set?.(x - Math.sin(angle) * offset * side, y + Math.cos(angle) * offset * side);
+        text.visible = Boolean(text.text);
+      }
+      return;
+    }
     const useFixedHud = fixedHud === true;
     const fixedMode = useFixedHud ? this.#fixedHudPoint(FIXED_HUD_MODE_Y_PX) : null;
     const fixedHints = useFixedHud ? this.#fixedHudPoint(FIXED_HUD_HINTS_Y_PX) : null;

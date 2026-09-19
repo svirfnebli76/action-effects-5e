@@ -942,8 +942,8 @@ const freeLineOptions = source => ({ source,
 
 test("free Line wheel burst preserves midpoint, resizes, rotates and elevates before confirmation", async () => {
   const h = harness({ onShow: ({ window }) => {
-    window.dispatch("wheel", { deltaY: 125, shiftKey: true });
-    window.dispatch("wheel", { deltaY: -125 });
+    window.dispatch("wheel", { deltaY: 125, altKey: true });
+    window.dispatch("wheel", { deltaY: -125, shiftKey: true });
     window.dispatch("wheel", { deltaY: -125, ctrlKey: true });
     window.dispatch("wheel", { deltaY: -125, ctrlKey: true, shiftKey: true });
   } });
@@ -962,13 +962,13 @@ test("free Line wheel burst preserves midpoint, resizes, rotates and elevates be
 
 test("free Line starts at maximum length and wheel resize respects both limits", async () => {
   const h = harness({ onShow: ({ window }) => {
-    for (let i=0; i<10; i++) window.dispatch("wheel", { deltaY: -125, shiftKey: true });
+    for (let i=0; i<10; i++) window.dispatch("wheel", { deltaY: -125, altKey: true });
   } });
   const result = await h.service.show(freeLineOptions(h.source));
   assert.equal(result.shape.length, 20);
   assert.equal(h.guideEvents.find(e => typeof e === "object").length, 20);
   const h2 = harness({ onShow: ({ window }) => {
-    for (let i=0; i<10; i++) window.dispatch("wheel", { deltaY: 125, shiftKey: true });
+    for (let i=0; i<10; i++) window.dispatch("wheel", { deltaY: 125, altKey: true });
   } });
   assert.equal((await h2.service.show(freeLineOptions(h2.source))).shape.length, 5);
 });
@@ -999,8 +999,8 @@ test("free Line elevation clamps both ends in XYZ and disabled controls do nothi
   assert.ok(result.placementPoint.z > 5 && result.placementPoint.z < 25);
   assert.equal(result.shape.origin.z, result.placementPoint.z);
   const h2 = harness({ onShow: ({ window }) => {
-    window.dispatch("wheel", { deltaY: 125, shiftKey: true });
-    window.dispatch("wheel", { deltaY: -125 });
+    window.dispatch("wheel", { deltaY: 125, altKey: true });
+    window.dispatch("wheel", { deltaY: -125, shiftKey: true });
     window.dispatch("wheel", { deltaY: -125, ctrlKey: true });
   } });
   const second = await h2.service.show({ ...freeLineOptions(h2.source), capabilities: { rotation: false, resize: false, elevation: false } });
@@ -1032,4 +1032,39 @@ test("free Line range ceiling and floor reject partial elevation ticks and prese
       for (const shape of h.guideEvents.filter(e => typeof e === "object")) assert.ok(Math.abs(shape.origin.z % 5) < 1e-8);
     }
   }
+});
+
+test("free Line plain wheel preserves zoom; Alt length mode recovers without a keyup", async () => {
+  let intercepted = 0;
+  const h = harness({ onShow: ({ window }) => {
+    const plain = { deltaY: 125, preventDefault: () => intercepted++, stopPropagation: () => intercepted++, stopImmediatePropagation: () => intercepted++ };
+    window.dispatch("wheel", plain);
+    assert.equal(intercepted, 0);
+    window.dispatch("keydown", { key: "Alt", altKey: true });
+    assert.equal(h.overlayEvents.at(-1)[1].mode, "LENGTH");
+    window.dispatch("wheel", { deltaY: 125, altKey: true });
+    window.dispatch("pointermove", { isTrusted: false, altKey: false, shiftKey: false, ctrlKey: false });
+    assert.equal(h.overlayEvents.filter(([kind,data]) => kind === "update" && data.mode).at(-1)[1].mode, "LENGTH");
+    window.dispatch("pointermove", { isTrusted: true, altKey: false, shiftKey: false, ctrlKey: false });
+    assert.equal(h.overlayEvents.at(-1)[1].mode, "MOVE");
+    window.dispatch("keydown", { key: "Alt", altKey: true });
+    window.dispatch("blur");
+    assert.equal(h.overlayEvents.at(-1)[1].mode, "MOVE");
+    window.dispatch("wheel", plain);
+    assert.equal(intercepted, 0);
+    window.dispatch("keydown", { key: "Alt", altKey: true });
+    window.dispatch("keyup", { key: "Alt", altKey: false });
+    assert.equal(h.overlayEvents.at(-1)[1].mode, "MOVE");
+    window.dispatch("wheel", { deltaY: -125, altKey: true, ctrlKey: true });
+    window.dispatch("wheel", { deltaY: -125, altKey: true, shiftKey: true });
+  } });
+  const result = await h.service.show(freeLineOptions(h.source));
+  assert.equal(result.shape.length, 15);
+  assert.equal(result.shape.yaw, 0);
+  assert.equal(result.placementPoint.z, 0);
+  const show = h.overlayEvents.find(([kind]) => kind === "show")[1];
+  assert.equal(show.freeLineUI, true);
+  assert.equal(show.fixedHud, false);
+  assert.deepEqual(show.hints, ["Shift to Rotate, Ctrl to Elevate, Alt to Alter Length"]);
+  assert.equal(h.window.count("wheel"), 0);
 });

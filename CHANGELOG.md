@@ -1,3 +1,10 @@
+## 0.4.4.32 — Free Line zoom, Alt length and local labels
+
+- Plain wheel is no longer intercepted for free Lines, allowing native Foundry canvas zoom. Shift+wheel rotates, Ctrl+wheel elevates, Alt+wheel resizes. Multiple manipulation modifiers perform no combined change.
+- Length mode uses physical wheel flags for actual changes; its UI state recovers on Alt release, trusted pointer input and window blur. Synthetic pointer events cannot overwrite modifier state.
+- Removes free Line fixed mode/control badges. Plain Move/Rotate/Elevate/Length text sits above the footprint; one conditional instruction sentence sits below. Both rotate with the geometry and stay upright. Dimension and elevation readouts remain.
+- Source-bound Line UI is unchanged. All 370 automated tests pass; native Foundry zoom, Alt handling and visual layout require live acceptance.
+
 ## 0.4.4.31 — Free Line elevation steps and rotating labels
 
 - Free Line elevation now accepts a whole configured step or stays at the last valid elevation. Range limits no longer introduce a fractional height that shifts all subsequent wheel increments.

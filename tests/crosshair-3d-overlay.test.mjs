@@ -208,3 +208,29 @@ test("free Line elevation label rotates and offsets together, then resets for ot
   assert.equal(text.position.x, 100);
   overlay.clear();
 });
+
+test("free Line has plain rotating mode and instructions outside its width with no fixed badges", () => {
+  const { parent, children } = installCanvas();
+  globalThis.canvas = { interface: parent };
+  globalThis.PIXI = { Text: FakeText, TextStyle: FakeTextStyle, Graphics: FakeGraphics, Container: FakeContainer };
+  const overlay = new Crosshair3dPlacementOverlayService();
+  const instructions = "Shift to Rotate, Ctrl to Elevate, Alt to Alter Length";
+  overlay.show({ freeLineUI: true, hints: [instructions] });
+  const mode = children.find(child => child.name === "action-effects-5e-3d-crosshair-mode");
+  const hints = children.find(child => child.name === "action-effects-5e-3d-crosshair-instructions");
+  assert.equal(children.length, 3, "elevation plus two plain labels only");
+  for (const [state,title] of [["MOVE","Move"],["ROTATE","Rotate"],["ELEVATE","Elevate"],["LENGTH","Length"]]) {
+    overlay.update({ mode: state, point: { x: 100, y: 200 }, lineHalfWidthPx: 50, labelRotation: Math.PI/4 });
+    assert.equal(mode.text, title);
+    assert.equal(hints.text, instructions);
+    assert.equal(mode.rotation, Math.PI/4);
+    assert.equal(hints.rotation, Math.PI/4);
+    assert.ok(mode.position.x > 100 && mode.position.y < 200);
+    assert.ok(hints.position.x < 100 && hints.position.y > 200);
+    assert.ok(Math.abs(Math.hypot(mode.position.x-100, mode.position.y-200)-74) < 1e-8);
+  }
+  overlay.update({ mode: "MOVE" });
+  assert.equal(mode.text, "Move", "mode updates without moving mouse");
+  overlay.clear();
+  assert.equal(children.length, 0);
+});
