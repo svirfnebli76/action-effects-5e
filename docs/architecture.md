@@ -1,6 +1,8 @@
 # Action Effects 5E architecture
 
-## v0.4.4.33 — PIXI placement integration (Checkpoint 2)
+## v0.4.4.34 — PIXI placement integration (Checkpoint 2)
+
+v0.4.4.34 filters captured blur events by target. Closing a DialogV2 launcher blurs its focused button, which is not a placement cancellation. Only a blur whose target is the browser window cancels the session.
 
 `ae5e.crosshairs3d.show(options)` and `.placement.show(options)` are the canonical placement APIs. The legacy `ae5e.crosshairs` API, Eskie catalog, media renderer, and legacy test entry points are removed without a wrapper or redirect. Existing Items using that API intentionally await migration after Checkpoint 4. Sequencer remains a **required** module for ordinary AE5E automations; placement has no dependency on its globals, media assets, or Measured Templates.
 

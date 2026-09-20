@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.33
+# Current infrastructure acceptance — v0.4.4.34
 
 ## Checkpoint 2 — PIXI placement integration
 
@@ -6,7 +6,9 @@ Run `npm test`. Tests use the real geometry, cell, Token-volume and renderer cod
 
 Placement is tested with Sequencer globals absent and with an enabled stub whose crosshair calls throw. Sequencer remains required in module.json and runtime dependency validation; do not disable the required module in your working Foundry world merely to run acceptance.
 
-Live Foundry acceptance is still required. Copy the complete macro from `docs/acceptance-crosshairs3d-v0.4.4.33.txt` into a Script Macro and select a source token. Run every shape, including the shallow prism example. Use Enemy, Leader, Follower, Neutral, Ally and Secret as available fixtures.
+Live Foundry acceptance is still required. Copy the complete macro from `docs/acceptance-crosshairs3d-v0.4.4.34.txt` into a Script Macro and select a source token. Run every shape, including the shallow prism example. Use Enemy, Leader, Follower, Neutral, Ally and Secret as available fixtures.
+
+v0.4.4.34 corrects launcher-dialog focus handling. A blur event from the dialog's focused control is ignored; an actual browser-window blur still cancels and cleans the session.
 
 1. Compare each guide, palette, text placement, pulse timing and tracer with its approved standalone macro. Cone text must clear the body throughout 35°–75°. Prism/cylinder hidden dashes must never brighten. Source line must illuminate from source to terminal, then hold/fade.
 2. Check mouse placement, native wheel zoom, all enabled modifier controls, rapid wheel bursts and modifier release without pointer movement. Cone has no wheel rotation; sphere/cylinder have no rotation.

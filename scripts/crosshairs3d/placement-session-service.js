@@ -295,7 +295,14 @@ export class Crosshair3dPlacementSessionService {
     });
     for (const type of ["mousedown", "mouseup", "click", "dblclick", "contextmenu"]) listen(type, event => { if (onCanvas(event) && !session.closed) stop(event); });
     listen("pointercancel", () => session.finish("cancelled"));
-    listen("blur", () => session.finish("cancelled"));
+    // This listener is registered in capture mode with the rest of the
+    // session input. A focused Dialog/button also emits a descendant blur
+    // while it closes; accepting that event cancelled placement immediately
+    // after a Dialog-based launcher selected a shape. Only a real browser
+    // window blur is a session cancellation condition.
+    listen("blur", event => {
+      if (event.target === globalThis.window) session.finish("cancelled");
+    });
     if (session.options.signal) {
       if (session.options.signal.aborted) session.finish("cancelled");
       else listen("abort", () => session.finish("cancelled"), session.options.signal);

@@ -107,13 +107,27 @@ test('free line rotate/resize/elevate obey endpoint range and preserve geometry 
   h.service.cancel(); await p;
 });
 
-for (const ending of ['blur', 'pointercancel', 'canvasTearDown', 'source-update', 'right-click']) test(`${ending}: cancellation cleanup`, async () => {
+for (const ending of ['pointercancel', 'canvasTearDown', 'source-update', 'right-click']) test(`${ending}: cancellation cleanup`, async () => {
   const h = harness(); const p = h.service.show({ source: h.source, shape: shapes[0] }); await h.flush();
   if(ending==='canvasTearDown') h.hook(ending);
   else if(ending==='source-update') h.hook('updateToken',h.source.document);
   else if(ending==='right-click') { h.dispatch('pointerdown',{button:2});h.dispatch('pointerup',{button:2});await h.tick(160); }
   else h.dispatch(ending);
   assert.equal((await p).cancelled,true); assert.ok(h.clean());
+});
+
+test('dialog control blur is ignored while a true window blur cancels and cleans up', async () => {
+  const h = harness();
+  const p = h.service.show({ source: h.source, shape: shapes[0] });
+  await h.flush();
+
+  h.dispatch('blur', { target: { tagName: 'BUTTON' } });
+  await h.flush();
+  assert.equal(h.service.getStats().active, true, 'closing launcher focus must not cancel placement');
+
+  h.dispatch('blur', { target: globalThis.window });
+  assert.equal((await p).cancelled, true);
+  assert.ok(h.clean());
 });
 
 test('renderer failure after initial setup releases singleton and restores targets', async () => {

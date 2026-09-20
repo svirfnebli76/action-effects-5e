@@ -93,6 +93,8 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.4.33 installation
+## v0.4.4.34 installation
 
-Sequencer is required for AE5E automations. The placement system itself uses native PIXI and pointer input. The legacy `ae5e.crosshairs` API is removed; existing Items will be migrated after Checkpoint 4. See `UPDATE-v0.4.4.33.md` for exact file changes and Git deletion instructions, and `docs/testing.md` for live acceptance.
+Sequencer is required for AE5E automations. The placement system itself uses native PIXI and pointer input. The legacy `ae5e.crosshairs` API is removed; existing Items will be migrated after Checkpoint 4. See `UPDATE-v0.4.4.33.md` for the original migration and `UPDATE-v0.4.4.34.md` for this patch, then use `docs/testing.md` for live acceptance.
+
+v0.4.4.34 fixes immediate cancellation when placement is launched from the included DialogV2 shape selector.

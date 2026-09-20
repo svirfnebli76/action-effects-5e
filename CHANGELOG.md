@@ -1,3 +1,9 @@
+## 0.4.4.34 — Dialog blur lifecycle correction
+
+- Prevents the shape-selection dialog's focused button from cancelling a newly started placement as the dialog closes.
+- Retains cancellation when the browser window itself loses focus.
+- Adds a regression that distinguishes descendant focus blur from true window blur and verifies cleanup.
+
 ## 0.4.4.33 — PIXI crosshair integration, Checkpoint 2
 
 - Integrates all six approved procedural renderers and source-line traveling edge illumination.
