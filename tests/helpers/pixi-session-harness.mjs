@@ -51,7 +51,7 @@ export function harness({ renderer: overrideRenderer, reverse = false, ground = 
   const geometry = new Crosshair3dGeometryService(), metrics = new Crosshair3dCanvasMetricsService();
   const tokens = new Crosshair3dTokenVolumeService(), range = new Crosshair3dRangeService();
   const cells = new Crosshair3dCellRasterizerService({ geometry });
-  const targeting = new Crosshair3dTargetingGeometryService({ cells, tokens });
+  const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
   const scene = { id: 'test', grid: { size: 100, distance: 5, units: 'ft' } };
   const token = (id, x, y, elevation = 0) => ({ id, name: id, actor: {}, document: { id, x, y, width: 1, height: 1, depth: 1, elevation, parent: scene, uuid: `Scene.test.Token.${id}` } });
   const source = token('source', 0, 0), inside = token('inside', 150, 150), outside = token('outside', 1600, 1600);

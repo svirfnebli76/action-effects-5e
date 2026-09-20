@@ -69,3 +69,9 @@ test('renderer partial initialization error cleans its complete root',()=>{
   const h=harness();assert.throws(()=>h.renderer.show({shape:{type:'unknown'}}));
   assert.equal(canvas.interface.children.length,0);
 });
+
+test('cone renderer has no source tracer presentation', async () => {
+  const fs = await import('node:fs/promises');
+  const source = await fs.readFile(new URL('../scripts/crosshairs3d/renderers/cone-renderer.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /drawSourceTracer|TRACER_COLOR|TRACER_CHEVRON/);
+});

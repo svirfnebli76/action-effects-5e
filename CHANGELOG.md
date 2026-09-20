@@ -1,3 +1,10 @@
+## 0.4.4.35 — Sphere targeting and placement presentation corrections
+
+- Requires sphere targets to overlap both an accepted affected grid cell and the true continuous 3D sphere, eliminating XYZ corner-cell leakage while preserving the established 50% cell policy and exact-tangency exclusion.
+- Removes the dark source tracer from the Cone guide.
+- Removes Rotate mode and its Shift control hint from source-driven Line placement; mouse aiming remains continuous and elevation remains available.
+- Adds regressions for the live diagnostic corner positions, sphere tangency/interior controls, Cone presentation, and source-driven Line capabilities.
+
 ## 0.4.4.34 — Dialog blur lifecycle correction
 
 - Prevents the shape-selection dialog's focused button from cancelling a newly started placement as the dialog closes.

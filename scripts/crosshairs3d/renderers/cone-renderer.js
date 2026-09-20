@@ -54,12 +54,6 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
   const TEXT_BLEND_START_DEGREES = 50;
   const TEXT_BLEND_END_DEGREES = 70;
 
-  const TRACER_COLOR = 0x4A4A4A;
-  const TRACER_ALPHA = 0.80;
-  const TRACER_WIDTH = 3;
-  const TRACER_CHEVRON_SIZE = 7;
-  const TRACER_CHEVRON_SPACING = 70;
-
   // Light spreads from the legal apex to the terminal face, holds, then fades.
   const LIGHT_SPREAD_MS = 2200;
   const FULLY_LIT_HOLD_MS = 650;
@@ -411,38 +405,6 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
       };
     }
 
-    function drawSourceTracer(from, to) {
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const length = Math.hypot(dx, dy);
-      if (length < 1e-7) return;
-      const direction = { x: dx / length, y: dy / length };
-      const normal = { x: -direction.y, y: direction.x };
-
-      drawing.lineStyle(TRACER_WIDTH, TRACER_COLOR, TRACER_ALPHA);
-      drawing.moveTo(from.x, from.y);
-      drawing.lineTo(to.x, to.y);
-
-      const chevrons = Math.max(0, Math.floor(length / TRACER_CHEVRON_SPACING));
-      for (let index = 1; index <= chevrons; index++) {
-        const ratio = index / (chevrons + 1);
-        const point = { x: from.x + dx * ratio, y: from.y + dy * ratio };
-        const back = {
-          x: point.x - direction.x * TRACER_CHEVRON_SIZE,
-          y: point.y - direction.y * TRACER_CHEVRON_SIZE
-        };
-        drawing.moveTo(
-          back.x + normal.x * TRACER_CHEVRON_SIZE * 0.55,
-          back.y + normal.y * TRACER_CHEVRON_SIZE * 0.55
-        );
-        drawing.lineTo(point.x, point.y);
-        drawing.lineTo(
-          back.x - normal.x * TRACER_CHEVRON_SIZE * 0.55,
-          back.y - normal.y * TRACER_CHEVRON_SIZE * 0.55
-        );
-      }
-    }
-
     function drawCone(current) {
       const geometry = presentation(current);
       const elevation = elevationBaseColor(current);
@@ -656,7 +618,6 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
         drawing.clear();
 
         const drawn = drawCone(current);
-        drawSourceTracer(sourceCenterPixels, drawn.apex);
         drawMarkers(drawn, current);
       }
 

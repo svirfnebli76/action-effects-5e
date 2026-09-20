@@ -2,10 +2,12 @@ import { CROSSHAIR_3D_EPSILON } from "./geometry-utils.js";
 
 export class Crosshair3dTargetingGeometryService {
   #cells;
+  #geometry;
   #tokens;
 
-  constructor({ cells, tokens }) {
+  constructor({ cells, geometry, tokens }) {
     this.#cells = cells;
+    this.#geometry = geometry;
     this.#tokens = tokens;
   }
 
@@ -30,12 +32,20 @@ export class Crosshair3dTargetingGeometryService {
   }
 
   inspectVolume(shape, volume, { grid, stopOnFirst = false, ...cellOptions } = {}) {
+    const normalizedShape = this.#geometry.normalizeShape(shape);
+    const epsilon = cellOptions.epsilon ?? CROSSHAIR_3D_EPSILON;
+    if (normalizedShape.type === "sphere" && !this.#hasPositiveSphereVolumeOverlap(normalizedShape, volume, epsilon)) {
+      return Object.freeze({
+        affected: false,
+        affectedCells: Object.freeze([])
+      });
+    }
     const normalizedGrid = this.#cells.normalizeGrid(grid);
     const affectedCells = [];
     for (const cell of this.candidateCellsForVolume(volume, normalizedGrid)) {
       const world = this.#cells.cellToWorld(cell, normalizedGrid);
-      if (!this.#tokens.intersectsCell(volume, world, { epsilon: cellOptions.epsilon ?? CROSSHAIR_3D_EPSILON })) continue;
-      if (!this.#cells.isCellAffected(shape, cell, normalizedGrid, cellOptions)) continue;
+      if (!this.#tokens.intersectsCell(volume, world, { epsilon })) continue;
+      if (!this.#cells.isCellAffected(normalizedShape, cell, normalizedGrid, cellOptions)) continue;
       affectedCells.push(Object.freeze({ ...cell }));
       if (stopOnFirst) break;
     }
@@ -47,5 +57,18 @@ export class Crosshair3dTargetingGeometryService {
 
   testVolume(shape, volume, options = {}) {
     return this.inspectVolume(shape, volume, { ...options, stopOnFirst: true }).affected;
+  }
+
+  #hasPositiveSphereVolumeOverlap(shape, volume, epsilon) {
+    const axisDistance = (value, min, max) => {
+      if (value < min) return min - value;
+      if (value > max) return value - max;
+      return 0;
+    };
+    const dx = axisDistance(shape.origin.x, volume.minX, volume.maxX);
+    const dy = axisDistance(shape.origin.y, volume.minY, volume.maxY);
+    const dz = axisDistance(shape.origin.z, volume.bottom, volume.top);
+    const positiveRadius = shape.radius - epsilon;
+    return positiveRadius > 0 && ((dx * dx) + (dy * dy) + (dz * dz)) < (positiveRadius * positiveRadius);
   }
 }

@@ -123,7 +123,11 @@ const crosshairs3dTokens = new Crosshair3dTokenVolumeService();
 const crosshairs3dRange = new Crosshair3dRangeService();
 const crosshairs3dRevisions = new Crosshair3dPlacementRevisionService();
 const crosshairs3dPropagation = new Crosshair3dPropagationModeService();
-const crosshairs3dTargeting = new Crosshair3dTargetingGeometryService({ cells: crosshairs3dCells, tokens: crosshairs3dTokens });
+const crosshairs3dTargeting = new Crosshair3dTargetingGeometryService({
+  cells: crosshairs3dCells,
+  geometry: crosshairs3dGeometry,
+  tokens: crosshairs3dTokens
+});
 const crosshairs3dMetrics = new Crosshair3dCanvasMetricsService();
 const crosshairs3dSurfaces = new Crosshair3dSurfaceService();
 const crosshairs3dElevationGauge = new CrosshairElevationGaugeService();

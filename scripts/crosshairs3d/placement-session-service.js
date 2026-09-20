@@ -50,7 +50,7 @@ export class Crosshair3dPlacementSessionService {
     if (!(Number.isFinite(max) && max > 0)) throw new Error("range.max must be a positive finite number.");
     options = { ...options, range: { policy: freeLine ? "endpoints" : "origin", ...options.range, max } };
     if (freeLine && !["center", "origin", "endpoints"].includes(options.range.policy)) throw new Error("Freely placed Line requires range.policy: center, origin, or endpoints.");
-    const allowedRotation = ["prism", "line", "free-line"].includes(baseShape.type);
+    const allowedRotation = ["prism", "free-line"].includes(baseShape.type);
     const capabilities = Object.freeze({
       elevation: options.capabilities?.elevation !== false,
       rotation: allowedRotation && options.capabilities?.rotation !== false,

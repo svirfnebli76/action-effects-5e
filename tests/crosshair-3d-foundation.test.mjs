@@ -246,7 +246,7 @@ test("propagation-mode foundation resolves Item defaults and future CAT-style ov
 
 test("lazy grid targeting follows continuous shape -> affected cells -> Token overlap", async () => {
   const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
-  const targeting = new Crosshair3dTargetingGeometryService({ cells, tokens });
+  const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
   const shape = { type: "prism", origin: { x: 2.5, y: 2.5, z: 0 }, width: 5, length: 5, height: 5 };
   const inside = { minX: 4.9, maxX: 9.9, minY: 0, maxY: 5, bottom: 0, top: 5 };
   const touching = { minX: 5, maxX: 10, minY: 0, maxY: 5, bottom: 0, top: 5 };
@@ -256,7 +256,7 @@ test("lazy grid targeting follows continuous shape -> affected cells -> Token ov
 
 test("large Token targeting succeeds when any one overlapped affected cell qualifies", async () => {
   const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
-  const targeting = new Crosshair3dTargetingGeometryService({ cells, tokens });
+  const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
   const shape = { type: "prism", origin: { x: 2.5, y: 2.5, z: 0 }, width: 5, length: 5, height: 5 };
   const large = { minX: 0, maxX: 15, minY: 0, maxY: 15, bottom: 0, top: 15 };
   const inspection = targeting.inspectVolume(shape, large, { grid });
@@ -266,10 +266,33 @@ test("large Token targeting succeeds when any one overlapped affected cell quali
 
 test("live-style Cone targeting acquires a Token in the cardinal apex-adjacent cell", async () => {
   const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
-  const targeting = new Crosshair3dTargetingGeometryService({ cells, tokens });
+  const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
   const cone = { type: "cone", origin: { x: 5, y: 5, z: 0 }, length: 15, yaw: 0, pitch: 0 };
   const eastToken = { minX: 5, maxX: 10, minY: 0, maxY: 5, bottom: 0, top: 5 };
   const inspection = targeting.inspectVolume(cone, eastToken, { grid });
   assert.equal(inspection.affected, true);
   assert.deepEqual(inspection.affectedCells, [{ x: 1, y: 0, z: 0 }]);
+});
+
+test("Sphere targeting rejects affected-cell corner leakage outside the continuous 3D volume", async () => {
+  const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
+  const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
+  const sphere = { type: "sphere", origin: { x: 102.5, y: 77.5, z: 20 }, radius: 10 };
+  const outsideCorner = { minX: 109.5, maxX: 114.5, minY: 84.5, maxY: 89.5, bottom: 27, top: 32 };
+  const insideCorner = { minX: 107.5, maxX: 112.5, minY: 82.5, maxY: 87.5, bottom: 25, top: 30 };
+
+  assert.equal(cells.isCellAffected(sphere, { x: 21, y: 16, z: 5 }, grid), true, "the broad affected-cell candidate remains present");
+  assert.equal(targeting.testVolume(sphere, outsideCorner, { grid }), false, "12.124-ft nearest corner is outside a 10-ft sphere");
+  assert.equal(targeting.testVolume(sphere, insideCorner, { grid }), true, "8.660-ft interior control remains targeted");
+});
+
+test("Sphere targeting excludes exact tangency and keeps positive interior overlap", async () => {
+  const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
+  const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
+  const sphere = { type: "sphere", origin: { x: 2.5, y: 2.5, z: 20 }, radius: 10 };
+  const tangent = { minX: 12.5, maxX: 17.5, minY: 0, maxY: 5, bottom: 17.5, top: 22.5 };
+  const positive = { ...tangent, minX: 9.5 };
+
+  assert.equal(targeting.testVolume(sphere, tangent, { grid }), false);
+  assert.equal(targeting.testVolume(sphere, positive, { grid }), true);
 });

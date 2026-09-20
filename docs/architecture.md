@@ -1,5 +1,11 @@
 # Action Effects 5E architecture
 
+## v0.4.4.35 — Sphere targeting refinement (Checkpoint 2)
+
+Sphere live targeting uses affected cells as its grid-policy candidate set, then requires positive AABB overlap with the exact continuous sphere. A token cannot qualify only because it overlaps an accepted corner cell outside the mathematical sphere. Exact tangency remains excluded.
+
+Source-driven Lines aim with the mouse and elevate but no longer expose Rotate mode. The Cone guide no longer draws a source tracer.
+
 ## v0.4.4.34 — PIXI placement integration (Checkpoint 2)
 
 v0.4.4.34 filters captured blur events by target. Closing a DialogV2 launcher blurs its focused button, which is not a placement cancellation. Only a blur whose target is the browser window cancels the session.

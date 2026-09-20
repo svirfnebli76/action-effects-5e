@@ -52,6 +52,18 @@ test('source cone has continuous apex, no wheel rotation, 1/5-grid short-cone in
   await h.confirm(); await p; assert.ok(h.clean());
 });
 
+test('source-driven line aims with the mouse and has no Rotate mode', async () => {
+  const h = harness(); let revision;
+  const p = h.service.show({ source: h.source, shape: shapes[4], onRevision: value => revision = value });
+  await h.flush();
+  h.dispatch('pointermove', { clientX: 800, clientY: 130 }); await h.flush();
+  const aimedYaw = revision.yaw;
+  h.dispatch('wheel', { shiftKey: true, deltaY: -1 }); await h.flush();
+  assert.equal(revision.yaw, aimedYaw);
+  assert.ok(!h.records.texts.some(text => text.text === 'SHIFT'));
+  h.service.cancel(); await p;
+});
+
 for (const length of [25, 26, 50, 51]) test(`cone ${length} ft elevation tier`, async () => {
   const h = harness(); const p = h.service.show({ source: h.source, shape: { type: 'cone', length } });
   await h.flush(); h.dispatch('pointermove'); h.dispatch('wheel', { ctrlKey: true, deltaY: -1 }); await h.flush();
