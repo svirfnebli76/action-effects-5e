@@ -32,7 +32,6 @@ import { BatchDisplacementService } from "./displacement/batch-displacement-serv
 import { SelectionIndicatorService } from "./ui/selection-indicator-service.js";
 import { ExternalPromptBridgeService } from "./ui/external-prompt-bridge-service.js";
 import { ChoicePromptService } from "./ui/choice-prompt-service.js";
-import { CrosshairService } from "./crosshairs/crosshair-service.js";
 import { Crosshair3dGeometryService } from "./crosshairs3d/geometry-service.js";
 import { Crosshair3dCellRasterizerService } from "./crosshairs3d/cell-rasterizer-service.js";
 import { Crosshair3dTokenVolumeService } from "./crosshairs3d/token-volume-service.js";
@@ -42,10 +41,8 @@ import { Crosshair3dPropagationModeService } from "./crosshairs3d/propagation-mo
 import { Crosshair3dTargetingGeometryService } from "./crosshairs3d/targeting-geometry-service.js";
 import { Crosshair3dCanvasMetricsService } from "./crosshairs3d/canvas-metrics-service.js";
 import { Crosshair3dSurfaceService } from "./crosshairs3d/surface-service.js";
-import { Crosshair3dPlacementOverlayService } from "./crosshairs3d/placement-overlay-service.js";
 import { CrosshairElevationGaugeService } from "./crosshairs3d/crosshair-elevation-gauge-service.js";
-import { Crosshair3dPlacementGuideService } from "./crosshairs3d/placement-guide-service.js";
-import { Crosshair3dPlacementVisualService } from "./crosshairs3d/placement-visual-service.js";
+import { Crosshair3dPixiPlacementRenderer } from "./crosshairs3d/pixi-placement-renderer.js";
 import { Crosshair3dPlacementSessionService } from "./crosshairs3d/placement-session-service.js";
 import { ReactionRegistry } from "./reactions/reaction-registry.js";
 import { ReactionAuthorityService } from "./reactions/reaction-authority-service.js";
@@ -120,7 +117,6 @@ const displacementGrace = new NonhostileEndpointGraceService({
 });
 const selectionIndicator = new SelectionIndicatorService();
 const externalPromptBridge = new ExternalPromptBridgeService({ selectionIndicator });
-const crosshairs = new CrosshairService();
 const crosshairs3dGeometry = new Crosshair3dGeometryService();
 const crosshairs3dCells = new Crosshair3dCellRasterizerService({ geometry: crosshairs3dGeometry });
 const crosshairs3dTokens = new Crosshair3dTokenVolumeService();
@@ -130,12 +126,9 @@ const crosshairs3dPropagation = new Crosshair3dPropagationModeService();
 const crosshairs3dTargeting = new Crosshair3dTargetingGeometryService({ cells: crosshairs3dCells, tokens: crosshairs3dTokens });
 const crosshairs3dMetrics = new Crosshair3dCanvasMetricsService();
 const crosshairs3dSurfaces = new Crosshair3dSurfaceService();
-const crosshairs3dOverlay = new Crosshair3dPlacementOverlayService();
 const crosshairs3dElevationGauge = new CrosshairElevationGaugeService();
-const crosshairs3dGuide = new Crosshair3dPlacementGuideService({ geometry: crosshairs3dGeometry, metrics: crosshairs3dMetrics });
-const crosshairs3dVisuals = new Crosshair3dPlacementVisualService({ crosshairs, metrics: crosshairs3dMetrics });
+const crosshairs3dRenderer = new Crosshair3dPixiPlacementRenderer();
 const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
-  crosshairs,
   geometry: crosshairs3dGeometry,
   cells: crosshairs3dCells,
   tokens: crosshairs3dTokens,
@@ -144,10 +137,8 @@ const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
   targeting: crosshairs3dTargeting,
   metrics: crosshairs3dMetrics,
   surfaces: crosshairs3dSurfaces,
-  overlay: crosshairs3dOverlay,
   elevationGauge: crosshairs3dElevationGauge,
-  guide: crosshairs3dGuide,
-  visuals: crosshairs3dVisuals
+  renderer: crosshairs3dRenderer
 });
 const reactionRegistry = new ReactionRegistry();
 const reactionAuthority = new ReactionAuthorityService({ socket });
@@ -310,7 +301,6 @@ const tests = new TestHarness({
   selectionIndicator,
   externalPromptBridge,
   choicePrompts,
-  crosshairs,
   crosshairs3dGeometry,
   crosshairs3dCells,
   crosshairs3dTokens,
@@ -427,7 +417,6 @@ const api = new ActionEffects5eApi({
   selectionIndicator,
   externalPromptBridge,
   choicePrompts,
-  crosshairs,
   crosshairs3dGeometry,
   crosshairs3dCells,
   crosshairs3dTokens,

@@ -1,693 +1,328 @@
-import { freeLineEndpoints, freeLineWithinRange, constrainFreeLineChange, freeLineRangeBoundary } from "./free-line-placement.js";
+import { freeLineEndpoints, freeLineWithinRange, constrainFreeLineChange } from "./free-line-placement.js";
 import { Logger } from "../core/logger.js";
 import { MODULE_ID, SETTINGS } from "../core/constants.js";
 import { CROSSHAIR_3D_SHAPES } from "./geometry-service.js";
 import { finiteNumber, normalizeDegrees } from "./geometry-utils.js";
 
-function tokenIds(tokens) {
-  return Array.from(tokens ?? []).map(token => token?.id ?? token?.document?.id).filter(Boolean);
-}
+const tokenIds = tokens => Array.from(tokens ?? [], token => token?.id ?? token?.document?.id).filter(Boolean);
+const sameIds = (a, b) => [...a].sort().join("|") === [...b].sort().join("|");
+const stop = event => { event.preventDefault?.(); event.stopPropagation?.(); event.stopImmediatePropagation?.(); };
 
-function unique(values) {
-  return [...new Set(values)];
-}
-
-function sameIds(a, b) {
-  if (a.length !== b.length) return false;
-  const left = [...a].sort();
-  const right = [...b].sort();
-  return left.every((id, index) => id === right[index]);
-}
-
-function sourceTokenOf(value) {
-  return value?.object ?? value?.document?.object ?? value ?? null;
-}
-
-function shapeFunctionalType(type) {
-  switch (type) {
-    case CROSSHAIR_3D_SHAPES.SPHERE:
-    case CROSSHAIR_3D_SHAPES.CYLINDER: return "circle";
-    case CROSSHAIR_3D_SHAPES.CONE: return "cone";
-    case CROSSHAIR_3D_SHAPES.LINE: return "ray";
-    case CROSSHAIR_3D_SHAPES.PRISM:
-    case CROSSHAIR_3D_SHAPES.FREE_LINE: return "ray";
-    default: return "circle";
-  }
-}
-
-function defaultCapabilities(type) {
-  return Object.freeze({
-    elevation: true,
-    rotation: [CROSSHAIR_3D_SHAPES.PRISM, CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE, CROSSHAIR_3D_SHAPES.FREE_LINE].includes(type),
-    los: false
-  });
-}
-
+/** Native pointer session. Intent is synchronous; resolved geometry/targets publish together. */
 export class Crosshair3dPlacementSessionService {
-  #crosshairs;
-  #geometry;
-  #cells;
-  #tokens;
-  #range;
-  #revisions;
-  #targeting;
-  #metrics;
-  #surfaces;
-  #overlay;
-  #elevationGauge;
-  #guide;
-  #visuals;
+  #geometry; #tokens; #range; #revisions; #targeting; #metrics; #surfaces; #renderer; #elevationGauge;
   #active = null;
   #stats = { sessions: 0, confirmed: 0, cancelled: 0, errors: 0, revisions: 0, targetRecalculations: 0, staleDiscards: 0, wheelEvents: 0 };
-
-  constructor({ crosshairs, geometry, cells, tokens, range, revisions, targeting, metrics, surfaces, overlay, elevationGauge = null, guide, visuals = null }) {
-    this.#crosshairs = crosshairs;
-    this.#geometry = geometry;
-    this.#cells = cells;
-    this.#tokens = tokens;
-    this.#range = range;
-    this.#revisions = revisions;
-    this.#targeting = targeting;
-    this.#metrics = metrics;
-    this.#surfaces = surfaces;
-    this.#overlay = overlay;
-    this.#elevationGauge = elevationGauge;
-    this.#guide = guide;
-    this.#visuals = visuals;
+  constructor({ geometry, tokens, range, revisions, targeting, metrics, surfaces, renderer, elevationGauge = null }) {
+    this.#geometry = geometry; this.#tokens = tokens; this.#range = range; this.#revisions = revisions;
+    this.#targeting = targeting; this.#metrics = metrics; this.#surfaces = surfaces;
+    this.#renderer = renderer; this.#elevationGauge = elevationGauge;
   }
+  getStats() { return Object.freeze({ ...this.#stats, active: Boolean(this.#active), activeSessionId: this.#active?.id ?? null }); }
+  cancel() { this.#active?.finish("cancelled"); }
 
   async show(options = {}) {
     if (this.#active) throw new Error("Only one local Action Effects 3D Crosshairs placement session may be active at a time.");
-    if (!globalThis.canvas?.ready) throw new Error("Action Effects 3D Crosshairs requires an active Scene canvas.");
-    if (!globalThis.Sequencer?.Crosshair?.show) throw new Error("Action Effects 3D Crosshairs requires Sequencer Crosshair.show().");
-
-    const source = sourceTokenOf(options.source);
+    const canvas = globalThis.canvas;
+    if (!canvas?.ready) throw new Error("Action Effects 3D Crosshairs requires an active Scene canvas.");
+    const source = options.source?.object ?? options.source?.document?.object ?? options.source;
     if (!source?.document) throw new Error("Action Effects 3D Crosshairs requires a source Token.");
-    const shapeInput = { ...(options.shape ?? {}) };
-    if (shapeInput.type === "line" && (options.placement?.mode === "free" || options.remote === true)) {
-      shapeInput.type = CROSSHAIR_3D_SHAPES.FREE_LINE;
-      shapeInput.height ??= shapeInput.width;
-    }
-    const baseShape = this.#geometry.normalizeShape(shapeInput);
-    const freeLine = baseShape.type === CROSSHAIR_3D_SHAPES.FREE_LINE;
-    if (freeLine && !["center", "origin", "endpoints"].includes(options.range?.policy)) {
-      throw new Error("Freely placed Line requires range.policy: center, origin, or endpoints.");
-    }
-    if (freeLine && !(Number.isFinite(options.range?.max) && options.range.max > 0)) {
-      throw new Error("Freely placed Line requires a positive finite range.max.");
-    }
+    if (!canvas.tokens?.setTargets) throw new Error("Canvas targeting is unavailable.");
     const metrics = this.#metrics.resolve();
-    const capabilities = Object.freeze({ ...defaultCapabilities(baseShape.type), resize: freeLine, ...(options.capabilities ?? {}) });
-    const self = !freeLine && (options.self === true || options.originMode === "self" || [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type) && options.remote !== true);
-    const originalTargetIds = tokenIds(globalThis.game?.user?.targets);
     const sourceVolume = this.#tokens.resolve(source, { grid: metrics, coordinateSpace: "pixels" });
-    const initialHeadingYaw = normalizeDegrees(baseShape.yaw ?? source.document.rotation ?? 0);
-    const initialArcPitch = finiteNumber(baseShape.pitch);
-    const initialOrientation = this.#canonicalSelfOrientation(initialHeadingYaw, initialArcPitch);
-    const initialYaw = self ? initialOrientation.yaw : initialHeadingYaw;
-    const initialPitch = self ? initialOrientation.pitch : finiteNumber(baseShape.pitch);
-    const initialApex = self ? this.#resolveSelfApex(source, initialYaw, initialPitch, metrics, sourceVolume, baseShape.type) : null;
-    let initialPoint = self ? initialApex : { ...baseShape.origin };
-    if (freeLine) {
-      const initial = { point: initialPoint, yaw: initialYaw, length: baseShape.length };
-      const valid = state => freeLineWithinRange(state, sourceVolume, options.range.max, options.range.policy, this.#range);
-      if (!valid(initial)) {
-        initialPoint = { x: (sourceVolume.minX + sourceVolume.maxX) / 2,
-          y: (sourceVolume.minY + sourceVolume.maxY) / 2, z: sourceVolume.bottom };
-        if (options.range.policy === "origin") {
-          const a = initialYaw * Math.PI / 180;
-          initialPoint.x += Math.cos(a) * baseShape.length / 2;
-          initialPoint.y += Math.sin(a) * baseShape.length / 2;
-        }
-        if (!valid({ ...initial, point: initialPoint })) throw new Error("Full-length Line cannot fit within the configured casting range.");
-      }
+    if (!sourceVolume) throw new Error("Could not resolve the source Token volume.");
+    const input = { ...(options.shape ?? {}) };
+    const requestedType = String(input.type ?? "").toLowerCase();
+    if (requestedType === "square") { input.type = "prism"; input.length ??= input.size ?? input.width; input.width ??= input.length; input.height ??= metrics.distance; }
+    if (requestedType === "cube") { input.length ??= input.size ?? input.width; input.width ??= input.length; input.height ??= input.length; }
+    if (requestedType === "circle") input.height ??= metrics.distance;
+    if (requestedType === "line" && (options.placement?.mode === "free" || options.remote === true)) {
+      input.type = "free-line"; input.height ??= input.width ?? metrics.distance;
     }
-    const initialState = this.#revisions.create({
-      length: baseShape.length,
-      point: initialPoint,
-      yaw: initialYaw,
-      pitch: initialPitch,
-      headingYaw: initialHeadingYaw,
-      arcPitch: initialArcPitch,
-      endpointZ: self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
-        ? initialPoint.z + (Math.sin((initialPitch * Math.PI) / 180) * baseShape.length)
-        : null,
-      selectedAbsoluteZ: initialPoint.z,
-      elevationPhase: null,
-      elevationRadius: null,
-      manualElevation: false,
-      shape: baseShape,
-      targets: Object.freeze([]),
-      valid: true
+    // Item dimensions take precedence; one Scene grid unit is the missing-dimension fallback.
+    if (["prism", "rectangle", "rect", "cylinder", "free-line"].includes(input.type)) input.height ??= input.depth ?? metrics.distance;
+    if (["line", "free-line"].includes(input.type)) input.width ??= metrics.distance;
+    const baseShape = this.#geometry.normalizeShape(input);
+    const freeLine = baseShape.type === "free-line";
+    const self = ["cone", "line"].includes(baseShape.type);
+    if (baseShape.type === "cone" && options.remote === true) throw new Error("Remote cone placement is not part of this checkpoint.");
+    const max = Number(options.range?.max ?? options.maxRange ?? (self ? baseShape.length : 60));
+    if (!(Number.isFinite(max) && max > 0)) throw new Error("range.max must be a positive finite number.");
+    options = { ...options, range: { policy: freeLine ? "endpoints" : "origin", ...options.range, max } };
+    if (freeLine && !["center", "origin", "endpoints"].includes(options.range.policy)) throw new Error("Freely placed Line requires range.policy: center, origin, or endpoints.");
+    const allowedRotation = ["prism", "line", "free-line"].includes(baseShape.type);
+    const capabilities = Object.freeze({
+      elevation: options.capabilities?.elevation !== false,
+      rotation: allowedRotation && options.capabilities?.rotation !== false,
+      resize: freeLine && options.capabilities?.resize !== false,
+      los: options.capabilities?.los === true
     });
-
+    const headingYaw = normalizeDegrees(input.yaw ?? source.document.rotation ?? 0);
+    const arcPitch = self ? normalizeDegrees(input.pitch ?? 0) : 0;
+    const orientation = this.#canonicalSelfOrientation(headingYaw, arcPitch);
+    const initialPoint = self ? this.#resolveSelfApex(source, orientation.yaw, orientation.pitch, metrics, sourceVolume, baseShape.type)
+      : input.origin ? { ...baseShape.origin } : { x: (sourceVolume.minX + sourceVolume.maxX) / 2, y: (sourceVolume.minY + sourceVolume.maxY) / 2, z: sourceVolume.bottom };
+    const intent = { point: initialPoint, yaw: self ? orientation.yaw : headingYaw, headingYaw,
+      pitch: self ? orientation.pitch : 0, arcPitch, length: baseShape.length,
+      manualElevation: false, selectedAbsoluteZ: initialPoint.z };
     const session = {
       id: globalThis.foundry?.utils?.randomID?.(12) ?? `${Date.now()}-${Math.random()}`,
-      options,
-      freeLine,
-      source,
-      sourceVolume,
-      metrics,
-      baseShape,
-      capabilities,
-      self,
-      originalTargetIds,
-      current: initialState,
-      intent: {
-        length: baseShape.length,
-        point: initialPoint,
-        yaw: initialYaw,
-        headingYaw: initialHeadingYaw,
-        pitch: initialPitch,
-        arcPitch: initialArcPitch,
-        endpointZ: initialState.endpointZ,
-        selectedAbsoluteZ: initialPoint.z,
-        elevationPhase: null,
-        elevationRadius: null,
-        manualElevation: false
-      },
-      requestedSerial: 0,
-      resolvedSerial: 0,
-      pending: null,
-      resolving: false,
-      closed: false,
-      carrier: null,
-      listeners: [],
-      modifier: { shift: false, ctrl: false, alt: false },
-      carrierSuppressionUntil: 0,
-      mode: "MOVE",
-      lastTargetIds: [...originalTargetIds],
-      elevationArc: null,
-      finalBarrier: Promise.resolve(),
-      result: null,
-      visualState: this.#visuals?.createSession?.({ id: globalThis.foundry?.utils?.randomID?.(12), ...(options.visual ?? {}), source }) ?? null
+      source, sourceVolume, scene: canvas.scene, metrics, baseShape, options, freeLine, self, capabilities, intent,
+      originalTargetIds: tokenIds(globalThis.game?.user?.targets), current: this.#revisions.create({ ...intent, shape: baseShape, targets: [], valid: false }),
+      mode: "MOVE", closed: false, finishing: false, settled: false, pending: null, drain: null,
+      requestedSerial: 0, resolvedSerial: -1, listeners: [], hooks: [], tick: null, lastPointer: null,
+      lastCamera: "", zoomUntil: 0, armed: false, gesture: null, lastTargetIds: tokenIds(globalThis.game?.user?.targets)
     };
+    if (!self && !this.#validState(session, intent)) throw new Error("Initial placement does not fit within the configured range or visibility.");
+    const done = new Promise(resolve => { session.finish = (status, error = null) => {
+      if (session.settled) return;
+      session.settled = true; session.closed = true; session.pending = null;
+      resolve({ status, error });
+    }; });
     this.#active = session;
-    this.#stats.sessions += 1;
-
-    const hints = [];
-    if (capabilities.rotation) hints.push(freeLine ? "Shift to Rotate" : "Hold Shift+Mousewheel to change Rotation");
-    
-    if (capabilities.elevation) hints.push(freeLine ? "Ctrl to Elevate" : "Hold Ctrl+Mousewheel to change Elevation");
-    if (freeLine && capabilities.resize) hints.push("Alt to Alter Length");
-    if (!freeLine && capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
-      hints.push("Hold Ctrl+Shift+Mousewheel to Orbit Elevation");
-    }
-    if (!freeLine) hints.push("Right Click to Cancel");
-    this.#overlay.show({
-      mode: "MOVE",
-      hints: freeLine ? [hints.join(", ")].filter(Boolean) : hints,
-      freeLineUI: freeLine,
-      fixedHud: !freeLine && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(baseShape.type)
-    });
-    this.#elevationGauge?.show?.({ enabled: capabilities.elevation });
-    this.#guide.show();
-    this.#installInput(session);
-
+    this.#stats.sessions++;
     try {
-      const result = await this.#showFunctionalCrosshair(session);
-      if (!result || result.cancelled || !result.position) {
-        this.#stats.cancelled += 1;
-        await this.#replaceUserTargets(session.originalTargetIds);
+      this.#renderer.show({ shape: baseShape, sourceVolume, metrics, metricsService: this.#metrics,
+        geometry: this.#geometry, options, capabilities });
+      if (baseShape.type === "line") this.#elevationGauge?.show({ enabled: capabilities.elevation });
+      this.#installInput(session);
+      this.#enqueue(session, "initial");
+      const outcome = await done;
+      if (outcome.error) throw outcome.error;
+      if (outcome.status !== "confirmed") {
+        this.#stats.cancelled++;
+        this.#restoreTargets(session);
         return Object.freeze({ cancelled: true, revision: session.current, targets: Object.freeze([]), shape: session.current.shape });
       }
-
-      await session.finalBarrier;
-      await this.#requestResolution(session, { carrier: result.position, reason: "final-confirm", force: true });
-      await session.finalBarrier;
-      if (!session.current?.valid) {
-        await this.#replaceUserTargets(session.originalTargetIds);
-        this.#stats.cancelled += 1;
-        return Object.freeze({ cancelled: true, invalid: true, revision: session.current, targets: Object.freeze([]), shape: session.current.shape });
-      }
-      this.#stats.confirmed += 1;
-      const targets = Object.freeze([...(session.current.targets ?? [])]);
-      return Object.freeze({
-        cancelled: false,
-        revision: session.current,
-        shape: session.current.shape,
-        targets,
-        targetIds: Object.freeze(tokenIds(targets)),
-        targetUuids: Object.freeze(targets.map(token => token?.document?.uuid ?? token?.uuid).filter(Boolean)),
-        placementPoint: Object.freeze({ ...session.current.point }),
-        yaw: session.current.yaw,
-        pitch: session.current.pitch
-      });
+      this.#stats.confirmed++;
+      const revision = session.current;
+      const targets = Object.freeze([...revision.targets]);
+      return Object.freeze({ cancelled: false, revision, shape: revision.shape, targets,
+        targetIds: Object.freeze(tokenIds(targets)), targetUuids: Object.freeze(targets.map(t => t.document?.uuid ?? t.uuid).filter(Boolean)),
+        placementPoint: Object.freeze({ ...revision.point }), yaw: revision.yaw, pitch: revision.pitch,
+        originLevelId: session.originLevelId ?? null });
     } catch (error) {
-      this.#stats.errors += 1;
-      await this.#replaceUserTargets(session.originalTargetIds);
+      session.closed = true;
+      this.#stats.errors++;
+      this.#restoreTargets(session);
       Logger.error("Action Effects 3D Crosshairs placement failed.", error);
       throw error;
-    } finally {
-      await this.#cleanup(session);
-    }
+    } finally { this.#cleanup(session); }
   }
 
-  getStats() {
-    return Object.freeze({ ...this.#stats, active: Boolean(this.#active), activeSessionId: this.#active?.id ?? null });
-  }
-
-  async #showFunctionalCrosshair(session) {
-    const callbacks = globalThis.Sequencer.Crosshair.CALLBACKS ?? {};
-    const callbackConfig = {};
-    const request = crosshair => {
-      if (Date.now() < session.carrierSuppressionUntil) return session.current;
-      return this.#requestResolution(session, { carrier: crosshair, reason: "move" });
-    };
-    if (callbacks.SHOW) callbackConfig[callbacks.SHOW] = async crosshair => {
-      session.carrier = crosshair;
-      await request(crosshair);
-    };
-    if (callbacks.MOVE) callbackConfig[callbacks.MOVE] = request;
-    if (callbacks.MOUSE_MOVE) callbackConfig[callbacks.MOUSE_MOVE] = crosshair => {
-      if (session.mode !== "MOVE") this.#syncCarrierToRevision(session, crosshair, session.current);
-    };
-    if (callbacks.PLACED) callbackConfig[callbacks.PLACED] = async crosshair => {
-      // A rapid wheel burst may still be resolving when the click arrives. Let
-      // the newest requested manipulation publish first so the invisible carrier
-      // is synchronized to that authoritative state before final reconciliation.
-      await session.finalBarrier;
-      await this.#requestResolution(session, { carrier: crosshair, reason: "placed-callback", force: true });
-      await session.finalBarrier;
-      return session.current?.valid === false ? false : undefined;
-    };
-
-    const shape = session.baseShape;
-    const projectedDistance = this.#projectedDistance(shape.length ?? shape.radius ?? Math.max(shape.width ?? 0, shape.length ?? 0), shape.pitch ?? 0, session.metrics.distance);
-    const location = session.self
-      ? { obj: session.source, lockToEdge: true, lockToEdgeDirection: false }
-      : {};
-    if (session.capabilities.los && session.self) {
-      location.wallBehavior = globalThis.Sequencer.Crosshair.PLACEMENT_RESTRICTIONS?.LINE_OF_SIGHT;
-    }
-
-    const crosshairConfig = {
-      t: shapeFunctionalType(shape.type),
-      distance: Math.max(session.metrics.distance, finiteNumber(projectedDistance, session.metrics.distance)),
-      width: finiteNumber(shape.width, session.metrics.distance),
-      borderAlpha: 0,
-      fillAlpha: 0,
-      gridHighlight: false,
-      location,
-      snap: { resolution: 8, direction: this.#rotationStep(session) }
-    };
-    return globalThis.Sequencer.Crosshair.show(crosshairConfig, callbackConfig).then(position => ({ position, cancelled: !position }));
-  }
-
-  #installInput(session) {
-    const window = globalThis.window;
-    if (!window?.addEventListener) return;
-    const setMode = next => {
-      session.mode = next;
-      this.#overlay.update({ mode: next });
-
-      const selfPitch = session.self
-        && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)
-        && next === "ELEVATE";
-      const remoteElevation = this.#usesRemoteRigidElevation(session) && next === "ELEVATE";
-      const remoteOrbit = this.#usesRemoteRigidElevation(session) && next === "ORBIT";
-      if (session.capabilities.elevation && (selfPitch || remoteElevation || remoteOrbit)) {
-        if (remoteOrbit) this.#ensureRemoteElevationArc(session, session.current?.point ?? session.intent?.point);
-        this.#elevationGauge?.update?.(this.#elevationGaugeState(session, session.current));
-      } else {
-        this.#elevationGauge?.update?.({ visible: false });
-      }
-    };
-    const updateMode = () => {
-      if (session.freeLine) {
-        setMode([session.modifier.ctrl, session.modifier.shift, session.modifier.alt].filter(Boolean).length > 1 ? "MOVE"
-          : session.modifier.ctrl && session.capabilities.elevation ? "ELEVATE"
-          : session.modifier.shift && session.capabilities.rotation ? "ROTATE"
-          : session.modifier.alt && session.capabilities.resize ? "LENGTH" : "MOVE");
-        return;
-      }
-      const next = session.modifier.ctrl && session.modifier.shift
-        ? session.capabilities.elevation && this.#usesRemoteRigidElevation(session) ? "ORBIT" : "MOVE"
-        : session.modifier.ctrl
-          ? session.capabilities.elevation ? "ELEVATE" : "MOVE"
-          : session.modifier.shift
-            ? session.capabilities.rotation ? "ROTATE" : "MOVE"
-            : "MOVE";
-      setMode(next);
-    };
-    // Keep prevention, but also recover when native Alt handling swallows a
-    // later modifier release. No persistent Alt-down latch: its keyup can also
-    // be lost. Recovery survives pointer movement BEFORE the next Ctrl cycle.
-    let altRecoveryArmed = false;
-    let recoverySawModifier = false;
-    const suppressAlt = event => {
-      if (event?.key !== "Alt" && event?.key !== "AltGraph") return false;
-      altRecoveryArmed = true;
-      recoverySawModifier ||= session.modifier.ctrl || session.modifier.shift || Boolean(event.ctrlKey || event.shiftKey);
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      event.stopImmediatePropagation?.();
-      return true;
-    };
-    const syncModifiers = (event, keyIsDown = null) => {
-      let shift = Boolean(event?.shiftKey);
-      let ctrl = Boolean(event?.ctrlKey);
-      let alt = session.freeLine && Boolean(event?.altKey);
-      if (session.freeLine && (event?.key === "Alt" || event?.key === "AltGraph") && keyIsDown !== null) alt = keyIsDown;
-      if (event?.key === "Shift" && keyIsDown !== null) shift = keyIsDown;
-      if (event?.key === "Control" && keyIsDown !== null) ctrl = keyIsDown;
-      const changed = shift !== session.modifier.shift || ctrl !== session.modifier.ctrl || alt !== session.modifier.alt;
-      session.modifier.shift = shift;
-      session.modifier.ctrl = ctrl;
-      session.modifier.alt = alt;
-      if (altRecoveryArmed && (shift || ctrl)) recoverySawModifier = true;
-      return changed;
-    };
-    const recoverFromPointer = event => {
-      if (session.freeLine && !session.closed && event.isTrusted === true
-        && [event.ctrlKey, event.shiftKey, event.altKey].every(value => typeof value === "boolean")) {
-        if (syncModifiers(event)) updateMode();
-        return;
-      }
-      if (session.closed || !altRecoveryArmed || event.isTrusted !== true || event.altKey !== false) return;
-      if (typeof event.ctrlKey !== "boolean" || typeof event.shiftKey !== "boolean") return;
-      // Do not use synthesized renderer events, and do not disarm just because
-      // an Alt tap was followed by movement before the next modifier cycle.
-      if (!recoverySawModifier) return;
-      if (syncModifiers(event)) updateMode();
-      if (!event.ctrlKey && !event.shiftKey) {
-        altRecoveryArmed = false;
-        recoverySawModifier = false;
-      }
-    };
-    const keydown = event => {
-      if (session.freeLine) { syncModifiers(event, true); updateMode(); }
-      if (suppressAlt(event)) return;
-      syncModifiers(event, true);
-      updateMode();
-    };
-    const keyup = event => {
-      if (session.freeLine) { syncModifiers(event, false); updateMode(); }
-      if (suppressAlt(event)) return;
-      syncModifiers(event, false);
-      updateMode();
-    };
-    const blur = () => {
-      altRecoveryArmed = false;
-      recoverySawModifier = false;
-      session.modifier.shift = false;
-      session.modifier.ctrl = false;
-      session.modifier.alt = false;
-      updateMode();
-    };
-    const wheel = event => {
-      if (session.closed) return;
-      // Wheel modifier flags describe the physical state for this exact input.
-      // Resynchronize before deciding whether AE5E should intercept the wheel.
-      if (syncModifiers(event)) updateMode();
-      const modified = session.modifier.shift || session.modifier.ctrl || (session.freeLine && session.modifier.alt);
-      if (!modified) return; // Leave plain wheel to Foundry canvas zoom.
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      event.stopImmediatePropagation?.();
-      this.#stats.wheelEvents += 1;
-      if (!event.deltaY) return;
-      const step = event.deltaY < 0 ? 1 : -1;
-      if (session.freeLine) {
-        if ([session.modifier.ctrl, session.modifier.shift, session.modifier.alt].filter(Boolean).length > 1) return;
-        const from = session.intent;
-        const to = { ...from, point: { ...from.point } };
-        let reason, yawDelta = 0;
-        if (session.modifier.ctrl) {
-          if (!session.capabilities.elevation) return;
-          to.point.z += (this.#reverseElevationWheelEnabled() ? -step : step) * this.#elevationStep(session);
-          to.manualElevation = true;
-          reason = "wheel-elevate";
-        } else if (session.modifier.alt) {
-          if (!session.capabilities.resize) return;
-          const increment = Math.max(0.001, finiteNumber(session.options.controls?.lengthStep, session.metrics.distance));
-          const minimum = Math.min(session.baseShape.length, Math.max(0.001, finiteNumber(session.options.controls?.minLength, session.metrics.distance)));
-          to.length = Math.max(minimum, Math.min(session.baseShape.length, from.length + step * increment));
-          reason = "wheel-resize";
-        } else {
-          if (!session.capabilities.rotation) return;
-          yawDelta = step * this.#rotationStep(session);
-          to.yaw += yawDelta;
-          reason = "wheel-rotate";
-        }
-        // Elevation is discrete: never accept a fractional step at the range cap.
-        const accepted = session.modifier.ctrl
-          ? (this.#freeLineValid(session, to) ? to : { ...from, point: { ...from.point } })
-          : constrainFreeLineChange(from, to, state => this.#freeLineValid(session, state), yawDelta);
-        accepted.yaw = normalizeDegrees(accepted.yaw);
-        accepted.headingYaw = accepted.yaw;
-        accepted.selectedAbsoluteZ = accepted.point.z;
-        Object.assign(session.intent, accepted);
-        this.#requestResolution(session, { statePatch: { ...accepted }, reason, force: true });
-        return;
-      }
-      if (session.modifier.shift && session.modifier.ctrl) {
-        if (session.capabilities.elevation && this.#usesRemoteRigidElevation(session)) {
-          setMode("ORBIT");
-          const elevationStep = this.#reverseElevationWheelEnabled() ? -step : step;
-          this.#requestElevationStep(session, elevationStep, { reason: "wheel-orbit" });
-        } else setMode("MOVE");
-        return;
-      }
-      if (session.modifier.shift && session.capabilities.rotation) {
-        setMode("ROTATE");
-        const headingYaw = normalizeDegrees(
-          finiteNumber(session.intent.headingYaw, session.intent.yaw)
-          + (step * this.#rotationStep(session))
-        );
-        const orientation = session.self
-          ? this.#canonicalSelfOrientation(headingYaw, session.intent.arcPitch)
-          : { yaw: headingYaw, pitch: session.intent.pitch };
-        Object.assign(session.intent, { headingYaw, yaw: orientation.yaw, pitch: orientation.pitch });
-        this.#requestResolution(session, { statePatch: { headingYaw, yaw: orientation.yaw, pitch: orientation.pitch }, reason: "wheel-rotate", force: true });
-        return;
-      }
-      if (session.modifier.ctrl && session.capabilities.elevation) {
-        setMode("ELEVATE");
-        const elevationStep = this.#reverseElevationWheelEnabled() ? -step : step;
-        if (this.#usesRemoteRigidElevation(session)) this.#requestVerticalTranslationStep(session, elevationStep);
-        else this.#requestElevationStep(session, elevationStep);
-      }
-    };
-    window.addEventListener("keydown", keydown, true);
-    window.addEventListener("keyup", keyup, true);
-    window.addEventListener("blur", blur, true);
-    window.addEventListener("pointermove", recoverFromPointer, true);
-    window.addEventListener("pointerdown", recoverFromPointer, true);
-    window.addEventListener("wheel", wheel, { capture: true, passive: false });
-    session.listeners.push(
-      ["keydown", keydown, true],
-      ["keyup", keyup, true],
-      ["blur", blur, true],
-      ["pointermove", recoverFromPointer, true],
-      ["pointerdown", recoverFromPointer, true],
-      ["wheel", wheel, { capture: true }]
-    );
-  }
-
-  #ensureRemoteElevationArc(session, pointInput = null) {
-    if (session.elevationArc) return session.elevationArc;
-    const state = session.intent;
-    const point = pointInput ?? state?.point;
-    if (!point) return null;
-
-    const anchor = this.#range.nearestPointOnVolume(session.sourceVolume, point);
-    const radius = this.#range.distanceBetweenPoints(anchor, point);
-    const dx = finiteNumber(point.x) - finiteNumber(anchor.x);
-    const dy = finiteNumber(point.y) - finiteNumber(anchor.y);
-    const horizontal = Math.hypot(dx, dy);
-    const unit = horizontal > 1e-9
-      ? { x: dx / horizontal, y: dy / horizontal }
-      : { x: Math.cos((finiteNumber(state?.yaw) * Math.PI) / 180), y: Math.sin((finiteNumber(state?.yaw) * Math.PI) / 180) };
-    const phase = radius > 1e-9
-      ? normalizeDegrees((Math.atan2(finiteNumber(point.z) - finiteNumber(anchor.z), horizontal) * 180) / Math.PI)
-      : 0;
-    session.elevationArc = { anchor, radius, unit, phase };
-    return session.elevationArc;
-  }
-
-  #requestElevationStep(session, step, { reason = "wheel-elevate" } = {}) {
-    const state = session.intent;
-    const elevationStep = this.#elevationStep(session);
-    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
-      const length = session.baseShape.length;
-      const arcPitch = this.#stepArcPitch(finiteNumber(state.arcPitch, state.pitch), step, length, elevationStep);
-      const headingYaw = finiteNumber(state.headingYaw, state.yaw);
-      const orientation = this.#canonicalSelfOrientation(headingYaw, arcPitch);
-      const point = this.#resolveSelfApex(session.source, orientation.yaw, orientation.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
-      const endpointZ = point.z + (Math.sin((orientation.pitch * Math.PI) / 180) * length);
-      Object.assign(session.intent, {
-        point,
-        headingYaw,
-        yaw: orientation.yaw,
-        pitch: orientation.pitch,
-        arcPitch,
-        endpointZ,
-        manualElevation: true
+  #enqueue(session, reason) {
+    if (session.closed) return;
+    session.pending = { serial: ++session.requestedSerial, reason, state: { ...session.intent, point: { ...session.intent.point } } };
+    if (!session.drain) {
+      // Assign the barrier before starting work, including synchronous filter callbacks.
+      session.drain = Promise.resolve().then(() => this.#drain(session)).catch(error => session.finish("error", error)).finally(() => {
+        session.drain = null;
+        if (session.pending && !session.closed) this.#enqueue(session, session.pending.reason);
       });
-      this.#requestResolution(session, {
-        statePatch: { point, headingYaw, yaw: orientation.yaw, pitch: orientation.pitch, arcPitch, endpointZ, manualElevation: true },
-        reason: "wheel-pitch",
-        force: true
-      });
-      return;
     }
-
-    const arc = this.#ensureRemoteElevationArc(session, state.point);
-    if (!arc || arc.radius <= 1e-9) return;
-    const snapped = this.#stepRemoteElevationSnap(arc.phase, step, arc.anchor.z, arc.radius, elevationStep);
-    const phase = snapped.phase;
-    arc.phase = phase;
-    const radians = (phase * Math.PI) / 180;
-    const horizontalMagnitude = Math.sqrt(Math.max(0, (arc.radius * arc.radius) - ((snapped.z - arc.anchor.z) ** 2)));
-    const signedHorizontal = Math.cos(radians) < 0 ? -horizontalMagnitude : horizontalMagnitude;
-    const z = snapped.z;
-    const point = {
-      x: arc.anchor.x + (arc.unit.x * signedHorizontal),
-      y: arc.anchor.y + (arc.unit.y * signedHorizontal),
-      z
-    };
-    Object.assign(session.intent, { point, selectedAbsoluteZ: z, elevationPhase: phase, elevationRadius: arc.radius, manualElevation: true });
-    this.#requestResolution(session, {
-      statePatch: { point, selectedAbsoluteZ: z, elevationPhase: phase, elevationRadius: arc.radius, manualElevation: true },
-      reason,
-      force: true
-    });
   }
-
-  #requestVerticalTranslationStep(session, step) {
-    const state = session.intent;
-    const distance = this.#elevationStep(session);
-    if (!step || distance <= 0 || !state?.point) return;
-
-    const point = {
-      x: finiteNumber(state.point.x),
-      y: finiteNumber(state.point.y),
-      z: finiteNumber(state.point.z) + (Math.sign(step) * distance)
-    };
-    const max = finiteNumber(session.options.range?.max ?? session.options.maxRange, Infinity);
-    if (Number.isFinite(max) && max > 0 && this.#range.distanceFromVolumeToPoint(session.sourceVolume, point) > max + 1e-9) {
-      return;
-    }
-
-    session.elevationArc = null;
-    Object.assign(session.intent, {
-      point,
-      selectedAbsoluteZ: point.z,
-      elevationPhase: null,
-      elevationRadius: null,
-      manualElevation: true
-    });
-    this.#requestResolution(session, {
-      statePatch: {
-        point,
-        selectedAbsoluteZ: point.z,
-        elevationPhase: null,
-        elevationRadius: null,
-        manualElevation: true
-      },
-      reason: "wheel-elevate",
-      force: true
-    });
-  }
-
-  async #requestResolution(session, request = {}) {
-    if (session.closed) return null;
-    const serial = ++session.requestedSerial;
-    session.pending = { ...request, serial };
-    const barrier = this.#drain(session);
-    session.finalBarrier = barrier;
-    return barrier;
-  }
-
   async #drain(session) {
-    if (session.resolving) return session.finalBarrier;
-    session.resolving = true;
-    try {
-      while (session.pending && !session.closed) {
-        const request = session.pending;
-        session.pending = null;
-        const resolved = await this.#resolveRequest(session, request);
-        if (request.serial < session.requestedSerial && session.pending) {
-          this.#stats.staleDiscards += 1;
-          continue;
-        }
-        if (!resolved) continue;
-        session.current = resolved;
-        session.resolvedSerial = request.serial;
-        await this.#publish(session, resolved);
+    while (session.pending && !session.closed) {
+      const request = session.pending; session.pending = null;
+      const state = request.state;
+      if (session.self) {
+        const orientation = this.#canonicalSelfOrientation(state.headingYaw, state.arcPitch);
+        Object.assign(state, orientation);
+        state.point = this.#resolveSelfApex(session.source, state.yaw, state.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
       }
-    } finally {
-      session.resolving = false;
+      const shape = this.#shapeForState(session.baseShape, state);
+      const direction = session.self ? this.#geometry.direction(shape) : null;
+      const endpoint = direction ? { x: shape.origin.x + direction.x * shape.length,
+        y: shape.origin.y + direction.y * shape.length, z: shape.origin.z + direction.z * shape.length } : null;
+      const valid = this.#validState(session, state);
+      const targets = valid ? await this.#collectTargets(session, shape) : Object.freeze([]);
+      if (session.closed) return;
+      if (request.serial !== session.requestedSerial) { this.#stats.staleDiscards++; continue; }
+      const revision = this.#revisions.revise(session.current, { ...state, shape, endpoint, terminal: endpoint,
+        endpointZ: endpoint?.z ?? null, targets, valid, serial: request.serial, reason: request.reason });
+      this.#renderer.update(revision, session.mode);
+      const ids = tokenIds(targets);
+      if (!sameIds(ids, tokenIds(globalThis.game?.user?.targets))) this.#replaceUserTargets(ids);
+      session.current = revision; session.resolvedSerial = request.serial; session.lastTargetIds = ids;
+      this.#stats.revisions++; this.#stats.targetRecalculations++;
+      this.#updateGauge(session);
+      if (typeof session.options.onRevision === "function") {
+        try { Promise.resolve(session.options.onRevision(revision)).catch(error => Logger.warn("3D Crosshairs onRevision callback failed.", error)); }
+        catch (error) { Logger.warn("3D Crosshairs onRevision callback failed.", error); }
+      }
     }
-    return session.current;
   }
-
-  async #resolveRequest(session, request) {
-    const previous = session.current;
-    let patch = { ...(request.statePatch ?? {}) };
-    const carrier = request.carrier?.document ?? request.carrier;
-    const intended = session.intent;
-
-    if (carrier && session.mode === "MOVE" && !request.statePatch?.point) {
-      if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
-        const effectiveYaw = normalizeDegrees(carrier.direction ?? intended.yaw);
-        const flipped = Math.abs(finiteNumber(intended.arcPitch, intended.pitch)) > 90;
-        const headingYaw = normalizeDegrees(effectiveYaw - (flipped ? 180 : 0));
-        const orientation = this.#canonicalSelfOrientation(headingYaw, intended.arcPitch);
-        patch.headingYaw = headingYaw;
-        patch.yaw = orientation.yaw;
-        patch.pitch = orientation.pitch;
-        patch.point = this.#resolveSelfApex(session.source, patch.yaw, patch.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
-        Object.assign(session.intent, { headingYaw, yaw: patch.yaw, pitch: patch.pitch, point: patch.point });
-      } else {
-        const pixelPoint = { x: finiteNumber(carrier.x), y: finiteNumber(carrier.y) };
-        const point = this.#resolveRemoteMovePoint(session, pixelPoint, previous.point.z);
-        patch.point = point;
-        patch.selectedAbsoluteZ = intended.manualElevation ? intended.selectedAbsoluteZ : point.z;
-        patch.elevationPhase = null;
-        patch.elevationRadius = null;
-        patch.yaw = normalizeDegrees(intended.yaw);
-        Object.assign(session.intent, { point: patch.point, selectedAbsoluteZ: patch.selectedAbsoluteZ, elevationPhase: null, elevationRadius: null, yaw: patch.yaw });
-        session.elevationArc = null;
-      }
-    }
-
-    const merged = {
-      length: patch.length ?? intended.length ?? session.baseShape.length,
-      point: patch.point ?? intended.point,
-      headingYaw: normalizeDegrees(patch.headingYaw ?? intended.headingYaw ?? patch.yaw ?? intended.yaw),
-      yaw: normalizeDegrees(patch.yaw ?? intended.yaw),
-      pitch: finiteNumber(patch.pitch ?? intended.pitch),
-      arcPitch: finiteNumber(patch.arcPitch ?? intended.arcPitch ?? patch.pitch ?? intended.pitch),
-      endpointZ: patch.endpointZ ?? intended.endpointZ,
-      selectedAbsoluteZ: patch.selectedAbsoluteZ ?? intended.selectedAbsoluteZ,
-      elevationPhase: patch.elevationPhase ?? intended.elevationPhase ?? null,
-      elevationRadius: patch.elevationRadius ?? intended.elevationRadius ?? null,
-      manualElevation: patch.manualElevation ?? intended.manualElevation
+  #updateGauge(session) {
+    if (session.baseShape.type !== "line") return;
+    const r = session.current;
+    this.#elevationGauge?.update({ distance: r.shape.length, maxRange: r.shape.length, angle: r.arcPitch,
+      elevationDelta: (r.endpoint?.z ?? r.point.z) - r.point.z,
+      belowOrigin: r.endpoint?.z < r.point.z - 1e-7, visible: session.mode === "ELEVATE" });
+  }
+  async #confirm(session) {
+    if (session.confirming || session.closed) return;
+    session.confirming = true;
+    this.#enqueue(session, "final-confirm");
+    while (session.drain && !session.closed) await session.drain;
+    if (session.closed) return;
+    if (!session.current.valid || session.resolvedSerial !== session.requestedSerial) { session.finish("cancelled"); return; }
+    session.finish("confirmed");
+  }
+  #validState(session, state) {
+    if (session.self) return this.#validateLos(session, state.point);
+    if (session.freeLine) return this.#freeLineValid(session, state);
+    return this.#range.distanceFromVolumeToPoint(session.sourceVolume, state.point) <= session.options.range.max + 1e-8
+      && this.#validateLos(session, state.point);
+  }
+  #accept(session, next, reason) {
+    if (session.closed || session.finishing) return;
+    if (!this.#validState(session, next)) return;
+    session.intent = next;
+    this.#enqueue(session, reason);
+  }
+  #installInput(session) {
+    const canvas = globalThis.canvas, view = canvas.app.renderer.view ?? canvas.app.renderer.canvas;
+    const guard = fn => (...args) => { try { return fn(...args); } catch (error) { session.finish("error", error); } };
+    const listen = (type, fn, target = globalThis.window) => {
+      const listener = guard(fn); const options = { capture: true, passive: false };
+      target.addEventListener(type, listener, options); session.listeners.push([target, type, listener, options]);
     };
-    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
-      const orientation = this.#canonicalSelfOrientation(merged.headingYaw, merged.arcPitch);
-      merged.yaw = orientation.yaw;
-      merged.pitch = orientation.pitch;
-      merged.point = this.#resolveSelfApex(session.source, merged.yaw, merged.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
-      merged.endpointZ = merged.point.z + (Math.sin((merged.pitch * Math.PI) / 180) * session.baseShape.length);
+    const hook = (name, fn) => { session.hooks.push([name, globalThis.Hooks.on(name, guard(fn))]); };
+    const onCanvas = event => event.target === view;
+    const sync = (event, down = null) => {
+      const m = { shift: Boolean(event.shiftKey), ctrl: Boolean(event.ctrlKey), alt: Boolean(event.altKey), meta: Boolean(event.metaKey) };
+      if (down !== null) {
+        if (event.key === "Shift") m.shift = down;
+        if (event.key === "Control") m.ctrl = down;
+        if (["Alt", "AltGraph"].includes(event.key)) m.alt = down;
+      }
+      const count = Object.values(m).filter(Boolean).length;
+      const mode = count !== 1 ? "MOVE" : m.ctrl && session.capabilities.elevation ? "ELEVATE"
+        : m.shift && session.capabilities.rotation ? "ROTATE" : m.alt && session.capabilities.resize ? "LENGTH" : "MOVE";
+      if (mode !== session.mode) {
+        session.mode = mode;
+        if (session.current.valid) this.#renderer.update(session.current, mode);
+        this.#updateGauge(session);
+      }
+      return { ...m, count };
+    };
+    const pointerWorld = event => {
+      const bounds = view.getBoundingClientRect(), screen = canvas.app.renderer.screen;
+      return canvas.stage.toLocal(new PIXI.Point((event.clientX - bounds.left) * screen.width / bounds.width,
+        (event.clientY - bounds.top) * screen.height / bounds.height));
+    };
+    const move = (event, m) => {
+      if (m.count || session.finishing) return;
+      const world = pointerWorld(event), state = session.intent;
+      if (session.self) {
+        const doc = session.source.document;
+        const dx = world.x - (doc.x + doc.width * session.metrics.size / 2);
+        const dy = world.y - (doc.y + doc.height * session.metrics.size / 2);
+        if (Math.hypot(dx, dy) < 1e-7) return;
+        const effectiveYaw = normalizeDegrees(Math.atan2(dy, dx) * 180 / Math.PI);
+        const flipped = this.#canonicalSelfOrientation(state.headingYaw, state.arcPitch).flipped;
+        const headingYaw = normalizeDegrees(effectiveYaw - (session.baseShape.type === "cone" && flipped ? 180 : 0));
+        const o = this.#canonicalSelfOrientation(headingYaw, state.arcPitch);
+        this.#accept(session, { ...state, ...o, headingYaw,
+          point: this.#resolveSelfApex(session.source, o.yaw, o.pitch, session.metrics, session.sourceVolume, session.baseShape.type) }, "move-aim");
+      } else {
+        const point = this.#resolveRemoteMovePoint(session, world, session.sourceVolume.bottom);
+        this.#accept(session, { ...state, point, selectedAbsoluteZ: state.manualElevation ? state.selectedAbsoluteZ : point.z }, "move");
+      }
+    };
+    listen("pointermove", event => {
+      if (!onCanvas(event) || session.closed || session.finishing) return;
+      session.armed = true;
+      const m = sync(event);
+      const changed = !session.lastPointer || event.clientX !== session.lastPointer.x || event.clientY !== session.lastPointer.y;
+      session.lastPointer = { x: event.clientX, y: event.clientY };
+      if (changed && performance.now() >= session.zoomUntil) move(event, m);
+      stop(event);
+    });
+    listen("wheel", event => {
+      if (!onCanvas(event) || session.closed) return;
+      const m = sync(event);
+      if (!m.count && !session.finishing) { session.zoomUntil = performance.now() + 200; return; }
+      stop(event);
+      if (session.finishing || m.count !== 1 || m.meta || !event.deltaY) return;
+      this.#stats.wheelEvents++;
+      const step = event.deltaY < 0 ? 1 : -1, from = session.intent;
+      let next = { ...from, point: { ...from.point } }, yawDelta = 0;
+      if (session.mode === "ELEVATE") {
+        const direction = this.#reverseElevationWheelEnabled() ? -step : step;
+        if (session.self) {
+          next.arcPitch = this.#stepArcPitch(from.arcPitch, direction, session.baseShape.length, this.#elevationStep(session));
+          const o = this.#canonicalSelfOrientation(from.headingYaw, next.arcPitch);
+          Object.assign(next, o);
+          next.point = this.#resolveSelfApex(session.source, o.yaw, o.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
+        } else {
+          next.point.z += direction * this.#elevationStep(session);
+          next.selectedAbsoluteZ = next.point.z; next.manualElevation = true;
+        }
+      } else if (session.mode === "ROTATE") {
+        yawDelta = step * this.#rotationStep(session);
+        if (session.self) {
+          next.headingYaw = normalizeDegrees(from.headingYaw + yawDelta);
+          const o = this.#canonicalSelfOrientation(next.headingYaw, from.arcPitch);
+          Object.assign(next, o);
+          next.point = this.#resolveSelfApex(session.source, o.yaw, o.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
+        } else next.yaw = normalizeDegrees(from.yaw + yawDelta);
+      } else if (session.mode === "LENGTH") {
+        const min = Math.min(session.baseShape.length, Math.max(0.001, finiteNumber(session.options.controls?.minLength, session.metrics.distance)));
+        next.length = Math.max(min, Math.min(session.baseShape.length, from.length + step * Math.max(0.001, finiteNumber(session.options.controls?.lengthStep, session.metrics.distance))));
+      } else return;
+      if (session.freeLine && session.mode !== "ELEVATE") next = constrainFreeLineChange(from, next, state => this.#validState(session, state), yawDelta);
+      this.#accept(session, next, `wheel-${session.mode.toLowerCase()}`);
+    });
+    for (const type of ["keydown", "keyup"]) listen(type, event => {
+      if (session.closed || event.target?.closest?.("input,textarea,select,[contenteditable='true']")) return;
+      sync(event, type === "keydown");
+      if (event.key === "Escape") { stop(event); if (type === "keydown") session.finish("cancelled"); }
+      else if (["Shift", "Control", "Alt", "AltGraph", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) stop(event);
+    });
+    listen("pointerdown", event => {
+      if (!onCanvas(event) || session.closed || ![0, 2].includes(event.button)) return;
+      stop(event);
+      if (session.finishing || (!session.armed && event.button === 0)) return;
+      // The last pointermove supplies aim; releasing a modifier never repositions it.
+      sync(event); session.finishing = true;
+      session.gesture = { button: event.button, id: event.pointerId, started: performance.now() };
+    });
+    listen("pointerup", event => {
+      const g = session.gesture;
+      if (!g || event.pointerId !== g.id || event.button !== g.button) return;
+      stop(event); g.released = performance.now();
+    });
+    for (const type of ["mousedown", "mouseup", "click", "dblclick", "contextmenu"]) listen(type, event => { if (onCanvas(event) && !session.closed) stop(event); });
+    listen("pointercancel", () => session.finish("cancelled"));
+    listen("blur", () => session.finish("cancelled"));
+    if (session.options.signal) {
+      if (session.options.signal.aborted) session.finish("cancelled");
+      else listen("abort", () => session.finish("cancelled"), session.options.signal);
     }
-    Object.assign(session.intent, merged);
-
-    const shape = this.#shapeForState(session.baseShape, merged);
-    const valid = session.freeLine ? this.#freeLineValid(session, merged) : this.#validateLos(session, merged.point);
-    let targets = previous.targets;
-    if (valid) {
-      targets = await this.#collectTargets(session, shape);
-      this.#stats.targetRecalculations += 1;
-    } else targets = Object.freeze([]);
-
-    const revised = this.#revisions.revise(previous, { ...merged, shape, valid, targets, reason: request.reason ?? "revision" });
-    this.#stats.revisions += 1;
-    return revised;
+    session.originLevelId = canvas.level?.id ?? null;
+    hook("canvasTearDown", () => session.finish("cancelled"));
+    for (const name of ["updateToken", "deleteToken", "createToken"]) hook(name, document => {
+      if (document.parent?.id !== session.scene.id) return;
+      if (document.id === session.source.id) session.finish("cancelled");
+      else this.#enqueue(session, "token-change");
+    });
+    session.tick = guard(() => {
+      if (session.closed) return;
+      if (!canvas.ready || canvas.scene !== session.scene || session.source.destroyed) return session.finish("cancelled");
+      const now = performance.now(), stage = canvas.stage;
+      const camera = [stage.position.x, stage.position.y, stage.pivot.x, stage.pivot.y, stage.scale.x, stage.scale.y].join("|");
+      if (session.lastCamera && camera !== session.lastCamera) session.zoomUntil = now + 200;
+      session.lastCamera = camera;
+      this.#renderer.frame(now);
+      const g = session.gesture;
+      if (g?.released !== undefined && now - g.released >= 150) {
+        if (g.button === 2) session.finish("cancelled");
+        else this.#confirm(session).catch(error => session.finish("error", error));
+      } else if (g && now - g.started > 5000) session.finish("cancelled");
+    });
+    canvas.app.ticker.add(session.tick, null, globalThis.PIXI.UPDATE_PRIORITY?.HIGH ?? 25);
   }
-
   #shapeForState(base, state) {
     const common = { ...base, origin: state.point };
     if (base.type === CROSSHAIR_3D_SHAPES.FREE_LINE) {
@@ -699,54 +334,6 @@ export class Crosshair3dPlacementSessionService {
     return this.#geometry.normalizeShape(common);
   }
 
-  #resolveRemoteMovePoint(session, pixelPoint, fallbackElevation) {
-    const max = finiteNumber(session.options.range?.max ?? session.options.maxRange, Infinity);
-    const pointAt = (pixel) => {
-      const surface = this.#surfaces.resolveAt({ x: pixel.x, y: pixel.y, fallbackElevation });
-      const z = session.intent.manualElevation
-        ? Math.max(finiteNumber(session.intent.selectedAbsoluteZ, surface.elevation), surface.elevation)
-        : surface.elevation;
-      return this.#metrics.pixelsToDistance({ x: pixel.x, y: pixel.y, elevation: z }, session.metrics);
-    };
-
-    const requested = pointAt(pixelPoint);
-    if (session.freeLine) {
-      const from = session.intent;
-      const to = { ...from, point: requested };
-      return constrainFreeLineChange(from, to, state => this.#freeLineValid(session, state)).point;
-    }
-    if (!Number.isFinite(max) || max <= 0 || this.#range.distanceFromVolumeToPoint(session.sourceVolume, requested) <= max) return requested;
-
-    // Range is true XYZ, but MOVE remains constrained to the currently selected
-    // Z plane (or the physical surface when it rises above that plane). Find
-    // the farthest legal XY point along the requested horizontal direction and
-    // re-resolve the surface at each probe so snapping/range cannot disagree.
-    const anchor = this.#range.nearestPointOnVolume(session.sourceVolume, requested);
-    const anchorPixel = this.#metrics.distanceToPixels(anchor, session.metrics);
-    let low = 0;
-    let high = 1;
-    let best = pointAt({ x: anchorPixel.x, y: anchorPixel.y });
-    if (this.#range.distanceFromVolumeToPoint(session.sourceVolume, best) > max) {
-      // A manually selected Z plane can theoretically become illegal if Scene
-      // geometry changes underneath it. Fail closed at the current accepted
-      // point rather than silently altering the selected Z.
-      return session.current?.point ?? requested;
-    }
-    for (let i = 0; i < 24; i += 1) {
-      const t = (low + high) / 2;
-      const probePixel = {
-        x: anchorPixel.x + ((pixelPoint.x - anchorPixel.x) * t),
-        y: anchorPixel.y + ((pixelPoint.y - anchorPixel.y) * t)
-      };
-      const probe = pointAt(probePixel);
-      if (this.#range.distanceFromVolumeToPoint(session.sourceVolume, probe) <= max) {
-        low = t;
-        best = probe;
-      } else high = t;
-    }
-    return best;
-  }
-
   #freeLineValid(session, state) {
     return freeLineWithinRange(state, session.sourceVolume, session.options.range.max, session.options.range.policy, this.#range)
       && this.#validateLos(session, session.options.range.policy === "origin" ? freeLineEndpoints(state)[0] : state.point);
@@ -756,7 +343,7 @@ export class Crosshair3dPlacementSessionService {
     if (!session.capabilities.los) return true;
     const pixel = this.#metrics.distanceToPixels(point, session.metrics);
     const vision = session.source?.vision;
-    if (typeof vision?.testPoint !== "function") return true;
+    if (typeof vision?.testPoint !== "function") return false;
     try { return Boolean(vision.testPoint({ x: pixel.x, y: pixel.y, elevation: point.z })); }
     catch (_error) { return false; }
   }
@@ -765,6 +352,7 @@ export class Crosshair3dPlacementSessionService {
     const candidates = Array.from(globalThis.canvas?.tokens?.placeables ?? []);
     const result = [];
     for (const token of candidates) {
+      if (session.closed) break;
       if (!token?.actor || token.id === session.source.id && session.options.includeSource !== true) continue;
       if (typeof globalThis.MidiQOL?.isTargetable === "function" && !globalThis.MidiQOL.isTargetable(token)) continue;
       if (typeof session.options.targetFilter === "function" && !(await session.options.targetFilter(token, { shape, sessionId: session.id }))) continue;
@@ -775,117 +363,6 @@ export class Crosshair3dPlacementSessionService {
     return Object.freeze(result);
   }
 
-  async #publish(session, revision) {
-    const visualResult = session.visualState && this.#visuals
-      ? await this.#visuals.update(session.visualState, revision.shape, session.options.visual ?? {})
-      : { artwork: false, guide: true };
-
-    const targetIds = tokenIds(revision.targets);
-    if (!sameIds(targetIds, session.lastTargetIds)) {
-      await this.#replaceUserTargets(targetIds);
-      session.lastTargetIds = [...targetIds];
-    }
-
-    if (visualResult.guide !== false) this.#guide.update(revision.shape, { color: session.options.guideColor ?? 0x7fefef,
-      rangeBoundary: session.freeLine && session.options.range.showBoundary !== false
-        ? freeLineRangeBoundary(session.sourceVolume, session.options.range.max, revision.point.z) : null,
-      rangePolicy: session.options.range?.policy });
-    else this.#guide.clearDrawing?.();
-
-    const pixel = this.#metrics.distanceToPixels(revision.point, session.metrics);
-    const overlayExtents = this.#overlayFootprintVerticalPixels(revision.shape, session.metrics, session.sourceVolume);
-    this.#overlay.update({
-      mode: session.mode,
-      elevation: revision.point.z,
-      labelRotation: session.freeLine ? this.#freeLineLabelAngle(revision.yaw) : 0,
-      lineHalfWidthPx: session.freeLine ? revision.shape.width / session.metrics.distance * session.metrics.size / 2 : null,
-      originElevation: session.sourceVolume?.bottom,
-      // Cone already owns a terminal-center absolute-elevation label. Hiding
-      // the generic apex readout prevents duplicate text over the source Token.
-      elevationVisible: ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type),
-      point: pixel,
-      gridSize: session.metrics.size,
-      footprintRadiusPx: this.#overlayFootprintRadiusPixels(revision.shape, session.metrics),
-      footprintTopPx: overlayExtents?.top,
-      footprintBottomPx: overlayExtents?.bottom,
-      fixedHud: !session.freeLine && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(revision.shape?.type)
-    });
-    this.#elevationGauge?.update?.(this.#elevationGaugeState(session, revision));
-    this.#syncCarrierToRevision(session, session.carrier, revision);
-    if (typeof session.options.onRevision === "function") {
-      try { session.options.onRevision(revision); } catch (error) { Logger.warn("3D Crosshairs onRevision callback failed.", error); }
-    }
-  }
-
-  #elevationGaugeState(session, revision) {
-    const point = revision?.point ?? session.intent?.point ?? { x: 0, y: 0, z: 0 };
-    const configuredRange = finiteNumber(session.options?.range?.max ?? session.options?.maxRange, NaN);
-
-    // Self Cone/Line uses the spell/effect endpoint as B. The apex remains A,
-    // while the pitch arc supplies the side-view angle.
-    if (session.freeLine) return { visible: false };
-    if (session.self && [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)) {
-      const distance = Math.max(0, finiteNumber(session.baseShape.length));
-      const endpointZ = finiteNumber(revision?.endpointZ, point.z);
-      const elevationDelta = endpointZ - finiteNumber(point.z);
-      return Object.freeze({
-        distance,
-        maxRange: Number.isFinite(configuredRange) && configuredRange > 0 ? configuredRange : distance,
-        angle: normalizeDegrees(revision?.arcPitch ?? revision?.pitch),
-        elevationDelta,
-        belowOrigin: endpointZ < finiteNumber(point.z),
-        visible: Boolean(session.capabilities?.elevation) && session.mode === "ELEVATE"
-      });
-    }
-
-    // Remote placements use the same nearest-point source anchor as true-3D
-    // range measurement. ORBIT retains a construction-circle anchor/phase;
-    // direct ELEVATE derives its side view from the current authoritative XYZ.
-    // During ORBIT, elevationPhase keeps the far-side (181-359 degree) half of
-    // the side view unambiguous.
-    const anchor = session.elevationArc?.anchor ?? this.#range.nearestPointOnVolume(session.sourceVolume, point);
-    const distance = this.#range.distanceBetweenPoints(anchor, point);
-    const dx = finiteNumber(point.x) - finiteNumber(anchor.x);
-    const dy = finiteNumber(point.y) - finiteNumber(anchor.y);
-    const horizontal = Math.hypot(dx, dy);
-    const fallbackAngle = normalizeDegrees((Math.atan2(finiteNumber(point.z) - finiteNumber(anchor.z), horizontal) * 180) / Math.PI);
-    const revisionPhase = revision?.elevationPhase;
-    const retainedPhase = session.elevationArc?.phase;
-    const angle = revisionPhase !== null && revisionPhase !== undefined && Number.isFinite(Number(revisionPhase))
-      ? normalizeDegrees(revisionPhase)
-      : retainedPhase !== null && retainedPhase !== undefined && Number.isFinite(Number(retainedPhase))
-        ? normalizeDegrees(retainedPhase)
-        : fallbackAngle;
-    const elevationDelta = finiteNumber(point.z) - finiteNumber(anchor.z);
-    return Object.freeze({
-      distance,
-      maxRange: Number.isFinite(configuredRange) && configuredRange > 0 ? configuredRange : Math.max(distance, session.metrics?.distance ?? 5),
-      angle,
-      elevationDelta,
-      belowOrigin: elevationDelta < 0,
-      visible: Boolean(session.capabilities?.elevation) && ["ELEVATE", "ORBIT"].includes(session.mode)
-    });
-  }
-
-  #syncCarrierToRevision(session, carrierInput, revision) {
-    const carrier = carrierInput ?? session.carrier;
-    if (!carrier || !revision) return;
-    const pixel = this.#metrics.distanceToPixels(revision.point, session.metrics);
-    const projected = [CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type)
-      ? this.#projectedDistance(session.baseShape.length, revision.pitch, session.metrics.distance)
-      : null;
-    const update = { x: pixel.x, y: pixel.y, direction: revision.yaw, elevation: revision.point.z };
-    if (projected !== null) update.distance = projected;
-    try {
-      session.carrierSuppressionUntil = Date.now() + 60;
-      carrier.updateCrosshair?.(update);
-      carrier.document?.updateSource?.(update);
-      carrier.refresh?.();
-    } catch (error) {
-      Logger.debug("Could not fully synchronize Sequencer crosshair carrier to accepted 3D revision.", error);
-    }
-  }
-
   #reverseElevationWheelEnabled() {
     try {
       const value = globalThis.game?.settings?.get?.(MODULE_ID, SETTINGS.CROSSHAIR_3D_REVERSE_ELEVATION_WHEEL);
@@ -893,78 +370,6 @@ export class Crosshair3dPlacementSessionService {
     } catch (_error) {
       return true;
     }
-  }
-
-  #overlayFootprintRadiusPixels(shape, metrics) {
-    const toPixels = distance => (Math.max(0, finiteNumber(distance)) / Math.max(1e-9, finiteNumber(metrics?.distance, 5))) * Math.max(1, finiteNumber(metrics?.size, 100));
-    switch (shape?.type) {
-      case CROSSHAIR_3D_SHAPES.SPHERE:
-      case CROSSHAIR_3D_SHAPES.CYLINDER:
-        return toPixels(shape.radius);
-      case CROSSHAIR_3D_SHAPES.PRISM:
-        return toPixels(Math.hypot(finiteNumber(shape.width), finiteNumber(shape.length)) / 2);
-      case CROSSHAIR_3D_SHAPES.FREE_LINE:
-      case CROSSHAIR_3D_SHAPES.LINE:
-        return toPixels(Math.max(finiteNumber(shape.width) / 2, finiteNumber(metrics?.distance, 5) / 2));
-      case CROSSHAIR_3D_SHAPES.CONE:
-        return toPixels(Math.hypot(finiteNumber(shape.length), finiteNumber(shape.length) / 2));
-      default:
-        return Math.max(1, finiteNumber(metrics?.size, 100) / 2);
-    }
-  }
-
-  #overlayFootprintVerticalPixels(shape, metrics, sourceVolume = null) {
-    if (shape?.type !== CROSSHAIR_3D_SHAPES.CONE) return null;
-    const apex = this.#metrics.distanceToPixels(shape.origin, metrics);
-    let minY = apex.y;
-    let maxY = apex.y;
-    const includeY = value => {
-      const y = finiteNumber(value, apex.y);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-    };
-
-    const direction = this.#geometry.direction(shape);
-    const basis = this.#geometry.lineBasis(shape);
-    const radius = finiteNumber(shape.length) / 2;
-    const center = {
-      x: finiteNumber(shape.origin.x) + direction.x * finiteNumber(shape.length),
-      y: finiteNumber(shape.origin.y) + direction.y * finiteNumber(shape.length),
-      z: finiteNumber(shape.origin.z) + direction.z * finiteNumber(shape.length)
-    };
-    for (let index = 0; index < 48; index += 1) {
-      const angle = (index / 48) * Math.PI * 2;
-      const point = this.#metrics.distanceToPixels({
-        x: center.x + radius * ((basis.widthAxis.x * Math.cos(angle)) + (basis.heightAxis.x * Math.sin(angle))),
-        y: center.y + radius * ((basis.widthAxis.y * Math.cos(angle)) + (basis.heightAxis.y * Math.sin(angle))),
-        z: center.z + radius * ((basis.widthAxis.z * Math.cos(angle)) + (basis.heightAxis.z * Math.sin(angle)))
-      }, metrics);
-      includeY(point.y);
-    }
-
-    // Self Cone apexes sit on a legal source boundary. Include the complete
-    // source footprint so the mode badge never covers the casting Token.
-    if (sourceVolume) {
-      includeY(this.#metrics.distanceToPixels({ x: sourceVolume.minX, y: sourceVolume.minY, z: sourceVolume.bottom }, metrics).y);
-      includeY(this.#metrics.distanceToPixels({ x: sourceVolume.maxX, y: sourceVolume.maxY, z: sourceVolume.bottom }, metrics).y);
-    }
-    return Object.freeze({ top: Math.max(0, apex.y - minY), bottom: Math.max(0, maxY - apex.y) });
-  }
-
-  #usesRemoteRigidElevation(session) {
-    return !session.self
-      && ![CROSSHAIR_3D_SHAPES.CONE, CROSSHAIR_3D_SHAPES.LINE].includes(session.baseShape.type);
-  }
-
-  #freeLineLabelAngle(yaw) {
-    const angle = ((yaw + 90) % 180 + 180) % 180 - 90;
-    return angle * Math.PI / 180;
-  }
-
-  #elevationStep(session) {
-    const configured = finiteNumber(session.options?.controls?.elevationStep, NaN);
-    if (Number.isFinite(configured) && configured > 0) return configured;
-    return Math.max(0, finiteNumber(session.metrics?.distance));
   }
 
   #rotationStep(session) {
@@ -979,56 +384,6 @@ export class Crosshair3dPlacementSessionService {
     if (arc > 90 && arc < 270) return { yaw: normalizeDegrees(heading + 180), pitch: 180 - arc, flipped: true };
     if (arc >= 270) return { yaw: heading, pitch: arc - 360, flipped: false };
     return { yaw: heading, pitch: arc, flipped: false };
-  }
-
-  #stepRemoteElevationSnap(currentInput, step, anchorZInput, radiusInput, distanceInput) {
-    const radius = Math.max(1e-9, finiteNumber(radiusInput));
-    const distance = Math.max(0, finiteNumber(distanceInput));
-    const anchorZ = finiteNumber(anchorZInput);
-    const current = normalizeDegrees(currentInput);
-    const direction = Math.sign(step);
-    if (!direction || distance <= 0) {
-      return { phase: current, z: anchorZ + (radius * Math.sin((current * Math.PI) / 180)) };
-    }
-
-    // In ELEVATE mode the vertical axis is authoritative for snapping. Each
-    // accepted wheel notch advances to the next horizontal Scene-grid plane
-    // encountered while travelling around the retained construction circle.
-    // XY is then solved continuously from the circle instead of being snapped
-    // to a map-grid square. This keeps world Z exactly on grid-distance values
-    // (for example 0, 5, 10, 15 on a 5-ft Scene) regardless of circle radius.
-    const minZ = anchorZ - radius;
-    const maxZ = anchorZ + radius;
-    const firstLevel = Math.ceil((minZ - 1e-9) / distance);
-    const lastLevel = Math.floor((maxZ + 1e-9) / distance);
-    const candidates = [];
-    const addCandidate = (phase, z) => {
-      const normalized = normalizeDegrees(phase);
-      if (candidates.some(candidate => Math.abs((((candidate.phase - normalized + 540) % 360) - 180)) < 1e-7)) return;
-      candidates.push({ phase: normalized, z });
-    };
-
-    for (let level = firstLevel; level <= lastLevel; level += 1) {
-      const z = level * distance;
-      const ratio = Math.max(-1, Math.min(1, (z - anchorZ) / radius));
-      const alpha = (Math.asin(ratio) * 180) / Math.PI;
-      addCandidate(alpha, z);
-      addCandidate(180 - alpha, z);
-    }
-
-    let best = null;
-    for (const candidate of candidates) {
-      const delta = direction > 0
-        ? (candidate.phase - current + 360) % 360
-        : (current - candidate.phase + 360) % 360;
-      if (delta <= 1e-7) continue;
-      if (!best || delta < best.delta) best = { ...candidate, delta };
-    }
-
-    if (!best) {
-      return { phase: current, z: anchorZ + (radius * Math.sin((current * Math.PI) / 180)) };
-    }
-    return { phase: best.phase, z: best.z };
   }
 
   #stepArcPitch(currentInput, step, lengthInput, distanceInput) {
@@ -1081,13 +436,7 @@ export class Crosshair3dPlacementSessionService {
     const ty = Math.abs(dy) > 1e-9 ? (heightPx / 2) / Math.abs(dy) : Infinity;
     const t = Math.min(tx, ty);
     let x = cx + dx * t, y = cy + dy * t;
-    // Cone retains its legal grid-intersection apex. A Line's near-face
-    // center instead slides continuously along the source perimeter.
-    if (shapeType !== CROSSHAIR_3D_SHAPES.LINE) {
-      if (tx < ty) y = y0 + Math.round((y - y0) / metrics.size) * metrics.size;
-      else if (ty < tx) x = x0 + Math.round((x - x0) / metrics.size) * metrics.size;
-      else { x = dx >= 0 ? x0 + widthPx : x0; y = dy >= 0 ? y0 + heightPx : y0; }
-    }
+    // Source-bound Cone and Line both slide continuously along the perimeter.
     x = Math.max(x0, Math.min(x0 + widthPx, x));
     y = Math.max(y0, Math.min(y0 + heightPx, y));
     const z = shapeType === CROSSHAIR_3D_SHAPES.LINE
@@ -1096,28 +445,50 @@ export class Crosshair3dPlacementSessionService {
     return this.#metrics.pixelsToDistance({ x, y, elevation: z }, metrics);
   }
 
-  #projectedDistance(length, pitch, gridDistance) {
-    const horizontal = Math.abs(finiteNumber(length) * Math.cos((finiteNumber(pitch) * Math.PI) / 180));
-    return Math.max(finiteNumber(gridDistance, 5), horizontal);
-  }
 
-  async #replaceUserTargets(ids) {
-    const normalized = unique(ids);
-    try { globalThis.canvas?.tokens?.setTargets?.(normalized); } catch (error) { Logger.warn("Could not update live 3D Crosshairs targets.", error); }
-    return normalized;
+  #elevationStep(session) {
+    const configured = Number(session.options.controls?.elevationStep);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+    return session.metrics.distance * (session.baseShape.type === "cone" && session.baseShape.length <= 25 ? 1 / 5 : 1);
   }
-
-  async #cleanup(session) {
-    if (session.closed) return;
-    session.closed = true;
-    for (const [type, listener, options] of session.listeners) {
-      try { globalThis.window?.removeEventListener?.(type, listener, options); } catch (_error) { /* noop */ }
+  #resolveRemoteMovePoint(session, world, fallbackElevation) {
+    const canvas = globalThis.canvas;
+    const snapped = canvas.grid?.getSnappedPoint?.(world, {
+      mode: globalThis.CONST?.GRID_SNAPPING_MODES?.CENTER, resolution: 8
+    }) ?? world;
+    const ground = this.#surfaces.resolveAt({ x: snapped.x, y: snapped.y, fallbackElevation });
+    const from = session.intent;
+    // Free-line retains its accepted surface clamp; other remote shapes retain selected absolute Z.
+    const z = from.manualElevation ? session.freeLine ? Math.max(from.point.z, ground.elevation)
+      : from.selectedAbsoluteZ : ground.elevation;
+    const requested = this.#metrics.pixelsToDistance({ ...snapped, z }, session.metrics);
+    if (session.freeLine) return constrainFreeLineChange(from, { ...from, point: requested }, state => this.#validState(session, state)).point;
+    const valid = point => this.#validState(session, { ...from, point });
+    if (valid(requested)) return requested;
+    let low = 0, high = 1, best = { ...from.point };
+    for (let i = 0; i < 32; i++) {
+      const t = (low + high) / 2;
+      const point = Object.fromEntries(["x", "y", "z"].map(axis => [axis, from.point[axis] + (requested[axis] - from.point[axis]) * t]));
+      if (valid(point)) { low = t; best = point; } else high = t;
     }
-    session.listeners.length = 0;
-    this.#overlay.clear();
-    this.#elevationGauge?.clear?.();
-    this.#guide.clear();
-    if (session.visualState && this.#visuals) await this.#visuals.clear(session.visualState);
+    return best;
+  }
+  #replaceUserTargets(ids) {
+    globalThis.canvas.tokens.setTargets([...new Set(ids)], { mode: "replace" });
+  }
+  #restoreTargets(session) {
+    if (!globalThis.canvas?.ready || globalThis.canvas.scene !== session.scene) return;
+    try { this.#replaceUserTargets(session.originalTargetIds.filter(id => globalThis.canvas.tokens.get(id))); }
+    catch (error) { Logger.warn("Could not restore previous targets.", error); }
+  }
+  #cleanup(session) {
+    session.closed = true; session.pending = null;
+    const safely = fn => { try { fn(); } catch (error) { Logger.warn("3D Crosshairs cleanup failed.", error); } };
+    if (session.tick) safely(() => globalThis.canvas.app.ticker.remove(session.tick));
+    for (const [target, type, listener, options] of session.listeners) safely(() => target.removeEventListener(type, listener, options));
+    for (const [name, id] of session.hooks) safely(() => globalThis.Hooks.off(name, id));
+    safely(() => this.#elevationGauge?.clear());
+    safely(() => this.#renderer.clear());
     if (this.#active === session) this.#active = null;
   }
 }

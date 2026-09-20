@@ -1,159 +1,71 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { harness } from './helpers/pixi-session-harness.mjs';
+import { illuminationPhase } from '../scripts/crosshairs3d/renderers/shared.js';
 
-import { Crosshair3dPlacementVisualService } from "../scripts/crosshairs3d/placement-visual-service.js";
-
-function installSequencerStub() {
-  const calls = { starts: [], transforms: [], destructiveUpdates: [], ends: [] };
-  const activeEffects = new Map();
-  class EffectBuilder {
-    constructor() { this.data = {}; }
-    name(v) { this.data.name = v; return this; }
-    file(v) { this.data.file = v; return this; }
-    atLocation(v) { this.data.source = v; return this; }
-    attachTo(v, options = {}) { this.data.source = v; this.data.attachTo = { active: true, ...options }; return this; }
-    stretchTo(v, options = {}) { this.data.target = v; this.data.stretchTo = { ...options }; return this; }
-    elevation(v, options) { this.data.elevation = { elevation: v, ...options }; return this; }
-    rotate(v) { this.data.angle = v; return this; }
-    opacity(v) { this.data.opacity = v; return this; }
-    locally() { this.data.local = true; return this; }
-    persist() { this.data.persist = true; return this; }
-    size(v, options) { this.data.size = { ...v, ...options }; return this; }
-    tint(v) { this.data.tint = v; return this; }
-    belowTokens() { this.data.belowTokens = true; return this; }
+for (const type of ['prism','cylinder','sphere','cone','line','free-line']) test(`${type}: retained PIXI objects, finite geometry at all pitch/yaw samples, immutable rules shape`, () => {
+  const h = harness();
+  const shape = h.geometry.normalizeShape({ type, length: 20, width: 5, height: 20, radius: 10 });
+  const metrics = h.metrics.resolve();
+  h.renderer.show({ shape, sourceVolume: h.tokens.resolve(h.source,{grid:metrics,coordinateSpace:'pixels'}),
+    metrics,metricsService:h.metrics,geometry:h.geometry,options:{range:{max:60}},capabilities:{rotation:true,elevation:true,resize:type==='free-line'} });
+  const count = h.records.graphics.length, textCount = h.records.texts.length;
+  for(const yaw of [0,45,90,180,270,359]) for(const pitch of [-90,-70,-50,0,50,60,70,90]) {
+    const next=h.geometry.normalizeShape({...shape,yaw,pitch,origin:{x:20,y:20,z:pitch<0?-5:5}});
+    const before=JSON.stringify(next),d=h.geometry.direction(next);
+    const terminal={x:next.origin.x+d.x*20,y:next.origin.y+d.y*20,z:next.origin.z+d.z*20};
+    h.renderer.update({shape:next,point:next.origin,yaw,pitch,arcPitch:pitch,terminal,endpoint:terminal,length:20},'ELEVATE');
+    for(const t of [0,550,1400,2200,2700,3000,3450]) h.renderer.frame(t);
+    assert.equal(JSON.stringify(next),before);
+    assert.equal(h.records.graphics.length,count);assert.equal(h.records.texts.length,textCount);
   }
-  class SequenceStub {
-    constructor() { this.builder = new EffectBuilder(); }
-    effect() { return this.builder; }
-    async play() {
-      const data = structuredClone(this.builder.data);
-      calls.starts.push(structuredClone(data));
-      const initialRadians = ((data.angle ?? 0) * Math.PI) / 180;
-      const effect = {
-        id: `effect-${data.name}`,
-        data,
-        _source: data.source,
-        _cachedSourceData: { position: data.source },
-        _target: data.target,
-        _cachedTargetData: { position: data.target },
-        _customAngle: data.angle ?? 0,
-        elevation: data.elevation?.elevation ?? 0,
-        // Model Sequencer 4.2.3: creation-time `.rotate()` writes the actual
-        // visual rotation to spriteContainer, while `_transformSprite()` does
-        // not re-apply later changes to data.angle.
-        spriteContainer: { rotation: -Math.atan2(Math.sin(initialRadians), Math.cos(initialRadians)) },
-        async _transformSprite() {
-          calls.transforms.push({
-            id: this.id,
-            source: structuredClone(this.data.source),
-            angle: this.data.angle,
-            target: structuredClone(this.data.target),
-            elevation: structuredClone(this.data.elevation),
-            size: structuredClone(this.data.size),
-            visualRotation: this.spriteContainer.rotation
-          });
-        }
-      };
-      activeEffects.set(data.name, effect);
-    }
-  }
-  globalThis.Sequence = SequenceStub;
-  globalThis.Sequencer = {
-    EffectManager: {
-      getEffects({ name }) {
-        const effect = activeEffects.get(name);
-        return effect ? [effect] : [];
-      },
-      async updateEffects(filter, updates) {
-        calls.destructiveUpdates.push({ filter: structuredClone(filter), updates: structuredClone(updates) });
-      },
-      async endEffects(filter) {
-        calls.ends.push(structuredClone(filter));
-        if (filter?.name) activeEffects.delete(filter.name);
-      }
-    }
-  };
-  globalThis.foundry = { utils: { randomID: () => "visual-test" } };
-  return calls;
-}
-
-function metrics() {
-  return {
-    resolve: () => ({ size: 100, distance: 5, originX: 0, originY: 0 }),
-    distanceToPixels: p => ({ x: p.x * 20, y: p.y * 20, elevation: p.z })
-  };
-}
-
-function crosshairs() {
-  return {
-    resolveAsset: ({ shape, tint, color }) => ({
-      file: `modules/eskie/${shape}.webm`,
-      nativeFallback: false,
-      tint: tint ?? color ?? "#7fefef",
-      reason: "test"
-    })
-  };
-}
-
-test("accepted-state Eskie artwork starts once and transforms the same live sprite in place", async () => {
-  const calls = installSequencerStub();
-  const service = new Crosshair3dPlacementVisualService({ crosshairs: crosshairs(), metrics: metrics() });
-  const state = service.createSession({ id: "one", source: { id: "source-token" } });
-  const shape = { type: "prism", origin: { x: 5, y: 10, z: 15 }, length: 10, width: 5, height: 5, yaw: 20 };
-  const first = await service.update(state, shape);
-  const second = await service.update(state, { ...shape, origin: { x: 10, y: 10, z: 20 }, yaw: 25 });
-  assert.equal(first.artwork, true);
-  assert.equal(second.artwork, true);
-  const artworkStarts = calls.starts.filter(entry => entry.name === "action-effects-5e.crosshair3d.accepted.one");
-  const tracerStarts = calls.starts.filter(entry => entry.name === "action-effects-5e.crosshair3d.tracer.one");
-  const artworkTransforms = calls.transforms.filter(entry => entry.id === "effect-action-effects-5e.crosshair3d.accepted.one");
-  const tracerTransforms = calls.transforms.filter(entry => entry.id === "effect-action-effects-5e.crosshair3d.tracer.one");
-  assert.equal(artworkStarts.length, 1, "one retained visual is started");
-  assert.equal(tracerStarts.length, 1, "one retained source tracer is started");
-  assert.equal(artworkTransforms.length, 1, "the retained CanvasEffect is transformed without media reinitialization");
-  assert.equal(tracerTransforms.length, 1, "the retained tracer endpoint transforms in place");
-  assert.equal(calls.destructiveUpdates.length, 0, "Sequencer updateEffects is not used during interactive movement");
-  assert.deepEqual(artworkTransforms[0].source, { x: 200, y: 200 });
-  assert.equal(artworkTransforms[0].angle, 25);
-  const liveArtwork = globalThis.Sequencer.EffectManager.getEffects({ name: "action-effects-5e.crosshair3d.accepted.one" })[0];
-  const expectedRadians = -(25 * Math.PI / 180);
-  assert.ok(Math.abs(liveArtwork.spriteContainer.rotation - expectedRadians) < 1e-12, "retained visual sprite rotates to the accepted yaw");
-  assert.deepEqual(tracerStarts[0].target, { x: 100, y: 200 });
-  assert.deepEqual(tracerTransforms[0].target, { x: 200, y: 200 });
-  assert.equal(tracerStarts[0].opacity, 0.8);
-  assert.equal(tracerStarts[0].tint, "#4A4A4A");
-  await service.clear(state);
-  assert.deepEqual(
-    calls.ends.slice(-2).map(entry => entry.name).sort(),
-    ["action-effects-5e.crosshair3d.accepted.one", "action-effects-5e.crosshair3d.tracer.one"].sort()
-  );
+  h.renderer.clear(); assert.equal(canvas.interface.children.length,0);
 });
 
-test("Cone always suppresses flat Eskie artwork and requests one retained AE5E guide path", async () => {
-  const calls = installSequencerStub();
-  const service = new Crosshair3dPlacementVisualService({ crosshairs: crosshairs(), metrics: metrics() });
-  const state = service.createSession({ id: "cone" });
-  const horizontal = await service.update(state, { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 0 });
-  assert.equal(horizontal.artwork, false);
-  assert.equal(horizontal.guide, true);
-  assert.equal(horizontal.reason, "3d-guide-required");
-  assert.equal(calls.starts.length, 0, "pitch-zero Cone never starts offset Eskie artwork");
-  const pitched = await service.update(state, { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 30 });
-  assert.equal(pitched.artwork, false);
-  assert.equal(pitched.guide, true);
-  assert.equal(calls.starts.length, 0, "changing pitch never creates a second presentation path");
+for(const type of ['prism','cylinder']) test(`${type}: animated layer never fills faces or redraws dashed hidden geometry`,()=>{
+  const h=harness(),shape=h.geometry.normalizeShape({type,length:20,width:20,height:20,radius:10});
+  const metrics=h.metrics.resolve();
+  h.renderer.show({shape,sourceVolume:h.tokens.resolve(h.source,{grid:metrics,coordinateSpace:'pixels'}),metrics,metricsService:h.metrics,
+    geometry:h.geometry,options:{range:{max:60}},capabilities:{elevation:true,rotation:type==='prism'}});
+  h.renderer.update({shape,point:shape.origin,yaw:0},'MOVE');
+  // The root contains the base drawing, light lines, marker, then text.
+  const [drawing,light]=canvas.interface.children[0].children[0].children;
+  const staticCommands=JSON.stringify(drawing.commands);
+  assert.ok(drawing.commands.filter(c=>c[0]==='moveTo').length>10,'hidden dash segments remain in static geometry');
+  for(const t of [200,1400,2199,2200,2700,3000]) {
+    h.renderer.frame(t);
+    assert.ok(!light.commands.some(c=>c[0]==='beginFill'),'illumination has no face fill');
+    assert.equal(JSON.stringify(drawing.commands),staticCommands,'animation cannot brighten static dashed lines');
+  }
+  h.renderer.frame(3499);assert.equal(light.commands.length,0);
+  h.renderer.clear();
 });
 
-test("source-bound Line uses only its retained guide at every pitch, without artwork or tracer", async () => {
-  const calls = installSequencerStub();
-  const service = new Crosshair3dPlacementVisualService({ crosshairs: crosshairs(), metrics: metrics() });
-  const state = service.createSession({ id: "line-guide", source: { center: { x: 50, y: 50 } } });
-  const base = { type: "line", origin: { x: 5, y: 10, z: 15 }, length: 20, width: 5, yaw: 0 };
+test('source line glow advances from source to terminal, holds, then fades without fill',()=>{
+  const h=harness(),shape=h.geometry.normalizeShape({type:'line',length:60,width:5,yaw:0,pitch:0});
+  const metrics=h.metrics.resolve();
+  h.renderer.show({shape,sourceVolume:h.tokens.resolve(h.source,{grid:metrics,coordinateSpace:'pixels'}),metrics,metricsService:h.metrics,
+    geometry:h.geometry,options:{range:{max:60}},capabilities:{elevation:true,rotation:true}});
+  h.renderer.update({shape,point:shape.origin,yaw:0,arcPitch:0,endpoint:{x:60,y:0,z:0}},'MOVE');
+  const glow=canvas.interface.children[0].children[0].children[1];
+  h.renderer.frame(1100);
+  const tips=glow.commands.filter(c=>c[0]==='lineTo');assert.ok(tips.length>0);
+  assert.ok(tips.every(c=>Math.abs(c[1]-600)<1e-6));
+  assert.ok(!glow.commands.some(c=>c[0]==='beginFill'));
+  h.renderer.frame(2200);assert.ok(glow.commands.filter(c=>c[0]==='drawPolygon').length===2);
+  h.renderer.frame(3000);assert.ok(glow.commands.filter(c=>c[0]==='lineStyle').every(c=>c[3]<0.6));
+  h.renderer.frame(3400);assert.equal(glow.commands.length,0);h.renderer.clear();
+});
 
-  for (const pitch of [0, 60, 90, -90, -30]) {
-    const result = await service.update(state, { ...base, pitch });
-    assert.equal(result.artwork, false);
-    assert.equal(result.guide, true);
-  }
-  assert.equal(calls.starts.length, 0);
+test('illumination timing uses cumulative spread, hold and unified fade',()=>{
+  assert.deepEqual(illuminationPhase(1100),{progress:.5,alpha:1});
+  assert.deepEqual(illuminationPhase(2600),{progress:1,alpha:1});
+  assert.deepEqual(illuminationPhase(3100),{progress:1,alpha:.5});
+  assert.deepEqual(illuminationPhase(3400),{progress:1,alpha:0});
+  assert.deepEqual(illuminationPhase(3500),{progress:0,alpha:1});
+});
+
+test('renderer partial initialization error cleans its complete root',()=>{
+  const h=harness();assert.throws(()=>h.renderer.show({shape:{type:'unknown'}}));
+  assert.equal(canvas.interface.children.length,0);
 });

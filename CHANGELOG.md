@@ -1,3 +1,13 @@
+## 0.4.4.33 — PIXI crosshair integration, Checkpoint 2
+
+- Integrates all six approved procedural renderers and source-line traveling edge illumination.
+- Replaces the hidden placement carrier with session-scoped pointer, modifier, confirmation, cancellation and ticker handling. No placement media assets or Measured Templates are created.
+- Preserves exact approved palettes/layouts, cone text transition, direct-Z remote placement, continuous source anchoring and shape-specific controls.
+- Removes the legacy crosshair API/catalog/services and old media/overlay/guide tests; introduces integrated renderer/input coverage and a live acceptance launcher.
+- Moves Sequencer from recommended to required in the manifest and dependency validator. Ordinary animation workflows remain unchanged.
+- Keeps packs/assets untouched. Existing legacy Item migrations remain deferred until after Checkpoint 4. Live Foundry acceptance of this integration is pending.
+- Exact DELETE/ADD/MODIFY lists and Git deletion scripts accompany this release.
+
 ## 0.4.4.32 — Free Line zoom, Alt length and local labels
 
 - Plain wheel is no longer intercepted for free Lines, allowing native Foundry canvas zoom. Shift+wheel rotates, Ctrl+wheel elevates, Alt+wheel resizes. Multiple manipulation modifiers perform no combined change.

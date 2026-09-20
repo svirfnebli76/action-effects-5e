@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-test("v0.4.4.32 exposes the opt-in Action Effects 3D Crosshairs live placement API without replacing legacy crosshairs", () => {
+test("v0.4.4.33 exposes the canonical PIXI placement API and removes legacy crosshairs", () => {
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
   assert.match(apiSource, /this\.crosshairs3d\s*=\s*Object\.freeze/);
@@ -19,6 +19,6 @@ test("v0.4.4.32 exposes the opt-in Action Effects 3D Crosshairs live placement A
   assert.match(mainSource, /new Crosshair3dCellRasterizerService/);
   assert.match(mainSource, /new Crosshair3dTargetingGeometryService/);
   assert.match(mainSource, /new Crosshair3dPlacementSessionService/);
-  assert.match(apiSource, /this\.crosshairs\s*=\s*Object\.freeze/, "the existing 2D crosshair API remains present");
+  assert.doesNotMatch(apiSource, /this\.crosshairs\s*=/, "legacy API has no wrapper or redirect");
   assert.doesNotMatch(mainSource, /crosshairs3d.*\.initialize\(\)/, "live 3D input remains session-scoped and opt-in rather than globally installed");
 });

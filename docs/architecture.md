@@ -1,35 +1,29 @@
 # Action Effects 5E architecture
 
-## v0.4.4.18 Action Effects 3D Crosshairs — live placement and targeting
+## v0.4.4.33 — PIXI placement integration (Checkpoint 2)
 
-The v0.4.4 line introduces Action Effects 3D Crosshairs as an opt-in subsystem. v0.4.4.1 established the pure geometry/data foundation; v0.4.4.2 adds the session-scoped live placement and targeting layer without replacing or globally hooking the established `ae5e.crosshairs` API. Existing Items remain on their accepted automation paths until explicitly migrated.
+`ae5e.crosshairs3d.show(options)` and `.placement.show(options)` are the canonical placement APIs. The legacy `ae5e.crosshairs` API, Eskie catalog, media renderer, and legacy test entry points are removed without a wrapper or redirect. Existing Items using that API intentionally await migration after Checkpoint 4. Sequencer remains a **required** module for ordinary AE5E automations; placement has no dependency on its globals, media assets, or Measured Templates.
 
-v0.4.4.3 is the first live-acceptance correction pass: remote construction-plane elevation can continue through vertical, accepted-state Sequencer art is transformed in place rather than using the destructive effect-update/reinitialize path, and confirmation synchronizes with the newest pending revision before reconciling the carrier.
+The session owns native pointer/keyboard listeners, the ticker, temporary PIXI objects, and local target preview. Per-shape renderers preserve the approved standalone designs: source-driven line Gradient Test 03 (user-pasted palette), free-line Test 08, sphere Test 13, prism Test 04, cone Test 07, and cylinder Test 01. Source line additionally accumulates line illumination from its source face to terminal rim, holds, fades and repeats. Its faces do not pulse. Prism/cylinder hidden lines stay dashed and never illuminate.
 
-v0.4.4.4 makes remote construction-plane elevation fully cyclic: the temporary construction-plane phase wraps continuously through 0–360° in either direction instead of stopping at the original plane or vertical poles.
+| Shape | Mouse | Shift+wheel | Ctrl+wheel | Alt+wheel |
+| --- | --- | --- | --- | --- |
+| Source line | Aim | 5° yaw | Fixed-length full-cycle pitch, 1 grid terminal-Z step | None |
+| Free line | Move center | 5° yaw | Whole-grid vertical translation | Length, capped at initial length |
+| Sphere | Move center | None | Whole-grid vertical translation | None |
+| Prism | Move bottom center | 5° yaw | Whole-grid vertical translation | None |
+| Cone | Aim | None | Full-cycle pitch: ≤25 ft uses 1/5 grid; >25 ft uses 1 grid | None |
+| Cylinder | Move bottom center | None | Whole-grid vertical translation | None |
 
-v0.4.4.7 keeps the cyclic construction-plane model but makes the Scene vertical grid authoritative during remote ELEVATE. Each Ctrl-wheel notch advances to the next horizontal Scene-grid Z plane encountered in the selected travel direction; XY is solved continuously from the fixed-radius construction circle, so accepted world-Z remains exactly grid-snapped while horizontal construction coordinates are not artificially quantized. If a pole lies between two Z planes, traversal continues across it to the matching snapped intersection on the far side without publishing an unsnapped zenith/nadir point. By live-test preference, releasing ELEVATE/ROTATE still returns to Sequencer's default cursor-centered MOVE behavior while AE5E preserves manually selected absolute Z. The dark-grey Entangle/Fireball source tracer remains retained temporary placement presentation. The click-to-confirm label is AE5E-owned and follows only accepted authoritative placement, not the raw Sequencer cursor carrier. Self Cone/Ray pitch remains on its prior implementation pending dedicated live acceptance.
+Plain wheel retains Foundry zoom. Multiple modifiers do nothing. Releasing a modifier alone does not reposition the shape. Both source-bound shapes use continuous perimeter anchoring. Cone retains the accepted source-bottom/source-top switch when pitching downward. All centerline lengths remain fixed during pitch. The client reverse-elevation-wheel setting remains honored.
 
-v0.4.4.8 keeps all accepted geometry/range/targeting behavior from v0.4.4.7 and refines only placement presentation and input preference. PIXI text creation now uses the Foundry-compatible `Text(text, style)` path, the elevation readout is 20 px white and center-anchored with a 20 px visual Y offset, the mode badge follows accepted placement above the crosshair footprint, and the click-to-confirm label remains authoritative without the prior object-string rendering bug. The client-scoped `Reverse mouse wheel direction in ELEVATE mode` setting defaults on and inverts only Ctrl-wheel ELEVATE/PITCH travel; Shift-wheel yaw rotation remains unchanged.
+Remote shapes follow the destination surface before elevation is manually selected. Sphere/prism/cylinder then preserve exact selected absolute Z during MOVE. Free line retains its accepted upward surface clamp. Range uses Euclidean XYZ from the source occupied volume. Faint source-volume range boundaries belong to remote shapes, not cone/source line. Prism/cylinder height offset is visual only; bottom-center placement and true 3D targeting do not move with it.
 
-v0.4.4.9 corrects the remaining Foundry v14/PIXI presentation incompatibility without changing placement geometry. The runtime may accept `PIXI.Text(text)` while silently ignoring a separate constructor style argument, leaving text black; AE5E therefore assigns an explicit `PIXI.TextStyle` after constructing each overlay text object. Overlay text remains pure white (`#FFFFFF`). The elevation readout is 22 px, center-anchored to the authoritative crosshair point, and offset downward by 44 px (two text-height units).
+The placement API resolves square to a shallow prism and circle to a shallow cylinder (missing height defaults to one Scene grid unit); cube defaults all dimensions to its supplied size. Explicit height wins. Shape dimensions are in Scene distance units; origin points are in AE5E distance coordinates, not pixels. A free line's interaction point is its midpoint; returned geometry origin is its start. Remote range defaults to 60; specify `range.max` and a free-line `range.policy` (`center`, `origin`, or `endpoints`, default `endpoints`) in Item automation.
 
-v0.4.4.10 adds the Checkpoint 2 **Crosshair Elevation Gauge** as retained temporary placement presentation. The gauge is a fixed-size screen-space PIXI HUD near the upper-left canvas, not a Scene object: a ticker compensates the parent canvas group's pan/zoom transform so the dial remains approximately 276 px across at the requested screen location. Its fixed circle represents 110% of the configured range, while authoritative placement state supplies the live A→B radial vector, distance, side-view angle, and elevation. Remote sessions use the same nearest-source anchor and retained `elevationPhase` that drive the construction circle, so far-side travel remains visually meaningful. The existing crosshair elevation readout also becomes red whenever accepted world Z falls below the source Token's base elevation.
-v0.4.4.11 refines that gauge for live use: the dial now has 5-degree graduations and a 50%-opacity `#484848` interior, is visible only during ELEVATE mode, and initializes the remote construction plane plus current side-view reading immediately on ELEVATE entry before any wheel movement. The retained gauge object remains session-scoped; mode changes toggle presentation rather than rebuilding the PIXI object.
+Intent updates synchronously for each wheel notch. Target calculation runs through a serialized latest-revision queue. Stale results cannot publish targets or graphics. Confirmation waits for the final revision; cancellation restores prior targets where the original Scene still exists. Blur, source change, Scene teardown, pointer cancellation and errors all release listeners, ticker and graphics. `.cancel()` is available at both API entry points; `options.signal` can abort a session. Optional LOS uses the source's native vision test and fails closed if unavailable.
 
-The authoritative foundation remains exposed under `ae5e.crosshairs3d` and separates geometry, grid-cell derivation, Token volume, lazy targeting geometry, true-3D range, immutable placement revisions, and propagation-mode selection. Continuous 3D primitives remain authoritative; on supported gridded Scenes they derive affected 3D cells using the accepted >=50% XY coverage through positive Z thickness rule, and Token targeting then uses positive Token/cell overlap. Target-only Items may use this cell logic transiently without creating Region documents or persistent Region-cell data.
-
-v0.4.4.16 removes the unsuccessful Alt-recovery machinery from the placement session and instead performs one final targeted browser-level mitigation: because Alt has no AE5E placement function, active Action Effects 3D Crosshairs sessions capture-suppress Alt keydown/keyup before Chromium/Electron menu/focus handling can consume or reroute later modifier transitions. Ctrl/Shift keyboard events and wheel events remain authoritative. No pointermove/pointerdown modifier-recovery listeners are installed, preserving the accepted no-flicker Crosshair Elevation Gauge behavior. Blur clears cached Ctrl/Shift state as before.
-
-v0.4.4.17 finalizes the current Checkpoint 2 instruction presentation. The redundant center click-to-confirm label is removed. Capability-conditional control instructions are retained PIXI badges that follow the authoritative crosshair below its footprint, with rotation first when available, elevation second when available, and Right Click to Cancel last. Each instruction has its own line and uses the same 16 px bold white-on-dark visual scale as the moving mode badge.
-
-v0.4.4.18 corrects retained Eskie artwork yaw without changing authoritative geometry. Sequencer 4.2.3 applies `.rotate()` / `data.angle` to `spriteContainer.rotation` when the sprite is first created, while its later `_transformSprite()` pass does not re-apply a changed angle. AE5E therefore keeps the same live CanvasEffect, continues using `_transformSprite()` for accepted position/size/elevation updates, and mirrors the accepted yaw directly onto the existing `spriteContainer.rotation` in radians after that transform pass. This preserves the no-flicker retained-media path while making Prism/Line artwork visually follow the already-authoritative rotated geometry.
-
-The live `ae5e.crosshairs3d.show(...)` session owns temporary input interception and accepted-state synchronization only for the duration of an opted-in placement. Normal mouse movement resolves XY/surfaces, Shift-wheel changes yaw by five degrees, Ctrl-wheel advances remote elevation to the next Scene-grid Z-plane intersection on the retained construction circle (Self Cone/Ray retain their existing pitch-step model), rapid input coalesces without dropping notches, and final confirmation waits for the newest authoritative revision. Accepted target state, presentation, and the hidden Sequencer carrier are published together after geometry/legality/target resolution rather than exposing raw cursor state as rules state.
-
-Remote placements follow Foundry move surfaces during normal MOVE; after manual elevation the selected world-Z plane is preserved across later XY movement unless higher terrain forces an upward clamp. Range remains true Euclidean XYZ from the nearest point of the source volume. Self Cone/Ray placement retains fixed centerline length, uses legal source-boundary 3D apexes, and hands the apex to the opposite source boundary after crossing vertical. Horizontal Cone presentation may use Eskie art, while pitched Cone presentation uses an AE5E-owned projected 3D guide.
-
-The existing Region-local 3D cell services remain the persistent-volume backend for later checkpoints. v0.4.4.2 does not yet create persistent Regions or implement live `Direct`/`Spread` obstruction propagation. The accepted persistent-area preMove entry interruption / Region-crossing snap remains unchanged.
+Geometry, cells, full Token-volume targeting, surface resolution and Region services remain separate. No persistent Regions are created by placement. Direct/Spread obstruction propagation and new persistent-volume integration remain later checkpoints. The environmental MeasuredTemplate compatibility reader is unrelated and remains intact. Packs, Item payloads and animation assets are unchanged.
 
 # Current Item / AE5E architecture boundary — v0.4.3.30
 
@@ -65,7 +59,7 @@ The bridge remains an **input adapter**, not environmental state. Native v14 Reg
 
 ## v0.4.3.4 Environmental Interaction architecture
 
-The environmental layer is **Region-native**. Persistent world state belongs to Foundry Scene Regions. Source adapters (Midi workflows, functional Eskie crosshairs, and legacy Measured Templates) normalize their geometry at the boundary and then leave the core dispatcher unaware of the original source type. Measured Templates are compatibility inputs only.
+The environmental layer is **Region-native**. Persistent world state belongs to Foundry Scene Regions. Source adapters (Midi workflows, AE5E 3D placement results, and legacy Measured Templates) normalize their geometry at the boundary and then leave the core dispatcher unaware of the original source type. Measured Templates are compatibility inputs only.
 
 The processing path is: source adapter → normalized environmental event → cached interested-Region index → bounding-box rejection → precise positive-minus-hole intersection → capability/profile reaction → one primary-GM Region mutation. Capabilities and profiles are independent registries; `Flammable`/`generic` is the first built-in pair. Region state and environmental timers live under `flags.action-effects-5e.environment`.
 
@@ -559,32 +553,9 @@ Transactions carry `parentTransactionId` and `rootTransactionId`. A child reacti
 Only the `ACTIVE` Reactor acquires a v0.3.27 `responder` selection-indicator lease. Waiting, resolving, and authority-waiting states are intentionally unmarked. The lease is released before another Reactor becomes active or whenever the transaction exits.
 
 
-## Reusable Eskie crosshair layer (v0.4.1.2)
+## Legacy crosshair removal
 
-AE5E treats custom placement graphics as an optional presentation layer above Sequencer's functional crosshair transaction. Rules code should ask `ae5e.crosshairs` for a visual; it should not hard-code free/Patreon detection or individual Eskie paths inside each spell.
-
-Resolution order is intentionally deterministic:
-
-```text
-requested visual
-    ↓
-exact native premium recolor
-    ↓ if missing
-same-style premium white + tint
-    ↓ if missing
-alternate premium style
-    ↓ if premium unavailable/missing
-free white + tint
-    ↓ if missing
-native functional Sequencer crosshair
-```
-
-The underlying functional crosshair and the Eskie visual shape are separate concepts. For example, Fireball uses a functional circular placement plus an Eskie Circle area visual and a separate Eskie Line tracer. `Line` means a source-to-template tracer; `Ray` means the path/beam itself. This distinction is stored in `ESKIE_CROSSHAIR_SEMANTICS`.
-
-When AE5E has a valid custom replacement visual, it applies the live-proven native suppression values `borderAlpha: 0`, `fillAlpha: 0`, `gridHighlight: false`. Suppression is conditional: if the visual resolver falls back native, AE5E leaves Sequencer's normal crosshair visible so a missing optional art module can never make an item unusable.
-
-The catalog is explicit rather than synthesized. Premium v1.9.0 includes 244 supplied crosshair WebMs and contains a known asymmetric entry (`Circle/Generic_01` Red normal/base has 40ft rather than 60ft, while the white 60ft and Red NoBase 60ft assets exist). The resolver therefore checks real entries and prefers same-style white+tint before changing art styles. The confirmed free catalog used by this release contains 52 white crosshairs and covers all six shapes, including Rectangle and Reticle. Free white artwork is the tintable fallback when a native premium recolor is unavailable.
-
+The v0.4.1.2 Eskie placement layer was removed in v0.4.4.33. See the current PIXI placement architecture above.
 
 ## Ongoing-effect multiplayer result authority (v0.4.1.6)
 

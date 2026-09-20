@@ -82,16 +82,6 @@ import {
   CROSSHAIR_3D_PROPAGATION_MODES,
   CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT
 } from "./crosshairs3d/propagation-mode-service.js";
-import {
-  ESKIE_CROSSHAIR_COLORS,
-  ESKIE_CROSSHAIR_DEFAULTS,
-  ESKIE_CROSSHAIR_SEMANTICS,
-  ESKIE_CROSSHAIR_SHAPES,
-  ESKIE_FREE_MODULE_ID,
-  ESKIE_PREMIUM_MODULE_ID,
-  ESKIE_TINT_APPROXIMATIONS,
-  SEQUENCER_MODULE_ID
-} from "./crosshairs/eskie-crosshair-catalog.js";
 
 export class ActionEffects5eApi {
   constructor({
@@ -144,7 +134,6 @@ export class ActionEffects5eApi {
     selectionIndicator,
     externalPromptBridge,
     choicePrompts,
-    crosshairs,
     crosshairs3dGeometry,
     crosshairs3dCells,
     crosshairs3dTokens,
@@ -230,14 +219,14 @@ export class ActionEffects5eApi {
   PERSISTENT_AREA_LIFECYCLE_SCHEMA_VERSION,
   PERSISTENT_AREA_EFFECT_FLAG,
       ENVIRONMENT_DEDUPE_TTL_MS,
-      ESKIE_PREMIUM_MODULE_ID,
-      ESKIE_FREE_MODULE_ID,
-      SEQUENCER_MODULE_ID,
-      ESKIE_CROSSHAIR_SHAPES,
-      ESKIE_CROSSHAIR_COLORS,
-      ESKIE_CROSSHAIR_DEFAULTS,
-      ESKIE_CROSSHAIR_SEMANTICS,
-      ESKIE_TINT_APPROXIMATIONS,
+
+
+
+
+
+
+
+
       SELECTION_INDICATOR_PREFERRED_ASSET,
       SELECTION_INDICATOR_PREFERRED_TINT,
       SELECTION_INDICATOR_FALLBACK_ASSET,
@@ -536,15 +525,6 @@ export class ActionEffects5eApi {
       getStats: () => choicePrompts.getStats()
     });
 
-    this.crosshairs = Object.freeze({
-      getEskieStatus: () => crosshairs.getEskieStatus(),
-      getShapeInfo: (shape) => crosshairs.getShapeInfo(shape),
-      getCatalog: (options) => crosshairs.getCatalog(options),
-      resolveAsset: (request, options) => crosshairs.resolveAsset(request, options),
-      show: (options) => crosshairs.show(options),
-      getStats: () => crosshairs.getStats()
-    });
-
     this.crosshairs3d = Object.freeze({
       geometry: Object.freeze({
         normalizeShape: (shape) => crosshairs3dGeometry.normalizeShape(shape),
@@ -589,9 +569,11 @@ export class ActionEffects5eApi {
       }),
       placement: Object.freeze({
         show: (options) => crosshairs3dPlacement.show(options),
+        cancel: () => crosshairs3dPlacement.cancel(),
         getStats: () => crosshairs3dPlacement.getStats()
       }),
       show: (options) => crosshairs3dPlacement.show(options),
+        cancel: () => crosshairs3dPlacement.cancel(),
       getStats: () => crosshairs3dPlacement.getStats()
     });
 
@@ -679,8 +661,6 @@ export class ActionEffects5eApi {
       runOngoingEffectLiveLifecycleTest: (options) => tests.runOngoingEffectLiveLifecycleTest(options),
       runOngoingEffectLiveMandatorySaveExecutionTest: (options) => tests.runOngoingEffectLiveMandatorySaveExecutionTest(options),
       runOngoingEffectLiveMandatorySaveSuccessTest: (options) => tests.runOngoingEffectLiveMandatorySaveSuccessTest(options),
-      runCrosshairFoundationTest: (options) => tests.runCrosshairFoundationTest(options),
-      runCrosshairInteractiveTest: (options) => tests.runCrosshairInteractiveTest(options),
       runSpellModifierEngineFoundationTest: (options) => tests.runSpellModifierEngineFoundationTest(options),
       runSpellModifierEngineLiveActivitySubstitutionTest: (options) => tests.runSpellModifierEngineLiveActivitySubstitutionTest(options),
       runFoundationSmokeTest: (options) => tests.runFoundationSmokeTest(options),

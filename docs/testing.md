@@ -1,39 +1,21 @@
-# Current infrastructure acceptance — v0.4.4.18
+# Current infrastructure acceptance — v0.4.4.33
 
-## Action Effects 3D Crosshairs Checkpoint 2 — live placement and targeting
+## Checkpoint 2 — PIXI placement integration
 
-Checkpoint 2 adds the opt-in live placement session while preserving all Checkpoint 1 geometry/data services. Repository acceptance is deterministic first:
+Run `npm test`. Tests use the real geometry, cell, Token-volume and renderer code with mocked Foundry events/PIXI drawing commands. They exercise all six renderers, final-revision barriers, rapid input, asynchronous cancellation, cleanup, whole-step elevation, range/LOS constraints, cone tier boundaries and full pitch cycles. Renderer tests verify retained objects, finite output, immutable targeting shapes, static hidden geometry, no prism/cylinder animated face fills, and the source-line traveling glow.
 
-```bash
-npm run check
-node tests/crosshair-3d-foundation.test.mjs
-node tests/crosshair-3d-live-session.test.mjs
-node tests/crosshair-3d-visual.test.mjs
-node tests/crosshair-3d-public-api.test.mjs
-```
+Placement is tested with Sequencer globals absent and with an enabled stub whose crosshair calls throw. Sequencer remains required in module.json and runtime dependency validation; do not disable the required module in your working Foundry world merely to run acceptance.
 
-The Checkpoint 2 suites additionally verify confirm/cancel target ownership, exact five-degree Shift-wheel increments, one-grid-unit Ctrl-wheel intent, rapid-input coalescing without dropped notches, fixed-length Self Ray/Cone pitch, vertical opposite-apex handoff, current-Level surface preference, manual absolute-Z preservation under true-3D range clamping, and retained accepted-state Eskie artwork with AE5E guide fallback.
+Live Foundry acceptance is still required. Copy the complete macro from `docs/acceptance-crosshairs3d-v0.4.4.33.txt` into a Script Macro and select a source token. Run every shape, including the shallow prism example. Use Enemy, Leader, Follower, Neutral, Ally and Secret as available fixtures.
 
-v0.4.4.3 adds regressions for remote elevation continuing through vertical on the retained construction arc, non-destructive in-place accepted-state Sequencer presentation updates, and confirmation waiting for the newest pending manipulation revision before final carrier reconciliation.
+1. Compare each guide, palette, text placement, pulse timing and tracer with its approved standalone macro. Cone text must clear the body throughout 35°–75°. Prism/cylinder hidden dashes must never brighten. Source line must illuminate from source to terminal, then hold/fade.
+2. Check mouse placement, native wheel zoom, all enabled modifier controls, rapid wheel bursts and modifier release without pointer movement. Cone has no wheel rotation; sphere/cylinder have no rotation.
+3. Check targets at multiple elevations, large-token overlaps, boundary contact, and source exclusion. Confirm once during a rapid wheel burst; targets and final geometry must match.
+4. Confirm and cancel each shape. Cancel must restore earlier targets; confirm must retain final targets. Check Escape, right-click, blur, source deletion/movement and Scene teardown. No graphics/listeners may remain.
+5. Exercise physical surfaces and optional LOS in a Scene with and without Levels. Optional LOS requires the source to have usable vision.
+6. Run existing generic Region/environment/ongoing-effect foundation gates below. Existing Web/Misty Step/other Items using the deleted legacy API are intentionally unavailable until their post-Checkpoint-4 migration; a passing infrastructure test does not mean those old Item macros work.
 
-v0.4.4.4 adds regressions for cyclic remote elevation, reverse wrap from phase zero, and repeated full-circle travel without losing wheel intent.
-
-v0.4.4.7 changes remote ELEVATE to authoritative Scene-grid Z snapping: each Ctrl-wheel notch advances to the next horizontal Z grid plane encountered around the retained construction circle, while XY is solved continuously from the circle rather than snapped to map-grid XY coordinates. This keeps accepted elevations on exact grid-distance values even when zenith/nadir falls between grid planes. The click-to-confirm label is now AE5E-owned and follows accepted authoritative placement rather than Sequencer's raw cursor carrier, eliminating boundary flicker. Default cursor-centered MOVE after modifier release, manual absolute-Z preservation, cyclic 360-degree travel, and the retained Entangle/Fireball dark-grey tracer remain unchanged.
-
-v0.4.4.8 is a presentation/input-preference pass only: the elevation readout is explicitly rendered with Foundry-compatible PIXI Text construction at 20 px white, centered on the accepted crosshair center with a 20 px downward offset; the MOVE/ROTATE/ELEVATE badge now follows the crosshair above its footprint; and the AE5E-owned confirmation label uses the same compatible text construction instead of rendering `[object Object]`. A new client setting, enabled by default, reverses Ctrl+mouse-wheel direction in ELEVATE mode without changing Shift+wheel ROTATE direction.
-
-v0.4.4.9 updates the overlay regression to model the live Foundry v14 behavior where a text string is accepted but constructor styling is ignored. AE5E assigns an explicit post-construction `PIXI.TextStyle`, keeping elevation/confirmation/mode text at pure white (`#FFFFFF`). The elevation readout is 22 px and its authoritative-center Y offset is 44 px.
-
-v0.4.4.10 adds deterministic coverage for the **Crosshair Elevation Gauge**: fixed ~276 px screen-space size, requested 320×275 target position on a 1920×1080 canvas, inverse parent-scale compensation during pan/zoom, 10% range headroom, A→B distance/elevation publication, far-side angle preservation, negative/below-origin red text, and session cleanup. The existing crosshair elevation overlay is also covered for white-at/above-source and red-below-source behavior. Placement geometry/input rules remain unchanged from v0.4.4.9.
-v0.4.4.11 adds regressions for 5-degree dial graduations, the `#484848` 50%-opacity interior, ELEVATE-only gauge visibility, immediate gauge state publication on Ctrl/ELEVATE entry without a wheel event, and initialization of a nonzero side-view phase from the current authoritative placement. Geometry and snapping rules remain unchanged.
-
-v0.4.4.17 adds overlay regressions for the crosshair-local instruction stack: no center confirmation label, same 16 px font size as the mode badge, one dark rounded badge per instruction line, authoritative placement below the crosshair footprint, and capability-conditional ordering of rotation, elevation, and cancel instructions. Alt suppression and all accepted gauge/geometry behavior from v0.4.4.16 remain unchanged.
-
-v0.4.4.18 strengthens the accepted-state visual regression to model Sequencer 4.2.3's real rotation lifecycle: `.rotate()` initializes `spriteContainer.rotation`, but `_transformSprite()` does not update it when `data.angle` later changes. The retained visual test now requires the same live CanvasEffect's `spriteContainer.rotation` to match the accepted yaw after an in-place update, while still forbidding destructive `EffectManager.updateEffects()` calls.
-
-Checkpoint 2 requires live Foundry acceptance because browser input interception, Sequencer CanvasEffect updates, PIXI guide placement, Token target highlighting/secrecy, Foundry surface resolution, and optional LOS cannot be accepted from Node tests alone. Checkpoint 3 must not begin until the focused live placement suite passes or any discovered runtime incompatibility is corrected.
-
-Checkpoint 2 deliberately excludes `Direct` / `Spread` obstruction propagation and persistent Region creation; those remain Checkpoint 3 work.
+The macro's PASS banner verifies lifecycle cleanup and legacy-API removal only. Visual and gameplay acceptance remain your live checks. No new persistent Region creation or Direct/Spread behavior is claimed by this checkpoint.
 
 ---
 
@@ -292,18 +274,6 @@ Action Effects 5E
 
 The leaf pack must be a D&D5e `Item` compendium with internal id `actions-common`. Existing **Spells** and **AE5E Administrative** packs should retain their prior contents unchanged. No multiplayer or Socketlib acceptance is required because v0.4.1.11 introduces no player-executed or privileged runtime behavior.
 
-## v0.4.1.10 Eskie custom-color resolver regression
-
-After installing v0.4.1.10, run the existing Foundry crosshair foundation test as GM:
-
-```js
-const ae5e = game.modules.get("action-effects-5e")?.api;
-await ae5e.tests.runCrosshairFoundationTest({ notify: true });
-```
-
-The suite now includes the exact Misty Step resolver request (`Circle`, `Fantasy_01`, `NoBase`, 30 ft, exact sizing, `#8FD8FF`) with premium and free Eskie both available. It must resolve the premium white 30-foot WebM with `tint: "#8FD8FF"`, `reason: "premium-white-tinted"`, and no native fallback. Native premium named-color checks remain in the same suite. No multiplayer/Socketlib acceptance is required for this resolver-only change because no privileged document write or GM-authoritative operation is involved.
-
-# Action Effects 5E testing
 
 ## Project test policy
 
@@ -358,32 +328,6 @@ The test creates disposable Actors/Tokens, applies the reusable voluntary-moveme
 
 For multiplayer acceptance, also initiate one real CAT teleport as a non-GM player. CAT remains responsible for any GM-routed physical token move; AE5E only routes the temporary teleport classification context to active GMs. Confirm that `ae5e.interoperability.cat.getStatus().teleportLifecycle` reports the wrapper and socket handlers active and that the resulting AE5E relationship behavior matches the same GM test.
 
-## v0.4.1.2 Eskie crosshair acceptance
-
-After installing 0.4.1.2, run the deterministic Foundry-side resolver/catalog gate first:
-
-```js
-const ae5e = game.modules.get("action-effects-5e").api;
-await ae5e.tests.runCrosshairFoundationTest({ notify: true });
-```
-
-Expected result: **18/18 PASS**. This checks the 244-entry premium catalog, 52-entry free catalog, all-six-shape coverage in both catalogs, Line-vs-Ray semantics, premium exact-color resolution, the known Generic_01 Red 60ft asymmetry, free white+tint fallback including Rectangle/Reticle, rectangle dimension normalization, Fireball-style floor sizing, custom hex tinting, unsupported-shape safety, and live module detection.
-
-Then control exactly one token on an active Scene and run:
-
-```js
-await ae5e.tests.runCrosshairInteractiveTest({
-  color: "red",
-  radius: 20,
-  range: 150
-});
-```
-
-The expected visual is the Fireball placement pattern: an Eskie Circle at the movable template and an Eskie Line tracing from the controlled source token to that template. If Patreon Eskie is active, the native premium red assets should be used. If only the free Eskie module is active, the white assets should be tinted. If neither compatible Eskie visual is available, the native Sequencer crosshair must remain visible and functional.
-
-During the custom-visual path, confirm that Sequencer's native border/fill/grid highlight are not visible. Placement and X/Escape cancellation must both end with **0 lingering AE5E crosshair effects**. The interactive test prints whether the resolver selected `premium`, `free`, or `native` mode and reports cleanup separately from placement/cancellation.
-
-This release does not migrate Fireball itself; the purpose of the test is to prove the reusable service can reproduce Fireball's established Circle + Line placement behavior before spells are converted to it.
 
 ## v0.4.1 Spell Modifier Engine acceptance
 

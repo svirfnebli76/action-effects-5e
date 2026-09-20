@@ -6,7 +6,7 @@ Action Effects 5E (AE5E) provides reusable D&D5e automation infrastructure for F
 
 AE5E runtime may own reusable infrastructure such as:
 
-- crosshairs and shared selection indicators;
+- PIXI-only 3D placement crosshairs and shared selection indicators;
 - Socketlib / primary-GM authority;
 - generic Region creation and native Region-event routing;
 - generic CAT/Midi Activity execution;
@@ -92,3 +92,7 @@ The suite includes architectural boundary tests that fail if Web-specific runtim
 Infrastructure builds must not modify `packs/` or `assets/` unless an isolated Item/asset publication is explicitly intended. Web's working actor Item remains separate from this infrastructure cleanup and should not be overwritten from a stale compendium copy.
 
 Historical release details are retained in `CHANGELOG.md`.
+
+## v0.4.4.33 installation
+
+Sequencer is required for AE5E automations. The placement system itself uses native PIXI and pointer input. The legacy `ae5e.crosshairs` API is removed; existing Items will be migrated after Checkpoint 4. See `UPDATE-v0.4.4.33.md` for exact file changes and Git deletion instructions, and `docs/testing.md` for live acceptance.
