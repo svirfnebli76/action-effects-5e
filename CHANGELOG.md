@@ -1,3 +1,10 @@
+## 0.4.4.38 — Checkpoint 3 persistence and live-acceptance hardening
+
+- Attached Direct and Spread persistent areas now re-resolve on source-token transforms and on movement Wall, Scene Level, or movement Surface changes. Only the primary GM writes the replacement mask; failed or empty resolution deactivates the mask instead of retaining stale affected cells.
+- Added a restricted, idempotent GM-authority update route for AE5E-owned crosshair Region geometry and metadata. It cannot edit arbitrary Region fields or non-AE5E Regions.
+- Exact unobstructed prisms and cylinders now persist as a single native Foundry rectangle/circle with exact elevation. Spheres, Direct/Spread results, pitched/irregular shapes, and areas requiring cell behavior remain cell-backed.
+- Expanded automated coverage for attachment re-resolution, fail-closed behavior, authority and backend selection. Added extended GM and player live-acceptance macros for real Levels, Surfaces, cancellation, native persistence, attached re-resolution, and player-to-GM Region authority.
+
 ## 0.4.4.37 — Action Effects 3D Crosshairs, Checkpoint 3
 
 - Added `none`, `direct`, and `spread` propagation over the authoritative 3D affected-cell mask. Sphere propagation preserves every chart-derived cell rather than intersecting the mask with a continuous sphere again.

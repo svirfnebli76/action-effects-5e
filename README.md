@@ -93,6 +93,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.4.38 installation
+
+Install the complete module folder and reload Foundry. v0.4.4.38 hardens Checkpoint 3 persistent areas: attached Direct/Spread masks re-resolve after source or obstruction changes, simple exact prisms/cylinders use native Regions, and complex/chart/clipped volumes remain cell-backed. Run both v0.4.4.38 acceptance macros in `docs/`—the extended macro as GM and the authority macro as Caerwyn Thorne's player with a GM online.
+
 ## v0.4.4.37 installation
 
 Sequencer is required for AE5E automations. The placement system itself uses native PIXI and pointer input. The legacy `ae5e.crosshairs` API is removed; existing Items will be migrated after Checkpoint 4. Use `docs/testing.md` for live acceptance.

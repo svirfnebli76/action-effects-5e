@@ -1,0 +1,61 @@
+await (async () => {
+  const TAG = "AE5E Checkpoint 3 Player Authority Acceptance 01";
+  const VERSION = "0.4.4.38";
+  const MODULE_ID = "action-effects-5e";
+  const module = game.modules.get(MODULE_ID);
+  const api = module?.api?.crosshairs3d;
+  if (game.user.isGM) return ui.notifications.warn(`${TAG} must be run by a non-GM player.`);
+  if (module?.version !== VERSION || !api?.persistent?.create) {
+    return ui.notifications.warn(`Install AE5E ${VERSION}, enable it, and reload first.`);
+  }
+  if (!canvas.ready || !canvas.grid.isSquare) return ui.notifications.warn("Open the GM test Scene first.");
+  const source = canvas.tokens.placeables.find(token => token.name === "Caerwyn Thorne");
+  if (!source) return ui.notifications.warn("Caerwyn Thorne must be present on this Scene.");
+  if (!source.document.testUserPermission(game.user, "OWNER")) {
+    return ui.notifications.warn("This player must own Caerwyn Thorne.");
+  }
+  if (![...game.users].some(user => user.active && user.isGM)) {
+    return ui.notifications.warn("An active GM client is required.");
+  }
+
+  const scene = canvas.scene;
+  const rect = canvas.dimensions.sceneRect;
+  const size = scene.grid.size;
+  const distance = scene.grid.distance;
+  const metrics = Object.freeze({ size, distance, originX: rect.x, originY: rect.y,
+    grid: Object.freeze({ distance, origin: Object.freeze({ x: 0, y: 0, z: 0 }) }) });
+  const center = {
+    x: ((source.center.x - rect.x) / size) * distance,
+    y: ((source.center.y - rect.y) / size) * distance,
+    z: source.document.elevation
+  };
+  let regionUuid = null;
+  try {
+    const shape = api.geometry.normalizeShape({ type: "prism", origin: center,
+      width: distance, length: distance, height: distance, yaw: 0 });
+    const propagation = await api.propagation.apply({ shape, grid: metrics.grid, mode: "none" });
+    const created = await api.persistent.create({ propagation, scene, source, metrics,
+      options: { name: `${TAG} Temporary`, locked: true } });
+    regionUuid = created.regionUuid;
+    const region = await fromUuid(regionUuid);
+    const ownership = module.api.regions.getOwnership(region);
+    const createdByAuthority = created.created && ownership?.requestedByUserId === game.user.id
+      && ownership?.createdByUserId !== game.user.id;
+    const removed = await module.api.regions.delete(regionUuid);
+    if (removed.deleted) regionUuid = null;
+    const passed = createdByAuthority && removed.deleted;
+    const result = { tag: TAG, version: VERSION, passed, created, ownership, removed };
+    console.log(TAG, result);
+    ui.notifications[passed ? "info" : "warn"](`${TAG}: ${passed ? "PASS" : "CHECK CONSOLE"}.`);
+    return result;
+  } catch (error) {
+    console.error(`${TAG}: FAIL`, error);
+    ui.notifications.error(`${TAG}: ${error.message}`);
+    return { tag: TAG, version: VERSION, passed: false, error: error.message };
+  } finally {
+    if (regionUuid) {
+      try { await module.api.regions.delete(regionUuid); }
+      catch (error) { console.warn(`${TAG}: temporary Region cleanup failed`, error); }
+    }
+  }
+})();

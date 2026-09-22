@@ -190,7 +190,10 @@ export class Crosshair3dPlacementSessionService {
         scene: session.scene,
         source: session.source,
         metrics: session.metrics,
-        options: session.options.persistent
+        options: {
+          ...session.options.persistent,
+          connectors: session.options.propagation?.connectors ?? []
+        }
       });
     } else if (session.options.persistent?.enabled === true) {
       session.persistentRegion = Object.freeze({ created: false, reason: "no-affected-cells" });

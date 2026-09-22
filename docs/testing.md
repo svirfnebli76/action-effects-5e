@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.37
+# Current infrastructure acceptance — v0.4.4.38
 
 ## Checkpoint 3 — propagation and persistent 3D Regions
 
@@ -6,9 +6,9 @@ Run `npm test`. Tests use the real geometry, cell, Token-volume and renderer cod
 
 Placement is tested with Sequencer globals absent and with an enabled stub whose crosshair calls throw. Sequencer remains required in module.json and runtime dependency validation; do not disable the required module in your working Foundry world merely to run acceptance.
 
-Live Foundry acceptance is still required. Copy the complete macro from `docs/acceptance-crosshairs3d-v0.4.4.37.txt` into a Script Macro and run it as a GM in the prepared test Scene. It uses Caerwyn Thorne, Leader, Follower, Enemy, Neutral, Ally and Ally 2; creates a temporary movement Wall and persistent Region; then restores token positions, targets, and temporary documents.
+Live Foundry acceptance is still required. First run `docs/acceptance-crosshairs3d-v0.4.4.38-gm.txt` as the primary GM. It tests cancellation, native persistence, an actual Level-bounded Wall, an actual Define Surface, and attached Direct re-resolution, then restores its source position, targets, and temporary documents. Next run `docs/acceptance-crosshairs3d-v0.4.4.38-player.txt` as the non-GM owner of Caerwyn Thorne while a GM remains online; it verifies player-routed Region creation and deletion.
 
-v0.4.4.37 retains the supplied chart method as the authoritative Sphere mask. Automated coverage verifies all supplied radii, Direct 50% coverage, positive Z thickness, Spread face connectivity, Foundry Level-bounded Walls, global Surfaces, final-revision targeting, idempotent Region creation, cancellation cleanup, and attached/static cell frames.
+v0.4.4.38 retains the supplied chart method as the authoritative Sphere mask. Automated coverage verifies all supplied radii, Direct 50% coverage, positive Z thickness, Spread face connectivity, Foundry Level-bounded Walls, global Surfaces, final-revision targeting, idempotent Region creation/update, cancellation cleanup, native exact persistence, and attached propagation re-resolution/fail-closed behavior.
 
 v0.4.4.35 adds an exact continuous-sphere guard after affected-cell qualification, removes the Cone source tracer, and removes Rotate mode from source-driven Lines.
 

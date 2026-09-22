@@ -1,5 +1,9 @@
 # Action Effects 5E architecture
 
+## v0.4.4.38 — Persistent backend and attached-propagation boundary
+
+Persistent None prisms and cylinders use a single exact native Foundry Region unless the caller explicitly requires cell behavior. Chart-derived Spheres, obstruction-clipped Direct/Spread results, pitched and irregular volumes, and destructible/per-cell areas use the cell backend. Attached None areas rely only on Foundry's rigid Token attachment. Attached Direct/Spread areas are environment-sensitive and are re-resolved by the primary GM after source transforms or relevant Wall, Level, and movement-Surface changes; failure deactivates their exact mask.
+
 ## v0.4.4.37 — Propagation and persistent cell-backed Regions (Checkpoint 3)
 
 The shape rasterizer remains the only authority for an area's candidate cells. `none` retains that mask, `direct` clips it with physical source-to-cell coverage, and `spread` flood-fills it through qualifying shared faces. Propagation cannot add cells outside the original mask. Target collection reads the resolved cell set rather than re-testing the continuous shape.

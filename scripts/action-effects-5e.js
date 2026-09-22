@@ -41,6 +41,7 @@ import { Crosshair3dPropagationModeService } from "./crosshairs3d/propagation-mo
 import { Crosshair3dPropagationService } from "./crosshairs3d/propagation-service.js";
 import { Crosshair3dFoundryPropagationEnvironment } from "./crosshairs3d/foundry-propagation-environment.js";
 import { Crosshair3dPersistentAreaService } from "./crosshairs3d/persistent-area-service.js";
+import { Crosshair3dAttachedPropagationService } from "./crosshairs3d/attached-propagation-service.js";
 import { Crosshair3dTargetingGeometryService } from "./crosshairs3d/targeting-geometry-service.js";
 import { Crosshair3dCanvasMetricsService } from "./crosshairs3d/canvas-metrics-service.js";
 import { Crosshair3dSurfaceService } from "./crosshairs3d/surface-service.js";
@@ -179,6 +180,15 @@ const regionCellAttachments = new RegionCellAttachmentService({ cells: regionCel
 const crosshairs3dPersistentAreas = new Crosshair3dPersistentAreaService({
   regions,
   regionCells,
+  metricsService: crosshairs3dMetrics
+});
+const attachedAreaPropagation = new Crosshair3dAttachedPropagationService({
+  authority: reactionAuthority,
+  regions,
+  regionCells,
+  propagation: crosshairs3dPropagation,
+  environment: crosshairs3dPropagationEnvironment,
+  persistentAreas: crosshairs3dPersistentAreas,
   metricsService: crosshairs3dMetrics
 });
 const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
@@ -334,6 +344,7 @@ const tests = new TestHarness({
   crosshairs3dPropagation,
   crosshairs3dPropagationEnvironment,
   crosshairs3dPersistentAreas,
+  crosshairs3dAttachedPropagation: attachedAreaPropagation,
   crosshairs3dTargeting,
   crosshairs3dPlacement,
   reactionRegistry,
@@ -453,6 +464,7 @@ const api = new ActionEffects5eApi({
   crosshairs3dPropagation,
   crosshairs3dPropagationEnvironment,
   crosshairs3dPersistentAreas,
+  crosshairs3dAttachedPropagation: attachedAreaPropagation,
   crosshairs3dTargeting,
   crosshairs3dPlacement,
   reactionRegistry,
@@ -517,6 +529,7 @@ Hooks.once("ready", async () => {
   await selectionIndicator.initialize();
   externalPromptBridge.initialize();
   await reactionAuthority.initialize();
+  attachedAreaPropagation.initialize();
   environmentTiming.initialize();
   persistentAreaLifecycle.initialize();
   environment.initialize();

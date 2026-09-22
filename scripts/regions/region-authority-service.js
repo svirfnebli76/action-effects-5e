@@ -39,10 +39,13 @@ export class RegionAuthorityService {
   #socket;
   #authority;
   #createCache = new Map();
+  #updateCache = new Map();
   #stats = {
     createRequests: 0,
+    updateRequests: 0,
     deleteRequests: 0,
     created: 0,
+    updated: 0,
     deleted: 0,
     routedToGm: 0,
     errors: 0,
@@ -54,6 +57,7 @@ export class RegionAuthorityService {
     this.#authority = authority;
 
     socket.register("regions.create", (payload) => this.#createAsAuthority(payload));
+    socket.register("regions.updateCrosshair3d", (payload) => this.#updateCrosshair3dAsAuthority(payload));
     socket.register("regions.delete", (payload) => this.#deleteAsAuthority(payload));
   }
 
@@ -157,6 +161,41 @@ export class RegionAuthorityService {
     }
   }
 
+  /** Update only AE5E 3D-crosshair persistence fields on an AE5E-owned Region. */
+  async updateCrosshair3d(regionOrUuid, changes, { requestId = null } = {}) {
+    this.#stats.updateRequests += 1;
+    const regionUuid = typeof regionOrUuid === "string" ? regionOrUuid : regionOrUuid?.uuid ?? null;
+    if (!regionUuid || !String(regionUuid).includes(".Region.")) {
+      return { updated: false, reason: "invalid-region-uuid" };
+    }
+    if (!changes || typeof changes !== "object" || Array.isArray(changes)) {
+      return { updated: false, reason: "invalid-changes" };
+    }
+    const allowed = new Set([
+      "shapes",
+      "elevation",
+      `flags.${MODULE_ID}.regionCells`,
+      `flags.${MODULE_ID}.crosshair3dPersistentArea`
+    ]);
+    if (Object.keys(changes).some(path => !allowed.has(path))) {
+      return { updated: false, reason: "unsupported-change-path" };
+    }
+    const payload = {
+      regionUuid,
+      changes: duplicate(changes),
+      requestId: String(requestId ?? randomId()),
+      requestedByUserId: globalThis.game?.user?.id ?? null
+    };
+    try {
+      return await this.#executeAsAuthority("regions.updateCrosshair3d", payload,
+        () => this.#updateCrosshair3dAsAuthority(payload));
+    } catch (error) {
+      this.#stats.errors += 1;
+      this.#record("crosshair3d-update-error", { regionUuid, message: error?.message ?? String(error) });
+      throw error;
+    }
+  }
+
   isOwned(region) {
     return Boolean(getProperty(region, `flags.${MODULE_ID}.${REGION_AUTHORITY_FLAG}`));
   }
@@ -220,6 +259,48 @@ export class RegionAuthorityService {
       requestId: payload?.requestId ?? null
     };
     this.#record("created", result);
+    return result;
+  }
+
+  async #updateCrosshair3dAsAuthority(payload) {
+    const requestId = String(payload?.requestId ?? "").trim();
+    if (!requestId) throw new Error("Region update requires a request ID.");
+    const cacheKey = `${payload?.requestedByUserId ?? "unknown"}:${requestId}`;
+    if (this.#updateCache.has(cacheKey)) return this.#updateCache.get(cacheKey);
+    const operation = this.#performUpdateCrosshair3dAsAuthority(payload);
+    this.#updateCache.set(cacheKey, operation);
+    try {
+      const result = await operation;
+      this.#updateCache.set(cacheKey, Promise.resolve(result));
+      while (this.#updateCache.size > 256) this.#updateCache.delete(this.#updateCache.keys().next().value);
+      return result;
+    } catch (error) {
+      this.#updateCache.delete(cacheKey);
+      throw error;
+    }
+  }
+
+  async #performUpdateCrosshair3dAsAuthority(payload) {
+    this.#assertAuthority();
+    const region = await fromUuid(payload?.regionUuid);
+    if (!region) return { updated: false, reason: "region-unavailable" };
+    if (region.documentName !== "Region") return { updated: false, reason: "not-a-region" };
+    if (!this.isOwned(region)) return { updated: false, reason: "not-ae5e-owned" };
+    const changes = duplicate(payload?.changes ?? {});
+    const allowed = new Set([
+      "shapes",
+      "elevation",
+      `flags.${MODULE_ID}.regionCells`,
+      `flags.${MODULE_ID}.crosshair3dPersistentArea`
+    ]);
+    if (Object.keys(changes).some(path => !allowed.has(path))) {
+      return { updated: false, reason: "unsupported-change-path" };
+    }
+    await region.update(changes, { ae5eCrosshair3dRepropagation: true });
+    this.#stats.updated += 1;
+    const result = { updated: true, regionUuid: region.uuid, sceneUuid: region.parent?.uuid ?? null,
+      requestId: payload.requestId };
+    this.#record("crosshair3d-updated", result);
     return result;
   }
 

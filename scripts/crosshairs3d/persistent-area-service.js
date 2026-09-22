@@ -42,36 +42,45 @@ export class Crosshair3dPersistentAreaService {
       cells: Object.fromEntries(cells.map(cell => [`${cell.x},${cell.y},${cell.z}`, REGION_CELL_STATES.ACTIVE])),
       frame
     });
+    const backend = this.#selectBackend(propagation, options);
+    const nativeShape = backend === "native" ? this.#nativeShape(propagation.shape, metrics) : null;
     const color = String(options.color ?? "#7fefef");
     const regionData = {
       name: String(options.name ?? "AE5E Persistent Area").trim() || "AE5E Persistent Area",
       color,
-      shapes: [{
+      shapes: nativeShape ? [nativeShape] : [{
         type: "rectangle", x: p0.x, y: p0.y,
         width: p1.x - p0.x, height: p1.y - p0.y,
         anchorX: 0, anchorY: 0, rotation: 0
       }],
-      elevation: { bottom: min.z * d, top: max.z * d },
+      elevation: nativeShape
+        ? { bottom: propagation.shape.origin.z,
+          top: propagation.shape.origin.z + propagation.shape.height }
+        : { bottom: min.z * d, top: max.z * d },
       behaviors: Array.isArray(options.behaviors) ? options.behaviors : [],
       locked: options.locked !== false,
       visibility: options.visibility ?? 0,
       ...(attached ? { attachment: { token: source.document?.id ?? source.id } } : {}),
       flags: {
         [MODULE_ID]: {
-          [REGION_CELL_FLAG]: config,
+          ...(backend === "cells" ? { [REGION_CELL_FLAG]: config } : {}),
           crosshair3dPersistentArea: {
             schemaVersion: 1,
+            backend,
             propagation: propagation.mode,
             support: propagation.support,
             shape: propagation.shape,
             origin: propagation.origin,
+            connectors: Array.isArray(options.connectors) ? options.connectors : [],
             sourceTokenUuid: source.document?.uuid ?? source.uuid ?? null,
+            sourceTransform: this.#sourceTransform(source?.document ?? source),
             attached
           }
         }
       }
     };
-    return Object.freeze({ regionData, config, bounds: { min, max }, operationId: randomId(), scene });
+    return Object.freeze({ regionData, config: backend === "cells" ? config : null, backend,
+      bounds: { min, max }, operationId: randomId(), scene });
   }
 
   async create(input) {
@@ -104,5 +113,60 @@ export class Crosshair3dPersistentAreaService {
       },
       rotationOffset: ((-rotation % 360) + 360) % 360
     };
+  }
+
+  #sourceTransform(source) {
+    if (!source) return null;
+    return {
+      x: finite(source.x),
+      y: finite(source.y),
+      elevation: finite(source.elevation),
+      rotation: finite(source.rotation),
+      width: finite(source.width, 1),
+      height: finite(source.height, 1)
+    };
+  }
+
+  #selectBackend(propagation, options) {
+    const requested = String(options.backend ?? "auto").trim().toLowerCase();
+    if (!["auto", "cells", "native"].includes(requested)) {
+      throw new RangeError(`Unknown persistent-area backend '${requested}'.`);
+    }
+    const cellBehavior = options.requiresCells === true || options.cellBehavior === true;
+    const exactNative = propagation?.mode === "none"
+      && ["prism", "cylinder"].includes(propagation?.shape?.type)
+      && !cellBehavior;
+    if (requested === "native" && !exactNative) {
+      throw new Error("This persistent area cannot be represented exactly by one native Foundry Region.");
+    }
+    return requested === "cells" || !exactNative ? "cells" : "native";
+  }
+
+  #nativeShape(shape, metrics) {
+    const scale = metrics.size / metrics.distance;
+    const center = this.#metricsService.distanceToPixels(shape.origin, metrics);
+    if (shape.type === "prism") {
+      return {
+        type: "rectangle",
+        x: center.x,
+        y: center.y,
+        width: shape.width * scale,
+        height: shape.length * scale,
+        anchorX: 0.5,
+        anchorY: 0.5,
+        rotation: finite(shape.yaw),
+        gridBased: false
+      };
+    }
+    if (shape.type === "cylinder") {
+      return {
+        type: "circle",
+        x: center.x,
+        y: center.y,
+        radius: shape.radius * scale,
+        gridBased: false
+      };
+    }
+    throw new Error(`Unsupported native persistent shape '${shape.type}'.`);
   }
 }

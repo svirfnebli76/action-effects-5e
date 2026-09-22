@@ -143,6 +143,7 @@ export class ActionEffects5eApi {
     crosshairs3dPropagation,
     crosshairs3dPropagationEnvironment,
     crosshairs3dPersistentAreas,
+    crosshairs3dAttachedPropagation,
     crosshairs3dTargeting,
     crosshairs3dPlacement,
     reactionRegistry,
@@ -569,7 +570,9 @@ export class ActionEffects5eApi {
       }),
       persistent: Object.freeze({
         build: (options) => crosshairs3dPersistentAreas.build(options),
-        create: (options) => crosshairs3dPersistentAreas.create(options)
+        create: (options) => crosshairs3dPersistentAreas.create(options),
+        resolveAttached: (region, options) => crosshairs3dAttachedPropagation.resolveRegion(region, options),
+        getAttachedStats: () => crosshairs3dAttachedPropagation.getStats()
       }),
       targeting: Object.freeze({
         candidateCellsForVolume: (volume, grid) => crosshairs3dTargeting.candidateCellsForVolume(volume, grid),

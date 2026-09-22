@@ -125,6 +125,51 @@ test("attached persistent cells begin in the Scene frame and follow the source a
   assert.deepEqual(built.regionData.attachment, { token: source.id });
 });
 
+test("unobstructed prisms and cylinders use one exact native Foundry Region", () => {
+  const { regions, regionCells } = regionFixture();
+  const service = new Crosshair3dPersistentAreaService({ regions, regionCells,
+    metricsService: new Crosshair3dCanvasMetricsService() });
+  const source = { id: "source", uuid: "Scene.s.Token.source", x: 0, y: 0,
+    width: 1, height: 1, elevation: 0, rotation: 0 };
+  const prism = service.build({ propagation: { mode: "none", support: "continuous-primitive",
+    shape: { type: "prism", origin: { x: 10, y: 15, z: 2.5 }, width: 10, length: 20,
+      height: 7.5, yaw: 30 }, origin: { x: 10, y: 15, z: 2.5 }, cells: [{ x: 1, y: 1, z: 0 }] },
+  scene: { uuid: "Scene.s" }, source, metrics });
+  assert.equal(prism.backend, "native");
+  assert.deepEqual(prism.regionData.shapes, [{ type: "rectangle", x: 200, y: 300, width: 200,
+    height: 400, anchorX: 0.5, anchorY: 0.5, rotation: 30, gridBased: false }]);
+  assert.deepEqual(prism.regionData.elevation, { bottom: 2.5, top: 10 });
+  assert.equal(Object.hasOwn(prism.regionData.flags[MODULE_ID], REGION_CELL_FLAG), false);
+  assert.equal(prism.regionData.flags[MODULE_ID].crosshair3dPersistentArea.backend, "native");
+
+  const cylinder = service.build({ propagation: { mode: "none", support: "continuous-primitive",
+    shape: { type: "cylinder", origin: { x: 10, y: 15, z: -5 }, radius: 7.5, height: 15 },
+    origin: { x: 10, y: 15, z: -5 }, cells: [{ x: 1, y: 1, z: -1 }] },
+  scene: { uuid: "Scene.s" }, source, metrics });
+  assert.equal(cylinder.backend, "native");
+  assert.deepEqual(cylinder.regionData.shapes, [{ type: "circle", x: 200, y: 300, radius: 150,
+    gridBased: false }]);
+  assert.deepEqual(cylinder.regionData.elevation, { bottom: -5, top: 10 });
+});
+
+test("clipped, chart-derived, and explicitly cell-sensitive areas remain cell-backed", () => {
+  const { regions, regionCells } = regionFixture();
+  const service = new Crosshair3dPersistentAreaService({ regions, regionCells,
+    metricsService: new Crosshair3dCanvasMetricsService() });
+  const input = mode => ({ propagation: { mode, support: "continuous-primitive",
+    shape: { type: "prism", origin: { x: 2.5, y: 2.5, z: 0 }, width: 5, length: 5,
+      height: 5, yaw: 0 }, origin: { x: 2.5, y: 2.5, z: 0 }, cells: [{ x: 0, y: 0, z: 0 }] },
+  scene: { uuid: "Scene.s" }, source: { id: "source", uuid: "Scene.s.Token.source" }, metrics });
+  assert.equal(service.build(input("direct")).backend, "cells");
+  assert.equal(service.build({ ...input("none"), options: { requiresCells: true } }).backend, "cells");
+  assert.throws(() => service.build({ ...input("direct"), options: { backend: "native" } }),
+    /cannot be represented exactly/);
+  const sphereBuilt = service.build({ propagation: { mode: "none", support: "chart-cell", shape,
+    origin: shape.origin, cells: [{ x: 0, y: 0, z: 0 }] }, scene: { uuid: "Scene.s" },
+  source: { id: "source", uuid: "Scene.s.Token.source" }, metrics });
+  assert.equal(sphereBuilt.backend, "cells");
+});
+
 test("Region creation request IDs are idempotent across concurrent confirmation retries", async () => {
   const gm = { id: "gm", isGM: true, active: true };
   globalThis.game = { user: gm, users: [gm] };
@@ -159,4 +204,37 @@ test("Region creation request IDs are idempotent across concurrent confirmation 
   assert.equal(creations, 1);
   assert.deepEqual(a, b);
   assert.equal(a.requestId, "same-operation");
+});
+
+test("AE5E-owned Region re-propagation updates are idempotent and path-limited", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  globalThis.game = { user: gm, users: [gm] };
+  globalThis.foundry = { utils: {
+    deepClone: value => structuredClone(value),
+    setProperty(object, path, value) {
+      const parts = path.split("."); const leaf = parts.pop(); let cursor = object;
+      for (const part of parts) cursor = cursor[part] ??= {}; cursor[leaf] = value;
+    },
+    getProperty: (object, path) => path.split(".").reduce((value, part) => value?.[part], object)
+  } };
+  let updates = 0;
+  const region = { id: "r", uuid: "Scene.s.Region.r", documentName: "Region",
+    parent: { uuid: "Scene.s" }, flags: { [MODULE_ID]: { authorityRegion: { requestId: "owner" } } },
+    async update(changes, options) { updates += 1; this.last = { changes, options }; } };
+  globalThis.fromUuid = async uuid => uuid === region.uuid ? region : null;
+  const registered = new Map();
+  const socket = { ready: true, register: (name, handler) => registered.set(name, handler),
+    executeAsUser: (name, _id, payload) => registered.get(name)(payload) };
+  const service = new RegionAuthorityService({ socket,
+    authority: { getPrimaryGm: () => gm, getStatus: () => ({}) } });
+  const changes = { elevation: { bottom: 0, top: 5 } };
+  const [a, b] = await Promise.all([
+    service.updateCrosshair3d(region, changes, { requestId: "same-update" }),
+    service.updateCrosshair3d(region, changes, { requestId: "same-update" })
+  ]);
+  assert.equal(updates, 1);
+  assert.deepEqual(a, b);
+  assert.equal(region.last.options.ae5eCrosshair3dRepropagation, true);
+  assert.deepEqual(await service.updateCrosshair3d(region, { name: "not allowed" }),
+    { updated: false, reason: "unsupported-change-path" });
 });
