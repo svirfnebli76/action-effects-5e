@@ -1,4 +1,4 @@
-import { MODULE_ID, REGION_CELL_FLAG, REGION_CELL_STATES } from "../core/constants.js";
+import { MODULE_ID, REGION_CELL_STATES } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
 
 const META_FLAG = "crosshair3dPersistentArea";
@@ -62,19 +62,19 @@ export class Crosshair3dAttachedPropagationService {
       for (const region of this.#regionsForSource(document)) this.#queue(region, { source, reason: "source-transform" });
     });
     for (const name of ["createWall", "updateWall", "deleteWall", "createLevel", "updateLevel", "deleteLevel"]) {
-      this.#on(name, document => this.#queueScene(document?.parent, name, { settleEnvironment: true }));
+      this.#on(name, document => this.#queueScene(document?.parent, name));
     }
     this.#on("updateRegion", (document, changes, options = {}) => {
       if (options.ae5eCrosshair3dRepropagation) return;
       const isSurface = [...(document?.behaviors ?? [])].some(behavior =>
         !behavior.disabled && behavior.type === "defineSurface" && behavior.system?.move);
       if (!isSurface && !Object.hasOwn(changes ?? {}, "behaviors")) return;
-      this.#queueScene(document?.parent, "surface-update", { settleEnvironment: true });
+      this.#queueScene(document?.parent, "surface-update");
     });
     for (const name of ["createRegion", "deleteRegion"]) this.#on(name, document => {
       const surface = [...(document?.behaviors ?? [])].some(behavior =>
         !behavior.disabled && behavior.type === "defineSurface" && behavior.system?.move);
-      if (surface) this.#queueScene(document?.parent, name, { settleEnvironment: true });
+      if (surface) this.#queueScene(document?.parent, name);
     });
     Logger.info("Attached 3D propagation service ready.");
   }
@@ -141,14 +141,20 @@ export class Crosshair3dAttachedPropagationService {
         }
       });
       const nextMetadata = built.regionData.flags[MODULE_ID][META_FLAG];
+      const configured = await this.#regionCells.configure(region, built.config);
+      if (!configured?.configured) {
+        throw new Error(`Region cell-mask replacement failed: ${configured?.reason ?? "unknown"}.`);
+      }
       const update = await this.#regions.updateCrosshair3d(region, {
         shapes: built.regionData.shapes,
         elevation: built.regionData.elevation,
-        [`flags.${MODULE_ID}.${REGION_CELL_FLAG}`]: built.config,
         [`flags.${MODULE_ID}.${META_FLAG}`]: { ...nextMetadata, lastReason: reason,
           repropagatedAt: new Date().toISOString() }
       }, { requestId: `${region.uuid}:${randomId()}` });
-      if (!update?.updated) throw new Error(`Region re-propagation update failed: ${update?.reason ?? "unknown"}.`);
+      if (!update?.updated) {
+        await this.#deactivateCells(region, built.config);
+        throw new Error(`Region re-propagation update failed: ${update?.reason ?? "unknown"}.`);
+      }
       this.#stats.resolved += 1;
       this.#record("resolved", { regionUuid: region.uuid, reason, cells: result.cells.length });
       return { resolved: true, regionUuid: region.uuid, reason, cells: result.cells.length, propagation: result };
@@ -169,11 +175,11 @@ export class Crosshair3dAttachedPropagationService {
     this.#hooks.push([name, Hooks.on(name, wrapped)]);
   }
 
-  #queueScene(scene, reason, options = {}) {
+  #queueScene(scene, reason) {
     if (!scene || globalThis.canvas?.scene !== scene) return;
     for (const region of scene.regions ?? []) {
       const metadata = getFlag(region, META_FLAG);
-      if (this.#isEnvironmentSensitive(metadata)) this.#queue(region, { reason, ...options });
+      if (this.#isEnvironmentSensitive(metadata)) this.#queue(region, { reason });
     }
   }
 
@@ -181,10 +187,7 @@ export class Crosshair3dAttachedPropagationService {
     if (!this.#isAuthority()) { this.#stats.skipped += 1; return; }
     const key = region.uuid;
     const previous = this.#queues.get(key) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(async () => {
-      if (options.settleEnvironment) await this.#waitForEnvironmentSettlement();
-      return this.resolveRegion(region, options);
-    });
+    const current = previous.catch(() => undefined).then(() => this.resolveRegion(region, options));
     this.#queues.set(key, current);
     this.#stats.queued += 1;
     current.finally(() => { if (this.#queues.get(key) === current) this.#queues.delete(key); });
@@ -207,26 +210,6 @@ export class Crosshair3dAttachedPropagationService {
     if (!globalThis.game?.user?.isGM) return false;
     const primary = this.#authority?.getPrimaryGm?.() ?? null;
     return !primary || primary.id === globalThis.game.user.id;
-  }
-
-  #waitForEnvironmentSettlement() {
-    return new Promise(resolve => {
-      let complete = false;
-      let timer = null;
-      const done = () => {
-        if (complete) return;
-        complete = true;
-        if (timer !== null) globalThis.clearTimeout?.(timer);
-        resolve();
-      };
-      timer = globalThis.setTimeout?.(done, 100) ?? null;
-      const frame = globalThis.requestAnimationFrame;
-      if (typeof frame !== "function") {
-        if (timer === null) Promise.resolve().then(done);
-        return;
-      }
-      frame(() => frame(done));
-    });
   }
 
   #sourceWithChanges(source, changes) {
@@ -285,16 +268,26 @@ export class Crosshair3dAttachedPropagationService {
       cells: {},
       frame: existing.frame
     });
+    const configured = await this.#regionCells.configure(region, config);
     const update = await this.#regions.updateCrosshair3d(region, {
-      [`flags.${MODULE_ID}.${REGION_CELL_FLAG}`]: config,
       [`flags.${MODULE_ID}.${META_FLAG}`]: { ...clone(metadata), lastReason: reason,
         repropagatedAt: new Date().toISOString() }
     }, { requestId: `${region.uuid}:${randomId()}` });
-    if (update?.updated) {
+    if (configured?.configured && update?.updated) {
       this.#stats.deactivated += 1;
       this.#record("deactivated", { regionUuid: region.uuid, reason });
     }
-    return { resolved: false, reason, deactivated: Boolean(update?.updated) };
+    return { resolved: false, reason, deactivated: Boolean(configured?.configured && update?.updated) };
+  }
+
+  async #deactivateCells(region, config) {
+    const inactive = this.#regionCells.buildRegionFlag({
+      bounds: config.bounds,
+      defaultState: REGION_CELL_STATES.INACTIVE,
+      cells: {},
+      frame: config.frame
+    });
+    await this.#regionCells.configure(region, inactive);
   }
 
   #record(type, details) {

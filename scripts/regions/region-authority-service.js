@@ -174,7 +174,6 @@ export class RegionAuthorityService {
     const allowed = new Set([
       "shapes",
       "elevation",
-      `flags.${MODULE_ID}.regionCells`,
       `flags.${MODULE_ID}.crosshair3dPersistentArea`
     ]);
     if (Object.keys(changes).some(path => !allowed.has(path))) {
@@ -290,7 +289,6 @@ export class RegionAuthorityService {
     const allowed = new Set([
       "shapes",
       "elevation",
-      `flags.${MODULE_ID}.regionCells`,
       `flags.${MODULE_ID}.crosshair3dPersistentArea`
     ]);
     if (Object.keys(changes).some(path => !allowed.has(path))) {

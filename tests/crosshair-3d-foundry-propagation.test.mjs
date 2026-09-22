@@ -237,4 +237,8 @@ test("AE5E-owned Region re-propagation updates are idempotent and path-limited",
   assert.equal(region.last.options.ae5eCrosshair3dRepropagation, true);
   assert.deepEqual(await service.updateCrosshair3d(region, { name: "not allowed" }),
     { updated: false, reason: "unsupported-change-path" });
+  assert.deepEqual(await service.updateCrosshair3d(region, {
+    [`flags.${MODULE_ID}.${REGION_CELL_FLAG}`]: { cells: {} }
+  }), { updated: false, reason: "unsupported-change-path" },
+  "cell masks must use RegionCellStateService.configure instead of the geometry/metadata writer");
 });

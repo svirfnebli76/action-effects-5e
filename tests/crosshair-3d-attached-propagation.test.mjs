@@ -43,6 +43,7 @@ function fixture({ mode = "direct", fail = false } = {}) {
   globalThis.fromUuid = async uuid => uuid === source.uuid ? source : uuid === region.uuid ? region : null;
   const updates = [];
   const regions = { async updateCrosshair3d(_region, changes) { updates.push(changes); return { updated: true }; } };
+  const configurations = [];
   const propagationCalls = [];
   const propagation = { async resolve(options) {
     propagationCalls.push(options);
@@ -53,7 +54,13 @@ function fixture({ mode = "direct", fail = false } = {}) {
   const environment = { create: () => ({ directCoverage() {} }) };
   const regionCells = {
     getConfig: () => config,
-    buildRegionFlag: input => structuredClone(input)
+    buildRegionFlag: input => structuredClone(input),
+    async configure(_region, nextConfig) {
+      const copy = structuredClone(nextConfig);
+      configurations.push(copy);
+      region.flags[MODULE_ID][REGION_CELL_FLAG] = copy;
+      return { configured: true, regionUuid: region.uuid, config: copy };
+    }
   };
   const persistentAreas = { build({ propagation: result, source: nextSource }) {
     const nextMetadata = { ...metadata, shape: result.shape, origin: result.origin,
@@ -74,7 +81,8 @@ function fixture({ mode = "direct", fail = false } = {}) {
     await new Promise(resolve => setTimeout(resolve, 130));
     for (let i = 0; i < 20; i += 1) await Promise.resolve();
   };
-  return { service, scene, source, region, metadata, config, updates, propagationCalls, emit, flush };
+  return { service, scene, source, region, metadata, config, configurations, updates,
+    propagationCalls, emit, flush };
 }
 
 test("attached Direct re-resolves from the transformed source and rebases exact cells", async () => {
@@ -89,8 +97,11 @@ test("attached Direct re-resolves from the transformed source and rebases exact 
   assert.ok(Math.abs(call.shape.origin.y - 5) < 1e-8);
   assert.equal(call.shape.origin.z, 5);
   assert.deepEqual(call.origin, call.shape.origin);
+  assert.equal(f.configurations.length, 1);
+  assert.deepEqual(f.configurations[0].cells, { "2,1,0": "ACTIVE" });
   assert.equal(f.updates.length, 1);
-  assert.deepEqual(f.updates[0][`flags.${MODULE_ID}.${REGION_CELL_FLAG}`].cells, { "2,1,0": "ACTIVE" });
+  assert.equal(Object.hasOwn(f.updates[0], `flags.${MODULE_ID}.${REGION_CELL_FLAG}`), false,
+    "cell masks use the dedicated Region Cell State authority path");
   assert.equal(f.updates[0][`flags.${MODULE_ID}.crosshair3dPersistentArea`].lastReason, "test-transform");
 });
 
@@ -115,35 +126,16 @@ test("source and environment hooks queue Direct/Spread but never re-resolve None
   none.service.shutdown();
 });
 
-test("Wall hooks wait for Foundry's collision geometry to settle before re-resolving", async () => {
-  const priorFrame = globalThis.requestAnimationFrame;
-  const frames = [];
-  globalThis.requestAnimationFrame = callback => {
-    frames.push(callback);
-    return frames.length;
-  };
-  try {
-    const f = fixture();
-    f.service.initialize();
-    f.emit("createWall", { parent: f.scene });
-    for (let i = 0; i < 10; i += 1) await Promise.resolve();
-    assert.equal(f.propagationCalls.length, 0, "the Wall hook must not resolve immediately");
-    assert.equal(frames.length, 1);
-
-    frames.shift()(performance.now());
-    for (let i = 0; i < 10; i += 1) await Promise.resolve();
-    assert.equal(f.propagationCalls.length, 0, "one animation frame is not considered settled");
-    assert.equal(frames.length, 1);
-
-    frames.shift()(performance.now());
-    for (let i = 0; i < 20; i += 1) await Promise.resolve();
-    assert.equal(f.propagationCalls.length, 1, "resolution runs after two animation frames");
-    assert.equal(f.service.getStats().pending, 0);
-    f.service.shutdown();
-  } finally {
-    if (priorFrame === undefined) delete globalThis.requestAnimationFrame;
-    else globalThis.requestAnimationFrame = priorFrame;
-  }
+test("Wall hooks immediately re-resolve through the dedicated cell-mask writer", async () => {
+  const f = fixture();
+  f.service.initialize();
+  f.emit("createWall", { parent: f.scene });
+  for (let i = 0; i < 30; i += 1) await Promise.resolve();
+  assert.equal(f.propagationCalls.length, 1);
+  assert.equal(f.configurations.length, 1);
+  assert.deepEqual(f.configurations[0].cells, { "2,1,0": "ACTIVE" });
+  assert.equal(f.service.getStats().pending, 0);
+  f.service.shutdown();
 });
 
 test("attached propagation fails closed by replacing active overrides with an inactive configuration", async () => {
@@ -152,7 +144,8 @@ test("attached propagation fails closed by replacing active overrides with an in
   assert.equal(result.resolved, false);
   assert.equal(result.deactivated, undefined, "outer failure result reports resolution-error");
   assert.equal(f.updates.length, 1);
-  const config = f.updates[0][`flags.${MODULE_ID}.${REGION_CELL_FLAG}`];
+  assert.equal(f.configurations.length, 1);
+  const config = f.configurations[0];
   assert.equal(config.defaultState, "INACTIVE");
   assert.deepEqual(config.cells, {});
   assert.equal(f.service.getStats().errors, 1);
@@ -165,4 +158,5 @@ test("non-primary clients never queue or write attached propagation", async () =
   const result = await f.service.resolveRegion(f.region, { source: f.source });
   assert.deepEqual(result, { resolved: false, reason: "not-primary-gm" });
   assert.equal(f.updates.length, 0);
+  assert.equal(f.configurations.length, 0);
 });

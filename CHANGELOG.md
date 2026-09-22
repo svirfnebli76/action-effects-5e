@@ -1,3 +1,10 @@
+## 0.4.4.40 — Attached cell-mask publication correction
+
+- Routes attached Direct/Spread mask replacement through the dedicated GM-authoritative Region Cell State service. Live diagnostics proved propagation correctly changed 28 cells to 14 behind a Wall while the previous combined geometry/metadata update left the stored mask at 28.
+- Restricts the crosshair Region geometry/metadata writer from accepting `regionCells`; exact cell data now has one canonical mutation path.
+- Removes the v0.4.4.39 frame-settlement delay after live evidence proved Foundry's raw movement collision already included the new Wall immediately.
+- Adds read/write separation regressions, fail-closed coverage, and a focused live clear → blocked → restored stored-mask acceptance.
+
 ## 0.4.4.39 — Attached obstruction timing correction
 
 - Defers Wall, Scene Level, and movement-Surface attached-area re-propagation until Foundry has applied the corresponding collision-geometry update. This prevents an attached Direct/Spread Region from rewriting its prior mask when a physical obstruction is created or changed.

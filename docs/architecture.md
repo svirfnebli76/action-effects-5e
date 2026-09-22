@@ -1,5 +1,9 @@
 # Action Effects 5E architecture
 
+## v0.4.4.40 — Canonical attached-mask mutation path
+
+Attached Direct/Spread re-propagation separates two authorities: Region geometry and crosshair metadata use the restricted Region-authority update route, while the exact `regionCells` mask uses `RegionCellStateService.configure`. The geometry writer explicitly rejects cell-mask changes. This preserves one canonical, serialized GM-authoritative mutation path for Region-local cell state and prevents a successful metadata update from concealing a stale exact mask.
+
 ## v0.4.4.39 — Environment-hook settlement boundary
 
 Foundry document hooks can run before the movement-collision backend has incorporated a Wall, Level, or Surface mutation. Attached Direct/Spread re-propagation therefore crosses a two-animation-frame settlement barrier for physical-environment hooks, with a short timer fallback when animation frames are unavailable. Source-Token transforms remain immediate and serialized per Region.
