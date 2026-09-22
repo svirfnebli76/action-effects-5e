@@ -99,6 +99,39 @@ test('remote selected Z persists through mouse movement and modifier release doe
   h.service.cancel(); await p;
 });
 
+test('sphere placement snaps XY to a full cell center and Z to complete grid units', async () => {
+  const h = harness({ ground: 2.6 }); let r;
+  const p = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10, origin: { x: 2.5, y: 2.5, z: 2.6 } }, onRevision: value => r = value });
+  await h.flush();
+  assert.deepEqual(r.point, { x: 2.5, y: 2.5, z: 5 });
+  h.dispatch('pointermove', { clientX: 200, clientY: 200 }); await h.flush();
+  assert.deepEqual(r.point, { x: 12.5, y: 12.5, z: 5 });
+  h.dispatch('wheel', { ctrlKey: true, deltaY: -1 }); await h.flush();
+  assert.equal(r.point.z, 10);
+  h.service.cancel(); await p; assert.ok(h.clean());
+});
+
+test('sphere placement rejects a radius that is not a whole Scene grid unit', async () => {
+  const h = harness();
+  await assert.rejects(
+    h.service.show({ source: h.source, shape: { type: 'sphere', radius: 7.5 } }),
+    /whole number of Scene grid units/
+  );
+  assert.ok(h.clean());
+});
+
+test('sphere range uses the nearest caster corner and never leaves its snapped cell center', async () => {
+  const h = harness(); let r;
+  const p = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 }, range: { max: 7.6 }, onRevision: value => r = value });
+  await h.flush();
+  const initial = { ...r.point };
+  h.dispatch('pointermove', { clientX: 200, clientY: 50 }); await h.flush();
+  assert.deepEqual(r.point, initial, 'the 7.906-ft corner distance exceeds the 7.6-ft range');
+  assert.equal((r.point.x / 5) % 1, 0.5);
+  assert.equal((r.point.y / 5) % 1, 0.5);
+  h.service.cancel(); await p; assert.ok(h.clean());
+});
+
 test('range clamps remote MOVE in XYZ and rejects elevation outside range', async () => {
   const h = harness(); let r;
   const p = h.service.show({ source: h.source, shape: shapes[0], range: { max: 10 }, onRevision: v => r = v });

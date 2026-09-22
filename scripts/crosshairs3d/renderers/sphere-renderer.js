@@ -1,4 +1,3 @@
-import { freeLineEndpoints, freeLineRangeBoundary } from "../free-line-placement.js";
 import { clamp01, controlHints, updateTextResolution } from "./shared.js";
 
 // Rendering and text layout preserved from AE5E-Sphere-PIXI-Surface-Illumination-Test-13.txt.
@@ -10,8 +9,6 @@ export function createRenderer(context) {
   const unit = String(scene.grid.units || "ft");
   const RANGE = Number(options.range?.max ?? options.maxRange ?? 60);
   const toPixel = point => metricsService.distanceToPixels(point, metrics);
-  const sourceCenterPixels = toPixel({ x: (sourceVolume.minX + sourceVolume.maxX) / 2,
-    y: (sourceVolume.minY + sourceVolume.maxY) / 2, z: sourceVolume.bottom });
   let root, revision, mode = "MOVE", labelsDirty = false;
   const labels = [];
   const lightStartedAt = performance.now(), waveStartedAt = lightStartedAt, pulseStartedAt = lightStartedAt;
@@ -67,6 +64,19 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
 
 
   const format = value => String(Math.round(Number(value) * 10) / 10);
+
+  function nearestSourceCorner(point) {
+    let best = null;
+    for (const z of [sourceVolume.bottom, sourceVolume.top]) {
+      for (const y of [sourceVolume.minY, sourceVolume.maxY]) {
+        for (const x of [sourceVolume.minX, sourceVolume.maxX]) {
+          const distance = Math.hypot(point.x - x, point.y - y, point.z - z);
+          if (!best || distance < best.distance) best = { x, y, z, distance };
+        }
+      }
+    }
+    return best;
+  }
 
   function mixColor(from, to, amount) {
     const t = clamp01(amount);
@@ -451,24 +461,18 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
       if (redrawShape) {
         drawing.clear();
 
-        const boundary = freeLineRangeBoundary(
-          sourceVolume,
-          RANGE,
-          current.point.z
-        ).map(toPixel);
-
-        if (options.range?.showBoundary !== false && boundary.length) {
+        const sourceCorner = nearestSourceCorner(current.point);
+        const verticalDistance = Math.abs(current.point.z - sourceCorner.z);
+        const planarRange = Math.sqrt(Math.max(0, (RANGE * RANGE) - (verticalDistance * verticalDistance)));
+        if (options.range?.showBoundary !== false && planarRange > 1e-7) {
+          const boundaryCenter = toPixel(sourceCorner);
           drawing.lineStyle(1.5, RANGE_RING_COLOR, RANGE_RING_ALPHA);
-          drawing.drawPolygon(boundary.flatMap(point => [point.x, point.y]));
+          drawing.drawCircle(boundaryCenter.x, boundaryCenter.y, planarRange * scale);
         }
 
         drawSphere(center, current.point);
         drawSourceTracer(
-          toPixel({
-            x: (sourceVolume.minX + sourceVolume.maxX) / 2,
-            y: (sourceVolume.minY + sourceVolume.maxY) / 2,
-            z: sourceVolume.bottom
-          }),
+          toPixel(sourceCorner),
           center
         );
         drawApex(center);

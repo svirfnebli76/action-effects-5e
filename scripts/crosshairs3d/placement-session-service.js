@@ -43,6 +43,12 @@ export class Crosshair3dPlacementSessionService {
     if (["prism", "rectangle", "rect", "cylinder", "free-line"].includes(input.type)) input.height ??= input.depth ?? metrics.distance;
     if (["line", "free-line"].includes(input.type)) input.width ??= metrics.distance;
     const baseShape = this.#geometry.normalizeShape(input);
+    if (baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE) {
+      const radiusUnits = baseShape.radius / metrics.distance;
+      if (Math.abs(radiusUnits - Math.round(radiusUnits)) > 1e-9) {
+        throw new RangeError("Sphere radius must be a whole number of Scene grid units.");
+      }
+    }
     const freeLine = baseShape.type === "free-line";
     const self = ["cone", "line"].includes(baseShape.type);
     if (baseShape.type === "cone" && options.remote === true) throw new Error("Remote cone placement is not part of this checkpoint.");
@@ -60,8 +66,9 @@ export class Crosshair3dPlacementSessionService {
     const headingYaw = normalizeDegrees(input.yaw ?? source.document.rotation ?? 0);
     const arcPitch = self ? normalizeDegrees(input.pitch ?? 0) : 0;
     const orientation = this.#canonicalSelfOrientation(headingYaw, arcPitch);
-    const initialPoint = self ? this.#resolveSelfApex(source, orientation.yaw, orientation.pitch, metrics, sourceVolume, baseShape.type)
+    let initialPoint = self ? this.#resolveSelfApex(source, orientation.yaw, orientation.pitch, metrics, sourceVolume, baseShape.type)
       : input.origin ? { ...baseShape.origin } : { x: (sourceVolume.minX + sourceVolume.maxX) / 2, y: (sourceVolume.minY + sourceVolume.maxY) / 2, z: sourceVolume.bottom };
+    if (baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE) initialPoint = this.#snapSphereCenter(initialPoint, metrics);
     const intent = { point: initialPoint, yaw: self ? orientation.yaw : headingYaw, headingYaw,
       pitch: self ? orientation.pitch : 0, arcPitch, length: baseShape.length,
       manualElevation: false, selectedAbsoluteZ: initialPoint.z };
@@ -171,7 +178,10 @@ export class Crosshair3dPlacementSessionService {
   #validState(session, state) {
     if (session.self) return this.#validateLos(session, state.point);
     if (session.freeLine) return this.#freeLineValid(session, state);
-    return this.#range.distanceFromVolumeToPoint(session.sourceVolume, state.point) <= session.options.range.max + 1e-8
+    const distance = session.baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE
+      ? this.#range.distanceFromVolumeCornerToPoint(session.sourceVolume, state.point)
+      : this.#range.distanceFromVolumeToPoint(session.sourceVolume, state.point);
+    return distance <= session.options.range.max + 1e-8
       && this.#validateLos(session, state.point);
   }
   #accept(session, next, reason) {
@@ -468,7 +478,8 @@ export class Crosshair3dPlacementSessionService {
     // Free-line retains its accepted surface clamp; other remote shapes retain selected absolute Z.
     const z = from.manualElevation ? session.freeLine ? Math.max(from.point.z, ground.elevation)
       : from.selectedAbsoluteZ : ground.elevation;
-    const requested = this.#metrics.pixelsToDistance({ ...snapped, z }, session.metrics);
+    let requested = this.#metrics.pixelsToDistance({ ...snapped, z }, session.metrics);
+    if (session.baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE) requested = this.#snapSphereCenter(requested, session.metrics);
     if (session.freeLine) return constrainFreeLineChange(from, { ...from, point: requested }, state => this.#validState(session, state)).point;
     const valid = point => this.#validState(session, { ...from, point });
     if (valid(requested)) return requested;
@@ -478,7 +489,18 @@ export class Crosshair3dPlacementSessionService {
       const point = Object.fromEntries(["x", "y", "z"].map(axis => [axis, from.point[axis] + (requested[axis] - from.point[axis]) * t]));
       if (valid(point)) { low = t; best = point; } else high = t;
     }
+    if (session.baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE) {
+      const snappedBest = this.#snapSphereCenter(best, session.metrics);
+      return valid(snappedBest) ? snappedBest : from.point;
+    }
     return best;
+  }
+  #snapSphereCenter(point, metrics) {
+    const d = metrics.distance;
+    const origin = metrics.grid?.origin ?? { x: 0, y: 0, z: 0 };
+    const center = (value, axis) => origin[axis] + ((Math.floor((finiteNumber(value) - origin[axis]) / d) + 0.5) * d);
+    const elevation = origin.z + (Math.round((finiteNumber(point?.z) - origin.z) / d) * d);
+    return { x: center(point?.x, "x"), y: center(point?.y, "y"), z: elevation };
   }
   #replaceUserTargets(ids) {
     globalThis.canvas.tokens.setTargets([...new Set(ids)], { mode: "replace" });

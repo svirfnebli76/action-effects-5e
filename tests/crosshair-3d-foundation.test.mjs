@@ -35,6 +35,10 @@ test("remote range can measure from the nearest point on a source Token volume",
   const volume = { minX: 0, maxX: 10, minY: 0, maxY: 10, bottom: 0, top: 10 };
   assert.deepEqual(range.nearestPointOnVolume(volume, { x: 30, y: 5, z: 5 }), { x: 10, y: 5, z: 5 });
   assert.equal(range.distanceFromVolumeToPoint(volume, { x: 30, y: 5, z: 5 }), 20);
+  const corner = range.nearestCornerOnVolume(volume, { x: 30, y: 5, z: 5 });
+  assert.deepEqual({ x: corner.x, y: corner.y, z: corner.z }, { x: 10, y: 0, z: 0 });
+  assert.ok(Math.abs(corner.distance - Math.sqrt(450)) < 1e-12);
+  assert.ok(Math.abs(range.distanceFromVolumeCornerToPoint(volume, { x: 30, y: 5, z: 5 }) - Math.sqrt(450)) < 1e-12);
 });
 
 test("Token volume prefers explicit Foundry depth and otherwise uses the longest XY edge", () => {
@@ -95,15 +99,94 @@ test("A 10 by 10 by 5 prism produces a 2 by 2 by 1 affected-cell mask", () => {
   assert.equal(mask.contains({ x: 1, y: 1, z: 0 }), true);
 });
 
-test("Sphere rasterization derives grid cells from the continuous sphere rather than from a box", () => {
-  const mask = cells.rasterize({ type: "sphere", origin: { x: 5, y: 5, z: 5 }, radius: 5 }, { grid });
-  assert.equal(mask.cells.length, 8);
-  assert.equal(mask.cells.every(cell => [0, 1].includes(cell.x) && [0, 1].includes(cell.y) && [0, 1].includes(cell.z)), true);
+test("Sphere rasterization uses chart-derived square-center heights", () => {
+  const mask = cells.rasterize({ type: "sphere", origin: { x: 2.5, y: 2.5, z: 0 }, radius: 5 }, { grid });
+  assert.deepEqual(mask.cells, [
+    { x: 0, y: 0, z: -1 },
+    { x: 0, y: 0, z: 0 }
+  ]);
 });
 
 test("Sphere tangent contact at a cell face has zero positive Z thickness", () => {
   const shape = { type: "sphere", origin: { x: 2.5, y: 2.5, z: 0 }, radius: 5 };
   assert.equal(cells.isCellAffected(shape, { x: 0, y: 0, z: 1 }, grid), false);
+});
+
+const suppliedSphereChartFirstRows = new Map([
+  [10, [5, 10, 5, 0]],
+  [15, [5, 10, 10, 10, 5, 0]],
+  [20, [0, 10, 10, 15, 10, 10, 0, 0]],
+  [25, [0, 0, 10, 15, 15, 15, 10, 0, 0, 0]],
+  [30, [0, 0, 5, 15, 15, 15, 15, 15, 5, 0, 0, 0]],
+  [40, [0, 0, 0, 0, 10, 15, 20, 20, 20, 15, 10, 0, 0, 0, 0, 0]],
+  [50, [0, 0, 0, 0, 0, 10, 15, 20, 20, 20, 20, 20, 15, 10, 0, 0, 0, 0, 0, 0]],
+  [60, [0, 0, 0, 0, 0, 0, 0, 15, 20, 20, 25, 25, 25, 20, 20, 15, 0, 0, 0, 0, 0, 0, 0, 0]]
+]);
+
+function sphereHalfHeightMatrix(mask, radius, distance = 5) {
+  const extent = radius / distance;
+  const start = 1 - extent;
+  const counts = new Map();
+  for (const cell of mask.cells) {
+    const key = `${cell.x}|${cell.y}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return Array.from({ length: extent * 2 }, (_, row) =>
+    Array.from({ length: extent * 2 }, (_, column) =>
+      ((counts.get(`${start + column}|${start + row}`) ?? 0) * distance) / 2
+    )
+  );
+}
+
+for (const [radius, expectedFirstRow] of suppliedSphereChartFirstRows) {
+  test(`Sphere ${radius}-foot radius reproduces the supplied chart and remains symmetric`, () => {
+    const shape = { type: "sphere", origin: { x: 2.5, y: 2.5, z: 0 }, radius };
+    const mask = cells.rasterize(shape, { grid });
+    const matrix = sphereHalfHeightMatrix(mask, radius);
+    assert.deepEqual(matrix[0], expectedFirstRow);
+
+    const expected = matrix.map((row, rowIndex) => row.map((_value, columnIndex) => {
+      const extent = radius / grid.distance;
+      const x = (1 - extent + columnIndex) * grid.distance;
+      const y = (1 - extent + rowIndex) * grid.distance;
+      const heightSquared = (radius * radius) - (x * x) - (y * y);
+      if (heightSquared <= 0) return 0;
+      return grid.distance * Math.floor((Math.sqrt(heightSquared) / grid.distance) + 0.5 + 1e-9);
+    }));
+    assert.deepEqual(matrix, expected);
+
+    for (const cell of mask.cells) {
+      assert.equal(mask.contains({ x: -cell.x, y: cell.y, z: cell.z }), true);
+      assert.equal(mask.contains({ x: cell.x, y: -cell.y, z: cell.z }), true);
+      assert.equal(mask.contains({ x: cell.x, y: cell.y, z: -cell.z - 1 }), true);
+    }
+  });
+}
+
+test("Sphere 20-foot chart matches the supplied complete matrix", () => {
+  const mask = cells.rasterize({ type: "sphere", origin: { x: 2.5, y: 2.5, z: 0 }, radius: 20 }, { grid });
+  assert.deepEqual(sphereHalfHeightMatrix(mask, 20), [
+    [0, 10, 10, 15, 10, 10, 0, 0],
+    [10, 15, 15, 15, 15, 15, 10, 0],
+    [10, 15, 20, 20, 20, 15, 10, 0],
+    [15, 15, 20, 20, 20, 15, 15, 0],
+    [10, 15, 20, 20, 20, 15, 10, 0],
+    [10, 15, 15, 15, 15, 15, 10, 0],
+    [0, 10, 10, 15, 10, 10, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0]
+  ]);
+});
+
+test("Sphere chart validation requires whole-grid radius, centered XY, and grid-aligned elevation", () => {
+  assert.throws(() => cells.rasterize({ type: "sphere", origin: { x: 2.5, y: 2.5, z: 0 }, radius: 7.5 }, { grid }), /radius/);
+  assert.throws(() => cells.rasterize({ type: "sphere", origin: { x: 0, y: 2.5, z: 0 }, radius: 10 }, { grid }), /XY center/);
+  assert.throws(() => cells.rasterize({ type: "sphere", origin: { x: 2.5, y: 2.5, z: 2.5 }, radius: 10 }, { grid }), /elevation/);
+});
+
+test("Sphere chart translates across XY and complete positive/negative elevation units", () => {
+  const base = cells.rasterize({ type: "sphere", origin: { x: 2.5, y: 2.5, z: 0 }, radius: 10 }, { grid });
+  const moved = cells.rasterize({ type: "sphere", origin: { x: 17.5, y: -7.5, z: -10 }, radius: 10 }, { grid });
+  assert.deepEqual(moved.cells, base.cells.map(cell => ({ x: cell.x + 3, y: cell.y - 2, z: cell.z - 2 })));
 });
 
 test("Vertical Line remains a W by W column in XY and occupies its positive-length Z cells", () => {
@@ -274,24 +357,24 @@ test("live-style Cone targeting acquires a Token in the cardinal apex-adjacent c
   assert.deepEqual(inspection.affectedCells, [{ x: 1, y: 0, z: 0 }]);
 });
 
-test("Sphere targeting rejects affected-cell corner leakage outside the continuous 3D volume", async () => {
+test("Sphere targeting treats chart-derived cells as authoritative beyond the continuous surface", async () => {
   const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
   const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
   const sphere = { type: "sphere", origin: { x: 102.5, y: 77.5, z: 20 }, radius: 10 };
-  const outsideCorner = { minX: 109.5, maxX: 114.5, minY: 84.5, maxY: 89.5, bottom: 27, top: 32 };
-  const insideCorner = { minX: 107.5, maxX: 112.5, minY: 82.5, maxY: 87.5, bottom: 25, top: 30 };
+  const roundedCellSliver = { minX: 109.5, maxX: 114.5, minY: 84.5, maxY: 89.5, bottom: 24, top: 29 };
+  const excludedAbove = { ...roundedCellSliver, bottom: 25, top: 30 };
 
-  assert.equal(cells.isCellAffected(sphere, { x: 21, y: 16, z: 5 }, grid), true, "the broad affected-cell candidate remains present");
-  assert.equal(targeting.testVolume(sphere, outsideCorner, { grid }), false, "12.124-ft nearest corner is outside a 10-ft sphere");
-  assert.equal(targeting.testVolume(sphere, insideCorner, { grid }), true, "8.660-ft interior control remains targeted");
+  assert.equal(cells.isCellAffected(sphere, { x: 21, y: 16, z: 4 }, grid), true);
+  assert.equal(targeting.testVolume(sphere, roundedCellSliver, { grid }), true, "positive overlap with the rounded chart cell is authoritative");
+  assert.equal(targeting.testVolume(sphere, excludedAbove, { grid }), false, "face contact with the chart column top remains excluded");
 });
 
-test("Sphere targeting excludes exact tangency and keeps positive interior overlap", async () => {
+test("Sphere targeting excludes cells whose square centers are exactly one radius away", async () => {
   const { Crosshair3dTargetingGeometryService } = await import("../scripts/crosshairs3d/targeting-geometry-service.js");
   const targeting = new Crosshair3dTargetingGeometryService({ cells, geometry, tokens });
   const sphere = { type: "sphere", origin: { x: 2.5, y: 2.5, z: 20 }, radius: 10 };
   const tangent = { minX: 12.5, maxX: 17.5, minY: 0, maxY: 5, bottom: 17.5, top: 22.5 };
-  const positive = { ...tangent, minX: 9.5 };
+  const positive = { minX: 9.5, maxX: 14.5, minY: 0, maxY: 5, bottom: 17.5, top: 22.5 };
 
   assert.equal(targeting.testVolume(sphere, tangent, { grid }), false);
   assert.equal(targeting.testVolume(sphere, positive, { grid }), true);

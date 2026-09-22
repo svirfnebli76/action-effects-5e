@@ -57,6 +57,19 @@ test('source line glow advances from source to terminal, holds, then fades witho
   h.renderer.frame(3400);assert.equal(glow.commands.length,0);h.renderer.clear();
 });
 
+test('sphere tracer begins at the nearest caster corner and ends at the snapped sphere center',()=>{
+  const h=harness(),shape=h.geometry.normalizeShape({type:'sphere',origin:{x:2.5,y:2.5,z:0},radius:10});
+  const metrics=h.metrics.resolve();
+  h.renderer.show({shape,sourceVolume:h.tokens.resolve(h.source,{grid:metrics,coordinateSpace:'pixels'}),metrics,metricsService:h.metrics,
+    geometry:h.geometry,options:{range:{max:60}},capabilities:{elevation:true}});
+  h.renderer.update({shape:{...shape,origin:{x:20,y:20,z:0}},point:{x:20,y:20,z:0}},'MOVE');
+  const hasCornerTracer=h.records.graphics.some(graphics=>graphics.commands.some((command,index,commands)=>
+    command[0]==='moveTo' && command[1]===100 && command[2]===100
+      && commands[index+1]?.[0]==='lineTo' && commands[index+1][1]===400 && commands[index+1][2]===400));
+  assert.equal(hasCornerTracer,true);
+  h.renderer.clear();
+});
+
 test('illumination timing uses cumulative spread, hold and unified fade',()=>{
   assert.deepEqual(illuminationPhase(1100),{progress:.5,alpha:1});
   assert.deepEqual(illuminationPhase(2600),{progress:1,alpha:1});

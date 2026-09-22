@@ -1,5 +1,13 @@
 # Action Effects 5E architecture
 
+## v0.4.4.36 — Chart-authoritative Sphere cells (Checkpoint 2)
+
+Remote Sphere placement uses the center of a complete XY grid cell and a Z center aligned to complete Scene grid units. Radius must be a positive whole number of Scene grid units.
+
+For each XY cell, AE5E measures from that cell's center to the Sphere center, solves the remaining vertical half-height from the sphere equation, and rounds it to the nearest grid unit with exact half-grid ties upward. The resulting symmetric Z cells are authoritative for targeting; positive Token overlap with any selected cell qualifies, while face-only contact does not. No secondary continuous-sphere filter is applied.
+
+Sphere range, the grey source tracer and the displayed current-anchor range guide use the nearest deterministic corner of the caster's occupied 3D volume.
+
 ## v0.4.4.35 — Sphere targeting refinement (Checkpoint 2)
 
 Sphere live targeting uses affected cells as its grid-policy candidate set, then requires positive AABB overlap with the exact continuous sphere. A token cannot qualify only because it overlaps an accepted corner cell outside the mathematical sphere. Exact tangency remains excluded.

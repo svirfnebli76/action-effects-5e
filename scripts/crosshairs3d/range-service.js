@@ -22,6 +22,29 @@ export class Crosshair3dRangeService {
     });
   }
 
+  nearestCornerOnVolume(volume, point) {
+    if (!volume) throw new TypeError("Source volume is required.");
+    const target = {
+      x: finiteNumber(point?.x),
+      y: finiteNumber(point?.y),
+      z: finiteNumber(point?.z ?? point?.elevation)
+    };
+    const corners = [];
+    for (const z of [volume.bottom, volume.top]) {
+      for (const y of [volume.minY, volume.maxY]) {
+        for (const x of [volume.minX, volume.maxX]) corners.push({ x, y, z });
+      }
+    }
+    return corners.reduce((best, corner) => {
+      const distance = distance3(corner, target);
+      return !best || distance < best.distance ? { ...corner, distance } : best;
+    }, null);
+  }
+
+  distanceFromVolumeCornerToPoint(volume, point) {
+    return this.nearestCornerOnVolume(volume, point).distance;
+  }
+
   clampPointFromOrigin(origin, requested, maxDistance) {
     const limit = Math.max(0, finiteNumber(maxDistance));
     const distance = distance3(origin, requested);

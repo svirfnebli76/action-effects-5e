@@ -1,5 +1,5 @@
 import { CROSSHAIR_3D_SHAPES } from "./geometry-service.js";
-import { CROSSHAIR_3D_EPSILON, clamp, finiteNumber } from "./geometry-utils.js";
+import { CROSSHAIR_3D_EPSILON, finiteNumber } from "./geometry-utils.js";
 
 export const CROSSHAIR_3D_CELL_COVERAGE_THRESHOLD = 0.5;
 
@@ -68,6 +68,12 @@ export class Crosshair3dCellRasterizerService {
     const world = this.cellToWorld(cell, grid);
     const threshold = finiteNumber(options.threshold, CROSSHAIR_3D_CELL_COVERAGE_THRESHOLD);
     const epsilon = finiteNumber(options.epsilon, CROSSHAIR_3D_EPSILON);
+
+    if (shape.type === CROSSHAIR_3D_SHAPES.SPHERE) {
+      this.#validateChartSphere(shape, grid, epsilon);
+      return this.#isChartSphereCellAffected(shape, world, grid, epsilon);
+    }
+
     const shapeBounds = this.#geometry.getBounds(shape);
     const zLow = Math.max(world.minZ, shapeBounds.minZ);
     const zHigh = Math.min(world.maxZ, shapeBounds.maxZ);
@@ -97,23 +103,6 @@ export class Crosshair3dCellRasterizerService {
     if (constantByZ) {
       const z = (zLow + zHigh) / 2;
       return this.#geometry.xyCoverageAtZ(shape, rect, z, { ...options, thresholdHint: threshold }) >= threshold - epsilon;
-    }
-
-    if (shape.type === CROSSHAIR_3D_SHAPES.SPHERE) {
-      const candidate = clamp(shape.origin.z, zLow, zHigh);
-      const interior = Math.min(zHigh - epsilon, Math.max(zLow + epsilon, candidate));
-      const coverage = this.#geometry.xyCoverageAtZ(shape, rect, interior, { ...options, thresholdHint: threshold });
-      if (coverage > threshold + epsilon) return true;
-      if (coverage < threshold - epsilon) return false;
-      const delta = Math.min((zHigh - zLow) / 100, grid.distance / 1000);
-      if (!(delta > epsilon)) return false;
-      const lower = interior - delta > zLow + epsilon
-        ? this.#geometry.xyCoverageAtZ(shape, rect, interior - delta, { ...options, thresholdHint: threshold })
-        : 0;
-      const upper = interior + delta < zHigh - epsilon
-        ? this.#geometry.xyCoverageAtZ(shape, rect, interior + delta, { ...options, thresholdHint: threshold })
-        : 0;
-      return lower >= threshold - epsilon || upper >= threshold - epsilon;
     }
 
     const zSamples = Math.max(9, Math.trunc(finiteNumber(options.zSamples, 17)) | 1);
@@ -157,6 +146,42 @@ export class Crosshair3dCellRasterizerService {
 
   worldCells(mask) {
     return mask.cells.map(cell => this.cellToWorld(cell, mask.grid));
+  }
+
+  #validateChartSphere(shape, grid, epsilon) {
+    const d = grid.distance;
+    const tolerance = Math.max(epsilon / d, 1e-9);
+    const whole = value => Math.abs(value - Math.round(value)) <= tolerance;
+    const centered = (value, origin) => whole(((value - origin) / d) - 0.5);
+
+    if (!whole(shape.radius / d)) {
+      throw new RangeError("Sphere radius must be a whole number of Scene grid units.");
+    }
+    if (!centered(shape.origin.x, grid.origin.x) || !centered(shape.origin.y, grid.origin.y)) {
+      throw new RangeError("Sphere center must be at the XY center of a Scene grid cell.");
+    }
+    if (!whole((shape.origin.z - grid.origin.z) / d)) {
+      throw new RangeError("Sphere center elevation must be a whole Scene grid unit.");
+    }
+  }
+
+  #isChartSphereCellAffected(shape, world, grid, epsilon) {
+    const d = grid.distance;
+    const centerX = (world.minX + world.maxX) / 2;
+    const centerY = (world.minY + world.maxY) / 2;
+    const dx = centerX - shape.origin.x;
+    const dy = centerY - shape.origin.y;
+    const heightSquared = (shape.radius * shape.radius) - (dx * dx) - (dy * dy);
+    if (!(heightSquared > epsilon * epsilon)) return false;
+
+    const exactHeight = Math.sqrt(heightSquared);
+    const halfUpTolerance = Math.max(epsilon / d, 1e-9);
+    const verticalUnits = Math.floor((exactHeight / d) + 0.5 + halfUpTolerance);
+    if (verticalUnits <= 0) return false;
+
+    const lower = shape.origin.z - (verticalUnits * d);
+    const upper = shape.origin.z + (verticalUnits * d);
+    return Math.min(world.maxZ, upper) - Math.max(world.minZ, lower) > epsilon;
   }
 
   #isHorizontalConeApexCellAffected(shape, world, rect, zLow, zHigh, threshold, epsilon, options) {

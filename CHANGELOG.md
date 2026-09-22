@@ -1,3 +1,11 @@
+## 0.4.4.36 — Chart-authoritative 3D Sphere targeting
+
+- Replaces the maximum-horizontal-slice Sphere rasterizer with the approved square-center chart calculation. Each XY square receives a vertical half-height from the sphere equation, rounded to the nearest Scene grid unit with half-grid ties rounded upward.
+- Makes the resulting chart-derived 3D cells authoritative for Sphere targeting. The v0.4.4.35 continuous-sphere post-filter is removed so it cannot reject cells intentionally included by grid rounding.
+- Snaps remote Sphere centers to a full XY grid-cell center and complete Z grid increments, and requires Sphere radii to be positive whole Scene grid units.
+- Measures Sphere range from the nearest caster-volume corner. The grey tracer and current range guide use the same deterministic corner and terminate at the Sphere center.
+- Adds exact chart regressions for 10, 15, 20, 25, 30, 40, 50 and 60-foot radii, plus full 20-foot matrix, symmetry, translation, elevation, rounding authority, tangency, range, snapping and validation coverage.
+
 ## 0.4.4.35 — Sphere targeting and placement presentation corrections
 
 - Requires sphere targets to overlap both an accepted affected grid cell and the true continuous 3D sphere, eliminating XYZ corner-cell leakage while preserving the established 50% cell policy and exact-tangency exclusion.

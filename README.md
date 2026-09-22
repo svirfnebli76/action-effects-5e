@@ -93,8 +93,8 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.4.35 installation
+## v0.4.4.36 installation
 
 Sequencer is required for AE5E automations. The placement system itself uses native PIXI and pointer input. The legacy `ae5e.crosshairs` API is removed; existing Items will be migrated after Checkpoint 4. Use `docs/testing.md` for live acceptance.
 
-v0.4.4.35 corrects Sphere corner-cell over-targeting, removes the Cone source tracer, and removes Rotate mode from source-driven Lines. It retains the v0.4.4.34 launcher-dialog lifecycle correction.
+v0.4.4.36 introduces chart-authoritative gridded Sphere targeting, whole-cell/whole-elevation Sphere placement, whole-grid radii and nearest-caster-corner range/tracer behavior. It retains the v0.4.4.35 Cone and source-driven Line presentation corrections and the v0.4.4.34 launcher lifecycle correction.
