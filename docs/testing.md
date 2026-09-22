@@ -1,14 +1,14 @@
-# Current infrastructure acceptance — v0.4.4.36
+# Current infrastructure acceptance — v0.4.4.37
 
-## Checkpoint 2 — PIXI placement integration
+## Checkpoint 3 — propagation and persistent 3D Regions
 
 Run `npm test`. Tests use the real geometry, cell, Token-volume and renderer code with mocked Foundry events/PIXI drawing commands. They exercise all six renderers, final-revision barriers, rapid input, asynchronous cancellation, cleanup, whole-step elevation, range/LOS constraints, cone tier boundaries and full pitch cycles. Renderer tests verify retained objects, finite output, immutable targeting shapes, static hidden geometry, no prism/cylinder animated face fills, and the source-line traveling glow.
 
 Placement is tested with Sequencer globals absent and with an enabled stub whose crosshair calls throw. Sequencer remains required in module.json and runtime dependency validation; do not disable the required module in your working Foundry world merely to run acceptance.
 
-Live Foundry acceptance is still required. Copy the complete macro from `docs/acceptance-crosshairs3d-v0.4.4.36.txt` into a Script Macro and select a source token. Run every shape, including the shallow prism example. Use Enemy, Leader, Follower, Neutral, Ally and Secret as available fixtures.
+Live Foundry acceptance is still required. Copy the complete macro from `docs/acceptance-crosshairs3d-v0.4.4.37.txt` into a Script Macro and run it as a GM in the prepared test Scene. It uses Caerwyn Thorne, Leader, Follower, Enemy, Neutral, Ally and Ally 2; creates a temporary movement Wall and persistent Region; then restores token positions, targets, and temporary documents.
 
-v0.4.4.36 replaces Sphere cell derivation with the supplied chart method. Automated coverage reproduces all supplied radii and the complete 20-foot matrix. Live acceptance should confirm square-center snapping, whole-grid elevation, nearest-caster-corner tracer/range behavior and expected target collection at rounded boundary cells.
+v0.4.4.37 retains the supplied chart method as the authoritative Sphere mask. Automated coverage verifies all supplied radii, Direct 50% coverage, positive Z thickness, Spread face connectivity, Foundry Level-bounded Walls, global Surfaces, final-revision targeting, idempotent Region creation, cancellation cleanup, and attached/static cell frames.
 
 v0.4.4.35 adds an exact continuous-sphere guard after affected-cell qualification, removes the Cone source tracer, and removes Rotate mode from source-driven Lines.
 

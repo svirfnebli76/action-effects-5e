@@ -38,6 +38,7 @@ function randomId() {
 export class RegionAuthorityService {
   #socket;
   #authority;
+  #createCache = new Map();
   #stats = {
     createRequests: 0,
     deleteRequests: 0,
@@ -103,7 +104,7 @@ export class RegionAuthorityService {
    * @param {Scene|string|null} options.scene Scene document or Scene UUID. Defaults to canvas.scene.
    * @param {object|null} options.metadata Optional serializable ownership/lifecycle metadata stamped on the Region.
    */
-  async create(regionData, { scene = null, metadata = null } = {}) {
+  async create(regionData, { scene = null, metadata = null, requestId = null } = {}) {
     this.#stats.createRequests += 1;
     const sceneUuid = this.#sceneUuid(scene);
     if (!sceneUuid) return { created: false, reason: "scene-unavailable" };
@@ -118,7 +119,7 @@ export class RegionAuthorityService {
       sceneUuid,
       regionData: duplicate(regionData),
       metadata: metadata && typeof metadata === "object" ? duplicate(metadata) : null,
-      requestId: randomId(),
+      requestId: String(requestId ?? randomId()),
       requestedByUserId: globalThis.game?.user?.id ?? null
     };
 
@@ -166,6 +167,24 @@ export class RegionAuthorityService {
   }
 
   async #createAsAuthority(payload) {
+    const requestId = String(payload?.requestId ?? "").trim();
+    if (!requestId) throw new Error("Region creation requires a request ID.");
+    const cacheKey = `${payload?.requestedByUserId ?? "unknown"}:${requestId}`;
+    if (this.#createCache.has(cacheKey)) return this.#createCache.get(cacheKey);
+    const operation = this.#performCreateAsAuthority(payload);
+    this.#createCache.set(cacheKey, operation);
+    try {
+      const result = await operation;
+      this.#createCache.set(cacheKey, Promise.resolve(result));
+      while (this.#createCache.size > 256) this.#createCache.delete(this.#createCache.keys().next().value);
+      return result;
+    } catch (error) {
+      this.#createCache.delete(cacheKey);
+      throw error;
+    }
+  }
+
+  async #performCreateAsAuthority(payload) {
     this.#assertAuthority();
     const scene = await fromUuid(payload?.sceneUuid);
     if (!scene || scene.documentName !== "Scene") return { created: false, reason: "scene-unavailable" };

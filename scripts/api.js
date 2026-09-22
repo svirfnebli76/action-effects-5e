@@ -139,7 +139,10 @@ export class ActionEffects5eApi {
     crosshairs3dTokens,
     crosshairs3dRange,
     crosshairs3dRevisions,
+    crosshairs3dPropagationModes,
     crosshairs3dPropagation,
+    crosshairs3dPropagationEnvironment,
+    crosshairs3dPersistentAreas,
     crosshairs3dTargeting,
     crosshairs3dPlacement,
     reactionRegistry,
@@ -559,13 +562,21 @@ export class ActionEffects5eApi {
         isCurrent: (candidate, current) => crosshairs3dRevisions.isCurrent(candidate, current)
       }),
       propagation: Object.freeze({
-        normalize: (mode, fallback) => crosshairs3dPropagation.normalize(mode, fallback),
-        resolve: (options) => crosshairs3dPropagation.resolve(options)
+        normalize: (mode, fallback) => crosshairs3dPropagationModes.normalize(mode, fallback),
+        resolve: (options) => crosshairs3dPropagationModes.resolve(options),
+        apply: (options) => crosshairs3dPropagation.resolve(options),
+        createFoundryEnvironment: (options) => crosshairs3dPropagationEnvironment.create(options)
+      }),
+      persistent: Object.freeze({
+        build: (options) => crosshairs3dPersistentAreas.build(options),
+        create: (options) => crosshairs3dPersistentAreas.create(options)
       }),
       targeting: Object.freeze({
         candidateCellsForVolume: (volume, grid) => crosshairs3dTargeting.candidateCellsForVolume(volume, grid),
         inspectVolume: (shape, volume, options) => crosshairs3dTargeting.inspectVolume(shape, volume, options),
-        testVolume: (shape, volume, options) => crosshairs3dTargeting.testVolume(shape, volume, options)
+        testVolume: (shape, volume, options) => crosshairs3dTargeting.testVolume(shape, volume, options),
+        inspectCells: (cells, volume, options) => crosshairs3dTargeting.inspectCells(cells, volume, options),
+        testCells: (cells, volume, options) => crosshairs3dTargeting.testCells(cells, volume, options)
       }),
       placement: Object.freeze({
         show: (options) => crosshairs3dPlacement.show(options),

@@ -38,6 +38,9 @@ import { Crosshair3dTokenVolumeService } from "./crosshairs3d/token-volume-servi
 import { Crosshair3dRangeService } from "./crosshairs3d/range-service.js";
 import { Crosshair3dPlacementRevisionService } from "./crosshairs3d/placement-revision-service.js";
 import { Crosshair3dPropagationModeService } from "./crosshairs3d/propagation-mode-service.js";
+import { Crosshair3dPropagationService } from "./crosshairs3d/propagation-service.js";
+import { Crosshair3dFoundryPropagationEnvironment } from "./crosshairs3d/foundry-propagation-environment.js";
+import { Crosshair3dPersistentAreaService } from "./crosshairs3d/persistent-area-service.js";
 import { Crosshair3dTargetingGeometryService } from "./crosshairs3d/targeting-geometry-service.js";
 import { Crosshair3dCanvasMetricsService } from "./crosshairs3d/canvas-metrics-service.js";
 import { Crosshair3dSurfaceService } from "./crosshairs3d/surface-service.js";
@@ -122,7 +125,11 @@ const crosshairs3dCells = new Crosshair3dCellRasterizerService({ geometry: cross
 const crosshairs3dTokens = new Crosshair3dTokenVolumeService();
 const crosshairs3dRange = new Crosshair3dRangeService();
 const crosshairs3dRevisions = new Crosshair3dPlacementRevisionService();
-const crosshairs3dPropagation = new Crosshair3dPropagationModeService();
+const crosshairs3dPropagationModes = new Crosshair3dPropagationModeService();
+const crosshairs3dPropagation = new Crosshair3dPropagationService({
+  cells: crosshairs3dCells,
+  geometry: crosshairs3dGeometry
+});
 const crosshairs3dTargeting = new Crosshair3dTargetingGeometryService({
   cells: crosshairs3dCells,
   geometry: crosshairs3dGeometry,
@@ -132,17 +139,9 @@ const crosshairs3dMetrics = new Crosshair3dCanvasMetricsService();
 const crosshairs3dSurfaces = new Crosshair3dSurfaceService();
 const crosshairs3dElevationGauge = new CrosshairElevationGaugeService();
 const crosshairs3dRenderer = new Crosshair3dPixiPlacementRenderer();
-const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
-  geometry: crosshairs3dGeometry,
-  cells: crosshairs3dCells,
-  tokens: crosshairs3dTokens,
-  range: crosshairs3dRange,
-  revisions: crosshairs3dRevisions,
-  targeting: crosshairs3dTargeting,
-  metrics: crosshairs3dMetrics,
-  surfaces: crosshairs3dSurfaces,
-  elevationGauge: crosshairs3dElevationGauge,
-  renderer: crosshairs3dRenderer
+const crosshairs3dPropagationEnvironment = new Crosshair3dFoundryPropagationEnvironment({
+  metricsService: crosshairs3dMetrics,
+  geometry: crosshairs3dGeometry
 });
 const reactionRegistry = new ReactionRegistry();
 const reactionAuthority = new ReactionAuthorityService({ socket });
@@ -177,6 +176,27 @@ const regionCells = new RegionCellStateService({ socket, authority: reactionAuth
 const regionOccupancy = new RegionOccupancyService({ cells: regionCells });
 const regionCellMovementCosts = new RegionCellMovementCostService({ occupancy: regionOccupancy, accounting: movementAccounting });
 const regionCellAttachments = new RegionCellAttachmentService({ cells: regionCells, occupancy: regionOccupancy });
+const crosshairs3dPersistentAreas = new Crosshair3dPersistentAreaService({
+  regions,
+  regionCells,
+  metricsService: crosshairs3dMetrics
+});
+const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
+  geometry: crosshairs3dGeometry,
+  cells: crosshairs3dCells,
+  tokens: crosshairs3dTokens,
+  range: crosshairs3dRange,
+  revisions: crosshairs3dRevisions,
+  targeting: crosshairs3dTargeting,
+  metrics: crosshairs3dMetrics,
+  surfaces: crosshairs3dSurfaces,
+  elevationGauge: crosshairs3dElevationGauge,
+  renderer: crosshairs3dRenderer,
+  propagation: crosshairs3dPropagation,
+  propagationModes: crosshairs3dPropagationModes,
+  propagationEnvironment: crosshairs3dPropagationEnvironment,
+  persistentAreas: crosshairs3dPersistentAreas
+});
 const environmentProfiles = new EnvironmentProfileRegistry();
 const environmentCapabilities = new EnvironmentCapabilityRegistry();
 const environmentGeometry = new EnvironmentGeometryService();
@@ -310,7 +330,10 @@ const tests = new TestHarness({
   crosshairs3dTokens,
   crosshairs3dRange,
   crosshairs3dRevisions,
+  crosshairs3dPropagationModes,
   crosshairs3dPropagation,
+  crosshairs3dPropagationEnvironment,
+  crosshairs3dPersistentAreas,
   crosshairs3dTargeting,
   crosshairs3dPlacement,
   reactionRegistry,
@@ -426,7 +449,10 @@ const api = new ActionEffects5eApi({
   crosshairs3dTokens,
   crosshairs3dRange,
   crosshairs3dRevisions,
+  crosshairs3dPropagationModes,
   crosshairs3dPropagation,
+  crosshairs3dPropagationEnvironment,
+  crosshairs3dPersistentAreas,
   crosshairs3dTargeting,
   crosshairs3dPlacement,
   reactionRegistry,

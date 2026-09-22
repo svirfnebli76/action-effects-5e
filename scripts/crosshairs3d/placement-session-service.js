@@ -10,13 +10,17 @@ const stop = event => { event.preventDefault?.(); event.stopPropagation?.(); eve
 
 /** Native pointer session. Intent is synchronous; resolved geometry/targets publish together. */
 export class Crosshair3dPlacementSessionService {
-  #geometry; #tokens; #range; #revisions; #targeting; #metrics; #surfaces; #renderer; #elevationGauge;
+  #geometry; #cells; #tokens; #range; #revisions; #targeting; #metrics; #surfaces; #renderer; #elevationGauge;
+  #propagation; #propagationModes; #propagationEnvironment; #persistentAreas;
   #active = null;
   #stats = { sessions: 0, confirmed: 0, cancelled: 0, errors: 0, revisions: 0, targetRecalculations: 0, staleDiscards: 0, wheelEvents: 0 };
-  constructor({ geometry, tokens, range, revisions, targeting, metrics, surfaces, renderer, elevationGauge = null }) {
-    this.#geometry = geometry; this.#tokens = tokens; this.#range = range; this.#revisions = revisions;
+  constructor({ geometry, cells = null, tokens, range, revisions, targeting, metrics, surfaces, renderer, elevationGauge = null,
+    propagation = null, propagationModes = null, propagationEnvironment = null, persistentAreas = null }) {
+    this.#geometry = geometry; this.#cells = cells; this.#tokens = tokens; this.#range = range; this.#revisions = revisions;
     this.#targeting = targeting; this.#metrics = metrics; this.#surfaces = surfaces;
     this.#renderer = renderer; this.#elevationGauge = elevationGauge;
+    this.#propagation = propagation; this.#propagationModes = propagationModes;
+    this.#propagationEnvironment = propagationEnvironment; this.#persistentAreas = persistentAreas;
   }
   getStats() { return Object.freeze({ ...this.#stats, active: Boolean(this.#active), activeSessionId: this.#active?.id ?? null }); }
   cancel() { this.#active?.finish("cancelled"); }
@@ -43,6 +47,8 @@ export class Crosshair3dPlacementSessionService {
     if (["prism", "rectangle", "rect", "cylinder", "free-line"].includes(input.type)) input.height ??= input.depth ?? metrics.distance;
     if (["line", "free-line"].includes(input.type)) input.width ??= metrics.distance;
     const baseShape = this.#geometry.normalizeShape(input);
+    const propagationSelection = this.#propagationModes?.resolve?.(options.propagation ?? {})
+      ?? { mode: "none", source: "default" };
     if (baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE) {
       const radiusUnits = baseShape.radius / metrics.distance;
       if (Math.abs(radiusUnits - Math.round(radiusUnits)) > 1e-9) {
@@ -75,6 +81,7 @@ export class Crosshair3dPlacementSessionService {
     const session = {
       id: globalThis.foundry?.utils?.randomID?.(12) ?? `${Date.now()}-${Math.random()}`,
       source, sourceVolume, scene: canvas.scene, metrics, baseShape, options, freeLine, self, capabilities, intent,
+      propagationSelection,
       originalTargetIds: tokenIds(globalThis.game?.user?.targets), current: this.#revisions.create({ ...intent, shape: baseShape, targets: [], valid: false }),
       mode: "MOVE", closed: false, finishing: false, settled: false, pending: null, drain: null,
       requestedSerial: 0, resolvedSerial: -1, listeners: [], hooks: [], tick: null, lastPointer: null,
@@ -107,7 +114,9 @@ export class Crosshair3dPlacementSessionService {
       return Object.freeze({ cancelled: false, revision, shape: revision.shape, targets,
         targetIds: Object.freeze(tokenIds(targets)), targetUuids: Object.freeze(targets.map(t => t.document?.uuid ?? t.uuid).filter(Boolean)),
         placementPoint: Object.freeze({ ...revision.point }), yaw: revision.yaw, pitch: revision.pitch,
-        originLevelId: session.originLevelId ?? null });
+        originLevelId: session.originLevelId ?? null,
+        propagation: revision.propagation ?? null,
+        persistentRegion: session.persistentRegion ?? null });
     } catch (error) {
       session.closed = true;
       this.#stats.errors++;
@@ -142,11 +151,12 @@ export class Crosshair3dPlacementSessionService {
       const endpoint = direction ? { x: shape.origin.x + direction.x * shape.length,
         y: shape.origin.y + direction.y * shape.length, z: shape.origin.z + direction.z * shape.length } : null;
       const valid = this.#validState(session, state);
-      const targets = valid ? await this.#collectTargets(session, shape) : Object.freeze([]);
+      const propagation = valid ? await this.#resolvePropagation(session, shape) : null;
+      const targets = propagation ? await this.#collectTargets(session, shape, propagation.cells) : Object.freeze([]);
       if (session.closed) return;
       if (request.serial !== session.requestedSerial) { this.#stats.staleDiscards++; continue; }
       const revision = this.#revisions.revise(session.current, { ...state, shape, endpoint, terminal: endpoint,
-        endpointZ: endpoint?.z ?? null, targets, valid, serial: request.serial, reason: request.reason });
+        endpointZ: endpoint?.z ?? null, targets, propagation, valid, serial: request.serial, reason: request.reason });
       this.#renderer.update(revision, session.mode);
       const ids = tokenIds(targets);
       if (!sameIds(ids, tokenIds(globalThis.game?.user?.targets))) this.#replaceUserTargets(ids);
@@ -173,6 +183,18 @@ export class Crosshair3dPlacementSessionService {
     while (session.drain && !session.closed) await session.drain;
     if (session.closed) return;
     if (!session.current.valid || session.resolvedSerial !== session.requestedSerial) { session.finish("cancelled"); return; }
+    if (session.options.persistent?.enabled === true && session.current.propagation?.cells?.length) {
+      if (!this.#persistentAreas) throw new Error("Persistent 3D area service is unavailable.");
+      session.persistentRegion = await this.#persistentAreas.create({
+        propagation: session.current.propagation,
+        scene: session.scene,
+        source: session.source,
+        metrics: session.metrics,
+        options: session.options.persistent
+      });
+    } else if (session.options.persistent?.enabled === true) {
+      session.persistentRegion = Object.freeze({ created: false, reason: "no-affected-cells" });
+    }
     session.finish("confirmed");
   }
   #validState(session, state) {
@@ -324,6 +346,18 @@ export class Crosshair3dPlacementSessionService {
       if (document.id === session.source.id) session.finish("cancelled");
       else this.#enqueue(session, "token-change");
     });
+    for (const name of ["createWall", "updateWall", "deleteWall", "createLevel", "updateLevel", "deleteLevel"]) hook(name, document => {
+      if (document.parent?.id === session.scene.id) this.#enqueue(session, "environment-change");
+    });
+    hook("updateRegion", document => {
+      if (document.parent?.id === session.scene.id) this.#enqueue(session, "surface-change");
+    });
+    for (const name of ["createRegion", "deleteRegion"]) hook(name, document => {
+      if (document.parent?.id !== session.scene.id) return;
+      const definesMovementSurface = [...(document.behaviors ?? [])].some(behavior =>
+        !behavior.disabled && behavior.type === "defineSurface" && behavior.system?.move);
+      if (definesMovementSurface) this.#enqueue(session, "surface-change");
+    });
     session.tick = guard(() => {
       if (session.closed) return;
       if (!canvas.ready || canvas.scene !== session.scene || session.source.destroyed) return session.finish("cancelled");
@@ -365,7 +399,28 @@ export class Crosshair3dPlacementSessionService {
     catch (_error) { return false; }
   }
 
-  async #collectTargets(session, shape) {
+  async #resolvePropagation(session, shape) {
+    if (!this.#propagation) {
+      const mask = this.#cells?.rasterize?.(shape, { grid: session.metrics.grid });
+      return Object.freeze({ mode: "none", shape, grid: session.metrics.grid, origin: shape.origin,
+        support: shape.type === "sphere" ? "chart-cell" : "continuous-primitive", cells: mask?.cells ?? null });
+    }
+    const mode = session.propagationSelection.mode;
+    const environment = mode === "none" ? null : this.#propagationEnvironment.create({
+      scene: session.scene, source: session.source, metrics: session.metrics
+    });
+    return this.#propagation.resolve({
+      shape,
+      grid: session.metrics.grid,
+      mode,
+      environment,
+      origin: session.options.propagation?.origin ?? shape.origin,
+      connectors: session.options.propagation?.connectors ?? [],
+      signal: session.options.signal
+    });
+  }
+
+  async #collectTargets(session, shape, propagatedCells) {
     const candidates = Array.from(globalThis.canvas?.tokens?.placeables ?? []);
     const result = [];
     for (const token of candidates) {
@@ -375,7 +430,10 @@ export class Crosshair3dPlacementSessionService {
       if (typeof session.options.targetFilter === "function" && !(await session.options.targetFilter(token, { shape, sessionId: session.id }))) continue;
       const volume = this.#tokens.resolve(token, { grid: session.metrics, coordinateSpace: "pixels" });
       if (!volume) continue;
-      if (this.#targeting.testVolume(shape, volume, { grid: session.metrics.grid })) result.push(token);
+      const affected = Array.isArray(propagatedCells)
+        ? this.#targeting.testCells(propagatedCells, volume, { grid: session.metrics.grid })
+        : this.#targeting.testVolume(shape, volume, { grid: session.metrics.grid });
+      if (affected) result.push(token);
     }
     return Object.freeze(result);
   }

@@ -49,6 +49,28 @@ export class Crosshair3dTargetingGeometryService {
     });
   }
 
+  inspectCells(cells, volume, { grid, stopOnFirst = false, epsilon = CROSSHAIR_3D_EPSILON } = {}) {
+    const normalizedGrid = this.#cells.normalizeGrid(grid);
+    const available = new Map((cells ?? []).map(cell => [`${cell.x},${cell.y},${cell.z}`, cell]));
+    const affectedCells = [];
+    for (const cell of this.candidateCellsForVolume(volume, normalizedGrid)) {
+      const selected = available.get(`${cell.x},${cell.y},${cell.z}`);
+      if (!selected) continue;
+      const world = this.#cells.cellToWorld(selected, normalizedGrid);
+      if (!this.#tokens.intersectsCell(volume, world, { epsilon })) continue;
+      affectedCells.push(Object.freeze({ ...selected }));
+      if (stopOnFirst) break;
+    }
+    return Object.freeze({
+      affected: affectedCells.length > 0,
+      affectedCells: Object.freeze(affectedCells)
+    });
+  }
+
+  testCells(cells, volume, options = {}) {
+    return this.inspectCells(cells, volume, { ...options, stopOnFirst: true }).affected;
+  }
+
   testVolume(shape, volume, options = {}) {
     return this.inspectVolume(shape, volume, { ...options, stopOnFirst: true }).affected;
   }

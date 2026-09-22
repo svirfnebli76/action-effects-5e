@@ -46,7 +46,7 @@ function eventTarget() {
     count() { return [...listeners.values()].reduce((a, b) => a + b.size, 0); }
   };
 }
-export function harness({ renderer: overrideRenderer, reverse = false, ground = 0 } = {}) {
+export function harness({ renderer: overrideRenderer, reverse = false, ground = 0, placementDependencies = {} } = {}) {
   const records = installPixi();
   const geometry = new Crosshair3dGeometryService(), metrics = new Crosshair3dCanvasMetricsService();
   const tokens = new Crosshair3dTokenVolumeService(), range = new Crosshair3dRangeService();
@@ -74,7 +74,8 @@ export function harness({ renderer: overrideRenderer, reverse = false, ground = 
   globalThis.MidiQOL = { isTargetable: () => true };
   const renderer = overrideRenderer ?? new Crosshair3dPixiPlacementRenderer();
   const service = new Crosshair3dPlacementSessionService({ geometry, tokens, range, revisions: new Crosshair3dPlacementRevisionService(), targeting,
-    metrics, surfaces: { resolveAt: () => ({ elevation: typeof ground === 'function' ? ground() : ground }) }, renderer });
+    metrics, surfaces: { resolveAt: () => ({ elevation: typeof ground === 'function' ? ground() : ground }) }, renderer,
+    ...placementDependencies });
   const dispatch = (type, extra = {}) => {
     const e = { target: view, clientX: 200, clientY: 200, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false,
       pointerId: 1, button: 0, preventDefault() { this.prevented = true; }, stopPropagation() {}, stopImmediatePropagation() {}, ...extra };

@@ -1,3 +1,14 @@
+## 0.4.4.37 — Action Effects 3D Crosshairs, Checkpoint 3
+
+- Added `none`, `direct`, and `spread` propagation over the authoritative 3D affected-cell mask. Sphere propagation preserves every chart-derived cell rather than intersecting the mask with a continuous sphere again.
+- Direct propagation requires at least 50% clear XY coverage through positive Z thickness and does not route around obstructions. Spread uses six-face traversal and requires a largest contiguous shared-face opening of at least 10%; disconnected holes and diagonal contact do not combine.
+- Added Foundry v14 physical obstruction integration. Movement-blocking Walls use the bottom/top elevation span of each assigned Scene Level, unbounded default Levels remain unbounded, horizontal movement-blocking Surfaces use their exact elevation, and the viewed Level never selects propagation geometry.
+- Placement revisions now publish resolved propagation cells and targets together. Final confirmation waits for the newest revision; cancellation and stale async work cannot create a Region.
+- Added persistent-area creation as one GM-authoritative Region document operation. The native Region is a broad XY shell and its AE5E Region-cell flag contains the exact 3D active cells from birth. Player-routed retries use an idempotent request ID.
+- Added static and Token-attached persistent frames, exact propagated-cell target collection, bounded approved Spread connectors, environment-change recalculation, and public diagnostic APIs.
+- Added automated regression coverage for supplied Sphere radii, the complete 20-foot chart, rounded chart corners, Direct thresholds, wall shadows, positive thickness, Spread connectivity, Foundry Wall/Surface query policy, persistence, attachment transforms, idempotency, final revision publication, and cancellation.
+- Added the GM live acceptance macro `docs/acceptance-crosshairs3d-v0.4.4.37.txt`; it restores all named Token positions and targets and removes its temporary Wall and Region.
+
 ## 0.4.4.36 — Chart-authoritative 3D Sphere targeting
 
 - Replaces the maximum-horizontal-slice Sphere rasterizer with the approved square-center chart calculation. Each XY square receives a vertical half-height from the sphere equation, rounded to the nearest Scene grid unit with half-grid ties rounded upward.

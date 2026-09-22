@@ -1,5 +1,13 @@
 # Action Effects 5E architecture
 
+## v0.4.4.37 — Propagation and persistent cell-backed Regions (Checkpoint 3)
+
+The shape rasterizer remains the only authority for an area's candidate cells. `none` retains that mask, `direct` clips it with physical source-to-cell coverage, and `spread` flood-fills it through qualifying shared faces. Propagation cannot add cells outside the original mask. Target collection reads the resolved cell set rather than re-testing the continuous shape.
+
+Foundry Walls provide vertical obstruction within their assigned Level elevation spans, while Foundry Surfaces provide horizontal obstruction at exact elevations. The adapter queries all relevant Scene Levels and does not depend on the viewed Level. Physical propagation uses movement restriction; visibility remains a separate placement capability.
+
+A confirmed persistent placement creates one native broad-shell Region carrying the exact sparse AE5E cell configuration in its initial document data. Static areas use the Scene grid frame. Attached areas use a Token-local frame whose initial transform equals the Scene grid and thereafter follows source translation, elevation, and rotation.
+
 ## v0.4.4.36 — Chart-authoritative Sphere cells (Checkpoint 2)
 
 Remote Sphere placement uses the center of a complete XY grid cell and a Z center aligned to complete Scene grid units. Radius must be a positive whole number of Scene grid units.

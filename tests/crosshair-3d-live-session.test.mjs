@@ -238,3 +238,56 @@ test('a second session cannot steal an active session; token changes refresh tar
   h.hook('updateToken',h.inside.document);await h.flush();assert.equal(count,2);
   h.service.cancel();await p;assert.ok(h.clean());
 });
+
+test('final confirmation publishes propagated cells, targets from them, and persists exactly once', async () => {
+  const calls = { propagation: 0, persistence: 0 };
+  const h = harness({ placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'direct', source: 'override' }) },
+    propagationEnvironment: { create: () => ({ adapter: true }) },
+    propagation: { async resolve({ shape, grid, mode, environment }) {
+      calls.propagation += 1;
+      assert.equal(mode, 'direct');
+      assert.equal(environment.adapter, true);
+      return Object.freeze({ mode, shape, grid, origin: shape.origin, support: 'continuous-primitive',
+        cells: Object.freeze([{ x: 1, y: 1, z: 0 }]), stats: Object.freeze({ affectedCells: 1 }) });
+    } },
+    persistentAreas: { async create({ propagation }) {
+      calls.persistence += 1;
+      assert.equal(propagation.cells.length, 1);
+      return Object.freeze({ created: true, regionUuid: 'Scene.test.Region.persisted' });
+    } }
+  } });
+  const promise = h.service.show({ source: h.source,
+    shape: { type: 'prism', length: 10, width: 10, height: 5 }, range: { max: 120 },
+    propagation: { override: 'direct' }, persistent: { enabled: true } });
+  await h.flush();
+  h.dispatch('pointermove');
+  await h.flush();
+  await h.confirm();
+  const result = await promise;
+  assert.equal(result.cancelled, false);
+  assert.equal(result.propagation.mode, 'direct');
+  assert.deepEqual(result.targetIds, ['inside']);
+  assert.equal(result.persistentRegion.regionUuid, 'Scene.test.Region.persisted');
+  assert.ok(calls.propagation >= 1);
+  assert.equal(calls.persistence, 1);
+});
+
+test('cancelling propagated placement creates no persistent Region', async () => {
+  let creations = 0;
+  const h = harness({ placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'none', source: 'item-default' }) },
+    propagation: { async resolve({ shape, grid }) {
+      return { mode: 'none', shape, grid, origin: shape.origin, support: 'continuous-primitive', cells: [] };
+    } },
+    persistentAreas: { async create() { creations += 1; return { created: true }; } }
+  } });
+  const promise = h.service.show({ source: h.source,
+    shape: { type: 'prism', length: 10, width: 10, height: 5 },
+    persistent: { enabled: true } });
+  await h.flush();
+  h.dispatch('pointercancel');
+  const result = await promise;
+  assert.equal(result.cancelled, true);
+  assert.equal(creations, 0);
+});

@@ -1,0 +1,131 @@
+await (async () => {
+  const TAG = "AE5E Checkpoint 3 Live Acceptance 01";
+  const VERSION = "0.4.4.37";
+  const module = game.modules.get("action-effects-5e");
+  const api = module?.api?.crosshairs3d;
+  const names = ["Caerwyn Thorne", "Leader", "Follower", "Enemy", "Neutral", "Ally", "Ally 2"];
+  if (!game.user.isGM) return ui.notifications.warn(`${TAG} requires a GM.`);
+  if (module?.version !== VERSION || !api?.propagation?.apply || !api?.persistent?.create) {
+    return ui.notifications.warn(`Install AE5E ${VERSION}, enable it, and reload first.`);
+  }
+  if (!canvas.ready || !canvas.grid.isSquare) return ui.notifications.warn("Open a square-grid Scene first.");
+  const byName = new Map(canvas.tokens.placeables.map(token => [token.name, token]));
+  const missing = names.filter(name => !byName.has(name));
+  if (missing.length) return ui.notifications.warn(`Missing Token(s): ${missing.join(", ")}`);
+
+  const source = byName.get("Caerwyn Thorne");
+  const fixtures = names.slice(1).map(name => byName.get(name));
+  const scene = canvas.scene;
+  const size = scene.grid.size;
+  const distance = scene.grid.distance;
+  const rect = canvas.dimensions.sceneRect;
+  const metrics = Object.freeze({
+    size, distance, originX: rect.x, originY: rect.y,
+    grid: Object.freeze({ distance, origin: Object.freeze({ x: 0, y: 0, z: 0 }) })
+  });
+  const snapshots = names.map(name => {
+    const document = byName.get(name).document;
+    return { _id: document.id, x: document.x, y: document.y, elevation: document.elevation };
+  });
+  const originalTargets = [...game.user.targets].map(token => token.id);
+  let wall = null;
+  let persistent = null;
+  const checks = [];
+  const record = (name, passed, details = {}) => checks.push({ name, passed: Boolean(passed), ...details });
+  const cellKey = cell => `${cell.x},${cell.y},${cell.z}`;
+  try {
+    await source.document.update({ x: 2500, y: 2500, elevation: 0 }, { animate: false });
+    const sourceCenter = {
+      x: ((2550 - rect.x) / size) * distance,
+      y: ((2550 - rect.y) / size) * distance,
+      z: 0
+    };
+    const center = {
+      x: (Math.floor((sourceCenter.x + 30) / distance) + 0.5) * distance,
+      y: (Math.floor(sourceCenter.y / distance) + 0.5) * distance,
+      z: 10
+    };
+    const shape = api.geometry.normalizeShape({ type: "sphere", origin: center, radius: 20 });
+    const clearEnvironment = api.propagation.createFoundryEnvironment({ scene, source, metrics });
+    const none = await api.propagation.apply({ shape, grid: metrics.grid, mode: "none" });
+    const directClear = await api.propagation.apply({ shape, grid: metrics.grid, mode: "direct",
+      environment: clearEnvironment, origin: center });
+    const noneKeys = new Set(none.cells.map(cellKey));
+    const directClearKeys = new Set(directClear.cells.map(cellKey));
+    record("None produced the chart-authoritative Sphere mask", none.cells.length > 0,
+      { cells: none.cells.length });
+    record("Clear Direct matches None", noneKeys.size === directClearKeys.size
+      && [...noneKeys].every(key => directClearKeys.has(key)),
+      { none: noneKeys.size, direct: directClearKeys.size });
+
+    const chosen = [
+      none.cells.find(cell => cell.x === Math.floor(center.x / distance)
+        && cell.y === Math.floor(center.y / distance) && cell.z === Math.floor(center.z / distance)),
+      ...none.cells.filter(cell => cell.z !== Math.floor(center.z / distance)).slice(0, 5)
+    ].filter(Boolean).slice(0, fixtures.length);
+    while (chosen.length < fixtures.length) chosen.push(none.cells[chosen.length]);
+    await scene.updateEmbeddedDocuments("Token", fixtures.map((token, index) => ({
+      _id: token.id,
+      x: rect.x + (chosen[index].x * size),
+      y: rect.y + (chosen[index].y * size),
+      elevation: chosen[index].z * distance
+    })), { animate: false });
+    const targetRows = fixtures.map((token, index) => {
+      const live = canvas.tokens.get(token.id);
+      const volume = api.tokens.resolveVolume(live, { grid: metrics, coordinateSpace: "pixels" });
+      const collected = api.targeting.testCells(none.cells, volume, { grid: metrics.grid });
+      return { token: token.name, cell: cellKey(chosen[index]), collected };
+    });
+    record("All six fixture Tokens collect from exact 3D cells", targetRows.every(row => row.collected),
+      { targets: targetRows });
+
+    const wallX = rect.x + ((center.x + distance) / distance * size);
+    const wallY = rect.y + ((center.y - 10) / distance * size);
+    const normal = CONST.EDGE_SENSE_TYPES?.NORMAL ?? CONST.WALL_SENSE_TYPES?.NORMAL ?? 1;
+    [wall] = await scene.createEmbeddedDocuments("Wall", [{
+      c: [wallX, wallY, wallX, wallY + (20 / distance * size)],
+      move: normal, sight: 0, light: 0, sound: 0, door: 0, ds: 0, levels: []
+    }]);
+    const blockedEnvironment = api.propagation.createFoundryEnvironment({ scene, source, metrics });
+    const directBlocked = await api.propagation.apply({ shape, grid: metrics.grid, mode: "direct",
+      environment: blockedEnvironment, origin: center });
+    const spreadBlocked = await api.propagation.apply({ shape, grid: metrics.grid, mode: "spread",
+      environment: blockedEnvironment, origin: center });
+    record("Temporary movement Wall removes Direct cells", directBlocked.cells.length < none.cells.length,
+      { none: none.cells.length, direct: directBlocked.cells.length });
+    record("Spread remains inside the original Sphere mask", spreadBlocked.cells.every(cell => noneKeys.has(cellKey(cell))),
+      { spread: spreadBlocked.cells.length });
+
+    persistent = await api.persistent.create({ propagation: none, scene, source, metrics,
+      options: { name: `${TAG} Temporary Region`, locked: true } });
+    const region = await fromUuid(persistent.regionUuid);
+    const config = region?.getFlag("action-effects-5e", "regionCells");
+    record("Persistent Region was created with the exact cell count",
+      persistent.created && Object.keys(config?.cells ?? {}).length === none.cells.length,
+      { regionUuid: persistent.regionUuid, cells: Object.keys(config?.cells ?? {}).length });
+
+    const passed = checks.every(check => check.passed);
+    console.group(TAG);
+    console.table(checks.map(check => ({ check: check.name, passed: check.passed,
+      details: JSON.stringify(Object.fromEntries(Object.entries(check).filter(([key]) => !["name", "passed"].includes(key)))) })));
+    console.log({ tag: TAG, version: VERSION, passed, checks });
+    console.groupEnd();
+    ui.notifications[passed ? "info" : "warn"](`${TAG}: ${passed ? "PASS" : "CHECK CONSOLE"}.`);
+    return { tag: TAG, version: VERSION, passed, checks };
+  } catch (error) {
+    console.error(`${TAG}: FAIL`, error);
+    ui.notifications.error(`${TAG}: ${error.message}`);
+    return { tag: TAG, version: VERSION, passed: false, error: error.message, checks };
+  } finally {
+    try { if (persistent?.regionUuid) await module.api.regions.delete(persistent.regionUuid); } catch (error) {
+      console.warn(`${TAG}: could not remove temporary Region`, error);
+    }
+    try { if (wall?.id && scene.walls.get(wall.id)) await scene.deleteEmbeddedDocuments("Wall", [wall.id]); } catch (error) {
+      console.warn(`${TAG}: could not remove temporary Wall`, error);
+    }
+    try { await scene.updateEmbeddedDocuments("Token", snapshots, { animate: false }); } catch (error) {
+      console.warn(`${TAG}: could not restore Token positions`, error);
+    }
+    try { canvas.tokens.setTargets(originalTargets.filter(id => canvas.tokens.get(id)), { mode: "replace" }); } catch (_) {}
+  }
+})();

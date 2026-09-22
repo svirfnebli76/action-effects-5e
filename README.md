@@ -93,8 +93,8 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.4.36 installation
+## v0.4.4.37 installation
 
 Sequencer is required for AE5E automations. The placement system itself uses native PIXI and pointer input. The legacy `ae5e.crosshairs` API is removed; existing Items will be migrated after Checkpoint 4. Use `docs/testing.md` for live acceptance.
 
-v0.4.4.36 introduces chart-authoritative gridded Sphere targeting, whole-cell/whole-elevation Sphere placement, whole-grid radii and nearest-caster-corner range/tracer behavior. It retains the v0.4.4.35 Cone and source-driven Line presentation corrections and the v0.4.4.34 launcher lifecycle correction.
+v0.4.4.37 completes Checkpoint 3 propagation and persistent-area generation. Placement revisions now resolve `none`, `direct`, or `spread` against the authoritative 3D cell mask before collecting targets. Direct uses physical movement-blocking Walls and Surfaces; Spread crosses only sufficiently open shared cell faces. Confirmed persistent placements create one broad native Foundry Region carrying the exact AE5E 3D cell state. Chart-authoritative Sphere cells remain unchanged.
