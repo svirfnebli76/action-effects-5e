@@ -1,5 +1,9 @@
 # Action Effects 5E architecture
 
+## v0.4.4.39 — Environment-hook settlement boundary
+
+Foundry document hooks can run before the movement-collision backend has incorporated a Wall, Level, or Surface mutation. Attached Direct/Spread re-propagation therefore crosses a two-animation-frame settlement barrier for physical-environment hooks, with a short timer fallback when animation frames are unavailable. Source-Token transforms remain immediate and serialized per Region.
+
 ## v0.4.4.38 — Persistent backend and attached-propagation boundary
 
 Persistent None prisms and cylinders use a single exact native Foundry Region unless the caller explicitly requires cell behavior. Chart-derived Spheres, obstruction-clipped Direct/Spread results, pitched and irregular volumes, and destructible/per-cell areas use the cell backend. Attached None areas rely only on Foundry's rigid Token attachment. Attached Direct/Spread areas are environment-sensitive and are re-resolved by the primary GM after source transforms or relevant Wall, Level, and movement-Surface changes; failure deactivates their exact mask.

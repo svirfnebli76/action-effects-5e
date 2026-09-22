@@ -62,19 +62,19 @@ export class Crosshair3dAttachedPropagationService {
       for (const region of this.#regionsForSource(document)) this.#queue(region, { source, reason: "source-transform" });
     });
     for (const name of ["createWall", "updateWall", "deleteWall", "createLevel", "updateLevel", "deleteLevel"]) {
-      this.#on(name, document => this.#queueScene(document?.parent, name));
+      this.#on(name, document => this.#queueScene(document?.parent, name, { settleEnvironment: true }));
     }
     this.#on("updateRegion", (document, changes, options = {}) => {
       if (options.ae5eCrosshair3dRepropagation) return;
       const isSurface = [...(document?.behaviors ?? [])].some(behavior =>
         !behavior.disabled && behavior.type === "defineSurface" && behavior.system?.move);
       if (!isSurface && !Object.hasOwn(changes ?? {}, "behaviors")) return;
-      this.#queueScene(document?.parent, "surface-update");
+      this.#queueScene(document?.parent, "surface-update", { settleEnvironment: true });
     });
     for (const name of ["createRegion", "deleteRegion"]) this.#on(name, document => {
       const surface = [...(document?.behaviors ?? [])].some(behavior =>
         !behavior.disabled && behavior.type === "defineSurface" && behavior.system?.move);
-      if (surface) this.#queueScene(document?.parent, name);
+      if (surface) this.#queueScene(document?.parent, name, { settleEnvironment: true });
     });
     Logger.info("Attached 3D propagation service ready.");
   }
@@ -169,11 +169,11 @@ export class Crosshair3dAttachedPropagationService {
     this.#hooks.push([name, Hooks.on(name, wrapped)]);
   }
 
-  #queueScene(scene, reason) {
+  #queueScene(scene, reason, options = {}) {
     if (!scene || globalThis.canvas?.scene !== scene) return;
     for (const region of scene.regions ?? []) {
       const metadata = getFlag(region, META_FLAG);
-      if (this.#isEnvironmentSensitive(metadata)) this.#queue(region, { reason });
+      if (this.#isEnvironmentSensitive(metadata)) this.#queue(region, { reason, ...options });
     }
   }
 
@@ -181,7 +181,10 @@ export class Crosshair3dAttachedPropagationService {
     if (!this.#isAuthority()) { this.#stats.skipped += 1; return; }
     const key = region.uuid;
     const previous = this.#queues.get(key) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(() => this.resolveRegion(region, options));
+    const current = previous.catch(() => undefined).then(async () => {
+      if (options.settleEnvironment) await this.#waitForEnvironmentSettlement();
+      return this.resolveRegion(region, options);
+    });
     this.#queues.set(key, current);
     this.#stats.queued += 1;
     current.finally(() => { if (this.#queues.get(key) === current) this.#queues.delete(key); });
@@ -204,6 +207,26 @@ export class Crosshair3dAttachedPropagationService {
     if (!globalThis.game?.user?.isGM) return false;
     const primary = this.#authority?.getPrimaryGm?.() ?? null;
     return !primary || primary.id === globalThis.game.user.id;
+  }
+
+  #waitForEnvironmentSettlement() {
+    return new Promise(resolve => {
+      let complete = false;
+      let timer = null;
+      const done = () => {
+        if (complete) return;
+        complete = true;
+        if (timer !== null) globalThis.clearTimeout?.(timer);
+        resolve();
+      };
+      timer = globalThis.setTimeout?.(done, 100) ?? null;
+      const frame = globalThis.requestAnimationFrame;
+      if (typeof frame !== "function") {
+        if (timer === null) Promise.resolve().then(done);
+        return;
+      }
+      frame(() => frame(done));
+    });
   }
 
   #sourceWithChanges(source, changes) {

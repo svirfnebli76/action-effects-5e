@@ -1,4 +1,4 @@
-# Current infrastructure acceptance — v0.4.4.38
+# Current infrastructure acceptance — v0.4.4.39
 
 ## Checkpoint 3 — propagation and persistent 3D Regions
 
@@ -6,7 +6,7 @@ Run `npm test`. Tests use the real geometry, cell, Token-volume and renderer cod
 
 Placement is tested with Sequencer globals absent and with an enabled stub whose crosshair calls throw. Sequencer remains required in module.json and runtime dependency validation; do not disable the required module in your working Foundry world merely to run acceptance.
 
-Live Foundry acceptance is still required. First run `docs/acceptance-crosshairs3d-v0.4.4.38-gm.txt` as the primary GM. It tests cancellation, native persistence, an actual Level-bounded Wall, an actual Define Surface, and attached Direct re-resolution, then restores its source position, targets, and temporary documents. Next run `docs/acceptance-crosshairs3d-v0.4.4.38-player.txt` as the non-GM owner of Caerwyn Thorne while a GM remains online; it verifies player-routed Region creation and deletion.
+The v0.4.4.38 interactive Direct/Spread and player-authority results remain accepted. For v0.4.4.39, run only `docs/acceptance-crosshairs3d-v0.4.4.39-attached-wall.txt` as the primary GM. It creates an attached Direct area and a real movement Wall, verifies clear → blocked → restored masks after the registered hooks settle, and removes every temporary document.
 
 v0.4.4.38 retains the supplied chart method as the authoritative Sphere mask. Automated coverage verifies all supplied radii, Direct 50% coverage, positive Z thickness, Spread face connectivity, Foundry Level-bounded Walls, global Surfaces, final-revision targeting, idempotent Region creation/update, cancellation cleanup, native exact persistence, and attached propagation re-resolution/fail-closed behavior.
 

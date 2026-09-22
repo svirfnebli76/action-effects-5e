@@ -1,3 +1,9 @@
+## 0.4.4.39 — Attached obstruction timing correction
+
+- Defers Wall, Scene Level, and movement-Surface attached-area re-propagation until Foundry has applied the corresponding collision-geometry update. This prevents an attached Direct/Spread Region from rewriting its prior mask when a physical obstruction is created or changed.
+- Keeps source-Token transform re-propagation immediate; only environment-document hooks use the settlement barrier.
+- Adds a deterministic regression proving that a Wall hook cannot resolve on the hook turn or first animation frame and resolves after the second frame, plus a focused live macro that verifies clear → blocked → restored cell counts with automatic cleanup.
+
 ## 0.4.4.38 — Checkpoint 3 persistence and live-acceptance hardening
 
 - Attached Direct and Spread persistent areas now re-resolve on source-token transforms and on movement Wall, Scene Level, or movement Surface changes. Only the primary GM writes the replacement mask; failed or empty resolution deactivates the mask instead of retaining stale affected cells.

@@ -69,7 +69,11 @@ function fixture({ mode = "direct", fail = false } = {}) {
     persistentAreas, metricsService: { resolve: () => metrics }
   });
   const emit = (name, ...args) => { for (const fn of hooks.get(name) ?? []) fn(...args); };
-  const flush = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };
+  const flush = async () => {
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    await new Promise(resolve => setTimeout(resolve, 130));
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  };
   return { service, scene, source, region, metadata, config, updates, propagationCalls, emit, flush };
 }
 
@@ -109,6 +113,37 @@ test("source and environment hooks queue Direct/Spread but never re-resolve None
   assert.equal(none.propagationCalls.length, 0);
   assert.equal(none.updates.length, 0);
   none.service.shutdown();
+});
+
+test("Wall hooks wait for Foundry's collision geometry to settle before re-resolving", async () => {
+  const priorFrame = globalThis.requestAnimationFrame;
+  const frames = [];
+  globalThis.requestAnimationFrame = callback => {
+    frames.push(callback);
+    return frames.length;
+  };
+  try {
+    const f = fixture();
+    f.service.initialize();
+    f.emit("createWall", { parent: f.scene });
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    assert.equal(f.propagationCalls.length, 0, "the Wall hook must not resolve immediately");
+    assert.equal(frames.length, 1);
+
+    frames.shift()(performance.now());
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    assert.equal(f.propagationCalls.length, 0, "one animation frame is not considered settled");
+    assert.equal(frames.length, 1);
+
+    frames.shift()(performance.now());
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    assert.equal(f.propagationCalls.length, 1, "resolution runs after two animation frames");
+    assert.equal(f.service.getStats().pending, 0);
+    f.service.shutdown();
+  } finally {
+    if (priorFrame === undefined) delete globalThis.requestAnimationFrame;
+    else globalThis.requestAnimationFrame = priorFrame;
+  }
 });
 
 test("attached propagation fails closed by replacing active overrides with an inactive configuration", async () => {
