@@ -1,3 +1,11 @@
+## 0.4.4.47 — coalesced Direct/Spread live propagation
+
+- Builds on v0.4.4.46 cooperative sampling. Live Foundry testing showed a major responsiveness improvement, but continuous movement still produced thousands of short-lived stale Direct/Spread calculations, leaving some residual roughness.
+- Adds a 24 ms quiet window for rapid mouse/wheel intent before Direct/Spread physical propagation begins. PIXI presentation remains immediate; newer intent replaces the pending physical request without starting collision work. Initial, environment/token refresh, and final-confirm requests remain immediate.
+- Keeps cooperative physical sampling as a second safety layer once propagation is actually running. If newer intent arrives during a calculation, the stale run still aborts at its next cooperative boundary.
+- Adds `coalescedRequests` and `propagationStarts` diagnostics so live acceptance can distinguish cheap request collapsing from actual physical work. Final confirmation still bypasses the quiet window and waits for the exact final authoritative propagation/target result.
+- Adds a rapid-input regression proving repeated Direct pointer movement starts no obsolete physical calculations and resolves only the newest stable presentation. All propagation geometry, sampling density, targeting, persistence, and cleanup rules remain unchanged.
+
 ## 0.4.4.46 — cooperative Direct/Spread physical sampling
 
 - Supersedes the incomplete v0.4.4.45 responsiveness correction. v0.4.4.45 separated PIXI presentation from authoritative propagation, but live Foundry testing showed Direct/Spread physical collision sampling still monopolized the main JavaScript task, preventing pointer events and rendering from advancing during the 70–120 ms resolver window.

@@ -7,6 +7,7 @@ import { finiteNumber, normalizeDegrees } from "./geometry-utils.js";
 const tokenIds = tokens => Array.from(tokens ?? [], token => token?.id ?? token?.document?.id).filter(Boolean);
 const sameIds = (a, b) => [...a].sort().join("|") === [...b].sort().join("|");
 const stop = event => { event.preventDefault?.(); event.stopPropagation?.(); event.stopImmediatePropagation?.(); };
+const PHYSICAL_PROPAGATION_QUIET_MS = 24;
 
 const yieldToMainThread = async () => {
   if (typeof globalThis.scheduler?.yield === "function") {
@@ -22,7 +23,7 @@ export class Crosshair3dPlacementSessionService {
   #propagation; #propagationModes; #propagationEnvironment; #persistentAreas;
   #active = null;
   #stats = { sessions: 0, confirmed: 0, cancelled: 0, errors: 0, revisions: 0, presentations: 0,
-    targetRecalculations: 0, staleDiscards: 0, wheelEvents: 0 };
+    targetRecalculations: 0, staleDiscards: 0, coalescedRequests: 0, propagationStarts: 0, wheelEvents: 0 };
   constructor({ geometry, cells = null, tokens, range, revisions, targeting, metrics, surfaces, renderer, elevationGauge = null,
     propagation = null, propagationModes = null, propagationEnvironment = null, persistentAreas = null }) {
     this.#geometry = geometry; this.#cells = cells; this.#tokens = tokens; this.#range = range; this.#revisions = revisions;
@@ -181,10 +182,13 @@ export class Crosshair3dPlacementSessionService {
   }
   async #drain(session) {
     while (session.pending && !session.closed) {
-      const request = session.pending; session.pending = null;
+      let request = session.pending; session.pending = null;
+      request = await this.#coalescePhysicalRequest(session, request);
+      if (!request || session.closed) continue;
       const presentation = request.presentation;
       let propagation;
       try {
+        if (presentation.valid) this.#stats.propagationStarts++;
         propagation = presentation.valid
           ? await this.#resolvePropagation(session, presentation.shape, request.serial)
           : null;
@@ -212,6 +216,24 @@ export class Crosshair3dPlacementSessionService {
       }
     }
   }
+  async #coalescePhysicalRequest(session, request) {
+    const isRapidIntent = candidate => candidate?.reason === "move"
+      || candidate?.reason === "move-aim"
+      || String(candidate?.reason ?? "").startsWith("wheel-");
+    if (session.propagationSelection.mode === "none" || !isRapidIntent(request)) return request;
+    while (!session.closed) {
+      await new Promise(resolve => globalThis.setTimeout(resolve, PHYSICAL_PROPAGATION_QUIET_MS));
+      if (session.closed) return null;
+      if (!session.pending) return request;
+      const newest = session.pending;
+      session.pending = null;
+      if (newest.serial !== request.serial) this.#stats.coalescedRequests++;
+      request = newest;
+      if (!isRapidIntent(request)) return request;
+    }
+    return null;
+  }
+
   #updateGauge(session) {
     if (session.baseShape.type !== "line") return;
     const r = session.presentation ?? session.current;

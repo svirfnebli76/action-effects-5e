@@ -1,12 +1,12 @@
-# Current infrastructure acceptance — v0.4.4.46
+# Current infrastructure acceptance — v0.4.4.47
 
 ## 3D Crosshairs responsiveness correction
 
-Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.4.46.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. For each interactive stage, move the 20-foot Sphere continuously for several seconds before left-clicking. Compare None, Direct, and Spread visually: Direct and Spread should track the mouse while physical obstruction sampling cooperatively yields to pointer input and rendering.
+Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.4.47.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. Move the 20-foot Sphere continuously for several seconds in each None, Direct, and Spread stage before left-clicking. Direct/Spread should visually approach None while their physical work is coalesced behind presentation.
 
-The macro also verifies that final targets match the newest authoritative revision, the Spread persistent Region stores the exact final propagated cell set, cancellation creates no Region and restores prior targets, and all temporary Regions are removed. Raw Direct/Spread propagation time may remain similar to v0.4.4.44; the acceptance criterion is presentation responsiveness plus unchanged final authority, not reduced sampling cost.
+The macro reports presentation count, actual propagation starts, coalesced requests, stale physical discards, and animation-frame timing. During continuous Direct/Spread movement, coalescing must occur and physical propagation starts must be materially fewer than presentations. Final serial/target authority, exact Spread persistence, cancellation, target restoration, and temporary Region cleanup remain required.
 
-Automated coverage now includes both delayed-promise scheduling tests and physical-adapter cooperative-yield tests. It proves that presentation advances before propagation resolves, Foundry collision sampling yields without changing Direct/Spread evidence, stale work terminates at a cooperative boundary, confirmation waits for the exact final serial, persistence receives those final cells, and cancellation/error cleanup remains fail-safe.
+Automated coverage proves immediate presentation, delayed-authority safety, cooperative yielding, stale in-flight cancellation, rapid-input pre-propagation coalescing, exact confirmation, persistence, cancellation, and error cleanup. Raw Direct/Spread calculation accuracy and sampling density are unchanged.
 
 ## Checkpoint 4 — production integration
 

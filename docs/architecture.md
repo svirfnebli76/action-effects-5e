@@ -1,3 +1,9 @@
+## v0.4.4.47 — quiet-window live propagation coalescing
+
+Rapid visual intent and physical authority now have separate scheduling rates. Every accepted mouse/wheel request still updates PIXI synchronously, but Direct/Spread movement requests must remain stable for 24 ms before physical propagation begins. Newer intent replaces the pending request and increments `coalescedRequests`; it does not start collision sampling. This prevents high-rate pointer devices from continuously launching obsolete physical work.
+
+Initial placement, token/environment refreshes, and final confirmation bypass the quiet window. Final confirmation retains the exact serial barrier: input is frozen, the final visual request resolves immediately through the full Direct/Spread algorithm, and only that authoritative result may publish targets or create a persistent Region. Once physical work is running, v0.4.4.46 cooperative yielding/stale cancellation remains the fallback if newer intent arrives. Geometry and sampling thresholds are unchanged.
+
 # Action Effects 5E architecture
 
 ## v0.4.4.46 — cooperative physical propagation scheduling

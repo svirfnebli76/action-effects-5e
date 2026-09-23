@@ -332,8 +332,9 @@ test('presentation advances immediately while delayed propagation remains author
   assert.deepEqual([...game.user.targets].map(token => token.id), ['outside'], 'targets must not follow unresolved visual intent');
 
   releaseFirst();
+  await new Promise(resolve => setTimeout(resolve, 40));
   await h.flush();
-  assert.equal(propagationCalls, 2, 'only the newest queued request should run after the stale calculation');
+  assert.equal(propagationCalls, 2, 'only the newest stable request should run after the stale calculation');
   assert.equal(resolved.length, 1);
   assert.equal(resolved[0].serial, 2);
   assert.ok(h.service.getStats().staleDiscards >= 1);
@@ -480,14 +481,49 @@ test('cooperative propagation yields to pointer input, aborts stale work, and re
     propagation: { override: 'direct' }, onRevision: revision => resolved.push(revision) });
 
   setTimeout(() => h.dispatch('pointermove', { clientX: 500, clientY: 250 }), 0);
-  await new Promise(resolve => setTimeout(resolve, 15));
+  await new Promise(resolve => setTimeout(resolve, 60));
   await h.flush();
 
   assert.ok(updates.some(entry => entry.revision.serial === 2), 'pointer input should present while propagation is cooperatively yielded');
-  assert.equal(propagationCalls, 2, 'stale propagation should terminate and the newest request should resolve');
+  assert.equal(propagationCalls, 2, 'stale propagation should terminate and the newest quiet request should resolve');
   assert.equal(resolved.length, 1);
   assert.equal(resolved[0].serial, 2);
   assert.ok(h.service.getStats().staleDiscards >= 1);
+
+  h.service.cancel();
+  await promise;
+  assert.ok(h.clean());
+});
+
+
+test('rapid Direct pointer movement coalesces before physical propagation starts', async () => {
+  let propagationCalls = 0;
+  const resolved = [];
+  const h = harness({ placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'direct', source: 'test' }) },
+    propagationEnvironment: { create: () => ({ test: true }) },
+    propagation: { async resolve({ shape, grid, mode }) {
+      propagationCalls += 1;
+      return Object.freeze({ mode, shape, grid, origin: shape.origin, support: 'continuous-primitive', cells: Object.freeze([]) });
+    } }
+  } });
+
+  const promise = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 },
+    propagation: { override: 'direct' }, onRevision: revision => resolved.push(revision) });
+  await h.flush();
+  assert.equal(propagationCalls, 1, 'initial placement should still resolve immediately');
+
+  for (let i = 0; i < 20; i += 1) {
+    h.dispatch('pointermove', { clientX: 400 + i, clientY: 250 });
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+
+  assert.equal(propagationCalls, 1, 'rapid movement should not start obsolete physical calculations');
+  assert.ok(h.service.getStats().coalescedRequests >= 1);
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await h.flush();
+  assert.equal(propagationCalls, 2, 'the newest stable presentation should resolve once after the quiet window');
+  assert.equal(resolved.at(-1).serial, h.service.getStats().activeResolvedSerial);
 
   h.service.cancel();
   await promise;
