@@ -93,9 +93,9 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.4.40 installation
+## v0.4.4.41 installation
 
-Install the complete module folder and reload Foundry. v0.4.4.40 corrects attached Direct/Spread cell-mask publication by using AE5E's dedicated Region Cell State authority path. Run only `docs/acceptance-crosshairs3d-v0.4.4.40-attached-wall.txt` as the primary GM; previously accepted interactive Direct, Spread, persistence, and player-authority results remain valid.
+Install the complete module folder and reload Foundry. v0.4.4.41 publishes Region-cell configurations as exact replacements instead of allowing Foundry v14 to recursively merge stale cell keys. Run only `docs/acceptance-crosshairs3d-v0.4.4.41-attached-wall.txt` as the primary GM; previously accepted interactive Direct, Spread, persistence, and player-authority results remain valid.
 
 ## v0.4.4.39 installation
 

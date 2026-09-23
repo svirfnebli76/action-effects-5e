@@ -1,3 +1,10 @@
+## 0.4.4.41 — Exact Region cell-mask replacement
+
+- Corrects the live Foundry v14 flag-write behavior exposed by v0.4.4.40 acceptance: object-valued flags merge recursively, so a new 14-cell mask written over a prior 28-cell mask retained all 28 keys.
+- Makes every complete Region cell configuration a true replacement by removing the previous flag before publishing the normalized snapshot. Per-Region write queues preserve ordering, and a failed second write remains safely unconfigured rather than retaining stale affected cells.
+- Applies the same replacement path to sparse cell-state mutations so restoring a cell to the default state actually removes its persisted override.
+- Adds a Foundry-merge regression for the exact 28 → 14 case and retains the focused live clear → blocked → restored acceptance.
+
 ## 0.4.4.40 — Attached cell-mask publication correction
 
 - Routes attached Direct/Spread mask replacement through the dedicated GM-authoritative Region Cell State service. Live diagnostics proved propagation correctly changed 28 cells to 14 behind a Wall while the previous combined geometry/metadata update left the stored mask at 28.

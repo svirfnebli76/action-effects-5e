@@ -1,5 +1,9 @@
 # Action Effects 5E architecture
 
+## v0.4.4.41 — Exact cell-mask snapshots
+
+Foundry v14 recursively merges ObjectField updates, including module flag objects. Region cell configurations are complete snapshots rather than patches, so `RegionCellStateService` serially removes the prior `regionCells` flag and then writes the normalized replacement. This guarantees that cells omitted by obstruction recalculation and sparse overrides restored to their default state are absent from persisted data. If replacement publication fails after removal, the Region remains unconfigured and therefore fails closed.
+
 ## v0.4.4.40 — Canonical attached-mask mutation path
 
 Attached Direct/Spread re-propagation separates two authorities: Region geometry and crosshair metadata use the restricted Region-authority update route, while the exact `regionCells` mask uses `RegionCellStateService.configure`. The geometry writer explicitly rejects cell-mask changes. This preserves one canonical, serialized GM-authoritative mutation path for Region-local cell state and prevents a successful metadata update from concealing a stale exact mask.

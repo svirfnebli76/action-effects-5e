@@ -683,7 +683,7 @@ export class RegionCellStateService {
       const ownership = this.#validateWritableRegion(region);
       if (!ownership.ok) return { configured: false, reason: ownership.reason };
       const config = this.normalizeConfig(payload?.config ?? {});
-      await region.update({ [this.flagPath]: config }, { ae5eRegionCells: true });
+      await this.#replaceConfig(region, config);
       this.#stats.configured += 1;
       const result = { configured: true, regionUuid: region.uuid, config: duplicate(config) };
       this.#record("configured", { regionUuid: region.uuid, bounds: config.bounds, defaultState: config.defaultState });
@@ -717,7 +717,7 @@ export class RegionCellStateService {
         changed += 1;
       }
 
-      if (changed > 0) await region.update({ [this.flagPath]: config }, { ae5eRegionCells: true });
+      if (changed > 0) await this.#replaceConfig(region, config);
       this.#stats.stateMutations += changed;
       const result = { updated: true, regionUuid: region.uuid, changed, ignored, config: duplicate(config) };
       this.#record("states-updated", { regionUuid: region.uuid, changed, ignored: ignored.length });
@@ -739,6 +739,17 @@ export class RegionCellStateService {
       this.#record("cleared", result);
       return result;
     });
+  }
+
+  async #replaceConfig(region, config) {
+    // Foundry recursively merges ObjectField updates. A cell mask is a complete
+    // snapshot, so omitted cell keys must be removed before the replacement is
+    // written; otherwise a shrinking mask silently retains its former cells.
+    if (this.isConfigured(region)) {
+      if (typeof region.unsetFlag === "function") await region.unsetFlag(MODULE_ID, REGION_CELL_FLAG);
+      else await region.update({ [`flags.${MODULE_ID}.-=${REGION_CELL_FLAG}`]: null }, { ae5eRegionCells: true });
+    }
+    await region.update({ [this.flagPath]: config }, { ae5eRegionCells: true });
   }
 
   async #executeAsAuthority(socketName, payload, localHandler) {

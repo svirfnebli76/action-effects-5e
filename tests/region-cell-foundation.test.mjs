@@ -24,6 +24,21 @@ function setProperty(object, path, value) {
   return true;
 }
 
+function mergeProperty(object, path, value) {
+  const existing = getProperty(object, path);
+  if (
+    existing && value &&
+    typeof existing === "object" && typeof value === "object" &&
+    !Array.isArray(existing) && !Array.isArray(value)
+  ) {
+    for (const [key, entry] of Object.entries(value)) {
+      mergeProperty(existing, key, entry);
+    }
+    return true;
+  }
+  return setProperty(object, path, structuredClone(value));
+}
+
 function makeFixture() {
   globalThis.foundry = {
     utils: {
@@ -66,7 +81,9 @@ function makeFixture() {
     flags: { [MODULE_ID]: { authorityRegion: { test: true } } },
     getFlag(scope, key) { return this.flags?.[scope]?.[key]; },
     async update(changes) {
-      for (const [path, value] of Object.entries(changes)) setProperty(this, path, structuredClone(value));
+      // Match Foundry v14 ObjectField semantics: object updates recursively
+      // merge and do not remove keys omitted from the incoming object.
+      for (const [path, value] of Object.entries(changes)) mergeProperty(this, path, value);
       return this;
     },
     async unsetFlag(scope, key) {
@@ -149,6 +166,31 @@ test("Region cell state persistence is GM-authoritative, sparse, batchable, and 
   const cleared = await service.clear(region);
   assert.equal(cleared.cleared, true);
   assert.equal(service.isConfigured(region), false);
+});
+
+test("Region cell configuration replaces a shrinking mask instead of merging stale cells", async () => {
+  const { service, region } = makeFixture();
+  const originalCells = Object.fromEntries(
+    Array.from({ length: 28 }, (_, index) => [`${index},0,0`, "ACTIVE"])
+  );
+  const blockedCells = Object.fromEntries(
+    Array.from({ length: 14 }, (_, index) => [`${index},0,0`, "ACTIVE"])
+  );
+
+  await service.configure(region, {
+    bounds: { min: { x: 0, y: 0, z: 0 }, size: { x: 28, y: 1, z: 1 } },
+    defaultState: "INACTIVE",
+    cells: originalCells
+  });
+  await service.configure(region, {
+    bounds: { min: { x: 0, y: 0, z: 0 }, size: { x: 28, y: 1, z: 1 } },
+    defaultState: "INACTIVE",
+    cells: blockedCells
+  });
+
+  const stored = service.getConfig(region);
+  assert.equal(Object.keys(stored.cells).length, 14);
+  assert.equal(Object.hasOwn(stored.cells, "27,0,0"), false);
 });
 
 test("Region cell static local/world transform round-trips translation, elevation, and rotation", () => {
