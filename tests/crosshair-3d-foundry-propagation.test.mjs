@@ -242,3 +242,33 @@ test("AE5E-owned Region re-propagation updates are idempotent and path-limited",
   }), { updated: false, reason: "unsupported-change-path" },
   "cell masks must use RegionCellStateService.configure instead of the geometry/metadata writer");
 });
+
+test("Foundry physical sampling cooperatively yields without changing Direct evidence", async () => {
+  let yields = 0;
+  let collisions = 0;
+  const adapter = environment({ xySamples: 2, zSlabs: 1, cooperateEvery: 2 }).create({
+    scene: {}, metrics,
+    collision: () => { collisions += 1; return false; },
+    cooperate: async () => { yields += 1; }
+  });
+  const evidence = await adapter.directCoverage({ shape, world, support: "chart-cell", origin: shape.origin });
+  assert.equal(collisions, 4);
+  assert.equal(yields, 2);
+  assert.equal(evidence.slabs[0].xyCoverage, 1);
+});
+
+test("Foundry physical sampling checks stale cancellation after a cooperative yield", async () => {
+  let aborted = false;
+  let collisions = 0;
+  const signal = { get aborted() { return aborted; } };
+  const adapter = environment({ xySamples: 2, zSlabs: 1, cooperateEvery: 2 }).create({
+    scene: {}, metrics, signal,
+    collision: () => { collisions += 1; return false; },
+    cooperate: async () => { aborted = true; }
+  });
+  await assert.rejects(
+    adapter.directCoverage({ shape, world, support: "chart-cell", origin: shape.origin }),
+    error => error?.name === "AbortError" && /cancelled/i.test(error.message)
+  );
+  assert.equal(collisions, 2, "stale work should stop at the first cooperative boundary");
+});

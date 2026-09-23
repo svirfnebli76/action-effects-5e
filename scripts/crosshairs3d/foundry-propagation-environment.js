@@ -32,23 +32,43 @@ export class Crosshair3dFoundryPropagationEnvironment {
   #xySamples;
   #zSlabs;
   #faceSamples;
+  #cooperateEvery;
 
-  constructor({ metricsService, geometry, xySamples = 4, zSlabs = 4, faceSamples = 10 } = {}) {
+  constructor({ metricsService, geometry, xySamples = 4, zSlabs = 4, faceSamples = 10, cooperateEvery = 256 } = {}) {
     this.#metricsService = metricsService;
     this.#geometry = geometry;
-    for (const [label, value] of [["xySamples", xySamples], ["zSlabs", zSlabs], ["faceSamples", faceSamples]]) {
+    for (const [label, value] of [["xySamples", xySamples], ["zSlabs", zSlabs], ["faceSamples", faceSamples], ["cooperateEvery", cooperateEvery]]) {
       if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`${label} must be a positive integer.`);
     }
     this.#xySamples = xySamples;
     this.#zSlabs = zSlabs;
     this.#faceSamples = faceSamples;
+    this.#cooperateEvery = cooperateEvery;
   }
 
   create({ scene = globalThis.canvas?.scene, source = null, metrics = this.#metricsService.resolve(),
-    collision = null } = {}) {
+    collision = null, cooperate = null, signal = null } = {}) {
     if (!scene) throw new Error("A Scene is required for physical propagation.");
+    if (cooperate !== null && typeof cooperate !== "function") throw new TypeError("cooperate must be a function when provided.");
     const blocked = collision ?? ((a, b) => this.#collision(scene, source, metrics, a, b));
-    const isBlocked = async (a, b) => Boolean(await blocked(a, b));
+    let samples = 0;
+    const checkAbort = () => {
+      if (signal?.aborted) {
+        const error = new Error("Propagation cancelled.");
+        error.name = "AbortError";
+        throw error;
+      }
+    };
+    const isBlocked = async (a, b) => {
+      checkAbort();
+      const result = Boolean(await blocked(a, b));
+      samples += 1;
+      if (cooperate && samples % this.#cooperateEvery === 0) {
+        await cooperate();
+        checkAbort();
+      }
+      return result;
+    };
 
     return Object.freeze({
       directCoverage: async query => {

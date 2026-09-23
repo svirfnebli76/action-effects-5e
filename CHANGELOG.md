@@ -1,3 +1,11 @@
+## 0.4.4.46 — cooperative Direct/Spread physical sampling
+
+- Supersedes the incomplete v0.4.4.45 responsiveness correction. v0.4.4.45 separated PIXI presentation from authoritative propagation, but live Foundry testing showed Direct/Spread physical collision sampling still monopolized the main JavaScript task, preventing pointer events and rendering from advancing during the 70–120 ms resolver window.
+- Adds cooperative main-thread yields inside bounded batches of Foundry physical collision samples. Sampling density and every accepted Direct/Spread threshold remain unchanged.
+- Treats an in-flight physical calculation as stale as soon as a newer placement serial is presented. At the next cooperative boundary stale work terminates instead of finishing an obsolete full propagation pass.
+- Keeps the v0.4.4.45 two-state authority model and final-confirmation barrier: PIXI may lead propagation, but targets, returned revisions, and persistent Regions still use only the newest fully resolved propagation result.
+- Adds regressions proving the Foundry physical adapter yields without changing evidence, stale sampling aborts at a cooperative boundary, and pointer input can advance while a physical propagation run is in flight. Packs and assets remain unchanged.
+
 ## 0.4.4.45 — 3D Crosshairs presentation/propagation decoupling
 
 - Separates immediate PIXI presentation from asynchronous Direct/Spread propagation and target collection. Accepted mouse/wheel intent now updates the visible 3D guide before physical obstruction sampling completes.

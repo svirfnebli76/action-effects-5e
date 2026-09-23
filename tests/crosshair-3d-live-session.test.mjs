@@ -447,3 +447,49 @@ test('propagation rejection closes the session and restores state after immediat
   assert.equal(h.service.getStats().errors, 1);
   assert.ok(h.clean());
 });
+
+test('cooperative propagation yields to pointer input, aborts stale work, and resolves only the newest presentation', async () => {
+  const updates = [];
+  const resolved = [];
+  let propagationCalls = 0;
+  const renderer = {
+    show() {},
+    update(revision, mode) { updates.push({ revision, mode }); },
+    frame() {},
+    clear() {}
+  };
+  const h = harness({ renderer, placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'direct', source: 'test' }) },
+    propagationEnvironment: { create: args => ({ cooperate: args.cooperate, signal: args.signal }) },
+    propagation: { async resolve({ shape, grid, mode, environment, signal }) {
+      propagationCalls += 1;
+      if (propagationCalls === 1) {
+        await environment.cooperate();
+        if (signal.aborted) {
+          const error = new Error('Propagation cancelled.');
+          error.name = 'AbortError';
+          throw error;
+        }
+      }
+      return Object.freeze({ mode, shape, grid, origin: shape.origin, support: 'continuous-primitive',
+        cells: Object.freeze(propagationCalls === 1 ? [{ x: 99, y: 99, z: 0 }] : []) });
+    } }
+  } });
+
+  const promise = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 },
+    propagation: { override: 'direct' }, onRevision: revision => resolved.push(revision) });
+
+  setTimeout(() => h.dispatch('pointermove', { clientX: 500, clientY: 250 }), 0);
+  await new Promise(resolve => setTimeout(resolve, 15));
+  await h.flush();
+
+  assert.ok(updates.some(entry => entry.revision.serial === 2), 'pointer input should present while propagation is cooperatively yielded');
+  assert.equal(propagationCalls, 2, 'stale propagation should terminate and the newest request should resolve');
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0].serial, 2);
+  assert.ok(h.service.getStats().staleDiscards >= 1);
+
+  h.service.cancel();
+  await promise;
+  assert.ok(h.clean());
+});

@@ -1,5 +1,13 @@
 # Action Effects 5E architecture
 
+## v0.4.4.46 — cooperative physical propagation scheduling
+
+The two-stage v0.4.4.45 state model remains authoritative, but live testing exposed a browser-task boundary that delayed pointer input despite early PIXI calls. Foundry Wall/Surface collision queries are synchronous. Awaiting those synchronous results creates microtask continuations but does not let the browser process pointer events or paint, so a long Direct/Spread sample pass could still monopolize the main thread.
+
+The Foundry propagation environment now counts physical collision samples and, only when live placement supplies a cooperative callback, yields the main thread after a bounded sample batch. The production batch is scheduling-only: Direct still uses the same XY/Z sampling, Spread still samples each shared face at 10×10, and no coverage/opening threshold changes. The generic propagation service and standalone physical adapter remain deterministic when no cooperative callback is supplied.
+
+Each placement propagation receives a request-scoped signal whose `aborted` state becomes true when the session closes, the caller aborts, or a newer placement serial exists. After a cooperative yield, stale physical work fails fast. The placement drain treats errors from a superseded serial as stale work rather than as a session failure, then resolves only the newest coalesced request. The `final-confirm` serial cannot be superseded by user input because confirmation freezes manipulation, so it still runs to completion and remains the sole authority for returned targets and persistent Region cells.
+
 ## v0.4.4.45 — two-stage live placement revisions
 
 Live 3D placement now keeps two deliberately separate records. `session.presentation` is the newest legal visual intent and contains the normalized shape, endpoint/terminal information, validity, and request serial needed by PIXI and the elevation gauge. It is rendered synchronously when the input request is accepted and is never authoritative for targets or persistence. `session.current` remains the last fully resolved authoritative revision containing completed propagation and target results.

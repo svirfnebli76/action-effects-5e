@@ -93,9 +93,9 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.4.45 installation
+## v0.4.4.46 installation
 
-Install the complete module folder and reload Foundry. v0.4.4.45 decouples PIXI presentation from Direct/Spread propagation so the visible 3D crosshair can follow current input while physical obstruction sampling and target collection resolve asynchronously. Final confirmation still waits for the exact authoritative propagation result before returning or creating a persistent Region. Run `docs/acceptance-crosshairs3d-v0.4.4.45.txt` as the primary GM and compare the 20-foot Sphere under None, Direct, and Spread.
+Install the complete module folder and reload Foundry. v0.4.4.46 keeps the immediate PIXI/authoritative propagation split introduced in v0.4.4.45 and makes Foundry Direct/Spread physical sampling cooperative with the browser main thread. Collision samples, Direct 50% XY/positive-Z coverage, Spread 10% contiguous shared-face opening, and 10×10 face sampling remain unchanged. Stale physical work stops at a cooperative boundary when newer visual intent exists, while confirmation still waits for the exact final authoritative result. Run `docs/acceptance-crosshairs3d-v0.4.4.46.txt` as the primary GM and compare the 20-foot Sphere under None, Direct, and Spread.
 
 ## v0.4.4.44 installation
 

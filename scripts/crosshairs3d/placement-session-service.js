@@ -8,6 +8,14 @@ const tokenIds = tokens => Array.from(tokens ?? [], token => token?.id ?? token?
 const sameIds = (a, b) => [...a].sort().join("|") === [...b].sort().join("|");
 const stop = event => { event.preventDefault?.(); event.stopPropagation?.(); event.stopImmediatePropagation?.(); };
 
+const yieldToMainThread = async () => {
+  if (typeof globalThis.scheduler?.yield === "function") {
+    await globalThis.scheduler.yield();
+    return;
+  }
+  await new Promise(resolve => globalThis.setTimeout(resolve, 0));
+};
+
 /** Native pointer session. Intent is synchronous; resolved geometry/targets publish together. */
 export class Crosshair3dPlacementSessionService {
   #geometry; #cells; #tokens; #range; #revisions; #targeting; #metrics; #surfaces; #renderer; #elevationGauge;
@@ -175,7 +183,19 @@ export class Crosshair3dPlacementSessionService {
     while (session.pending && !session.closed) {
       const request = session.pending; session.pending = null;
       const presentation = request.presentation;
-      const propagation = presentation.valid ? await this.#resolvePropagation(session, presentation.shape) : null;
+      let propagation;
+      try {
+        propagation = presentation.valid
+          ? await this.#resolvePropagation(session, presentation.shape, request.serial)
+          : null;
+      } catch (error) {
+        if (session.closed) return;
+        if (request.serial !== session.requestedSerial) {
+          this.#stats.staleDiscards++;
+          continue;
+        }
+        throw error;
+      }
       const targets = propagation ? await this.#collectTargets(session, presentation.shape, propagation.cells) : Object.freeze([]);
       if (session.closed) return;
       if (request.serial !== session.requestedSerial) { this.#stats.staleDiscards++; continue; }
@@ -431,15 +451,31 @@ export class Crosshair3dPlacementSessionService {
     catch (_error) { return false; }
   }
 
-  async #resolvePropagation(session, shape) {
+  async #resolvePropagation(session, shape, requestSerial = session.requestedSerial) {
     if (!this.#propagation) {
       const mask = this.#cells?.rasterize?.(shape, { grid: session.metrics.grid });
       return Object.freeze({ mode: "none", shape, grid: session.metrics.grid, origin: shape.origin,
         support: shape.type === "sphere" ? "chart-cell" : "continuous-primitive", cells: mask?.cells ?? null });
     }
     const mode = session.propagationSelection.mode;
+    const externalSignal = session.options.signal;
+    const signal = {
+      get aborted() {
+        return session.closed
+          || requestSerial !== session.requestedSerial
+          || externalSignal?.aborted === true;
+      }
+    };
+    const cooperate = async () => {
+      await yieldToMainThread();
+      if (signal.aborted) {
+        const error = new Error("Propagation cancelled.");
+        error.name = "AbortError";
+        throw error;
+      }
+    };
     const environment = mode === "none" ? null : this.#propagationEnvironment.create({
-      scene: session.scene, source: session.source, metrics: session.metrics
+      scene: session.scene, source: session.source, metrics: session.metrics, signal, cooperate
     });
     return this.#propagation.resolve({
       shape,
@@ -448,7 +484,7 @@ export class Crosshair3dPlacementSessionService {
       environment,
       origin: session.options.propagation?.origin ?? shape.origin,
       connectors: session.options.propagation?.connectors ?? [],
-      signal: session.options.signal
+      signal
     });
   }
 

@@ -1,12 +1,12 @@
-# Current infrastructure acceptance — v0.4.4.45
+# Current infrastructure acceptance — v0.4.4.46
 
 ## 3D Crosshairs responsiveness correction
 
-Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.4.45.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. For each interactive stage, move the 20-foot Sphere continuously for several seconds before left-clicking. Compare None, Direct, and Spread visually: Direct and Spread should track the mouse without waiting on their physical obstruction calculations.
+Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.4.46.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. For each interactive stage, move the 20-foot Sphere continuously for several seconds before left-clicking. Compare None, Direct, and Spread visually: Direct and Spread should track the mouse while physical obstruction sampling cooperatively yields to pointer input and rendering.
 
 The macro also verifies that final targets match the newest authoritative revision, the Spread persistent Region stores the exact final propagated cell set, cancellation creates no Region and restores prior targets, and all temporary Regions are removed. Raw Direct/Spread propagation time may remain similar to v0.4.4.44; the acceptance criterion is presentation responsiveness plus unchanged final authority, not reduced sampling cost.
 
-Automated delayed-promise tests prove that presentation advances before propagation resolves, rapid input is coalesced without blocking PIXI, stale results cannot publish, confirmation waits for the exact final serial, persistence receives those final cells, and cancellation/error cleanup remains fail-safe.
+Automated coverage now includes both delayed-promise scheduling tests and physical-adapter cooperative-yield tests. It proves that presentation advances before propagation resolves, Foundry collision sampling yields without changing Direct/Spread evidence, stale work terminates at a cooperative boundary, confirmation waits for the exact final serial, persistence receives those final cells, and cancellation/error cleanup remains fail-safe.
 
 ## Checkpoint 4 — production integration
 
