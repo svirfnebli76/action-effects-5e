@@ -1,9 +1,9 @@
 import { freeLineEndpoints, freeLineRangeBoundary } from "../free-line-placement.js";
-import { clamp01, controlHints, updateTextResolution } from "./shared.js";
+import { clamp01, controlHints, updateTextResolution, TARGET_PREVIEW_NOTICE_TEXT, TARGET_PREVIEW_NOTICE_COLOR, targetPreviewNoticeEnabled } from "./shared.js";
 
 // Rendering and text layout preserved from AE5E-Free-Line-Brighter-Edge-Pulse-Test-08.txt.
 export function createRenderer(context) {
-  const { shape, sourceVolume, metrics, metricsService, geometry, options, capabilities, parent } = context;
+  const { shape, sourceVolume, metrics, metricsService, geometry, options, capabilities, propagationMode, parent } = context;
   const api = { geometry };
   const scene = globalThis.canvas.scene;
   const scale = metrics.size / metrics.distance;
@@ -100,7 +100,15 @@ const MAX_LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height;
     header.addChild(badge, modeText, dimensions);
     const elevation = text("", true), instructions = new PIXI.Container();
     for (const [value, bold] of controlHints(capabilities)) { instructions.addChild(text(value, bold)); }
+    const targetPreviewNotice = targetPreviewNoticeEnabled(propagationMode)
+      ? text(TARGET_PREVIEW_NOTICE_TEXT)
+      : null;
+    if (targetPreviewNotice) {
+      targetPreviewNotice.style.fill = TARGET_PREVIEW_NOTICE_COLOR;
+      targetPreviewNotice.anchor.set(0.5, 0.5);
+    }
     textRoot.addChild(header, elevation, instructions);
+    if (targetPreviewNotice) textRoot.addChild(targetPreviewNotice);
     let lastResolution = 2;
 
     function drawSourceTracer(from, to) {
@@ -229,7 +237,9 @@ const MAX_LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height;
       let x = 0;
       for (const label of instructions.children) { label.position.set(x, 0); x += label.width; }
       instructions.pivot.x = x / 2;
-      instructions.position.set(0, WIDTH * scale / 2 + 20);
+      const instructionY = WIDTH * scale / 2 + 20;
+      instructions.position.set(0, instructionY);
+      if (targetPreviewNotice) targetPreviewNotice.position.set(0, instructionY + 22);
       labelsDirty = false;
     }
 

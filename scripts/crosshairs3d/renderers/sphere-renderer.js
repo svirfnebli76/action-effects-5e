@@ -1,8 +1,8 @@
-import { clamp01, controlHints, updateTextResolution } from "./shared.js";
+import { clamp01, controlHints, updateTextResolution, TARGET_PREVIEW_NOTICE_TEXT, TARGET_PREVIEW_NOTICE_COLOR, targetPreviewNoticeEnabled } from "./shared.js";
 
 // Rendering and text layout preserved from AE5E-Sphere-PIXI-Surface-Illumination-Test-13.txt.
 export function createRenderer(context) {
-  const { shape, sourceVolume, metrics, metricsService, geometry, options, capabilities, parent } = context;
+  const { shape, sourceVolume, metrics, metricsService, geometry, options, capabilities, propagationMode, parent } = context;
   const api = { geometry };
   const scene = globalThis.canvas.scene;
   const scale = metrics.size / metrics.distance;
@@ -152,7 +152,15 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
     const centerElevation = makeText("", true);
     const instructions = new PIXI.Container();
     for (const [value, bold] of controlHints(capabilities)) { instructions.addChild(makeText(value, bold)); }
+    const targetPreviewNotice = targetPreviewNoticeEnabled(propagationMode)
+      ? makeText(TARGET_PREVIEW_NOTICE_TEXT)
+      : null;
+    if (targetPreviewNotice) {
+      targetPreviewNotice.style.fill = TARGET_PREVIEW_NOTICE_COLOR;
+      targetPreviewNotice.anchor.set(0.5, 0.5);
+    }
     textRoot.addChild(header, centerElevation, instructions);
+    if (targetPreviewNotice) textRoot.addChild(targetPreviewNotice);
 
     let lastResolution = 2;
 
@@ -502,7 +510,9 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
         cursor += label.width;
       }
       instructions.pivot.x = cursor / 2;
-      instructions.position.set(0, radiusPixels + 20);
+      const instructionY = radiusPixels + 20;
+      instructions.position.set(0, instructionY);
+      if (targetPreviewNotice) targetPreviewNotice.position.set(0, instructionY + 22);
       labelsDirty = false;
     }
 

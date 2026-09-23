@@ -1,12 +1,10 @@
-# Current infrastructure acceptance — v0.4.4.47
+# Current infrastructure acceptance — v0.4.5.1
 
-## 3D Crosshairs responsiveness correction
+## 3D Crosshairs target-preview notice
 
-Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.4.47.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. Move the 20-foot Sphere continuously for several seconds in each None, Direct, and Spread stage before left-clicking. Direct/Spread should visually approach None while their physical work is coalesced behind presentation.
+Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.5.1.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. The live macro opens the same 20-foot Sphere under None, Direct, and Spread. None must omit the notice; Direct and Spread must show `Target Preview takes 1-2sec` centered directly below the existing control hint in the same 16 px size and `#e0dcdd` color.
 
-The macro reports presentation count, actual propagation starts, coalesced requests, stale physical discards, and animation-frame timing. During continuous Direct/Spread movement, coalescing must occur and physical propagation starts must be materially fewer than presentations. Final serial/target authority, exact Spread persistence, cancellation, target restoration, and temporary Region cleanup remain required.
-
-Automated coverage proves immediate presentation, delayed-authority safety, cooperative yielding, stale in-flight cancellation, rapid-input pre-propagation coalescing, exact confirmation, persistence, cancellation, and error cleanup. Raw Direct/Spread calculation accuracy and sampling density are unchanged.
+Automated renderer coverage verifies the notice contract across Prism/Cube, Cylinder, Sphere, Cone, source-driven Line, and Freely Placed Line. A placement-session regression verifies that the resolved propagation mode selected for the session is the mode supplied to presentation. v0.4.4.47 propagation scheduling and all authoritative geometry/target/persistence behavior remain unchanged.
 
 ## Checkpoint 4 — production integration
 

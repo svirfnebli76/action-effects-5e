@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { harness } from './helpers/pixi-session-harness.mjs';
-import { illuminationPhase } from '../scripts/crosshairs3d/renderers/shared.js';
+import { illuminationPhase, TARGET_PREVIEW_NOTICE_TEXT, TARGET_PREVIEW_NOTICE_COLOR } from '../scripts/crosshairs3d/renderers/shared.js';
 
 for (const type of ['prism','cylinder','sphere','cone','line','free-line']) test(`${type}: retained PIXI objects, finite geometry at all pitch/yaw samples, immutable rules shape`, () => {
   const h = harness();
@@ -77,6 +77,50 @@ test('illumination timing uses cumulative spread, hold and unified fade',()=>{
   assert.deepEqual(illuminationPhase(3400),{progress:1,alpha:0});
   assert.deepEqual(illuminationPhase(3500),{progress:0,alpha:1});
 });
+
+
+for (const type of ['prism','cylinder','sphere','cone','line','free-line']) {
+  for (const propagationMode of ['none','direct','spread']) {
+    test(`${type}: target-preview notice follows ${propagationMode} propagation`, () => {
+      const h = harness();
+      const shape = h.geometry.normalizeShape({ type, length: 20, width: 5, height: 20, radius: 10 });
+      const metrics = h.metrics.resolve();
+      h.renderer.show({
+        shape,
+        sourceVolume: h.tokens.resolve(h.source, { grid: metrics, coordinateSpace: 'pixels' }),
+        metrics,
+        metricsService: h.metrics,
+        geometry: h.geometry,
+        options: { range: { max: 60 } },
+        capabilities: { rotation: true, elevation: true, resize: type === 'free-line' },
+        propagationMode
+      });
+      const direction = ['cone','line'].includes(type) ? h.geometry.direction(shape) : null;
+      const endpoint = direction ? {
+        x: shape.origin.x + direction.x * shape.length,
+        y: shape.origin.y + direction.y * shape.length,
+        z: shape.origin.z + direction.z * shape.length
+      } : null;
+      h.renderer.update({
+        shape,
+        point: shape.origin,
+        yaw: shape.yaw ?? 0,
+        pitch: shape.pitch ?? 0,
+        arcPitch: shape.pitch ?? 0,
+        length: shape.length,
+        terminal: endpoint,
+        endpoint
+      }, 'MOVE');
+      const notices = h.records.texts.filter(label => label.text === TARGET_PREVIEW_NOTICE_TEXT);
+      assert.equal(notices.length, propagationMode === 'none' ? 0 : 1);
+      if (notices.length) {
+        assert.equal(notices[0].style.fontSize, 16);
+        assert.equal(String(notices[0].style.fill).toLowerCase(), TARGET_PREVIEW_NOTICE_COLOR);
+      }
+      h.renderer.clear();
+    });
+  }
+}
 
 test('renderer partial initialization error cleans its complete root',()=>{
   const h=harness();assert.throws(()=>h.renderer.show({shape:{type:'unknown'}}));

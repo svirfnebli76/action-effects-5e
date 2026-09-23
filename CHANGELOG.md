@@ -1,3 +1,10 @@
+## 0.4.5.1 — Direct/Spread target-preview notice
+
+- Carries forward the accepted v0.4.4.47 responsiveness architecture unchanged: immediate PIXI presentation, 24 ms rapid-input coalescing, cooperative stale-work cancellation, and exact final-confirmation authority.
+- Adds the centered placement notice `Target Preview takes 1-2sec` directly below the existing bottom control hint whenever the resolved propagation mode is `direct` or `spread`. `none` placements do not show the notice.
+- Uses the same 16 px instruction size with color `#e0dcdd`. The notice is presentation-only and is available across Prism/Cube, Cylinder, Sphere, Cone, source-driven Line, and Freely Placed Line renderers.
+- Adds renderer regressions for all six renderer families under None/Direct/Spread plus a placement-session regression proving the resolved propagation mode reaches PIXI presentation. Propagation, targeting, geometry, persistence, and sampling behavior are unchanged.
+
 ## 0.4.4.47 — coalesced Direct/Spread live propagation
 
 - Builds on v0.4.4.46 cooperative sampling. Live Foundry testing showed a major responsiveness improvement, but continuous movement still produced thousands of short-lived stale Direct/Spread calculations, leaving some residual roughness.

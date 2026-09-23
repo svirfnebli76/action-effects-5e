@@ -206,6 +206,30 @@ test('free-line elevation takes whole steps and reversal does not inherit a frac
   h.service.cancel();await p;
 });
 
+
+test('resolved propagation mode is passed to the PIXI renderer for target-preview UX', async () => {
+  for (const mode of ['none','direct','spread']) {
+    let shownMode = null;
+    const renderer = {
+      show(context) { shownMode = context.propagationMode; },
+      update() {},
+      frame() {},
+      clear() {}
+    };
+    const h = harness({
+      renderer,
+      placementDependencies: {
+        propagationModes: { resolve: () => ({ mode, source: 'test' }) }
+      }
+    });
+    const promise = h.service.show({ source: h.source, shape: shapes[0] });
+    await h.flush();
+    assert.equal(shownMode, mode);
+    h.service.cancel();
+    await promise;
+  }
+});
+
 test('capability disabling hides unsupported instructions and prevents manipulation',async()=>{
   const h=harness();let r;
   const p=h.service.show({source:h.source,shape:shapes[1],capabilities:{rotation:false,elevation:false},onRevision:v=>r=v});

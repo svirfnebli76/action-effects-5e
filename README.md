@@ -93,6 +93,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.1 installation
+
+Install the complete module folder and reload Foundry. v0.4.5.1 carries forward the v0.4.4.47 Direct/Spread responsiveness architecture unchanged and adds a presentation-only notice for physical propagation modes: `Target Preview takes 1-2sec`. The notice appears directly below the existing bottom control hint for Direct and Spread, uses the same 16 px size in `#e0dcdd`, and is absent for None. Run `docs/acceptance-crosshairs3d-v0.4.5.1.txt` as the primary GM for the focused live visual check.
+
 ## v0.4.4.47 installation
 
 Install the complete module folder and reload Foundry. v0.4.4.47 keeps immediate PIXI presentation and exact authoritative Direct/Spread resolution, but coalesces rapid mouse/wheel intent for 24 ms before starting expensive physical sampling. Continuous movement therefore replaces pending physical requests instead of launching thousands of obsolete collision calculations. Initial placement, environment/token refresh, and final confirmation remain immediate; final confirmation still waits for the exact final propagated cells and targets. Cooperative sampling from v0.4.4.46 remains active if a running calculation becomes stale. Run `docs/acceptance-crosshairs3d-v0.4.4.47.txt` as the primary GM and compare the 20-foot Sphere under None, Direct, and Spread.

@@ -1,3 +1,9 @@
+## v0.4.5.1 — propagation-aware target-preview presentation
+
+The resolved placement propagation mode is now passed into the PIXI renderer as presentation context. Renderers use it only to decide whether to show the informational notice `Target Preview takes 1-2sec`: Direct and Spread show it, while None does not. The notice is centered one text line below the existing bottom control hint, uses the same 16 px instruction size, and uses `#e0dcdd`.
+
+This is intentionally outside the authoritative revision pipeline. It does not read pending/authoritative state, start propagation, change target publication, or affect confirmation. The v0.4.4.47 quiet-window/cooperative scheduling architecture remains unchanged.
+
 ## v0.4.4.47 — quiet-window live propagation coalescing
 
 Rapid visual intent and physical authority now have separate scheduling rates. Every accepted mouse/wheel request still updates PIXI synchronously, but Direct/Spread movement requests must remain stable for 24 ms before physical propagation begins. Newer intent replaces the pending request and increments `coalescedRequests`; it does not start collision sampling. This prevents high-rate pointer devices from continuously launching obsolete physical work.

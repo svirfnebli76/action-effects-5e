@@ -1,9 +1,9 @@
 import { freeLineEndpoints, freeLineRangeBoundary } from "../free-line-placement.js";
-import { clamp01, controlHints, updateTextResolution } from "./shared.js";
+import { clamp01, controlHints, updateTextResolution, TARGET_PREVIEW_NOTICE_TEXT, TARGET_PREVIEW_NOTICE_COLOR, targetPreviewNoticeEnabled } from "./shared.js";
 
 // Rendering and text layout preserved from AE5E-Cone-No-Sequencer-Test-07.txt.
 export function createRenderer(context) {
-  const { shape, sourceVolume, metrics, metricsService, geometry, options, capabilities, parent } = context;
+  const { shape, sourceVolume, metrics, metricsService, geometry, options, capabilities, propagationMode, parent } = context;
   const api = { geometry };
   const scene = globalThis.canvas.scene;
   const scale = metrics.size / metrics.distance;
@@ -140,7 +140,15 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
     const endpointElevation = makeText("", true);
     const instructions = new PIXI.Container();
     for (const [value, bold] of controlHints(capabilities)) { instructions.addChild(makeText(value, bold)); }
+    const targetPreviewNotice = targetPreviewNoticeEnabled(propagationMode)
+      ? makeText(TARGET_PREVIEW_NOTICE_TEXT)
+      : null;
+    if (targetPreviewNotice) {
+      targetPreviewNotice.style.fill = TARGET_PREVIEW_NOTICE_COLOR;
+      targetPreviewNotice.anchor.set(0.5, 0.5);
+    }
     textRoot.addChild(header, endpointElevation, instructions);
+    if (targetPreviewNotice) textRoot.addChild(targetPreviewNotice);
     let lastResolution = 2;
 
     const line = (graphics, from, to, color, alpha, width) => {
@@ -655,6 +663,14 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
         layout.instructionPosition.y
       );
       instructions.rotation = layout.instructionRotation;
+      if (targetPreviewNotice) {
+        const offset = 22;
+        targetPreviewNotice.position.set(
+          layout.instructionPosition.x - Math.sin(layout.instructionRotation) * offset,
+          layout.instructionPosition.y + Math.cos(layout.instructionRotation) * offset
+        );
+        targetPreviewNotice.rotation = layout.instructionRotation;
+      }
       labelsDirty = false;
     }
 

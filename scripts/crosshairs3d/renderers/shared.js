@@ -1,5 +1,12 @@
 /** Common presentation utilities; no input listeners or targeting side effects. */
 export const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+
+export const TARGET_PREVIEW_NOTICE_TEXT = "Target Preview takes 1-2sec";
+export const TARGET_PREVIEW_NOTICE_COLOR = "#e0dcdd";
+export function targetPreviewNoticeEnabled(propagationMode) {
+  const mode = String(propagationMode ?? "none").toLowerCase();
+  return mode === "direct" || mode === "spread";
+}
 export function controlHints(capabilities) {
   const parts = [];
   const add = (key, action) => {

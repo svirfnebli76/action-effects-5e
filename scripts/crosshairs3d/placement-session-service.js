@@ -110,7 +110,7 @@ export class Crosshair3dPlacementSessionService {
     this.#stats.sessions++;
     try {
       this.#renderer.show({ shape: baseShape, sourceVolume, metrics, metricsService: this.#metrics,
-        geometry: this.#geometry, options, capabilities });
+        geometry: this.#geometry, options, capabilities, propagationMode: propagationSelection.mode });
       if (baseShape.type === "line") this.#elevationGauge?.show({ enabled: capabilities.elevation });
       this.#installInput(session);
       this.#enqueue(session, "initial");

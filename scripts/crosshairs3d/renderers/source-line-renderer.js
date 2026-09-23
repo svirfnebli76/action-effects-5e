@@ -1,7 +1,7 @@
-import { clamp01, controlHints, updateTextResolution, illuminationPhase } from "./shared.js";
+import { clamp01, controlHints, updateTextResolution, illuminationPhase, TARGET_PREVIEW_NOTICE_TEXT, TARGET_PREVIEW_NOTICE_COLOR, targetPreviewNoticeEnabled } from "./shared.js";
 // Source-driven Line Gradient Test 03, with the user's final pasted palette.
 export function createRenderer(context) {
-  const { shape, metrics, metricsService, geometry, capabilities, parent } = context;
+  const { shape, metrics, metricsService, geometry, capabilities, propagationMode, parent } = context;
   const api = { geometry };
   const scene = globalThis.canvas.scene;
   const LENGTH = shape.length, WIDTH = shape.width;
@@ -350,7 +350,15 @@ const guide = createGradientGuide();
     for (const [value, bold] of controlHints(capabilities)) {
       instructions.addChild(createText(value, bold));
     }
+    const targetPreviewNotice = targetPreviewNoticeEnabled(propagationMode)
+      ? createText(TARGET_PREVIEW_NOTICE_TEXT)
+      : null;
+    if (targetPreviewNotice) {
+      targetPreviewNotice.style.fill = TARGET_PREVIEW_NOTICE_COLOR;
+      targetPreviewNotice.anchor.set(0.5, 0.5);
+    }
     textRoot.addChild(header, instructions);
+    if (targetPreviewNotice) textRoot.addChild(targetPreviewNotice);
     function updatePresentation(redrawGuide = true) {
       if (!revision) return;
 
@@ -398,8 +406,9 @@ const guide = createGradientGuide();
         instructionWidth += label.width;
       }
       instructions.pivot.x = instructionWidth / 2;
-      instructions.position.set(0, WIDTH * scale / 2 + 20);
-
+      const instructionY = WIDTH * scale / 2 + 20;
+      instructions.position.set(0, instructionY);
+      if (targetPreviewNotice) targetPreviewNotice.position.set(0, instructionY + 22);
 
 
 
