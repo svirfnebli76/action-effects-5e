@@ -82,6 +82,11 @@ import {
   CROSSHAIR_3D_PROPAGATION_MODES,
   CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT
 } from "./crosshairs3d/propagation-mode-service.js";
+import {
+  CROSSHAIR_3D_CONFIGURATION_SCHEMA_VERSION,
+  CROSSHAIR_3D_CONFIGURATION_FLAG,
+  CROSSHAIR_3D_CAT_PROPAGATION_KEY
+} from "./crosshairs3d/integration-service.js";
 
 export class ActionEffects5eApi {
   constructor({
@@ -146,6 +151,7 @@ export class ActionEffects5eApi {
     crosshairs3dAttachedPropagation,
     crosshairs3dTargeting,
     crosshairs3dPlacement,
+    crosshairs3dIntegration,
     reactionRegistry,
     reactionAuthority,
     reactionDiscovery,
@@ -247,7 +253,10 @@ export class ActionEffects5eApi {
       CROSSHAIR_3D_SHAPES,
       CROSSHAIR_3D_CELL_COVERAGE_THRESHOLD,
       CROSSHAIR_3D_PROPAGATION_MODES,
-      CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT
+      CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT,
+      CROSSHAIR_3D_CONFIGURATION_SCHEMA_VERSION,
+      CROSSHAIR_3D_CONFIGURATION_FLAG,
+      CROSSHAIR_3D_CAT_PROPAGATION_KEY
     });
 
     this.dependencies = Object.freeze({
@@ -586,8 +595,23 @@ export class ActionEffects5eApi {
         cancel: () => crosshairs3dPlacement.cancel(),
         getStats: () => crosshairs3dPlacement.getStats()
       }),
+      configuration: Object.freeze({
+        schemaVersion: CROSSHAIR_3D_CONFIGURATION_SCHEMA_VERSION,
+        flag: CROSSHAIR_3D_CONFIGURATION_FLAG,
+        catPropagationKey: CROSSHAIR_3D_CAT_PROPAGATION_KEY,
+        getCatPropagationConfig: () => crosshairs3dIntegration.getCatPropagationConfig(),
+        inspect: (options) => crosshairs3dIntegration.inspect(options),
+        resolve: (options) => crosshairs3dIntegration.resolve(options)
+      }),
+      configured: Object.freeze({
+        show: (options) => crosshairs3dIntegration.show(options),
+        resolve: (options) => crosshairs3dIntegration.resolve(options),
+        getStats: () => crosshairs3dIntegration.getStats(),
+        getRecent: () => crosshairs3dIntegration.getRecent()
+      }),
+      showConfigured: (options) => crosshairs3dIntegration.show(options),
       show: (options) => crosshairs3dPlacement.show(options),
-        cancel: () => crosshairs3dPlacement.cancel(),
+      cancel: () => crosshairs3dPlacement.cancel(),
       getStats: () => crosshairs3dPlacement.getStats()
     });
 

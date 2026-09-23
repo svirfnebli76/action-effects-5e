@@ -1,5 +1,13 @@
 # Action Effects 5E architecture
 
+## v0.4.4.42 — Checkpoint 4 production boundary
+
+`Crosshair3dIntegrationService` is the stable Item/Activity-facing boundary around the accepted low-level placement stack. It reads only the opt-in `flags.action-effects-5e.crosshairs3d` schema, layers Activity and call-specific configuration deterministically, validates before opening a session, resolves CAT's `propagation` preference, and publishes immutable placement options plus sanitized provenance. The public entry point is `crosshairs3d.showConfigured()`; low-level `show()` remains available for diagnostics and bespoke automation.
+
+CAT owns installed user preference values under `flags.cat.config.*`. AE5E supplies a canonical `default`/`none`/`direct`/`spread` select descriptor and reads the chosen value through CAT's public configuration-value API. `default`, missing CAT, and failed CAT reads retain the Item-authored propagation mode.
+
+Attached Direct/Spread persistence is rehydrated on service initialization and `canvasReady`, in addition to its existing source/environment hooks. This is a primary-GM, exact-mask recalculation; None areas are skipped. Configuration and provenance avoid D&D5e Item system paths, isolating the current 5.3.3 implementation from future 6.0 schema changes.
+
 ## v0.4.4.41 — Exact cell-mask snapshots
 
 Foundry v14 recursively merges ObjectField updates, including module flag objects. Region cell configurations are complete snapshots rather than patches, so `RegionCellStateService` serially removes the prior `regionCells` flag and then writes the normalized replacement. This guarantees that cells omitted by obstruction recalculation and sparse overrides restored to their default state are absent from persisted data. If replacement publication fails after removal, the Region remains unconfigured and therefore fails closed.

@@ -1,3 +1,12 @@
+## 0.4.4.42 — Action Effects 3D Crosshairs, Checkpoint 4 production integration
+
+- Adds the production Item/Activity configuration boundary at `flags.action-effects-5e.crosshairs3d`, with deterministic Item → Activity → explicit → runtime override precedence, schema validation, immutable resolved options, and sanitized provenance.
+- Adds the high-level `crosshairs3d.showConfigured()` / `crosshairs3d.configured.show()` API while retaining the accepted low-level placement and geometry APIs for diagnostics and bespoke automation.
+- Finishes CAT's per-Item propagation override boundary. Item-authored defaults remain `none`, `direct`, or `spread`; CAT may select `default`, `none`, `direct`, or `spread` through its standard configuration-value API.
+- Rehydrates attached Direct/Spread areas when the module initializes and whenever a Scene becomes canvas-ready, preventing persisted masks from remaining stale after a client reload. None areas remain unaffected.
+- Adds bounded production diagnostics, explicit validation failures, CAT-read failure fallback, cancellation/error accounting, and D&D5e-version isolation through flags rather than system-internal paths.
+- Adds consolidated automated coverage and a self-cleaning Foundry acceptance macro. Packs and assets remain byte-for-byte unchanged; existing Item migrations remain deferred.
+
 ## 0.4.4.41 — Exact Region cell-mask replacement
 
 - Corrects the live Foundry v14 flag-write behavior exposed by v0.4.4.40 acceptance: object-valued flags merge recursively, so a new 14-cell mask written over a prior 28-cell mask retained all 28 keys.

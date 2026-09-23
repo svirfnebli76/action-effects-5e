@@ -48,6 +48,7 @@ import { Crosshair3dSurfaceService } from "./crosshairs3d/surface-service.js";
 import { CrosshairElevationGaugeService } from "./crosshairs3d/crosshair-elevation-gauge-service.js";
 import { Crosshair3dPixiPlacementRenderer } from "./crosshairs3d/pixi-placement-renderer.js";
 import { Crosshair3dPlacementSessionService } from "./crosshairs3d/placement-session-service.js";
+import { Crosshair3dIntegrationService } from "./crosshairs3d/integration-service.js";
 import { ReactionRegistry } from "./reactions/reaction-registry.js";
 import { ReactionAuthorityService } from "./reactions/reaction-authority-service.js";
 import { ReactionDiscoveryService } from "./reactions/reaction-discovery-service.js";
@@ -207,6 +208,10 @@ const crosshairs3dPlacement = new Crosshair3dPlacementSessionService({
   propagationEnvironment: crosshairs3dPropagationEnvironment,
   persistentAreas: crosshairs3dPersistentAreas
 });
+const crosshairs3dIntegration = new Crosshair3dIntegrationService({
+  placement: crosshairs3dPlacement,
+  propagationModes: crosshairs3dPropagationModes
+});
 const environmentProfiles = new EnvironmentProfileRegistry();
 const environmentCapabilities = new EnvironmentCapabilityRegistry();
 const environmentGeometry = new EnvironmentGeometryService();
@@ -347,6 +352,7 @@ const tests = new TestHarness({
   crosshairs3dAttachedPropagation: attachedAreaPropagation,
   crosshairs3dTargeting,
   crosshairs3dPlacement,
+  crosshairs3dIntegration,
   reactionRegistry,
   reactionAuthority,
   reactionDiscovery,
@@ -467,6 +473,7 @@ const api = new ActionEffects5eApi({
   crosshairs3dAttachedPropagation: attachedAreaPropagation,
   crosshairs3dTargeting,
   crosshairs3dPlacement,
+  crosshairs3dIntegration,
   reactionRegistry,
   reactionAuthority,
   reactionDiscovery,

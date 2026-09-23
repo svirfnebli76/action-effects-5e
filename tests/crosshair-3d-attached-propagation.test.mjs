@@ -108,12 +108,14 @@ test("attached Direct re-resolves from the transformed source and rebases exact 
 test("source and environment hooks queue Direct/Spread but never re-resolve None", async () => {
   const direct = fixture();
   direct.service.initialize();
+  await direct.flush();
+  assert.equal(direct.propagationCalls.length, 1, "initialization rehydrates persisted attached areas");
   direct.emit("updateToken", direct.source, { x: 100 });
   await direct.flush();
-  assert.equal(direct.propagationCalls.length, 1);
+  assert.equal(direct.propagationCalls.length, 2);
   direct.emit("updateWall", { parent: direct.scene });
   await direct.flush();
-  assert.equal(direct.propagationCalls.length, 2);
+  assert.equal(direct.propagationCalls.length, 3);
   direct.service.shutdown();
 
   const none = fixture({ mode: "none" });
@@ -129,12 +131,27 @@ test("source and environment hooks queue Direct/Spread but never re-resolve None
 test("Wall hooks immediately re-resolve through the dedicated cell-mask writer", async () => {
   const f = fixture();
   f.service.initialize();
+  await f.flush();
+  const before = f.propagationCalls.length;
   f.emit("createWall", { parent: f.scene });
   for (let i = 0; i < 30; i += 1) await Promise.resolve();
-  assert.equal(f.propagationCalls.length, 1);
-  assert.equal(f.configurations.length, 1);
-  assert.deepEqual(f.configurations[0].cells, { "2,1,0": "ACTIVE" });
+  assert.equal(f.propagationCalls.length, before + 1);
+  assert.equal(f.configurations.length, before + 1);
+  assert.deepEqual(f.configurations.at(-1).cells, { "2,1,0": "ACTIVE" });
   assert.equal(f.service.getStats().pending, 0);
+  f.service.shutdown();
+});
+
+test("canvasReady rehydrates persisted attached areas after a Scene reload", async () => {
+  const f = fixture();
+  f.service.initialize();
+  await f.flush();
+  const before = f.propagationCalls.length;
+  f.emit("canvasReady", { scene: f.scene });
+  await f.flush();
+  assert.equal(f.propagationCalls.length, before + 1);
+  assert.equal(f.service.getStats().rehydrations, 2);
+  assert.equal(f.service.getStats().last.reason, "canvas-ready");
   f.service.shutdown();
 });
 

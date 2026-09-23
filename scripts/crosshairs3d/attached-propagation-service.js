@@ -41,7 +41,7 @@ export class Crosshair3dAttachedPropagationService {
   #hooks = [];
   #queues = new Map();
   #initialized = false;
-  #stats = { queued: 0, resolved: 0, deactivated: 0, skipped: 0, errors: 0, last: null };
+  #stats = { queued: 0, resolved: 0, deactivated: 0, skipped: 0, rehydrations: 0, errors: 0, last: null };
 
   constructor({ authority, regions, regionCells, propagation, environment, persistentAreas, metricsService }) {
     this.#authority = authority;
@@ -76,6 +76,15 @@ export class Crosshair3dAttachedPropagationService {
         !behavior.disabled && behavior.type === "defineSurface" && behavior.system?.move);
       if (surface) this.#queueScene(document?.parent, name);
     });
+    this.#on("canvasReady", readyCanvas => {
+      this.#stats.rehydrations += 1;
+      this.#queueScene(readyCanvas?.scene ?? globalThis.canvas?.scene, "canvas-ready");
+    });
+    // A browser reload can occur after Walls or Surfaces changed while this
+    // client was absent. Re-resolve the active Scene's attached sensitive
+    // areas once so persisted masks cannot remain stale until another hook.
+    this.#stats.rehydrations += 1;
+    this.#queueScene(globalThis.canvas?.scene, "initialize");
     Logger.info("Attached 3D propagation service ready.");
   }
 
