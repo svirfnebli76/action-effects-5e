@@ -1,5 +1,9 @@
 # Action Effects 5E architecture
 
+## v0.4.4.43 — Live Document isolation
+
+Configuration inspection is a serialized diagnostic boundary: it publishes cloned configuration, source labels, and Item/Activity UUIDs, never live Documents. Resolution keeps Item/Activity references private only while reading AE5E flags and CAT preferences. Configured placement results use a shallow frozen wrapper because the accepted low-level result intentionally contains live Token references; recursive freezing is restricted to JSON-like configuration, provenance, and diagnostic records.
+
 ## v0.4.4.42 — Checkpoint 4 production boundary
 
 `Crosshair3dIntegrationService` is the stable Item/Activity-facing boundary around the accepted low-level placement stack. It reads only the opt-in `flags.action-effects-5e.crosshairs3d` schema, layers Activity and call-specific configuration deterministically, validates before opening a session, resolves CAT's `propagation` preference, and publishes immutable placement options plus sanitized provenance. The public entry point is `crosshairs3d.showConfigured()`; low-level `show()` remains available for diagnostics and bespoke automation.

@@ -93,6 +93,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.4.43 installation
+
+Install the complete module folder and reload Foundry. v0.4.4.43 corrects the live Foundry circular-Document failure found in the first Checkpoint 4 acceptance attempt. Run `docs/acceptance-crosshairs3d-v0.4.4.43.txt` as the primary GM; it exercises the production Item/CAT path without recursively traversing or freezing live Foundry Documents.
+
 ## v0.4.4.42 installation
 
 Install the complete module folder and reload Foundry. v0.4.4.42 is the Checkpoint 4 production-integration candidate: Item/Activity configuration, CAT propagation overrides, sanitized provenance, and attached-area reload rehydration are now public through `api.crosshairs3d`. Run `docs/acceptance-crosshairs3d-v0.4.4.42.txt` as the primary GM. The macro creates and removes its own temporary World Item and persistent Region, restores targets, and does not modify compendiums or assets.

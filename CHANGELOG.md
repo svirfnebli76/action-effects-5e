@@ -1,3 +1,10 @@
+## 0.4.4.43 — Foundry Document isolation correction
+
+- Corrects the v0.4.4.42 live acceptance failure where configuration inspection recursively froze the resolved result while it still contained a live Foundry Item document, whose circular folder/collection graph overflowed the call stack.
+- Makes inspection output document-free and publishes only Item/Activity UUIDs, cloned configuration data, and source labels. Internal resolution retains document references only long enough to read flags and CAT preferences.
+- Shallow-freezes configured placement result wrappers so their live Token references are neither recursively traversed nor frozen.
+- Adds circular Foundry Item, folder, parent collection, Token, and TokenDocument regressions while retaining all Checkpoint 4 behavior.
+
 ## 0.4.4.42 — Action Effects 3D Crosshairs, Checkpoint 4 production integration
 
 - Adds the production Item/Activity configuration boundary at `flags.action-effects-5e.crosshairs3d`, with deterministic Item → Activity → explicit → runtime override precedence, schema validation, immutable resolved options, and sanitized provenance.

@@ -128,32 +128,49 @@ export class Crosshair3dIntegrationService {
     try {
       const assembled = this.#assemble(input);
       const errors = this.#validate(assembled.configuration);
-      return freeze({ valid: errors.length === 0, errors, ...assembled });
+      return freeze({
+        valid: errors.length === 0,
+        errors,
+        configuration: clone(assembled.configuration),
+        sources: [...assembled.sources],
+        itemUuid: uuid(assembled.item),
+        activityUuid: uuid(assembled.activity)
+      });
     } catch (error) {
       return freeze({
         valid: false,
         errors: [error?.message ?? String(error)],
         configuration: null,
         sources: [],
-        item: input.item ?? null,
-        activity: input.activity ?? null
+        itemUuid: uuid(input.item),
+        activityUuid: uuid(input.activity)
       });
     }
   }
 
   async resolve(input = {}) {
     this.#stats.resolutionRequests += 1;
-    const inspected = this.inspect(input);
-    if (!inspected.valid) {
+    let assembled;
+    try {
+      assembled = this.#assemble(input);
+    } catch (cause) {
       this.#stats.validationFailures += 1;
-      const error = new Error(`Invalid Action Effects 3D Crosshairs configuration: ${inspected.errors.join(" ")}`);
-      error.issues = [...inspected.errors];
+      const issues = [cause?.message ?? String(cause)];
+      const error = new Error(`Invalid Action Effects 3D Crosshairs configuration: ${issues.join(" ")}`, { cause });
+      error.issues = issues;
+      throw error;
+    }
+    const errors = this.#validate(assembled.configuration);
+    if (errors.length) {
+      this.#stats.validationFailures += 1;
+      const error = new Error(`Invalid Action Effects 3D Crosshairs configuration: ${errors.join(" ")}`);
+      error.issues = [...errors];
       throw error;
     }
 
-    const configuration = clone(inspected.configuration);
+    const configuration = clone(assembled.configuration);
     configuration.propagation = normalizePropagationConfig(configuration.propagation);
-    const item = inspected.item;
+    const item = assembled.item;
     const cat = await this.#resolveCatOverride({
       item,
       catOptions: input.catOptions,
@@ -182,8 +199,8 @@ export class Crosshair3dIntegrationService {
     const provenance = freeze({
       schemaVersion: CROSSHAIR_3D_CONFIGURATION_SCHEMA_VERSION,
       itemUuid: uuid(item),
-      activityUuid: uuid(inspected.activity),
-      sources: [...inspected.sources],
+      activityUuid: uuid(assembled.activity),
+      sources: [...assembled.sources],
       propagation: {
         mode: selection.mode,
         source: selection.source === "override" ? cat.source : "item-default",
@@ -221,7 +238,10 @@ export class Crosshair3dIntegrationService {
       });
       if (result.cancelled) this.#stats.cancelled += 1;
       else this.#stats.confirmed += 1;
-      const published = freeze({ ...result, provenance: resolved.provenance });
+      // Placement results intentionally retain live Token references in
+      // `targets`. Freeze only the wrapper; never recursively traverse or
+      // freeze Foundry Documents or Placeables.
+      const published = Object.freeze({ ...result, provenance: resolved.provenance });
       this.#record(result.cancelled ? "cancelled" : "confirmed", resolved.provenance);
       return published;
     } catch (error) {

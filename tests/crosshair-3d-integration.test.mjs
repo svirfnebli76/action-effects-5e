@@ -76,6 +76,24 @@ test("Item, Activity, explicit configuration, and runtime overrides merge in doc
   assert.equal(item.flags[MODULE_ID][CROSSHAIR_3D_CONFIGURATION_FLAG].range.max, 30, "stored Item data is immutable input");
 });
 
+test("inspection and resolution never recursively traverse or freeze circular Foundry Documents", async () => {
+  const f = fixture({ placementResult: { cancelled: false, targets: [] } });
+  const item = document("Item.circular", baseConfig());
+  const folder = { name: "Folder", contents: [item] };
+  item.folder = folder;
+  item.parent = { items: [item] };
+  const inspected = f.service.inspect({ item });
+  assert.equal(inspected.valid, true);
+  assert.equal(inspected.itemUuid, item.uuid);
+  assert.equal(Object.hasOwn(inspected, "item"), false);
+  assert.equal(Object.isFrozen(item), false);
+  assert.equal(Object.isFrozen(folder), false);
+
+  const resolved = await f.service.resolve({ item, readCat: false });
+  assert.equal(resolved.provenance.itemUuid, item.uuid);
+  assert.equal(Object.isFrozen(item), false);
+});
+
 test("CAT Item configuration overrides the Item default through automationUtils.getConfigValue", async () => {
   const f = fixture();
   const item = document("Item.item", baseConfig());
@@ -175,7 +193,14 @@ test("unsupported and malformed configurations fail before a placement session b
 });
 
 test("configured.show publishes sanitized provenance and forwards only approved runtime callbacks", async () => {
-  const f = fixture();
+  const target = { id: "target" };
+  target.document = { object: target };
+  const f = fixture({ placementResult: {
+    cancelled: false,
+    targetIds: ["target"],
+    targets: [target],
+    shape: { type: "sphere" }
+  } });
   const item = document("Item.item", baseConfig());
   const source = { id: "source" };
   const onRevision = () => {};
@@ -196,6 +221,8 @@ test("configured.show publishes sanitized provenance and forwards only approved 
   assert.equal(f.calls[0].propagation.override, "none");
   assert.equal(result.provenance.propagation.mode, "none");
   assert.equal(Object.hasOwn(result.provenance, "item"), false, "provenance never publishes a live Document");
+  assert.equal(result.targets[0].id, target.id);
+  assert.equal(Object.isFrozen(result.targets[0]), false, "live Token references are never recursively frozen");
   assert.equal(f.service.getStats().confirmed, 1);
   assert.equal(f.service.getRecent().at(-1).type, "confirmed");
 });
