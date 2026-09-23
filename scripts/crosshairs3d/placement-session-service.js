@@ -13,7 +13,8 @@ export class Crosshair3dPlacementSessionService {
   #geometry; #cells; #tokens; #range; #revisions; #targeting; #metrics; #surfaces; #renderer; #elevationGauge;
   #propagation; #propagationModes; #propagationEnvironment; #persistentAreas;
   #active = null;
-  #stats = { sessions: 0, confirmed: 0, cancelled: 0, errors: 0, revisions: 0, targetRecalculations: 0, staleDiscards: 0, wheelEvents: 0 };
+  #stats = { sessions: 0, confirmed: 0, cancelled: 0, errors: 0, revisions: 0, presentations: 0,
+    targetRecalculations: 0, staleDiscards: 0, wheelEvents: 0 };
   constructor({ geometry, cells = null, tokens, range, revisions, targeting, metrics, surfaces, renderer, elevationGauge = null,
     propagation = null, propagationModes = null, propagationEnvironment = null, persistentAreas = null }) {
     this.#geometry = geometry; this.#cells = cells; this.#tokens = tokens; this.#range = range; this.#revisions = revisions;
@@ -22,7 +23,9 @@ export class Crosshair3dPlacementSessionService {
     this.#propagation = propagation; this.#propagationModes = propagationModes;
     this.#propagationEnvironment = propagationEnvironment; this.#persistentAreas = persistentAreas;
   }
-  getStats() { return Object.freeze({ ...this.#stats, active: Boolean(this.#active), activeSessionId: this.#active?.id ?? null }); }
+  getStats() { return Object.freeze({ ...this.#stats, active: Boolean(this.#active), activeSessionId: this.#active?.id ?? null,
+    activePresentationSerial: this.#active?.presentation?.serial ?? null,
+    activeResolvedSerial: this.#active?.resolvedSerial ?? null }); }
   cancel() { this.#active?.finish("cancelled"); }
 
   async show(options = {}) {
@@ -83,6 +86,7 @@ export class Crosshair3dPlacementSessionService {
       source, sourceVolume, scene: canvas.scene, metrics, baseShape, options, freeLine, self, capabilities, intent,
       propagationSelection,
       originalTargetIds: tokenIds(globalThis.game?.user?.targets), current: this.#revisions.create({ ...intent, shape: baseShape, targets: [], valid: false }),
+      presentation: null,
       mode: "MOVE", closed: false, finishing: false, settled: false, pending: null, drain: null,
       requestedSerial: 0, resolvedSerial: -1, listeners: [], hooks: [], tick: null, lastPointer: null,
       lastCamera: "", zoomUntil: 0, armed: false, gesture: null, lastTargetIds: tokenIds(globalThis.game?.user?.targets)
@@ -127,42 +131,61 @@ export class Crosshair3dPlacementSessionService {
   }
 
   #enqueue(session, reason) {
-    if (session.closed) return;
-    session.pending = { serial: ++session.requestedSerial, reason, state: { ...session.intent, point: { ...session.intent.point } } };
-    if (!session.drain) {
-      // Assign the barrier before starting work, including synchronous filter callbacks.
-      session.drain = Promise.resolve().then(() => this.#drain(session)).catch(error => session.finish("error", error)).finally(() => {
-        session.drain = null;
-        if (session.pending && !session.closed) this.#enqueue(session, session.pending.reason);
-      });
+    if (session.closed) return null;
+    const request = { serial: ++session.requestedSerial, reason,
+      state: { ...session.intent, point: { ...session.intent.point } } };
+    request.presentation = this.#present(session, request);
+    session.pending = request;
+    this.#startDrain(session);
+    return request.serial;
+  }
+  #present(session, request) {
+    const state = request.state;
+    if (session.self) {
+      const orientation = this.#canonicalSelfOrientation(state.headingYaw, state.arcPitch);
+      Object.assign(state, orientation);
+      state.point = this.#resolveSelfApex(session.source, state.yaw, state.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
     }
+    const shape = this.#shapeForState(session.baseShape, state);
+    const direction = session.self ? this.#geometry.direction(shape) : null;
+    const endpoint = direction ? { x: shape.origin.x + direction.x * shape.length,
+      y: shape.origin.y + direction.y * shape.length, z: shape.origin.z + direction.z * shape.length } : null;
+    const valid = this.#validState(session, state);
+    const presentation = this.#revisions.create({ ...state, shape, endpoint, terminal: endpoint,
+      endpointZ: endpoint?.z ?? null, targets: session.current.targets, propagation: null,
+      valid, serial: request.serial, reason: request.reason, presentation: true });
+    this.#renderer.update(presentation, session.mode);
+    session.presentation = presentation;
+    this.#stats.presentations++;
+    this.#updateGauge(session);
+    return presentation;
+  }
+  #startDrain(session) {
+    if (session.closed || session.drain || !session.pending) return;
+    // The drain remains the authoritative propagation/target barrier. Presentation
+    // has already happened synchronously in #enqueue and never waits on this work.
+    session.drain = Promise.resolve().then(() => this.#drain(session))
+      .catch(error => session.finish("error", error))
+      .finally(() => {
+        session.drain = null;
+        if (session.pending && !session.closed) this.#startDrain(session);
+      });
   }
   async #drain(session) {
     while (session.pending && !session.closed) {
       const request = session.pending; session.pending = null;
-      const state = request.state;
-      if (session.self) {
-        const orientation = this.#canonicalSelfOrientation(state.headingYaw, state.arcPitch);
-        Object.assign(state, orientation);
-        state.point = this.#resolveSelfApex(session.source, state.yaw, state.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
-      }
-      const shape = this.#shapeForState(session.baseShape, state);
-      const direction = session.self ? this.#geometry.direction(shape) : null;
-      const endpoint = direction ? { x: shape.origin.x + direction.x * shape.length,
-        y: shape.origin.y + direction.y * shape.length, z: shape.origin.z + direction.z * shape.length } : null;
-      const valid = this.#validState(session, state);
-      const propagation = valid ? await this.#resolvePropagation(session, shape) : null;
-      const targets = propagation ? await this.#collectTargets(session, shape, propagation.cells) : Object.freeze([]);
+      const presentation = request.presentation;
+      const propagation = presentation.valid ? await this.#resolvePropagation(session, presentation.shape) : null;
+      const targets = propagation ? await this.#collectTargets(session, presentation.shape, propagation.cells) : Object.freeze([]);
       if (session.closed) return;
       if (request.serial !== session.requestedSerial) { this.#stats.staleDiscards++; continue; }
-      const revision = this.#revisions.revise(session.current, { ...state, shape, endpoint, terminal: endpoint,
-        endpointZ: endpoint?.z ?? null, targets, propagation, valid, serial: request.serial, reason: request.reason });
-      this.#renderer.update(revision, session.mode);
+      const revision = this.#revisions.revise(session.current, { ...request.state, shape: presentation.shape,
+        endpoint: presentation.endpoint, terminal: presentation.terminal, endpointZ: presentation.endpointZ,
+        targets, propagation, valid: presentation.valid, serial: request.serial, reason: request.reason });
       const ids = tokenIds(targets);
       if (!sameIds(ids, tokenIds(globalThis.game?.user?.targets))) this.#replaceUserTargets(ids);
       session.current = revision; session.resolvedSerial = request.serial; session.lastTargetIds = ids;
       this.#stats.revisions++; this.#stats.targetRecalculations++;
-      this.#updateGauge(session);
       if (typeof session.options.onRevision === "function") {
         try { Promise.resolve(session.options.onRevision(revision)).catch(error => Logger.warn("3D Crosshairs onRevision callback failed.", error)); }
         catch (error) { Logger.warn("3D Crosshairs onRevision callback failed.", error); }
@@ -171,7 +194,7 @@ export class Crosshair3dPlacementSessionService {
   }
   #updateGauge(session) {
     if (session.baseShape.type !== "line") return;
-    const r = session.current;
+    const r = session.presentation ?? session.current;
     this.#elevationGauge?.update({ distance: r.shape.length, maxRange: r.shape.length, angle: r.arcPitch,
       elevationDelta: (r.endpoint?.z ?? r.point.z) - r.point.z,
       belowOrigin: r.endpoint?.z < r.point.z - 1e-7, visible: session.mode === "ELEVATE" });
@@ -180,7 +203,12 @@ export class Crosshair3dPlacementSessionService {
     if (session.confirming || session.closed) return;
     session.confirming = true;
     this.#enqueue(session, "final-confirm");
-    while (session.drain && !session.closed) await session.drain;
+    while (!session.closed) {
+      this.#startDrain(session);
+      const barrier = session.drain;
+      if (barrier) await barrier;
+      if (!session.pending && !session.drain && session.resolvedSerial === session.requestedSerial) break;
+    }
     if (session.closed) return;
     if (!session.current.valid || session.resolvedSerial !== session.requestedSerial) { session.finish("cancelled"); return; }
     if (session.options.persistent?.enabled === true && session.current.propagation?.cells?.length) {
@@ -236,7 +264,8 @@ export class Crosshair3dPlacementSessionService {
         : m.shift && session.capabilities.rotation ? "ROTATE" : m.alt && session.capabilities.resize ? "LENGTH" : "MOVE";
       if (mode !== session.mode) {
         session.mode = mode;
-        if (session.current.valid) this.#renderer.update(session.current, mode);
+        const displayed = session.presentation ?? session.current;
+        if (displayed.valid) this.#renderer.update(displayed, mode);
         this.#updateGauge(session);
       }
       return { ...m, count };
@@ -572,7 +601,7 @@ export class Crosshair3dPlacementSessionService {
     catch (error) { Logger.warn("Could not restore previous targets.", error); }
   }
   #cleanup(session) {
-    session.closed = true; session.pending = null;
+    session.closed = true; session.pending = null; session.presentation = null;
     const safely = fn => { try { fn(); } catch (error) { Logger.warn("3D Crosshairs cleanup failed.", error); } };
     if (session.tick) safely(() => globalThis.canvas.app.ticker.remove(session.tick));
     for (const [target, type, listener, options] of session.listeners) safely(() => target.removeEventListener(type, listener, options));

@@ -1,5 +1,13 @@
 # Action Effects 5E architecture
 
+## v0.4.4.45 — two-stage live placement revisions
+
+Live 3D placement now keeps two deliberately separate records. `session.presentation` is the newest legal visual intent and contains the normalized shape, endpoint/terminal information, validity, and request serial needed by PIXI and the elevation gauge. It is rendered synchronously when the input request is accepted and is never authoritative for targets or persistence. `session.current` remains the last fully resolved authoritative revision containing completed propagation and target results.
+
+The asynchronous drain permits one physical calculation in flight while coalescing pending input to the newest request. A completed result may publish targets and replace `session.current` only when its serial still equals the newest requested serial; stale results are counted and discarded. The renderer is not called from authoritative completion, so a slow result can never move the guide backward.
+
+Confirmation freezes further user manipulation, enqueues a `final-confirm` presentation for the exact visible state, and waits until the newest requested serial is fully resolved. Persistent Region creation then consumes `session.current.propagation` from that exact serial. Environment/token invalidations may still enqueue a newer authoritative recalculation while confirmation is waiting. Cancellation closes the session immediately; late propagation completion cannot publish targets or create a Region.
+
 ## v0.4.4.44 — CAT runtime utility boundary
 
 Per-Item propagation overrides are read through CAT's published global utility structure, `cat.utils.automationUtils.getConfigValue(item, "propagation")`. The utility object is retained as the call receiver. The earlier direct `cat.automationUtils` shape remains a fallback only, allowing development/test consumers to transition without weakening the production CAT path.

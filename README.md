@@ -93,6 +93,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.4.45 installation
+
+Install the complete module folder and reload Foundry. v0.4.4.45 decouples PIXI presentation from Direct/Spread propagation so the visible 3D crosshair can follow current input while physical obstruction sampling and target collection resolve asynchronously. Final confirmation still waits for the exact authoritative propagation result before returning or creating a persistent Region. Run `docs/acceptance-crosshairs3d-v0.4.4.45.txt` as the primary GM and compare the 20-foot Sphere under None, Direct, and Spread.
+
 ## v0.4.4.44 installation
 
 Install the complete module folder and reload Foundry. v0.4.4.44 applies the CAT configuration path proven by the standalone live diagnostic: `cat.utils.automationUtils.getConfigValue()`. Run `docs/acceptance-crosshairs3d-v0.4.4.44.txt` as the primary GM to repeat the full Checkpoint 4 production acceptance without the diagnostic bypass.

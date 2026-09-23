@@ -1,0 +1,262 @@
+await (async () => {
+  const TAG = "AE5E 3D Crosshairs Responsiveness Acceptance 01";
+  const VERSION = "0.4.4.45";
+  const MODULE_ID = "action-effects-5e";
+  const module = game.modules.get(MODULE_ID);
+  const api = module?.api?.crosshairs3d;
+  const regionCells = module?.api?.regions?.cells;
+
+  if (!game.user.isGM) {
+    return ui.notifications.warn(`${TAG} must be run by the primary GM.`);
+  }
+  if (module?.version !== VERSION || !api?.show || !api?.getStats || !regionCells?.getConfig) {
+    return ui.notifications.warn(`Install and activate AE5E ${VERSION}, then reload Foundry.`);
+  }
+  if (!canvas.ready || !canvas.grid.isSquare) {
+    return ui.notifications.warn("Open a square-grid Scene first.");
+  }
+  if (api.getStats().active) {
+    return ui.notifications.warn("Finish or cancel the current 3D placement first.");
+  }
+
+  const source = canvas.tokens.placeables.find(token => token.name === "Caerwyn Thorne")
+    ?? canvas.tokens.controlled[0];
+  if (!source) {
+    return ui.notifications.warn("Place Caerwyn Thorne on the Scene or select one source Token.");
+  }
+
+  const checks = [];
+  const temporaryRegions = new Set();
+  const originalTargets = [...game.user.targets].map(token => token.id);
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const record = (check, passed, details = {}) => checks.push({ check, passed: Boolean(passed), details });
+  const sameIds = (a, b) => [...a].sort().join("|") === [...b].sort().join("|");
+  const cellKey = cell => `${cell.x},${cell.y},${cell.z}`;
+  const restoreTargets = () => {
+    const ids = originalTargets.filter(id => canvas.tokens.get(id));
+    canvas.tokens.setTargets(ids, { mode: "replace" });
+  };
+  async function waitFor(predicate, label, timeout = 5000) {
+    const started = performance.now();
+    while (performance.now() - started < timeout) {
+      const value = await predicate();
+      if (value) return value;
+      await wait(25);
+    }
+    throw new Error(`Timed out waiting for ${label}.`);
+  }
+  async function deleteRegionUuid(uuid) {
+    if (!uuid) return;
+    const region = await fromUuid(uuid).catch(() => null);
+    if (!region) return;
+    if (typeof region.delete === "function") await region.delete();
+    else await canvas.scene.deleteEmbeddedDocuments("Region", [region.id]);
+  }
+
+  async function runInteractive(mode, { persistent = false } = {}) {
+    restoreTargets();
+    const before = api.getStats();
+    const authoritative = [];
+    const samples = [];
+    let watching = true;
+    let presentationAdvancedWhileResolvedHeld = false;
+    let previous = null;
+
+    ui.notifications.info(
+      `${TAG}: ${mode.toUpperCase()} — move the 20-foot Sphere continuously for several seconds, then left-click to confirm.`
+    );
+
+    const watcher = (async () => {
+      while (watching) {
+        const stats = api.getStats();
+        if (stats.active) {
+          const sample = {
+            presentation: stats.activePresentationSerial,
+            resolved: stats.activeResolvedSerial
+          };
+          samples.push(sample);
+          if (previous
+            && sample.resolved === previous.resolved
+            && Number.isInteger(sample.presentation)
+            && Number.isInteger(previous.presentation)
+            && sample.presentation > previous.presentation) {
+            presentationAdvancedWhileResolvedHeld = true;
+          }
+          previous = sample;
+        }
+        await wait(16);
+      }
+    })();
+
+    let result;
+    try {
+      result = await api.show({
+        source,
+        shape: { type: "sphere", radius: 20 },
+        range: { max: 60 },
+        capabilities: { elevation: true },
+        propagation: { override: mode },
+        persistent: persistent ? {
+          enabled: true,
+          name: `${TAG} Temporary ${mode} Sphere`,
+          locked: true
+        } : { enabled: false },
+        onRevision: revision => authoritative.push({
+          serial: revision.serial,
+          targetIds: revision.targets.map(token => token.id)
+        })
+      });
+    } finally {
+      watching = false;
+      await watcher;
+    }
+
+    const after = api.getStats();
+    const lastAuthoritative = authoritative.at(-1) ?? null;
+    const liveTargetIds = [...game.user.targets].map(token => token.id);
+    const serialsMonotonic = authoritative.every((entry, index) =>
+      index === 0 || entry.serial > authoritative[index - 1].serial);
+
+    record(
+      `${mode}: final authoritative revision matches the confirmed visual request`,
+      result.cancelled === false
+        && lastAuthoritative?.serial === result.revision.serial
+        && serialsMonotonic,
+      {
+        resultSerial: result.revision?.serial ?? null,
+        lastAuthoritativeSerial: lastAuthoritative?.serial ?? null,
+        authoritativeSerials: authoritative.map(entry => entry.serial),
+        presentationDelta: after.presentations - before.presentations,
+        authoritativeDelta: after.revisions - before.revisions,
+        staleDelta: after.staleDiscards - before.staleDiscards,
+        presentationAdvancedWhileResolvedHeld
+      }
+    );
+
+    record(
+      `${mode}: only the final authoritative targets remain published`,
+      result.cancelled === false
+        && sameIds(liveTargetIds, result.targetIds ?? [])
+        && sameIds(lastAuthoritative?.targetIds ?? [], result.targetIds ?? []),
+      {
+        liveTargetIds,
+        resultTargetIds: result.targetIds ?? [],
+        lastAuthoritativeTargetIds: lastAuthoritative?.targetIds ?? []
+      }
+    );
+
+    if (persistent && result.persistentRegion?.regionUuid) {
+      temporaryRegions.add(result.persistentRegion.regionUuid);
+      const region = await fromUuid(result.persistentRegion.regionUuid);
+      const config = regionCells.getConfig(region);
+      const metadata = region?.getFlag(MODULE_ID, "crosshair3dPersistentArea");
+      const expectedKeys = (result.propagation?.cells ?? []).map(cellKey).sort();
+      const storedKeys = Object.entries(config?.cells ?? {})
+        .filter(([, state]) => String(state).toUpperCase() === "ACTIVE")
+        .map(([key]) => key)
+        .sort();
+      record(
+        `${mode}: persistent Region stores the exact final propagated cell set`,
+        result.persistentRegion?.created === true
+          && result.propagation?.mode === mode
+          && metadata?.propagation === mode
+          && expectedKeys.join("|") === storedKeys.join("|"),
+        {
+          regionUuid: result.persistentRegion.regionUuid,
+          expectedCells: expectedKeys.length,
+          storedCells: storedKeys.length,
+          propagation: result.propagation?.mode ?? null,
+          metadataPropagation: metadata?.propagation ?? null
+        }
+      );
+    }
+
+    restoreTargets();
+    return result;
+  }
+
+  try {
+    const none = await runInteractive("none");
+    const direct = await runInteractive("direct");
+    const spread = await runInteractive("spread", { persistent: true });
+
+    record(
+      "None, Direct, and Spread all completed with the same 20-foot Sphere placement contract",
+      [none, direct, spread].every(result =>
+        result.cancelled === false
+        && result.shape?.type === "sphere"
+        && result.shape?.radius === 20
+        && ["none", "direct", "spread"].includes(result.propagation?.mode)),
+      {
+        modes: [none.propagation?.mode, direct.propagation?.mode, spread.propagation?.mode],
+        cells: [none.propagation?.cells?.length, direct.propagation?.cells?.length, spread.propagation?.cells?.length]
+      }
+    );
+
+    restoreTargets();
+    const regionsBeforeCancel = canvas.scene.regions.size;
+    const controller = new AbortController();
+    const cancellation = api.show({
+      source,
+      shape: { type: "sphere", radius: 20 },
+      range: { max: 60 },
+      propagation: { override: "spread" },
+      persistent: { enabled: true, name: `${TAG} Must Not Persist` },
+      signal: controller.signal
+    });
+    await waitFor(() => api.getStats().active, "cancellation placement activation");
+    controller.abort();
+    const cancelled = await cancellation;
+    record(
+      "Cancellation invalidates pending work, restores targets, and creates no Region",
+      cancelled.cancelled === true
+        && api.getStats().active === false
+        && canvas.scene.regions.size === regionsBeforeCancel
+        && sameIds([...game.user.targets].map(token => token.id), originalTargets),
+      {
+        cancelled: cancelled.cancelled,
+        active: api.getStats().active,
+        beforeRegions: regionsBeforeCancel,
+        afterRegions: canvas.scene.regions.size,
+        targetIds: [...game.user.targets].map(token => token.id)
+      }
+    );
+
+    const passed = checks.every(check => check.passed);
+    console.group(`${TAG} — ${passed ? "PASS" : "FAIL"}`);
+    console.table(checks.map(entry => ({
+      check: entry.check,
+      passed: entry.passed,
+      details: JSON.stringify(entry.details)
+    })));
+    console.log({
+      tag: TAG,
+      version: VERSION,
+      passed,
+      checks,
+      finalStats: api.getStats(),
+      visualAcceptanceRequired: true,
+      visualQuestion: "Did Direct and Spread visually track the mouse comparably to None while you moved the Sphere continuously?"
+    });
+    console.groupEnd();
+
+    ui.notifications[passed ? "info" : "error"](
+      `${TAG}: ${passed ? "objective checks PASS" : "one or more objective checks FAILED"}. `
+      + "Please report whether Direct and Spread felt as responsive as None."
+    );
+    return { tag: TAG, version: VERSION, passed, checks };
+  } catch (error) {
+    console.error(`${TAG} failed`, error);
+    ui.notifications.error(`${TAG} failed: ${error.message}`);
+    throw error;
+  } finally {
+    restoreTargets();
+    for (const uuid of temporaryRegions) {
+      try {
+        await deleteRegionUuid(uuid);
+      } catch (error) {
+        console.warn(`${TAG}: temporary Region cleanup failed`, uuid, error);
+      }
+    }
+  }
+})();

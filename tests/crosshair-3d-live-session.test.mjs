@@ -291,3 +291,159 @@ test('cancelling propagated placement creates no persistent Region', async () =>
   assert.equal(result.cancelled, true);
   assert.equal(creations, 0);
 });
+
+test('presentation advances immediately while delayed propagation remains authoritative and stale results never publish', async () => {
+  let releaseFirst;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  const updates = [];
+  const resolved = [];
+  let propagationCalls = 0;
+  const renderer = {
+    show() {},
+    update(revision, mode) { updates.push({ revision, mode }); },
+    frame() {},
+    clear() {}
+  };
+  const h = harness({ renderer, placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'direct', source: 'test' }) },
+    propagationEnvironment: { create: () => ({ test: true }) },
+    propagation: { async resolve({ shape, grid, mode }) {
+      propagationCalls += 1;
+      if (propagationCalls === 1) await firstGate;
+      return Object.freeze({ mode, shape, grid, origin: shape.origin, support: 'continuous-primitive',
+        cells: Object.freeze(propagationCalls === 1 ? [{ x: 1, y: 1, z: 0 }] : []) });
+    } }
+  } });
+
+  const promise = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 },
+    propagation: { override: 'direct' }, onRevision: revision => resolved.push(revision) });
+  await h.flush();
+
+  assert.equal(propagationCalls, 1, 'initial authoritative propagation should be in flight');
+  assert.equal(updates.at(-1).revision.serial, 1, 'initial geometry must already be presented');
+  assert.equal(h.service.getStats().activeResolvedSerial, -1);
+
+  const before = { ...updates.at(-1).revision.point };
+  h.dispatch('pointermove', { clientX: 500, clientY: 200 });
+  const newestPresentation = updates.at(-1).revision;
+  assert.equal(newestPresentation.serial, 2, 'new visual intent must present synchronously');
+  assert.notDeepEqual(newestPresentation.point, before);
+  assert.equal(h.service.getStats().activePresentationSerial, 2);
+  assert.deepEqual([...game.user.targets].map(token => token.id), ['outside'], 'targets must not follow unresolved visual intent');
+
+  releaseFirst();
+  await h.flush();
+  assert.equal(propagationCalls, 2, 'only the newest queued request should run after the stale calculation');
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0].serial, 2);
+  assert.ok(h.service.getStats().staleDiscards >= 1);
+  assert.ok(!h.history.some(ids => ids.includes('inside')), 'stale propagation targets must never be published');
+
+  h.service.cancel();
+  await promise;
+  assert.ok(h.clean());
+});
+
+test('confirmation waits for propagation of the exact final presentation and persistence receives those cells', async () => {
+  let releaseInitial, releaseFinal;
+  const initialGate = new Promise(resolve => { releaseInitial = resolve; });
+  const finalGate = new Promise(resolve => { releaseFinal = resolve; });
+  const updates = [];
+  const persistence = [];
+  let propagationCalls = 0;
+  const renderer = {
+    show() {},
+    update(revision, mode) { updates.push({ revision, mode }); },
+    frame() {},
+    clear() {}
+  };
+  const h = harness({ renderer, placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'spread', source: 'test' }) },
+    propagationEnvironment: { create: () => ({ test: true }) },
+    propagation: { async resolve({ shape, grid, mode }) {
+      propagationCalls += 1;
+      if (propagationCalls === 1) await initialGate;
+      else if (propagationCalls === 2) await finalGate;
+      const cells = propagationCalls === 2 ? [{ x: 1, y: 1, z: 0 }] : [{ x: 99, y: 99, z: 0 }];
+      return Object.freeze({ mode, shape, grid, origin: shape.origin, support: 'continuous-primitive', cells: Object.freeze(cells) });
+    } },
+    persistentAreas: { async create(args) {
+      persistence.push(args);
+      return Object.freeze({ created: true, regionUuid: 'Scene.test.Region.final' });
+    } }
+  } });
+
+  let settled = false;
+  const promise = h.service.show({ source: h.source,
+    shape: { type: 'sphere', radius: 10 }, propagation: { override: 'spread' }, persistent: { enabled: true } });
+  promise.finally(() => { settled = true; });
+  await h.flush();
+  h.dispatch('pointermove', { clientX: 500, clientY: 300 });
+  await h.confirm();
+
+  const finalPresentation = updates.at(-1).revision;
+  assert.equal(finalPresentation.reason, 'final-confirm');
+  assert.equal(finalPresentation.serial, 3);
+  assert.equal(settled, false, 'confirmation must not finish while older propagation is still running');
+
+  releaseInitial();
+  await h.flush();
+  assert.equal(propagationCalls, 2, 'final-confirm propagation should start after the stale request completes');
+  assert.equal(settled, false, 'confirmation must wait for final-confirm propagation itself');
+
+  releaseFinal();
+  await h.flush();
+  const result = await promise;
+  assert.equal(result.cancelled, false);
+  assert.equal(result.revision.serial, finalPresentation.serial);
+  assert.deepEqual(result.placementPoint, finalPresentation.point);
+  assert.deepEqual(result.propagation.cells, [{ x: 1, y: 1, z: 0 }]);
+  assert.deepEqual(result.targetIds, ['inside']);
+  assert.equal(persistence.length, 1);
+  assert.deepEqual(persistence[0].propagation.cells, result.propagation.cells);
+  assert.deepEqual(persistence[0].propagation.shape.origin, finalPresentation.shape.origin);
+  assert.equal(result.persistentRegion.regionUuid, 'Scene.test.Region.final');
+  assert.ok(h.clean());
+});
+
+test('cancellation invalidates delayed propagation without late target publication', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const h = harness({ placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'direct', source: 'test' }) },
+    propagationEnvironment: { create: () => ({ test: true }) },
+    propagation: { async resolve({ shape, grid, mode }) {
+      await gate;
+      return { mode, shape, grid, origin: shape.origin, support: 'continuous-primitive', cells: [{ x: 1, y: 1, z: 0 }] };
+    } }
+  } });
+  const promise = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 }, propagation: { override: 'direct' } });
+  await h.flush();
+  h.dispatch('pointercancel');
+  const result = await promise;
+  assert.equal(result.cancelled, true);
+  assert.deepEqual([...game.user.targets].map(token => token.id), ['outside']);
+  const historyLength = h.history.length;
+  release();
+  await h.flush();
+  assert.equal(h.history.length, historyLength, 'late propagation completion must not publish targets after cancellation');
+  assert.ok(h.clean());
+});
+
+test('propagation rejection closes the session and restores state after immediate presentation', async () => {
+  const updates = [];
+  const renderer = { show() {}, update(revision) { updates.push(revision); }, frame() {}, clear() {} };
+  const h = harness({ renderer, placementDependencies: {
+    propagationModes: { resolve: () => ({ mode: 'direct', source: 'test' }) },
+    propagationEnvironment: { create: () => ({ test: true }) },
+    propagation: { async resolve() { throw new Error('propagation failed'); } }
+  } });
+  await assert.rejects(
+    h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 }, propagation: { override: 'direct' } }),
+    /propagation failed/
+  );
+  assert.equal(updates.length, 1, 'the inexpensive presentation should occur before propagation rejects');
+  assert.deepEqual([...game.user.targets].map(token => token.id), ['outside']);
+  assert.equal(h.service.getStats().errors, 1);
+  assert.ok(h.clean());
+});

@@ -1,3 +1,11 @@
+## 0.4.4.45 — 3D Crosshairs presentation/propagation decoupling
+
+- Separates immediate PIXI presentation from asynchronous Direct/Spread propagation and target collection. Accepted mouse/wheel intent now updates the visible 3D guide before physical obstruction sampling completes.
+- Keeps `session.current` authoritative: only the newest completed propagation/target result can replace it or publish targets. Stale calculations are discarded and never redraw the guide or overwrite newer targets.
+- Adds a final confirmation barrier that freezes input, waits for propagation of the exact final presented state, and gives persistent Region creation that exact authoritative cell set. Cancellation still invalidates pending work and restores prior targets.
+- Adds presentation/resolution statistics for live diagnosis plus deterministic delayed-propagation regressions covering immediate rendering, stale rejection, final confirmation, persistence, cancellation, and error cleanup.
+- Adds a self-cleaning Foundry responsiveness acceptance macro comparing the same 20-foot Sphere under None, Direct, and Spread. Packs and assets remain unchanged.
+
 ## 0.4.4.44 — CAT configuration utility path correction
 
 - Uses CAT's live `cat.utils.automationUtils.getConfigValue()` boundary for per-Item 3D propagation choices, preserving the utility receiver when invoked.
