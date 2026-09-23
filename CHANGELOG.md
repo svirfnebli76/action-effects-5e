@@ -1,3 +1,10 @@
+## 0.4.4.44 — CAT configuration utility path correction
+
+- Uses CAT's live `cat.utils.automationUtils.getConfigValue()` boundary for per-Item 3D propagation choices, preserving the utility receiver when invoked.
+- Retains the early direct `cat.automationUtils` lookup only as a compatibility fallback.
+- Adds regressions for CAT's real global-object structure, receiver binding, direct-path fallback, explicit override bypass, and CAT-read failure behavior.
+- Removes the obsolete root-level `UPDATE-v0.4.4.33.md` and `UPDATE-v0.4.4.34.md` stragglers. Packs and assets remain unchanged.
+
 ## 0.4.4.43 — Foundry Document isolation correction
 
 - Corrects the v0.4.4.42 live acceptance failure where configuration inspection recursively froze the resolved result while it still contained a live Foundry Item document, whose circular folder/collection graph overflowed the call stack.

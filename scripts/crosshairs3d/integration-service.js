@@ -330,11 +330,15 @@ export class Crosshair3dIntegrationService {
       if (catOptions[key] !== undefined) return { value: catOptions[key], source: "cat-options" };
     }
     if (!readCat || !item) return { value: CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT, source: "default" };
-    const getter = globalThis.cat?.automationUtils?.getConfigValue;
+    // CAT publishes its supported macro utilities beneath `cat.utils`.
+    // Retain the early-development direct path as a compatibility fallback.
+    const utilities = globalThis.cat?.utils?.automationUtils
+      ?? globalThis.cat?.automationUtils;
+    const getter = utilities?.getConfigValue;
     if (typeof getter !== "function") return { value: CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT, source: "default" };
     this.#stats.catReads += 1;
     try {
-      const value = await getter(item, key);
+      const value = await getter.call(utilities, item, key);
       return {
         value: value ?? CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT,
         source: value == null ? "default" : "cat-item-configuration"

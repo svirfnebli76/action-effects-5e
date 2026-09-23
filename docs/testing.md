@@ -1,8 +1,8 @@
-# Current infrastructure acceptance — v0.4.4.43
+# Current infrastructure acceptance — v0.4.4.44
 
 ## Checkpoint 4 — production integration
 
-Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.4.43.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. The macro performs contract, validation, real CAT preference, stored Item configuration, configured placement/persistence, automatic cancellation, reload-rehydration, diagnostics, cleanup, and target-restoration checks. It creates one disposable World Item and one temporary persistent Region; it does not move Tokens, place Walls, or modify compendiums/assets. v0.4.4.43 additionally verifies that live circular Foundry Documents remain outside recursive freezing and published inspection data.
+Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.4.44.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. The macro performs contract, validation, CAT's real `cat.utils.automationUtils` preference read, stored Item configuration, configured placement/persistence, automatic cancellation, reload-rehydration, diagnostics, cleanup, and target-restoration checks. It creates one disposable World Item and one temporary persistent Region; it does not move Tokens, place Walls, or modify compendiums/assets.
 
 The accepted Checkpoint 2/3 geometry, visuals, chart-Sphere targeting, Direct/Spread propagation, Wall/Surface behavior, exact Region persistence, and player-authority results do not need to be repeated. Checkpoint 4 wraps those services in the production Item/Activity boundary rather than changing their algorithms.
 

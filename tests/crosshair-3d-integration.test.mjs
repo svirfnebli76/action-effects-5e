@@ -94,14 +94,16 @@ test("inspection and resolution never recursively traverse or freeze circular Fo
   assert.equal(Object.isFrozen(item), false);
 });
 
-test("CAT Item configuration overrides the Item default through automationUtils.getConfigValue", async () => {
+test("CAT Item configuration uses the live cat.utils.automationUtils API path", async () => {
   const f = fixture();
   const item = document("Item.item", baseConfig());
   const reads = [];
-  globalThis.cat = { automationUtils: { async getConfigValue(documentArg, key) {
+  const automationUtils = { async getConfigValue(documentArg, key) {
+    assert.equal(this, automationUtils, "CAT utility receiver is preserved");
     reads.push([documentArg, key]);
     return "spread";
-  } } };
+  } };
+  globalThis.cat = { api: {}, lib: {}, utils: { automationUtils } };
 
   const resolved = await f.service.resolve({ item });
   assert.equal(resolved.provenance.propagation.itemDefault, "direct");
@@ -112,12 +114,21 @@ test("CAT Item configuration overrides the Item default through automationUtils.
   assert.equal(f.service.getStats().catReads, 1);
 });
 
+test("the early direct CAT utility path remains a compatibility fallback", async () => {
+  const f = fixture();
+  const item = document("Item.item", baseConfig());
+  globalThis.cat = { automationUtils: { getConfigValue() { return "none"; } } };
+  const resolved = await f.service.resolve({ item });
+  assert.equal(resolved.provenance.propagation.mode, "none");
+  assert.equal(resolved.provenance.propagation.source, "cat-item-configuration");
+});
+
 test("explicit CAT options support default, none, direct, and spread without consulting CAT", async () => {
   for (const [override, expected] of [["default", "direct"], ["none", "none"], ["direct", "direct"], ["spread", "spread"]]) {
     const f = fixture();
     const item = document("Item.item", baseConfig());
     let reads = 0;
-    globalThis.cat = { automationUtils: { getConfigValue() { reads += 1; return "none"; } } };
+    globalThis.cat = { utils: { automationUtils: { getConfigValue() { reads += 1; return "none"; } } } };
     const resolved = await f.service.resolve({ item, catOptions: { propagation: override } });
     assert.equal(resolved.provenance.propagation.mode, expected);
     assert.equal(reads, 0);
@@ -147,7 +158,7 @@ test("missing or failed CAT reads retain the Item default and expose diagnostics
   assert.equal(missingResult.provenance.propagation.overrideSource, "default");
 
   const failed = fixture();
-  globalThis.cat = { automationUtils: { getConfigValue() { throw new Error("synthetic CAT read failure"); } } };
+  globalThis.cat = { utils: { automationUtils: { getConfigValue() { throw new Error("synthetic CAT read failure"); } } } };
   const failedResult = await failed.service.resolve({
     item: document("Item.item", baseConfig())
   });
