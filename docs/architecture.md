@@ -1,3 +1,9 @@
+## v0.4.5.2 — affected cells vs physical traversal support
+
+Narrow continuous shapes now separate **affected cells** from **Spread traversal support**. Source-driven Lines, Freely Placed Lines, and Cones keep the existing 50% authoritative rasterized mask for targeting and persistence. Spread additionally rasterizes a low-threshold positive-volume support mask used only by its internal BFS. Support cells can connect the physical shape through orthogonally adjacent grid cells but are never published as affected cells. The existing Foundry shared-face obstruction adapter still evaluates every traversed orthogonal face and still requires a largest contiguous opening of at least 10%; diagonal-only traversal remains impossible.
+
+Cone Direct now uses 17 Z slices across the actual Cone/cell overlap, matching the rasterizer's sampling cadence instead of the generic four cell slabs. The Direct decision remains unchanged: a cell still requires at least 50% clear XY coverage through positive Z thickness. The horizontal Cone's special 25% apex-adjacent rasterization exception therefore remains eligible in None/Spread but is not automatically promoted by Direct. Sphere chart cells and tangency behavior are unchanged.
+
 ## v0.4.5.1 — propagation-aware target-preview presentation
 
 The resolved placement propagation mode is now passed into the PIXI renderer as presentation context. Renderers use it only to decide whether to show the informational notice `Target Preview takes 1-2sec`: Direct and Spread show it, while None does not. The notice is centered one text line below the existing bottom control hint, uses the same 16 px instruction size, and uses `#e0dcdd`.

@@ -74,9 +74,17 @@ export class Crosshair3dFoundryPropagationEnvironment {
       directCoverage: async query => {
         const { world, support, shape } = query;
         const slabs = [];
-        for (let slab = 0; slab < this.#zSlabs; slab += 1) {
-          const zMin = world.minZ + ((world.maxZ - world.minZ) * slab / this.#zSlabs);
-          const zMax = world.minZ + ((world.maxZ - world.minZ) * (slab + 1) / this.#zSlabs);
+        // Pitched Cones can exceed 50% cell coverage only within a narrow Z
+        // band. Match the rasterizer's 17-slice evidence instead of allowing
+        // the generic four fixed midpoints to miss that qualifying band.
+        const shapeBounds = shape.type === "cone" ? this.#geometry.getBounds(shape) : null;
+        const zLow = shapeBounds ? Math.max(world.minZ, shapeBounds.minZ) : world.minZ;
+        const zHigh = shapeBounds ? Math.min(world.maxZ, shapeBounds.maxZ) : world.maxZ;
+        if (!(zHigh - zLow > EPSILON)) return Object.freeze({ slabs: Object.freeze([]) });
+        const slabCount = shape.type === "cone" ? 17 : this.#zSlabs;
+        for (let slab = 0; slab < slabCount; slab += 1) {
+          const zMin = zLow + ((zHigh - zLow) * slab / slabCount);
+          const zMax = zLow + ((zHigh - zLow) * (slab + 1) / slabCount);
           const z = (zMin + zMax) / 2;
           let clear = 0;
           const total = this.#xySamples * this.#xySamples;

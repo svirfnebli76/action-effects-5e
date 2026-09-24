@@ -544,8 +544,11 @@ test('rapid Direct pointer movement coalesces before physical propagation starts
 
   assert.equal(propagationCalls, 1, 'rapid movement should not start obsolete physical calculations');
   assert.ok(h.service.getStats().coalescedRequests >= 1);
-  await new Promise(resolve => setTimeout(resolve, 40));
-  await h.flush();
+  const deadline = Date.now() + 250;
+  while (propagationCalls < 2 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 5));
+    await h.flush();
+  }
   assert.equal(propagationCalls, 2, 'the newest stable presentation should resolve once after the quiet window');
   assert.equal(resolved.at(-1).serial, h.service.getStats().activeResolvedSerial);
 

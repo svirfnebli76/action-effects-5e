@@ -3,6 +3,10 @@ import { Crosshair3dPropagationModeService } from "./propagation-mode-service.js
 const key = ({ x, y, z }) => `${x},${y},${z}`;
 const AXES = ["x", "y", "z"];
 const STEPS = AXES.flatMap(axis => [-1, 1].map(sign => ({ axis, sign })));
+const SPREAD_FLOW_TYPES = new Set(["line", "free-line", "cone"]);
+const SPREAD_FLOW_THRESHOLD = 1e-6;
+const SPREAD_FLOW_EPSILON = 1e-9;
+const SPREAD_FLOW_Z_SAMPLES = 33;
 
 function fraction(value, label) {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
@@ -92,16 +96,35 @@ export class Crosshair3dPropagationService {
       if (typeof environment?.seedOpen !== "function" || typeof environment?.sharedFace !== "function") {
         throw new Error("Spread propagation requires physical seed and shared-face adapters.");
       }
+      // Affected cells remain authoritative for targeting/persistence. Narrow
+      // continuous shapes need a second, traversal-only mask so Spread can
+      // follow the real volume through orthogonally adjacent cells that have
+      // positive shape volume but less than 50% affected coverage.
+      const flowMask = SPREAD_FLOW_TYPES.has(shape.type)
+        ? this.cells.rasterize(shape, {
+          grid,
+          threshold: SPREAD_FLOW_THRESHOLD,
+          epsilon: SPREAD_FLOW_EPSILON,
+          zSamples: SPREAD_FLOW_Z_SAMPLES
+        })
+        : candidate;
+      const flowCells = new Map(flowMask.cells.map(cell => [key(cell), cell]));
+      // Every authoritative candidate is always traversable, even if future
+      // support-mask tuning becomes more conservative.
+      for (const cell of candidate.cells) flowCells.set(key(cell), cell);
+
       const queue = [];
+      const visited = new Set();
       const enqueue = cell => {
         const k = key(cell);
-        if (!candidates.has(k) || selected.has(k)) return;
-        selected.add(k);
-        queue.push(candidates.get(k));
+        if (!flowCells.has(k) || visited.has(k)) return;
+        visited.add(k);
+        queue.push(flowCells.get(k));
+        if (candidates.has(k)) selected.add(k);
       };
-      // Boundary origins seed every incident candidate, but only after the
-      // adapter verifies that the origin-facing shared boundary is open.
-      for (const cell of candidate.cells) {
+      // Boundary origins seed every incident traversal cell, but only after
+      // the adapter verifies that the origin-facing physical path is open.
+      for (const cell of flowCells.values()) {
         const query = context(cell);
         if (!AXES.every(axis => {
           const lower = grid.origin[axis] + cell[axis] * grid.distance;
@@ -141,7 +164,7 @@ export class Crosshair3dPropagationService {
         const cell = queue[index];
         for (const { axis, sign } of STEPS) {
           const next = { ...cell, [axis]: cell[axis] + sign };
-          if (!candidates.has(key(next)) || selected.has(key(next))) continue;
+          if (!flowCells.has(key(next)) || visited.has(key(next))) continue;
           const evidence = await environment.sharedFace({ ...context(cell), next,
             nextWorld: this.cells.cellToWorld(next, grid), axis, sign });
           stats.faceQueries++;
@@ -149,7 +172,7 @@ export class Crosshair3dPropagationService {
           if (opening >= 0.1) enqueue(next);
         }
         for (const connector of connections.get(key(cell)) ?? []) {
-          if (selected.has(key(connector.cell))) continue;
+          if (visited.has(key(connector.cell))) continue;
           if (typeof environment.connectorOpen !== "function") {
             throw new Error("Approved Spread connectors require a physical connector adapter.");
           }

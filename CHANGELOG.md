@@ -1,3 +1,10 @@
+## 0.4.5.2 — Line/Cone physical propagation correction
+
+- Corrects Spread for source-driven Lines, Freely Placed Lines, and pitched Cones without changing their authoritative affected-cell masks. Spread now uses an internal positive-volume traversal mask for those narrow/angled shapes, allowing orthogonal physical flow through cells the continuous shape occupies even when those cells do not meet the normal 50% affected threshold.
+- Traversal-only cells can never become returned affected cells, live targets, or persistent Region cells. Spread still advances only through orthogonal shared faces and retains the existing 10% contiguous-opening requirement, so Walls/Surfaces/Levels continue to block physical flow.
+- Corrects Direct sampling for Cones by matching the rasterizer's 17-slice Z evidence within the Cone/cell overlap instead of relying on four generic cell mid-slabs. Normally qualifying pitched Cone cells therefore survive clear-space Direct, while the horizontal Cone's intentional 25% apex exception remains subject to Direct's independent 50% rule.
+- Adds nine focused regressions for Line yaw/pitch, Free Line yaw, Cone Spread pitch, traversal-only output isolation, wall interruption, no diagonal jumping, pitched Cone Direct, and the horizontal Cone apex exception. Sphere chart/tangency behavior is unchanged.
+
 ## 0.4.5.1 — Direct/Spread target-preview notice
 
 - Carries forward the accepted v0.4.4.47 responsiveness architecture unchanged: immediate PIXI presentation, 24 ms rapid-input coalescing, cooperative stale-work cancellation, and exact final-confirmation authority.

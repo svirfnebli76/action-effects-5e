@@ -1,10 +1,10 @@
-# Current infrastructure acceptance — v0.4.5.1
+# Current infrastructure acceptance — v0.4.5.2
 
-## 3D Crosshairs target-preview notice
+## 3D Crosshairs Line/Cone propagation correction
 
-Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.5.1.txt` as AE5E's primary GM on a square-grid Scene containing Caerwyn Thorne. The live macro opens the same 20-foot Sphere under None, Direct, and Spread. None must omit the notice; Direct and Spread must show `Target Preview takes 1-2sec` centered directly below the existing control hint in the same 16 px size and `#e0dcdd` color.
+Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.5.2.txt` as AE5E's primary GM on a square-grid Scene with a selected source Token. The macro first performs clear-space geometry checks for angled/pitched Lines and Cones, then guides live Source-driven Line Spread, Freely Placed Line Spread, Cone Direct, and Cone Spread placements. During the live cases, verify the target preview remains stable after the 1–2 second settling period and that elevated Cone targets remain selected when physically inside the volume. No Regions or Items are created and prior targets are restored at the end.
 
-Automated renderer coverage verifies the notice contract across Prism/Cube, Cylinder, Sphere, Cone, source-driven Line, and Freely Placed Line. A placement-session regression verifies that the resolved propagation mode selected for the session is the mode supplied to presentation. v0.4.4.47 propagation scheduling and all authoritative geometry/target/persistence behavior remain unchanged.
+Automated coverage verifies the new traversal-only Spread support never becomes affected output, a full wall plane still interrupts a diagonal Line, orthogonal-face closure prevents diagonal jumping, pitched Cone Direct preserves all normally qualifying cells in clear space, and the horizontal Cone's 25% apex exception remains subject to Direct's independent 50% requirement. Sphere chart/tangency behavior and the v0.4.5.1 target-preview notice remain unchanged.
 
 ## Checkpoint 4 — production integration
 
