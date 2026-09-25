@@ -117,7 +117,12 @@ export class Crosshair3dFoundryPropagationEnvironment {
         const n = this.#faceSamples;
         const open = Array.from({ length: n }, () => Array(n).fill(false));
         const d = query.grid.distance;
-        const inset = Math.max(d * 1e-4, EPSILON * 10);
+        // Foundry v14's movement collision backend does not reliably register
+        // sub-pixel rays across a Wall. Keep each shared-face probe local to
+        // the face, but guarantee at least one canvas pixel of travel on each
+        // side. Preserve the former proportional inset as a lower fallback.
+        const pixelDistance = metrics?.size > 0 ? d / metrics.size : 0;
+        const inset = Math.max(d * 1e-4, pixelDistance, EPSILON * 10);
         for (let v = 0; v < n; v += 1) {
           for (let u = 0; u < n; u += 1) {
             const point = this.#facePoint(query.world, query.axis, query.sign, (u + 0.5) / n, (v + 0.5) / n);

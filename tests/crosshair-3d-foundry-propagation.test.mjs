@@ -33,6 +33,34 @@ test("Foundry Direct adapter measures the full chart cell and accepts exactly ha
   assert.equal(evidence.slabs[0].zMax - evidence.slabs[0].zMin, 5);
 });
 
+test("Foundry Spread shared-face probes span at least one canvas pixel on each side", async () => {
+  const rays = [];
+  const adapter = environment({ faceSamples: 1 }).create({
+    scene: {}, metrics,
+    collision: (from, to) => { rays.push({ from, to }); return false; }
+  });
+  await adapter.sharedFace({ world, grid: metrics.grid, axis: "x", sign: 1 });
+  assert.equal(rays.length, 1);
+  assert.ok(Math.abs(rays[0].from.x - 4.95) < 1e-9);
+  assert.ok(Math.abs(rays[0].to.x - 5.05) < 1e-9);
+  const totalPixels = ((rays[0].to.x - rays[0].from.x) / metrics.distance) * metrics.size;
+  assert.ok(Math.abs(totalPixels - 2) < 1e-9,
+    "a 100 px / 5 ft grid must use the live-proven two-pixel total collision ray");
+});
+
+test("Foundry Spread shared-face probes retain a one-pixel minimum on lower-resolution grids", async () => {
+  const lowRes = Object.freeze({ ...metrics, size: 50 });
+  const rays = [];
+  const adapter = environment({ faceSamples: 1 }).create({
+    scene: {}, metrics: lowRes,
+    collision: (from, to) => { rays.push({ from, to }); return false; }
+  });
+  await adapter.sharedFace({ world, grid: lowRes.grid, axis: "x", sign: 1 });
+  const totalPixels = ((rays[0].to.x - rays[0].from.x) / lowRes.distance) * lowRes.size;
+  assert.ok(Math.abs(totalPixels - 2) < 1e-9,
+    "the probe must still span one pixel on each side when one percent of the grid is sub-pixel");
+});
+
 test("Foundry Spread adapter uses the largest four-connected face opening", async () => {
   const adapter = environment({ faceSamples: 10 }).create({
     scene: {}, metrics,

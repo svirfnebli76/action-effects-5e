@@ -1,3 +1,10 @@
+## 0.4.5.4 — Foundry v14 Spread wall-probe precision correction
+
+- Corrects the generic Spread shared-face movement-Wall probe so each perpendicular collision ray extends at least one canvas pixel to either side of the tested face. Live Foundry v14 diagnostics showed the prior `gridDistance * 1e-4` inset produced a 0.02-pixel total ray on a 100 px / 5 ft grid, below Foundry's reliable movement-collision precision; a 2-pixel total ray was the first consistently detected length.
+- Keeps the accepted 10x10 shared-face sampling, largest-contiguous-opening >=10% rule, orthogonal-only traversal, propagation masks, analytic Line SAT support, and Direct/None behavior unchanged.
+- The correction applies to the shared Foundry Spread environment used by Lines, Sphere, Prism, and Cylinder; Cone Spread remains explicitly unsupported.
+- Adds regressions proving the one-pixel-per-side minimum at normal and lower canvas resolutions. Automated coverage is now 485 tests. Packs/assets remain unchanged.
+
 ## 0.4.5.3 — Analytic Line Spread support / Cone Spread retirement
 
 - Replaces sampled hidden traversal support for source-driven and freely placed Lines with exact OBB-vs-grid-cell separating-axis tests. Only strict positive-volume intersections become traversal support; face/edge/point tangency is excluded.
