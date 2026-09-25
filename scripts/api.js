@@ -599,7 +599,7 @@ export class ActionEffects5eApi {
         schemaVersion: CROSSHAIR_3D_CONFIGURATION_SCHEMA_VERSION,
         flag: CROSSHAIR_3D_CONFIGURATION_FLAG,
         catPropagationKey: CROSSHAIR_3D_CAT_PROPAGATION_KEY,
-        getCatPropagationConfig: () => crosshairs3dIntegration.getCatPropagationConfig(),
+        getCatPropagationConfig: (options) => crosshairs3dIntegration.getCatPropagationConfig(options),
         inspect: (options) => crosshairs3dIntegration.inspect(options),
         resolve: (options) => crosshairs3dIntegration.resolve(options)
       }),

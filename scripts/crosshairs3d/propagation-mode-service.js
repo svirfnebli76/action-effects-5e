@@ -8,10 +8,23 @@ export const CROSSHAIR_3D_PROPAGATION_OVERRIDE_DEFAULT = "default";
 
 const VALID_MODES = new Set(Object.values(CROSSHAIR_3D_PROPAGATION_MODES));
 
+function normalizedShapeType(shapeOrType) {
+  if (shapeOrType && typeof shapeOrType === "object") return String(shapeOrType.type ?? "").trim().toLowerCase();
+  return String(shapeOrType ?? "").trim().toLowerCase();
+}
+
 export class Crosshair3dPropagationModeService {
   normalize(value, fallback = CROSSHAIR_3D_PROPAGATION_MODES.NONE) {
     const mode = String(value ?? fallback).trim().toLowerCase();
     if (!VALID_MODES.has(mode)) throw new RangeError(`Unsupported Action Effects 3D Crosshairs propagation mode '${mode}'.`);
+    return mode;
+  }
+
+  assertSupported(shapeOrType, value, fallback = CROSSHAIR_3D_PROPAGATION_MODES.NONE) {
+    const mode = this.normalize(value, fallback);
+    if (normalizedShapeType(shapeOrType) === "cone" && mode === CROSSHAIR_3D_PROPAGATION_MODES.SPREAD) {
+      throw new RangeError("Cone does not support Spread propagation. Use None or Direct.");
+    }
     return mode;
   }
 

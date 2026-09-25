@@ -1,0 +1,324 @@
+await (async () => {
+  const TAG = "AE5E 3D Crosshairs Analytic Line Acceptance 01";
+  const VERSION = "0.4.5.3";
+  const MODULE_ID = "action-effects-5e";
+
+  const module = game.modules.get(MODULE_ID);
+  const api = module?.api?.crosshairs3d;
+  const source = canvas.tokens?.controlled?.[0]
+    ?? canvas.tokens.placeables.find(token => token.name === "Caerwyn Thorne");
+
+  if (!game.user.isGM) return ui.notifications.warn(`${TAG} must be run by the primary GM.`);
+  if (
+    module?.version !== VERSION
+    || !api?.show
+    || !api?.getStats
+    || !api?.cells?.rasterize
+    || !api?.propagation?.apply
+    || !api?.propagation?.createFoundryEnvironment
+    || !api?.configuration?.getCatPropagationConfig
+  ) return ui.notifications.warn(`Install AE5E v${VERSION} and reload Foundry first.`);
+  if (!canvas.ready || !canvas.grid.isSquare) return ui.notifications.warn("Open a square-grid Scene first.");
+  if (!source) return ui.notifications.warn("Select a source Token first.");
+  if (api.getStats().active) return ui.notifications.warn("Finish or cancel the current 3D placement first.");
+
+  const choice = await foundry.applications.api.DialogV2.wait({
+    window: { title: `AE5E ${VERSION} — Analytic Line Acceptance` },
+    position: { width: 560 },
+    content: `
+      <p>This acceptance runs automatic Line/Cone/configuration checks, creates and removes one temporary movement Wall, then opens six live placements:</p>
+      <ol>
+        <li>Source-driven Line — Spread</li>
+        <li>Freely Placed Line — Spread</li>
+        <li>Cone — Direct</li>
+        <li>Sphere — None smoke test</li>
+        <li>Prism — None smoke test</li>
+        <li>Cylinder — None smoke test</li>
+      </ol>
+      <p>For both Lines, use a diagonal angle. For the Source Line also add some positive or negative pitch. For Cone Direct, aim upward through an elevated Token. Allow the Target Preview to settle before confirming Direct/Spread placements.</p>
+      <p>The macro restores your prior targets and removes its temporary Wall.</p>
+    `,
+    buttons: [
+      { action: "start", label: "Start Acceptance", default: true },
+      { action: "cancel", label: "Cancel" }
+    ],
+    rejectClose: false
+  });
+  if (choice !== "start") return;
+
+  const checks = [];
+  const liveResults = [];
+  const originalTargets = [...game.user.targets].map(token => token.id);
+  let temporaryWallId = null;
+
+  const distance = Number(canvas.scene.grid.distance);
+  const size = Number(canvas.scene.grid.size);
+  const rect = canvas.dimensions?.sceneRect ?? { x: 0, y: 0 };
+  const metrics = {
+    size,
+    distance,
+    originX: Number(rect.x ?? 0),
+    originY: Number(rect.y ?? 0),
+    grid: { distance, origin: { x: 0, y: 0, z: 0 } }
+  };
+  const grid = metrics.grid;
+
+  const key = cell => `${cell.x},${cell.y},${cell.z}`;
+  const keySet = cells => new Set((cells ?? []).map(key));
+  const sameMask = (a, b) => {
+    const left = keySet(a), right = keySet(b);
+    return left.size === right.size && [...left].every(value => right.has(value));
+  };
+  const record = (check, passed, details = {}) => checks.push({ check, passed: Boolean(passed), details });
+  const restoreTargets = () => {
+    const ids = originalTargets.filter(id => canvas.tokens.get(id));
+    canvas.tokens.setTargets(ids, { mode: "replace" });
+  };
+  const nextFrames = async (count = 2) => {
+    for (let i = 0; i < count; i += 1) await new Promise(resolve => requestAnimationFrame(resolve));
+  };
+  const toPixels = point => ({
+    x: metrics.originX + ((point.x / distance) * size),
+    y: metrics.originY + ((point.y / distance) * size)
+  });
+
+  const clearSpread = {
+    seedOpen: () => true,
+    sharedFace: () => ({ largestContiguousFraction: 1 })
+  };
+  const clearDirect = api.propagation.createFoundryEnvironment({
+    scene: canvas.scene,
+    source,
+    metrics,
+    collision: () => false
+  });
+
+  async function verifySpread(label, shape) {
+    const expected = api.cells.rasterize(shape, { grid }).cells;
+    const result = await api.propagation.apply({ shape, grid, mode: "spread", environment: clearSpread });
+    record(`${label}: clear-space Spread reaches every authoritative cell`, sameMask(expected, result.cells), {
+      authoritativeCells: expected.length,
+      spreadCells: result.cells.length,
+      seedQueries: result.stats?.seedQueries ?? null,
+      faceQueries: result.stats?.faceQueries ?? null
+    });
+  }
+
+  async function verifyConeDirect(pitch) {
+    const shape = { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 37.5, pitch };
+    const expected = api.cells.rasterize(shape, { grid }).cells;
+    const result = await api.propagation.apply({ shape, grid, mode: "direct", environment: clearDirect });
+    record(`Cone ${pitch}° Direct retains v0.4.5.2 correctness`, sameMask(expected, result.cells), {
+      authoritativeCells: expected.length,
+      directCells: result.cells.length
+    });
+  }
+
+  async function expectReject(label, action, pattern) {
+    try {
+      await action();
+      record(label, false, { error: "request unexpectedly succeeded" });
+    } catch (error) {
+      record(label, pattern.test(String(error?.message ?? error)), { error: error?.message ?? String(error) });
+    }
+  }
+
+  async function runTemporaryWallCheck() {
+    const volume = api.tokens.resolveVolume(source, { grid: metrics, coordinateSpace: "pixels" });
+    if (!volume) throw new Error("Could not resolve the selected source Token volume for the Wall check.");
+    const origin = {
+      x: (volume.minX + volume.maxX) / 2,
+      y: (volume.minY + volume.maxY) / 2,
+      z: volume.bottom
+    };
+    const shape = { type: "line", origin, length: 60, width: 5, yaw: 45, pitch: 0 };
+    const clearEnvironment = api.propagation.createFoundryEnvironment({ scene: canvas.scene, source, metrics });
+    const before = await api.propagation.apply({ shape, grid, mode: "spread", environment: clearEnvironment, origin });
+
+    const wallX = origin.x + 20;
+    const a = toPixels({ x: wallX, y: origin.y - 15 });
+    const b = toPixels({ x: wallX, y: origin.y + 55 });
+    const normal = CONST.EDGE_SENSE_TYPES?.NORMAL ?? CONST.WALL_SENSE_TYPES?.NORMAL ?? 1;
+    const [wall] = await canvas.scene.createEmbeddedDocuments("Wall", [{
+      c: [a.x, a.y, b.x, b.y],
+      move: normal,
+      sight: 0,
+      light: 0,
+      sound: 0,
+      door: 0,
+      ds: 0
+    }]);
+    temporaryWallId = wall.id;
+    await nextFrames(2);
+
+    const blockedEnvironment = api.propagation.createFoundryEnvironment({ scene: canvas.scene, source, metrics });
+    const blocked = await api.propagation.apply({ shape, grid, mode: "spread", environment: blockedEnvironment, origin });
+    record("Temporary real Wall blocks downstream angled-Line Spread", blocked.cells.length < before.cells.length, {
+      before: before.cells.length,
+      blocked: blocked.cells.length,
+      wallId: wall.id
+    });
+
+    await canvas.scene.deleteEmbeddedDocuments("Wall", [temporaryWallId]);
+    temporaryWallId = null;
+    await nextFrames(2);
+    const restoredEnvironment = api.propagation.createFoundryEnvironment({ scene: canvas.scene, source, metrics });
+    const restored = await api.propagation.apply({ shape, grid, mode: "spread", environment: restoredEnvironment, origin });
+    record("Deleting the temporary Wall restores the prior Line Spread mask", sameMask(before.cells, restored.cells), {
+      before: before.cells.length,
+      restored: restored.cells.length
+    });
+  }
+
+  async function runLiveCase({ label, mode, shape, range, instruction }) {
+    restoreTargets();
+    ui.notifications.info(`${label} / ${mode.toUpperCase()}: ${instruction}`);
+    const result = await api.show({
+      source,
+      shape,
+      range,
+      propagation: { override: mode },
+      persistent: { enabled: false }
+    });
+    const stats = api.getStats();
+    const resolvedMode = result.propagation?.mode ?? mode;
+    const targetIds = result.targetIds ?? result.targets?.map(token => token.id) ?? [];
+    const passed = result.cancelled === false && !stats.active && resolvedMode === mode;
+    record(`${label}: live ${mode} placement confirms cleanly`, passed, {
+      cancelled: result.cancelled,
+      resolvedMode,
+      targetIds,
+      propagationCells: result.propagation?.cells?.length ?? null
+    });
+    liveResults.push({ label, mode, cancelled: result.cancelled, targetIds,
+      propagationCells: result.propagation?.cells?.length ?? null });
+    restoreTargets();
+  }
+
+  try {
+    for (const yaw of [15, 30, 45, 60, 75]) {
+      await verifySpread(`Source Line yaw ${yaw}°`, {
+        type: "line", origin: { x: 0, y: 0, z: 0 }, length: 60, width: 5, yaw, pitch: 0
+      });
+    }
+    for (const pitch of [-60, -30, 30, 60]) {
+      await verifySpread(`Source Line pitch ${pitch}°`, {
+        type: "line", origin: { x: 0, y: 0, z: 0 }, length: 60, width: 5, yaw: 37.5, pitch
+      });
+    }
+    for (const yaw of [15, 30, 45, 60, 75]) {
+      await verifySpread(`Free Line yaw ${yaw}°`, {
+        type: "free-line", origin: { x: 0, y: 0, z: 0 }, length: 60, width: 5, height: 20, yaw
+      });
+    }
+
+    await expectReject(
+      "Low-level Cone Spread is rejected explicitly",
+      () => api.propagation.apply({
+        shape: { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 0, pitch: 30 },
+        grid,
+        mode: "spread",
+        environment: clearSpread
+      }),
+      /Cone does not support Spread propagation/
+    );
+    await expectReject(
+      "Raw placement Cone Spread is rejected before a session starts",
+      () => api.show({ source, shape: { type: "cone", length: 15 }, propagation: { override: "spread" } }),
+      /Cone does not support Spread propagation/
+    );
+    record("Cone CAT descriptor omits Spread",
+      !api.configuration.getCatPropagationConfig({ shapeType: "cone" }).options.some(option => option.value === "spread"),
+      { options: api.configuration.getCatPropagationConfig({ shapeType: "cone" }).options.map(option => option.value) });
+    record("Rejected Cone Spread leaves no active placement session", api.getStats().active === false,
+      { stats: api.getStats() });
+
+    for (const pitch of [15, 30, 45, 60, 75, 90]) await verifyConeDirect(pitch);
+    await runTemporaryWallCheck();
+
+    await runLiveCase({
+      label: "Source-driven Line",
+      mode: "spread",
+      shape: { type: "line", length: 60, width: 5 },
+      range: { max: 60 },
+      instruction: "Aim diagonally through Tokens, add some positive or negative pitch with CTRL+wheel, wait for Target Preview, then confirm."
+    });
+    await runLiveCase({
+      label: "Freely Placed Line",
+      mode: "spread",
+      shape: { type: "free-line", length: 60, width: 5, height: 20 },
+      range: { max: 120, policy: "endpoints" },
+      instruction: "Place and rotate diagonally through Tokens, wait for Target Preview, then confirm."
+    });
+    await runLiveCase({
+      label: "Cone",
+      mode: "direct",
+      shape: { type: "cone", length: 15 },
+      range: { max: 60 },
+      instruction: "Aim upward so the visible 3D Cone contains an elevated Token, wait for Target Preview, then confirm."
+    });
+    await runLiveCase({
+      label: "Sphere",
+      mode: "none",
+      shape: { type: "sphere", radius: 10 },
+      range: { max: 60 },
+      instruction: "Place and confirm a normal Sphere smoke test."
+    });
+    await runLiveCase({
+      label: "Prism",
+      mode: "none",
+      shape: { type: "prism", length: 20, width: 20, height: 20 },
+      range: { max: 60 },
+      instruction: "Place and confirm a normal Prism smoke test."
+    });
+    await runLiveCase({
+      label: "Cylinder",
+      mode: "none",
+      shape: { type: "cylinder", radius: 10, height: 20 },
+      range: { max: 60 },
+      instruction: "Place and confirm a normal Cylinder smoke test."
+    });
+
+    const passed = checks.every(entry => entry.passed);
+    console.group(`${TAG} — ${passed ? "PASS" : "FAIL"}`);
+    console.table(checks.map(entry => ({
+      check: entry.check,
+      passed: entry.passed,
+      details: JSON.stringify(entry.details)
+    })));
+    console.table(liveResults);
+    console.log({
+      tag: TAG,
+      version: VERSION,
+      passed,
+      checks,
+      liveResults,
+      visualAcceptanceRequired: true,
+      visualQuestions: [
+        "Did Source-driven Line Spread keep stable targeting at diagonal angles and non-zero pitch?",
+        "Did Freely Placed Line Spread keep stable targeting at diagonal angles?",
+        "Did Cone Direct keep an elevated Token targeted when visibly inside the Cone?",
+        "Did Sphere, Prism, and Cylinder smoke placements look and target normally?"
+      ]
+    });
+    console.groupEnd();
+
+    ui.notifications[passed ? "info" : "error"](
+      `${TAG}: objective checks ${passed ? "PASS" : "FAIL"}. Please report the four visual results.`
+    );
+    return { tag: TAG, version: VERSION, passed, checks, liveResults };
+  } catch (error) {
+    console.error(`${TAG} failed`, error);
+    ui.notifications.error(`${TAG} failed: ${error.message}`);
+    return { tag: TAG, version: VERSION, passed: false, error: error.message, checks, liveResults };
+  } finally {
+    if (temporaryWallId) {
+      try {
+        if (canvas.scene.walls.get(temporaryWallId)) await canvas.scene.deleteEmbeddedDocuments("Wall", [temporaryWallId]);
+      } catch (error) {
+        console.warn(`${TAG}: temporary Wall cleanup failed`, error);
+      }
+    }
+    restoreTargets();
+  }
+})();

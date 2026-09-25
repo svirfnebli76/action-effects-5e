@@ -229,3 +229,20 @@ test("Cancellation and oversized candidate masks stop before publication", async
   await assert.rejects(propagation.resolve({ shape: sphere, grid, mode: "direct", signal: later.signal,
     environment: { directCoverage(query) { later.abort(); return direct().directCoverage(query); } } }), /cancelled/);
 });
+
+test("low-level propagation rejects Cone Spread before any physical environment query", async () => {
+  let queried = false;
+  await assert.rejects(
+    propagation.resolve({
+      shape: { type: "cone", origin: { x: 0, y: 0, z: 0 }, length: 15, yaw: 30, pitch: 45 },
+      grid,
+      mode: "spread",
+      environment: {
+        seedOpen() { queried = true; return true; },
+        sharedFace() { queried = true; return { largestContiguousFraction: 1 }; }
+      }
+    }),
+    /Cone does not support Spread propagation/
+  );
+  assert.equal(queried, false);
+});

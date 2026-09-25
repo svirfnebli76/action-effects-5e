@@ -1,3 +1,7 @@
+## v0.4.5.3 — analytic Line traversal support
+
+Source-driven Line and Freely Placed Line are exact oriented boxes. Spread traversal support is now the set of grid-cell AABBs having strict positive-volume overlap with the Line OBB under a 15-axis separating-axis test. This support remains traversal-only; the existing authoritative affected-cell raster remains the sole targeting/persistence mask. Cone Spread is unsupported and rejected explicitly; Cone Direct retains the v0.4.5.2 raster/Direct behavior.
+
 ## v0.4.5.2 — affected cells vs physical traversal support
 
 Narrow continuous shapes now separate **affected cells** from **Spread traversal support**. Source-driven Lines, Freely Placed Lines, and Cones keep the existing 50% authoritative rasterized mask for targeting and persistence. Spread additionally rasterizes a low-threshold positive-volume support mask used only by its internal BFS. Support cells can connect the physical shape through orthogonally adjacent grid cells but are never published as affected cells. The existing Foundry shared-face obstruction adapter still evaluates every traversed orthogonal face and still requires a largest contiguous opening of at least 10%; diagonal-only traversal remains impossible.

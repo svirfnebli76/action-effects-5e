@@ -261,3 +261,58 @@ test("the production contract uses explicit flags and never depends on D&D5e sys
   assert.equal(resolved.options.shape.type, "sphere");
   assert.equal(resolved.provenance.itemUuid, "Item.item");
 });
+
+test("stored Cone Spread configuration is invalid and cannot reach placement", async () => {
+  const f = fixture();
+  const configuration = baseConfig({
+    shape: { type: "cone", length: 15 },
+    propagation: { mode: "spread" }
+  });
+  const inspected = f.service.inspect({ configuration });
+  assert.equal(inspected.valid, false);
+  assert.ok(inspected.errors.some(error => error.includes("Cone does not support Spread propagation")));
+  await assert.rejects(
+    f.service.show({ source: { id: "source" }, configuration, readCat: false }),
+    /Cone does not support Spread propagation/
+  );
+  assert.equal(f.calls.length, 0);
+});
+
+test("CAT cannot override a valid Cone configuration to Spread", async () => {
+  const f = fixture();
+  const configuration = baseConfig({
+    shape: { type: "cone", length: 15 },
+    propagation: { mode: "direct" }
+  });
+  await assert.rejects(
+    f.service.resolve({ configuration, catOptions: { propagation: "spread" } }),
+    /Cone does not support Spread propagation/
+  );
+  assert.equal(f.service.getStats().validationFailures, 1);
+});
+
+test("Cone CAT authoring descriptor omits Spread while the generic descriptor remains unchanged", () => {
+  const f = fixture();
+  assert.deepEqual(
+    f.service.getCatPropagationConfig({ shapeType: "cone" }).options.map(option => option.value),
+    ["default", "none", "direct"]
+  );
+  assert.deepEqual(
+    f.service.getCatPropagationConfig().options.map(option => option.value),
+    ["default", "none", "direct", "spread"]
+  );
+});
+
+test("Cone None and Direct remain valid configured propagation modes", async () => {
+  for (const mode of ["none", "direct"]) {
+    const f = fixture();
+    const resolved = await f.service.resolve({
+      configuration: baseConfig({
+        shape: { type: "cone", length: 15 },
+        propagation: { mode }
+      }),
+      readCat: false
+    });
+    assert.equal(resolved.provenance.propagation.mode, mode);
+  }
+});

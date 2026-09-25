@@ -1,3 +1,12 @@
+## 0.4.5.3 — Analytic Line Spread support / Cone Spread retirement
+
+- Replaces sampled hidden traversal support for source-driven and freely placed Lines with exact OBB-vs-grid-cell separating-axis tests. Only strict positive-volume intersections become traversal support; face/edge/point tangency is excluded.
+- Keeps the authoritative >=50% affected-cell mask separate from traversal support, so support-only cells still cannot target Tokens or persist as ACTIVE Region cells. Orthogonal-only traversal, the 10% contiguous shared-face opening rule, and Wall/Surface/Level obstruction checks are unchanged.
+- Explicitly disallows Cone + Spread instead of silently remapping it. Low-level propagation, raw placement, configured Item/Activity resolution, and CAT overrides all reject the combination before placement. Cone-specific CAT authoring data omits Spread.
+- Legacy attached Cone+Spread persistent areas fail closed by deactivating their cell mask on rehydration; once inactive they are not repeatedly rewritten.
+- Preserves Cone None/Direct behavior, including the v0.4.5.2 17-slab Direct correctness fix, and leaves Sphere/Prism/Cylinder geometry plus the responsive 24 ms propagation scheduler unchanged.
+- Expands automated coverage to 483 tests, including broad analytic-vs-sampled Line matrices, positive-volume tangency rules, Cone rejection boundaries, CAT/configuration behavior, raw placement rejection, and legacy persisted-area cleanup. Packs/assets remain unchanged.
+
 ## 0.4.5.2 — Line/Cone physical propagation correction
 
 - Corrects Spread for source-driven Lines, Freely Placed Lines, and pitched Cones without changing their authoritative affected-cell masks. Spread now uses an internal positive-volume traversal mask for those narrow/angled shapes, allowing orthogonal physical flow through cells the continuous shape occupies even when those cells do not meet the normal 50% affected threshold.

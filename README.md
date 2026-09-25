@@ -93,9 +93,9 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.5.2 installation
+## v0.4.5.3 installation
 
-Install the complete module folder and reload Foundry. v0.4.5.2 corrects physical propagation for angled/elevated Lines and Cones while preserving the accepted 50% affected-cell mask, orthogonal-only Spread, 10% contiguous shared-face opening rule, chart-authoritative Sphere behavior, and v0.4.5.1 target-preview presentation. Spread may use traversal-only positive-volume support cells internally, but only authoritative affected cells can target or persist. Cone Direct now samples Z with the same 17-slice evidence used by the rasterizer. Run `docs/acceptance-crosshairs3d-v0.4.5.2.txt` as the primary GM.
+Install the complete module folder and reload Foundry. v0.4.5.3 replaces sampled hidden Line traversal with exact analytic OBB-vs-cell support and explicitly retires Cone Spread. Cone None/Direct, Sphere, Prism, Cylinder, the 50% authoritative affected-cell rule, orthogonal-only Spread, the 10% contiguous shared-face opening rule, and the accepted target-preview responsiveness architecture remain unchanged. Run `docs/acceptance-crosshairs3d-v0.4.5.3.txt` as the primary GM.
 
 ## v0.4.5.1 installation
 

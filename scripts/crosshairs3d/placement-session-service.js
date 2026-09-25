@@ -61,6 +61,7 @@ export class Crosshair3dPlacementSessionService {
     const baseShape = this.#geometry.normalizeShape(input);
     const propagationSelection = this.#propagationModes?.resolve?.(options.propagation ?? {})
       ?? { mode: "none", source: "default" };
+    this.#propagationModes?.assertSupported?.(baseShape, propagationSelection.mode);
     if (baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE) {
       const radiusUnits = baseShape.radius / metrics.distance;
       if (Math.abs(radiusUnits - Math.round(radiusUnits)) > 1e-9) {

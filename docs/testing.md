@@ -1,8 +1,8 @@
-# Current infrastructure acceptance — v0.4.5.2
+# Current infrastructure acceptance — v0.4.5.3
 
 ## 3D Crosshairs Line/Cone propagation correction
 
-Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.5.2.txt` as AE5E's primary GM on a square-grid Scene with a selected source Token. The macro first performs clear-space geometry checks for angled/pitched Lines and Cones, then guides live Source-driven Line Spread, Freely Placed Line Spread, Cone Direct, and Cone Spread placements. During the live cases, verify the target preview remains stable after the 1–2 second settling period and that elevated Cone targets remain selected when physically inside the volume. No Regions or Items are created and prior targets are restored at the end.
+Run `npm test`, then run `docs/acceptance-crosshairs3d-v0.4.5.3.txt` as AE5E's primary GM on a square-grid Scene with a selected source Token. The macro validates analytic Line Spread connectivity and Cone Spread rejection, then guides live Source-driven Line Spread, Freely Placed Line Spread, Cone Direct, and Sphere/Prism/Cylinder smoke placements. Allow the accepted 1–2 second target preview to settle before confirming Direct/Spread cases. No Items or persistent Regions are created and prior targets are restored at the end.
 
 Automated coverage verifies the new traversal-only Spread support never becomes affected output, a full wall plane still interrupts a diagonal Line, orthogonal-face closure prevents diagonal jumping, pitched Cone Direct preserves all normally qualifying cells in clear space, and the horizontal Cone's 25% apex exception remains subject to Direct's independent 50% requirement. Sphere chart/tangency behavior and the v0.4.5.1 target-preview notice remain unchanged.
 

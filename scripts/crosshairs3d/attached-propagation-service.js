@@ -103,6 +103,10 @@ export class Crosshair3dAttachedPropagationService {
     if (!this.#isAuthority()) return { resolved: false, reason: "not-primary-gm" };
     const metadata = getFlag(region, META_FLAG);
     if (!this.#isEnvironmentSensitive(metadata)) return { resolved: false, reason: "not-environment-sensitive" };
+    if (this.#isUnsupportedConeSpread(metadata)) {
+      if (this.#cellMaskInactive(region)) return { resolved: false, reason: "unsupported-cone-spread", deactivated: false };
+      return this.#deactivate(region, metadata, "unsupported-cone-spread");
+    }
     const scene = region.parent;
     if (!scene || globalThis.canvas?.scene !== scene) {
       return { resolved: false, reason: "scene-not-active" };
@@ -188,7 +192,7 @@ export class Crosshair3dAttachedPropagationService {
     if (!scene || globalThis.canvas?.scene !== scene) return;
     for (const region of scene.regions ?? []) {
       const metadata = getFlag(region, META_FLAG);
-      if (this.#isEnvironmentSensitive(metadata)) this.#queue(region, { reason });
+      if (this.#isEnvironmentSensitive(metadata, region)) this.#queue(region, { reason });
     }
   }
 
@@ -207,12 +211,26 @@ export class Crosshair3dAttachedPropagationService {
     if (!scene || globalThis.canvas?.scene !== scene) return [];
     return [...(scene.regions ?? [])].filter(region => {
       const metadata = getFlag(region, META_FLAG);
-      return this.#isEnvironmentSensitive(metadata) && metadata.sourceTokenUuid === source.uuid;
+      return this.#isEnvironmentSensitive(metadata, region) && metadata.sourceTokenUuid === source.uuid;
     });
   }
 
-  #isEnvironmentSensitive(metadata) {
-    return metadata?.attached === true && ["direct", "spread"].includes(metadata.propagation);
+  #isEnvironmentSensitive(metadata, region = null) {
+    if (metadata?.attached !== true || !["direct", "spread"].includes(metadata.propagation)) return false;
+    if (region && this.#isUnsupportedConeSpread(metadata) && this.#cellMaskInactive(region)) return false;
+    return true;
+  }
+
+  #isUnsupportedConeSpread(metadata) {
+    return metadata?.attached === true
+      && metadata?.propagation === "spread"
+      && String(metadata?.shape?.type ?? "").trim().toLowerCase() === "cone";
+  }
+
+  #cellMaskInactive(region) {
+    const config = this.#regionCells.getConfig(region);
+    if (!config || config.defaultState !== REGION_CELL_STATES.INACTIVE) return false;
+    return !Object.values(config.cells ?? {}).includes(REGION_CELL_STATES.ACTIVE);
   }
 
   #isAuthority() {

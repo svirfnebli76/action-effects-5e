@@ -83,6 +83,12 @@ function normalizePropagationConfig(input) {
   return clone(input);
 }
 
+function shapeType(configurationOrShape) {
+  if (typeof configurationOrShape === "string") return configurationOrShape.trim().toLowerCase();
+  const shape = configurationOrShape?.shape ?? configurationOrShape;
+  return String(shape?.type ?? "").trim().toLowerCase();
+}
+
 /**
  * Production Item/Activity boundary for Action Effects 3D Crosshairs.
  *
@@ -112,8 +118,13 @@ export class Crosshair3dIntegrationService {
     this.#propagationModes = propagationModes;
   }
 
-  getCatPropagationConfig() {
-    return clone(CROSSHAIR_3D_CAT_PROPAGATION_CONFIG);
+  getCatPropagationConfig(input = {}) {
+    const descriptor = clone(CROSSHAIR_3D_CAT_PROPAGATION_CONFIG);
+    const requestedShape = typeof input === "string" ? input : input?.shapeType ?? input?.shape ?? input;
+    if (shapeType(requestedShape) === "cone") {
+      descriptor.options = descriptor.options.filter(option => option.value !== CROSSHAIR_3D_PROPAGATION_MODES.SPREAD);
+    }
+    return descriptor;
   }
 
   getStats() {
@@ -187,6 +198,14 @@ export class Crosshair3dIntegrationService {
         `Invalid CAT 3D propagation override '${String(cat.value)}'. Expected default, none, direct, or spread.`,
         { cause }
       );
+      error.issues = [cause?.message ?? String(cause)];
+      throw error;
+    }
+    try {
+      this.#propagationModes.assertSupported(configuration.shape, selection.mode);
+    } catch (cause) {
+      this.#stats.validationFailures += 1;
+      const error = new Error(`Invalid Action Effects 3D Crosshairs configuration: ${cause?.message ?? String(cause)}`, { cause });
       error.issues = [cause?.message ?? String(cause)];
       throw error;
     }
@@ -305,7 +324,8 @@ export class Crosshair3dIntegrationService {
     }
     try {
       const propagation = normalizePropagationConfig(configuration.propagation);
-      this.#propagationModes.normalize(propagation.mode ?? CROSSHAIR_3D_PROPAGATION_MODES.NONE);
+      const mode = this.#propagationModes.normalize(propagation.mode ?? CROSSHAIR_3D_PROPAGATION_MODES.NONE);
+      this.#propagationModes.assertSupported(configuration.shape, mode);
       if (propagation.connectors !== undefined && !Array.isArray(propagation.connectors)) {
         errors.push("propagation.connectors must be an array.");
       }

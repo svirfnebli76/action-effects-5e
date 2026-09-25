@@ -53,7 +53,7 @@ function fixture({ mode = "direct", fail = false } = {}) {
   } };
   const environment = { create: () => ({ directCoverage() {} }) };
   const regionCells = {
-    getConfig: () => config,
+    getConfig: currentRegion => currentRegion?.flags?.[MODULE_ID]?.[REGION_CELL_FLAG] ?? null,
     buildRegionFlag: input => structuredClone(input),
     async configure(_region, nextConfig) {
       const copy = structuredClone(nextConfig);
@@ -176,4 +176,26 @@ test("non-primary clients never queue or write attached propagation", async () =
   assert.deepEqual(result, { resolved: false, reason: "not-primary-gm" });
   assert.equal(f.updates.length, 0);
   assert.equal(f.configurations.length, 0);
+});
+
+test("legacy attached Cone Spread deactivates once on rehydration and stays inert afterward", async () => {
+  const f = fixture({ mode: "spread" });
+  f.metadata.shape = { type: "cone", origin: { x: 5, y: 5, z: 0 }, length: 15, yaw: 0, pitch: 0 };
+  f.region.flags[MODULE_ID].crosshair3dPersistentArea = f.metadata;
+
+  f.service.initialize();
+  await f.flush();
+  assert.equal(f.propagationCalls.length, 0, "unsupported legacy Cone Spread never enters propagation");
+  assert.equal(f.configurations.length, 1);
+  assert.equal(f.configurations[0].defaultState, "INACTIVE");
+  assert.deepEqual(f.configurations[0].cells, {});
+  assert.equal(f.updates.length, 1);
+  assert.equal(f.updates[0][`flags.${MODULE_ID}.crosshair3dPersistentArea`].lastReason, "unsupported-cone-spread");
+
+  f.emit("updateWall", { parent: f.scene });
+  f.emit("updateToken", f.source, { x: 100 });
+  await f.flush();
+  assert.equal(f.configurations.length, 1, "already-deactivated legacy data is not rewritten");
+  assert.equal(f.updates.length, 1);
+  f.service.shutdown();
 });

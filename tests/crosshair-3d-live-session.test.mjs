@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { harness } from './helpers/pixi-session-harness.mjs';
+import { Crosshair3dPropagationModeService } from '../scripts/crosshairs3d/propagation-mode-service.js';
 
 const shapes = [
   { type: 'sphere', radius: 10 }, { type: 'prism', length: 20, width: 20, height: 20 },
@@ -554,5 +555,30 @@ test('rapid Direct pointer movement coalesces before physical propagation starts
 
   h.service.cancel();
   await promise;
+  assert.ok(h.clean());
+});
+
+test('raw Cone Spread placement is rejected before renderer setup or session activation', async () => {
+  let rendererShows = 0;
+  const renderer = {
+    show() { rendererShows += 1; },
+    update() {},
+    frame() {},
+    clear() {}
+  };
+  const h = harness({
+    renderer,
+    placementDependencies: { propagationModes: new Crosshair3dPropagationModeService() }
+  });
+  await assert.rejects(
+    h.service.show({
+      source: h.source,
+      shape: { type: 'cone', length: 15 },
+      propagation: { itemDefault: 'spread' }
+    }),
+    /Cone does not support Spread propagation/
+  );
+  assert.equal(rendererShows, 0);
+  assert.equal(h.service.getStats().active, false);
   assert.ok(h.clean());
 });

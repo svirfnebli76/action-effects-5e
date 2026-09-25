@@ -1,12 +1,10 @@
 import { Crosshair3dPropagationModeService } from "./propagation-mode-service.js";
+import { Crosshair3dLineSupportService } from "./line-support-service.js";
 
 const key = ({ x, y, z }) => `${x},${y},${z}`;
 const AXES = ["x", "y", "z"];
 const STEPS = AXES.flatMap(axis => [-1, 1].map(sign => ({ axis, sign })));
-const SPREAD_FLOW_TYPES = new Set(["line", "free-line", "cone"]);
-const SPREAD_FLOW_THRESHOLD = 1e-6;
-const SPREAD_FLOW_EPSILON = 1e-9;
-const SPREAD_FLOW_Z_SAMPLES = 33;
+const ANALYTIC_LINE_SUPPORT_TYPES = new Set(["line", "free-line"]);
 
 function fraction(value, label) {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
@@ -40,6 +38,7 @@ export class Crosshair3dPropagationService {
     this.cells = cells;
     this.geometry = geometry;
     this.modes = new Crosshair3dPropagationModeService();
+    this.lineSupport = new Crosshair3dLineSupportService({ cells, geometry });
     if (!Number.isSafeInteger(maxCells) || maxCells < 1) throw new RangeError("Invalid cell budget.");
     this.maxCells = maxCells;
   }
@@ -48,6 +47,7 @@ export class Crosshair3dPropagationService {
     origin: originInput, connectors = [], signal } = {}) {
     mode = this.modes.normalize(mode);
     const shape = this.geometry.normalizeShape(input);
+    mode = this.modes.assertSupported(shape, mode);
     const grid = this.cells.normalizeGrid(gridInput);
     const origin = point(originInput ?? shape.origin, "Propagation origin");
     const checkAbort = () => {
@@ -96,17 +96,13 @@ export class Crosshair3dPropagationService {
       if (typeof environment?.seedOpen !== "function" || typeof environment?.sharedFace !== "function") {
         throw new Error("Spread propagation requires physical seed and shared-face adapters.");
       }
-      // Affected cells remain authoritative for targeting/persistence. Narrow
-      // continuous shapes need a second, traversal-only mask so Spread can
-      // follow the real volume through orthogonally adjacent cells that have
-      // positive shape volume but less than 50% affected coverage.
-      const flowMask = SPREAD_FLOW_TYPES.has(shape.type)
-        ? this.cells.rasterize(shape, {
-          grid,
-          threshold: SPREAD_FLOW_THRESHOLD,
-          epsilon: SPREAD_FLOW_EPSILON,
-          zSamples: SPREAD_FLOW_Z_SAMPLES
-        })
+      // Affected cells remain authoritative for targeting/persistence. The two
+      // Line geometries are exact oriented boxes, so their traversal-only
+      // support is computed analytically with strict positive-volume SAT
+      // rather than threshold/Z sampling. Other shapes traverse only their
+      // authoritative affected mask.
+      const flowMask = ANALYTIC_LINE_SUPPORT_TYPES.has(shape.type)
+        ? this.lineSupport.rasterize(shape, { grid })
         : candidate;
       const flowCells = new Map(flowMask.cells.map(cell => [key(cell), cell]));
       // Every authoritative candidate is always traversable, even if future
