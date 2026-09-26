@@ -23,7 +23,7 @@ function normalizeMultiplier(value) {
  * This deliberately does not use animation-frame swept-volume overlap and never
  * writes TokenDocument.movementHistory directly. The Item/rules layer chooses the
  * costly states and multiplier (for example ACTIVE + 2x); this service contains
- * no Web-specific meaning.
+ * no Item-specific meaning.
  */
 export class RegionCellMovementCostService {
   #occupancy;

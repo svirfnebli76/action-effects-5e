@@ -38,23 +38,6 @@ The generic persistent-area stack consists of:
 
 AE5E does not implement spell-specific difficult-terrain rules. Ordinary Regions may use `regions.buildMovementCostBehavior()` to construct Foundry's native Modify Movement Cost RegionBehavior. Cell-backed Regions use the generic Region-cell movement-cost service so inactive/GONE cells can remain normal terrain while ACTIVE cells modify cost; Item automation decides which cell states and multiplier its rules require. Foundry/D&D5e movement measurement and movement history remain authoritative.
 
-## Web status after infrastructure cleanup
-
-Web-specific runtime automation has been removed from AE5E production services. There is no spell-specific Web public API, runtime service/RegionBehavior class, socket handler, or Web rule constant in production runtime code.
-
-The Web On Use macro is intentionally not shipped in this infrastructure checkpoint. It will be re-authored against the finalized generic API after infrastructure acceptance.
-
-Web knowledge remains only in dev/test authoring validation and regression tests. The source Item can be checked with:
-
-```js
-await game.modules.get("action-effects-5e").api.tests.environment.validateWebItem({
-  itemUuid: "PASTE-WEB-ITEM-UUID-HERE",
-  escapeTemplateUuid: "PASTE-ESCAPE-WEB-COMPENDIUM-UUID-HERE",
-  notify: true
-});
-```
-
-The validator requires the automation-only `Cast Web`, `Web Save`, and `Burning Web Damage` Activities to use `target.override = true` and `target.prompt = false`. It validates the external Escape Web helper, requires that helper Activity to target `Self`, and does not require or support the retired legacy Escape Web Activity on the spell.
 
 ## Live Foundry acceptance
 
@@ -85,13 +68,17 @@ await ae5e.tests.environment.runAll({ notify: true });
 npm test
 ```
 
-The suite includes architectural boundary tests that fail if Web-specific runtime terms are reintroduced outside `scripts/dev`.
+The suite validates the reusable infrastructure contracts and regression coverage used by AE5E production services.
 
 ## Compendium safety
 
-Infrastructure builds must not modify `packs/` or `assets/` unless an isolated Item/asset publication is explicitly intended. Web's working actor Item remains separate from this infrastructure cleanup and should not be overwritten from a stale compendium copy.
+Infrastructure builds must not modify `packs/` or `assets/` unless an isolated Item/asset publication is explicitly intended.
 
 Historical release details are retained in `CHANGELOG.md`.
+
+## v0.4.5.6 installation
+
+Install the complete module folder and reload Foundry. v0.4.5.6 is a source-architecture cleanup release: obsolete Item-specific development/runtime remnants are removed, retained generic tests use neutral fixtures, and a redundant legacy Region-cell simulation wrapper is retired in favor of the existing Region-local 3D Cell State foundation/stress coverage. Compendium Items and Region-local 3D Cell State behavior are unchanged.
 
 ## v0.4.5.5 installation
 

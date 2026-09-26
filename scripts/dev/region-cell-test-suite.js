@@ -370,68 +370,13 @@ export class RegionCellTestSuite {
     return result;
   }
 
-  runWebSimulationTest({ notify = true, iterations = 10000 } = {}) {
-    const checks = [];
-    const record = (name, passed, details = null) => checks.push({ name, passed: Boolean(passed), details });
-    const region = syntheticRegion(this.#cells, {
-      bounds: { min: { x: 0, y: 0, z: 0 }, size: { x: 4, y: 4, z: 4 } },
-      defaultState: "ACTIVE",
-      frame: { type: "static", origin: { x: 0, y: 0, elevation: 0 }, rotation: 0 }
-    });
-    const config = this.#cells.getConfig(region);
-    record("Intact Web-like volume begins with 64 ACTIVE cells", this.#cells.enumerateCells(config, { states: "ACTIVE" }).length === 64);
-
-    // Simulate runtime state changes on the persisted sparse representation.
-    config.cells["1,1,1"] = "GONE";
-    region.flags[MODULE_ID][REGION_CELL_FLAG] = this.#cells.normalizeConfig(config);
-    record("One destroyed cell changes only that cube", this.#cells.enumerateCells(region, { states: "ACTIVE" }).length === 63, this.#cells.summarizeStates(region));
-    delete config.cells["1,1,1"];
-
-    for (let x = 0; x < 4; x += 1) config.cells[`${x},1,1`] = "GONE";
-    region.flags[MODULE_ID][REGION_CELL_FLAG] = this.#cells.normalizeConfig(config);
-    record("Horizontal four-cell passage leaves 60 ACTIVE cells", this.#cells.enumerateCells(region, { states: "ACTIVE" }).length === 60, this.#cells.summarizeStates(region));
-    for (let x = 0; x < 4; x += 1) delete config.cells[`${x},1,1`];
-
-    for (let z = 0; z < 4; z += 1) config.cells[`2,2,${z}`] = "GONE";
-    region.flags[MODULE_ID][REGION_CELL_FLAG] = this.#cells.normalizeConfig(config);
-    record("Vertical four-cell passage leaves 60 ACTIVE cells", this.#cells.enumerateCells(region, { states: "ACTIVE" }).length === 60, this.#cells.summarizeStates(region));
-
-    config.cells["3,3,3"] = "BURNING";
-    region.flags[MODULE_ID][REGION_CELL_FLAG] = this.#cells.normalizeConfig(config);
-    record("Transitional BURNING state remains generic and queryable", this.#cells.summarizeStates(region).BURNING === 1, this.#cells.summarizeStates(region));
-
-    const gone = {};
-    for (let z = 0; z < 4; z += 1) for (let y = 0; y < 4; y += 1) for (let x = 0; x < 4; x += 1) gone[`${x},${y},${z}`] = "GONE";
-    region.flags[MODULE_ID][REGION_CELL_FLAG] = this.#cells.normalizeConfig({ ...config, cells: gone });
-    record("Complete destruction reaches zero ACTIVE cells without recreating Region", this.#cells.enumerateCells(region, { states: "ACTIVE" }).length === 0 && region.uuid === "Scene.synthetic.Region.region-cells", this.#cells.summarizeStates(region));
-
-    // Restore intact volume for repeated-query performance measurement.
-    region.flags[MODULE_ID][REGION_CELL_FLAG] = this.#cells.normalizeConfig({ ...config, cells: {} });
-    const token = syntheticToken({ x: 100, y: 100, elevation: 5, depth: 1 });
-    const count = Math.max(100, Math.trunc(Number(iterations) || 10000));
-    const start = globalThis.performance?.now?.() ?? Date.now();
-    let hits = 0;
-    for (let i = 0; i < count; i += 1) if (this.#occupancy.testTokenAt(region, token)) hits += 1;
-    const elapsedMs = (globalThis.performance?.now?.() ?? Date.now()) - start;
-    record("Repeated 4x4x4 occupancy load returns deterministic results", hits === count, { iterations: count, elapsedMs, queriesPerSecond: elapsedMs > 0 ? Math.round((count / elapsedMs) * 1000) : null });
-
-    const passed = checks.every(check => check.passed);
-    const result = { passed, checks, performance: { iterations: count, elapsedMs, queriesPerSecond: elapsedMs > 0 ? Math.round((count / elapsedMs) * 1000) : null } };
-    banner("REGION CELL WEB SIMULATION", passed);
-    console.table(consoleRows(checks));
-    console.log(result);
-    if (notify && globalThis.ui?.notifications) ui.notifications[passed ? "info" : "error"](`AE5E Region Cell Web Simulation ${passed ? "PASSED" : "FAILED"}. See console.`);
-    return result;
-  }
-
-  runFullSuite({ notify = true, iterations = 10000 } = {}) {
+  runFullSuite({ notify = true } = {}) {
     const results = {
       foundation: this.runFoundationTest({ notify: false }),
       containment: this.runContainmentTest({ notify: false }),
       movement: this.runMovementTest({ notify: false }),
       terrain: this.runTerrainTest({ notify: false }),
-      attachment: this.runAttachmentTest({ notify: false }),
-      webSimulation: this.runWebSimulationTest({ notify: false, iterations })
+      attachment: this.runAttachmentTest({ notify: false })
     };
     const passed = Object.values(results).every(result => result?.passed === true);
     const output = { passed, results };

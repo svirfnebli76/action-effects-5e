@@ -83,7 +83,7 @@ function fixture() {
   return { cells, occupancy, attachments, documents, scene, region, makeToken, getUpdateCount: () => updateCount };
 }
 
-function webConfig(frame = { type: "static", origin: { x: 0, y: 0, elevation: 0 }, rotation: 0 }) {
+function cellConfig(frame = { type: "static", origin: { x: 0, y: 0, elevation: 0 }, rotation: 0 }) {
   return {
     bounds: { min: { x: 0, y: 0, z: 0 }, size: { x: 4, y: 4, z: 4 } },
     defaultState: "ACTIVE",
@@ -237,7 +237,7 @@ test("attached cell frame responds independently to elevation and rotation acros
 
 test("same XY at different elevations and multi-Token queries remain independent", async () => {
   const f = fixture();
-  await f.cells.configure(f.region, webConfig());
+  await f.cells.configure(f.region, cellConfig());
   const low = f.makeToken({ id: "low", x: 0, y: 0, elevation: 0 });
   const mid = f.makeToken({ id: "mid", x: 0, y: 0, elevation: 5 });
   const high = f.makeToken({ id: "high", x: 0, y: 0, elevation: 25 });
@@ -248,9 +248,9 @@ test("same XY at different elevations and multi-Token queries remain independent
   assert.equal(f.cells.getCellState(f.region, { x: 0, y: 0, z: 1 }), "GONE", "queries never rewrite shared state");
 });
 
-test("Web-like 4x4x4 state destruction supports holes, passages, tunnels, disconnected groups, burning, and all-GONE", async () => {
+test("4x4x4 state destruction supports holes, passages, tunnels, disconnected groups, burning, and all-GONE", async () => {
   const f = fixture();
-  await f.cells.configure(f.region, webConfig());
+  await f.cells.configure(f.region, cellConfig());
   const regionIdentity = f.region.uuid;
   assert.equal(activeCount(f.cells, f.region), 64);
 
@@ -290,7 +290,7 @@ test("Web-like 4x4x4 state destruction supports holes, passages, tunnels, discon
 
 test("concurrent state writes serialize without losing independent cell mutations", async () => {
   const f = fixture();
-  await f.cells.configure(f.region, webConfig());
+  await f.cells.configure(f.region, cellConfig());
   await Promise.all([
     f.cells.setCellState(f.region, { x: 0, y: 0, z: 0 }, "GONE"),
     f.cells.setCellState(f.region, { x: 3, y: 3, z: 3 }, "BURNING")
@@ -303,7 +303,7 @@ test("concurrent state writes serialize without losing independent cell mutation
 test("flag persistence survives service recreation and deleted/missing sources fail closed", async () => {
   const f = fixture();
   const source = f.makeToken({ id: "source" });
-  await f.cells.configure(f.region, webConfig({ type: "token", sourceTokenUuid: source.uuid, offset: { x: 0, y: 0, z: 0 } }));
+  await f.cells.configure(f.region, cellConfig({ type: "token", sourceTokenUuid: source.uuid, offset: { x: 0, y: 0, z: 0 } }));
   await f.cells.setCellState(f.region, { x: 1, y: 1, z: 1 }, "GONE");
 
   const handlers = new Map();
@@ -327,7 +327,7 @@ test("flag persistence survives service recreation and deleted/missing sources f
 
 test("4x4x4 containment lookup remains inexpensive under repeated multi-token load", async () => {
   const f = fixture();
-  await f.cells.configure(f.region, webConfig());
+  await f.cells.configure(f.region, cellConfig());
   const tokens = [];
   for (let i=0; i<20; i++) tokens.push(f.makeToken({ id: `t${i}`, x: (i%4)*100, y: (Math.floor(i/4)%4)*100, elevation: (i%4)*5 }));
   const iterations = 10_000;

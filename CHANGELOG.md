@@ -1,3 +1,11 @@
+## 0.4.5.6
+
+- Removed obsolete spell-specific Web runtime/development remnants and stale public test hooks.
+- Retired the redundant Web-era 4×4×4 Region-cell simulation wrapper; existing generic Region-local 3D Cell State foundation/stress coverage remains authoritative.
+- Generalized retained ongoing-effect, Activity, environmental, and Region-cell regression fixtures so they no longer encode Web-specific names.
+- Removed stale Web RegionBehavior localization and README guidance.
+- Compendium Items and Region-local 3D Cell State runtime behavior are unchanged.
+
 ## 0.4.5.5 — Source-bound Prism/Cube placement
 
 - Adds reusable source-bound placement for Prism/Cube geometry through `placement: { mode: "source" }`. The source anchor slides continuously around the source Token perimeter and the Prism center remains one half-length outward from that anchor, preserving a full outward-facing box without corner attachment.

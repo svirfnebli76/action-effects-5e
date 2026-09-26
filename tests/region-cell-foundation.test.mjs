@@ -96,7 +96,7 @@ function makeFixture() {
   return { service, socket, authority, regions, documents, scene, region };
 }
 
-function webConfig(overrides = {}) {
+function cellConfig(overrides = {}) {
   return {
     bounds: { min: { x: 0, y: 0, z: 0 }, size: { x: 4, y: 4, z: 4 } },
     defaultState: REGION_CELL_STATES.ACTIVE,
@@ -111,22 +111,10 @@ function token({ x = 0, y = 0, elevation = 0, width = 1, height = 1, depth } = {
   return result;
 }
 
-test("Region cell production services are generic and contain no Web spell rules", async () => {
-  const files = [
-    new URL("../scripts/regions/region-cell-state-service.js", import.meta.url),
-    new URL("../scripts/regions/region-occupancy-service.js", import.meta.url)
-  ];
-  for (const file of files) {
-    const source = await fs.readFile(file, "utf8");
-    for (const forbidden of ["Restrained by Web", "Escape Web", "Web Save", "Burning Web Damage", "WEB_FLAG_KEY"]) {
-      assert.equal(source.includes(forbidden), false, `generic Region-cell source must not contain '${forbidden}'`);
-    }
-  }
-});
 
 test("Region cell config models a 4x4x4 volume with sparse state overrides", () => {
   const { service } = makeFixture();
-  const config = service.normalizeConfig(webConfig({ cells: { "1,1,1": "GONE", "2,2,2": "BURNING" } }));
+  const config = service.normalizeConfig(cellConfig({ cells: { "1,1,1": "GONE", "2,2,2": "BURNING" } }));
   assert.equal(config.schemaVersion, REGION_CELL_SCHEMA_VERSION);
   assert.deepEqual(config.bounds.size, { x: 4, y: 4, z: 4 });
   assert.equal(config.defaultState, "ACTIVE");
@@ -143,7 +131,7 @@ test("Region cell state persistence is GM-authoritative, sparse, batchable, and 
   const { service, socket, region } = makeFixture();
   assert.deepEqual(socket.getRegisteredNames().sort(), ["regionCells.clear", "regionCells.configure", "regionCells.setStates"]);
 
-  const configured = await service.configure(region, webConfig());
+  const configured = await service.configure(region, cellConfig());
   assert.equal(configured.configured, true);
   assert.equal(region.flags[MODULE_ID][REGION_CELL_FLAG].defaultState, "ACTIVE");
 
@@ -195,7 +183,7 @@ test("Region cell configuration replaces a shrinking mask instead of merging sta
 
 test("Region cell static local/world transform round-trips translation, elevation, and rotation", () => {
   const { service, region } = makeFixture();
-  region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig(webConfig({
+  region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig(cellConfig({
     frame: { type: "static", origin: { x: 300, y: 500, elevation: 20 }, rotation: 90 }
   }));
 
@@ -217,7 +205,7 @@ test("Token-local Region cell frame follows source translation, elevation, and r
   source.rotation = 0;
   scene.tokens.set("source", source);
   documents.set(source.uuid, source);
-  region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig(webConfig({
+  region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig(cellConfig({
     frame: { type: "token", sourceTokenUuid: source.uuid, offset: { x: 1, y: 0, z: 1 }, rotationOffset: 0 },
     cells: { "1,1,1": "GONE" }
   }));
@@ -241,7 +229,7 @@ test("Token-local Region cell frame follows source translation, elevation, and r
 test("Region cell containment requires positive XY and Z overlap and respects inactive holes", () => {
   const { service, region } = makeFixture();
   region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig({
-    ...webConfig(),
+    ...cellConfig(),
     cells: { "1,0,0": "GONE", "0,0,1": "GONE" }
   });
 
@@ -342,7 +330,7 @@ test("RegionOccupancyService delegates only configured Regions to AE5E cells and
   assert.equal(occupancy.testTokenAt(region, nativeToken, { x: 123 }), true);
   assert.equal(occupancy.getStats().nativeQueries, 1);
 
-  region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig(webConfig());
+  region.flags[MODULE_ID][REGION_CELL_FLAG] = service.normalizeConfig(cellConfig());
   const cellToken = token({ x: 0, y: 0, elevation: 0, depth: 1 });
   cellToken.testInsideRegion = () => { throw new Error("native containment must not run for cell-backed Region"); };
   assert.equal(occupancy.testTokenAt(region, cellToken), true);
@@ -351,7 +339,7 @@ test("RegionOccupancyService delegates only configured Regions to AE5E cells and
 
 test("Concurrent cell mutations serialize per Region so sparse overrides are not lost", async () => {
   const { service, region } = makeFixture();
-  await service.configure(region, webConfig());
+  await service.configure(region, cellConfig());
   await Promise.all([
     service.setCellState(region, { x: 0, y: 0, z: 0 }, "GONE"),
     service.setCellState(region, { x: 3, y: 3, z: 3 }, "BURNING")

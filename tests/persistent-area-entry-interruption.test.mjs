@@ -272,5 +272,4 @@ test("entry interruption is wired through MovementService rather than a global m
   assert.match(startup, /new\s+PersistentAreaEntryInterruptionService\s*\(\s*\{[\s\S]*?events:\s*persistentAreaEvents,[\s\S]*?movement/);
   assert.match(startup, /persistentAreaEntryInterruption\.initialize\(\)/);
   assert.match(api, /getEntryInterruptionStats:\s*\(\)\s*=>\s*persistentAreaEntryInterruption/);
-  assert.doesNotMatch(api, /\bweb\s*=/i);
 });

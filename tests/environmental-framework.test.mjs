@@ -31,7 +31,7 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
   const apiSource = fs.readFileSync(new URL("../scripts/api.js", import.meta.url), "utf8");
   const mainSource = fs.readFileSync(new URL("../scripts/action-effects-5e.js", import.meta.url), "utf8");
-  assert.equal(manifest.version, "0.4.5.5");
+  assert.equal(manifest.version, "0.4.5.6");
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.flammable, {});
   assert.deepEqual(manifest.documentTypes?.RegionBehavior?.["persistent-area"], {});
   assert.match(apiSource, /this\.environment = Object\.freeze/);
@@ -41,7 +41,6 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   assert.match(apiSource, /runEnvironmentalFoundationTest/);
   assert.match(apiSource, /runEnvironmentalMidiFireTest/);
   assert.match(apiSource, /runMidiFire:\s*\(options\)\s*=>\s*tests\.runEnvironmentalMidiFireTest/);
-  assert.doesNotMatch(apiSource, /this\.web = Object\.freeze/);
   assert.match(apiSource, /this\.activities = Object\.freeze/);
   assert.match(apiSource, /runEnvironmentalLiveLifecycleTest/);
   assert.match(apiSource, /runEnvironmentalPerformanceTest/);
@@ -49,7 +48,6 @@ test("module manifest and public API wire the Flammable RegionBehavior foundatio
   assert.match(apiSource, /persistentAreas:\s*Object\.freeze/);
   assert.match(mainSource, /midiEnvironment\.initialize\(\)/);
   assert.match(mainSource, /environmentTiming\.initialize\(\)/);
-  assert.doesNotMatch(mainSource, /web\.initialize\(\)/);
 });
 
 test("environment capability and profile registries are generic extension seams", () => {
@@ -62,15 +60,15 @@ test("environment capability and profile registries are generic extension seams"
     eventTypes: [ENVIRONMENT_EVENT_TYPES.FIRE],
     handler
   });
-  const unregisterProfile = profiles.register(ENVIRONMENT_CAPABILITIES.FLAMMABLE, "web-test", {
-    label: "Web Test",
+  const unregisterProfile = profiles.register(ENVIRONMENT_CAPABILITIES.FLAMMABLE, "fixture-test", {
+    label: "Fixture Test",
     react: () => ({ handled: true })
   });
 
   assert.equal(capabilities.hasEventConsumers("fire"), true);
   assert.equal(capabilities.getForBehaviorType(ENVIRONMENT_BEHAVIOR_TYPES.FLAMMABLE)?.id, "flammable");
-  assert.equal(profiles.get("flammable", "web-test")?.label, "Web Test");
-  assert.throws(() => profiles.register("flammable", "web-test", { react: () => null }), /already registered/);
+  assert.equal(profiles.get("flammable", "fixture-test")?.label, "Fixture Test");
+  assert.throws(() => profiles.register("flammable", "fixture-test", { react: () => null }), /already registered/);
   assert.equal(unregisterProfile(), true);
   assert.equal(unregisterCapability(), true);
   assert.equal(capabilities.hasEventConsumers("fire"), false);
@@ -148,7 +146,7 @@ test("environment mutations batch state and hole changes into one Region update"
   };
   const behavior = { id: "behavior-1" };
   const capability = { id: "flammable" };
-  const profile = { profileId: "web-test" };
+  const profile = { profileId: "fixture-test" };
   const hole = { type: "rectangle", x: 0, y: 0, width: 100, height: 100, hole: true };
   const event = { id: "fire-event" };
 
@@ -157,7 +155,7 @@ test("environment mutations batch state and hole changes into one Region update"
       handled: true,
       state: { status: "burning" },
       addHoles: [hole],
-      scheduleTimers: [{ id: "burn-away", handlerId: "web.burn-away", due: { realTimeMs: 12345 }, payload: { cell: "0,0" } }]
+      scheduleTimers: [{ id: "burn-away", handlerId: "fixture.burn-away", due: { realTimeMs: 12345 }, payload: { cell: "0,0" } }]
     } },
     { behavior, capability, profile, reaction: { handled: true, addHoles: [hole] } }
   ], event);
@@ -169,7 +167,7 @@ test("environment mutations batch state and hole changes into one Region update"
   assert.equal(state.status, "burning");
   assert.equal(state.lastEventId, "fire-event");
   const timer = updates[0].data[`flags.${MODULE_ID}.${ENVIRONMENT_FLAG_KEY}`].timers["burn-away"];
-  assert.equal(timer.handlerId, "web.burn-away");
+  assert.equal(timer.handlerId, "fixture.burn-away");
   assert.equal(timer.behaviorId, behavior.id);
   assert.equal(timer.payload.cell, "0,0");
 });
@@ -215,7 +213,7 @@ test("environment timer cancellation uses Foundry v14 forced replacement so remo
           schemaVersion: 1,
           states: {},
           timers: {
-            "burn-away": { id: "burn-away", handlerId: "web.burn-away", due: { realTimeMs: 1 } }
+            "burn-away": { id: "burn-away", handlerId: "fixture.burn-away", due: { realTimeMs: 1 } }
           }
         }
       }
@@ -237,7 +235,7 @@ test("environment timer cancellation uses Foundry v14 forced replacement so remo
     const result = await mutation.apply(region, [{
       behavior: { id: "behavior-1" },
       capability: { id: "flammable" },
-      profile: { profileId: "web-test" },
+      profile: { profileId: "fixture-test" },
       reaction: { handled: true, cancelTimers: ["burn-away"] }
     }], { id: "timer-complete" });
 
@@ -310,7 +308,7 @@ test("Foundry-cleaned Region rectangle defaults do not defeat repeated-hole de-d
     const result = await mutation.apply(region, [{
       behavior: { id: "behavior-1" },
       capability: { id: "flammable" },
-      profile: { profileId: "web-test" },
+      profile: { profileId: "fixture-test" },
       reaction: {
         handled: true,
         addHoles: [geometry.createRectangle({ x: 0, y: 0, width: 100, height: 100, hole: true })]
@@ -353,7 +351,7 @@ test("equivalent Foundry v14 rectangle pivot/anchor sources de-duplicate by worl
     const result = await mutation.apply(region, [{
       behavior: { id: "behavior-1" },
       capability: { id: "flammable" },
-      profile: { profileId: "web-test" },
+      profile: { profileId: "fixture-test" },
       reaction: {
         handled: true,
         addHoles: [geometry.createRectangle({ x: 0, y: 0, width: 100, height: 100, hole: true })]
@@ -390,7 +388,7 @@ test("rotated equivalent rectangle anchor sources de-duplicate by world-space fo
     const result = await mutation.apply(region, [{
       behavior: { id: "behavior-1" },
       capability: { id: "flammable" },
-      profile: { profileId: "web-test" },
+      profile: { profileId: "fixture-test" },
       reaction: { handled: true, addHoles: [requested] }
     }], { id: "rotated-repeat-hole" });
 
@@ -460,7 +458,7 @@ test("legacy concise rectangle holes migrate to the same v14 anchored geometry b
     const result = await mutation.apply(region, [{
       behavior: { id: "behavior-1" },
       capability: { id: "flammable" },
-      profile: { profileId: "legacy-web-test" },
+      profile: { profileId: "legacy-fixture-test" },
       reaction: {
         handled: true,
         addHoles: [{ type: "rectangle", x: 0, y: 0, width: 100, height: 100, rotation: 0, hole: true }]

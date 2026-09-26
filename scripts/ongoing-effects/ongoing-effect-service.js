@@ -194,7 +194,7 @@ export class OngoingEffectService {
     }
 
     // The exact parent Active Effect UUID is the ownership key. This permits two
-    // overlapping Webs (or any two independent ongoing effects) to grant their
+    // overlapping independent ongoing effects to grant their
     // own helpers while making repeated provisioning for one effect idempotent.
     const linkedExisting = asArray(actor.items).find(item => {
       const grant = this.getGrantConfig(item);

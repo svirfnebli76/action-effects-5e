@@ -81,7 +81,6 @@ test("PersistentAreaEventService builds a generic recipe without spell-specific 
   assert.equal(result.behavior.type, `${MODULE_ID}.persistent-area`);
   assert.deepEqual(new Set(result.behavior.system.events), new Set(["tokenMoveIn", "tokenMoveWithin", "tokenExit"]));
   assert.equal(JSON.parse(result.behavior.system.recipeJson).handlers.tokenMoveIn.activity.activityReference, "Fixture Check");
-  assert.equal(JSON.stringify(result).toLowerCase().includes("web"), false);
 });
 
 test("PersistentAreaEventService executes a configured Activity once per combat turn and can stop voluntary movement on failure", async () => {

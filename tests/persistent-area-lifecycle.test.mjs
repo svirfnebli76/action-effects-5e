@@ -99,12 +99,6 @@ function makeService({ documents, worldActors = [], sceneTokens = [], hookHandle
   return new PersistentAreaLifecycleService({ socket, authority });
 }
 
-test("PersistentAreaLifecycleService is generic and contains no spell-specific Web rules", async () => {
-  const source = await fs.readFile(new URL("../scripts/environment/persistent-area-lifecycle-service.js", import.meta.url), "utf8");
-  for (const forbidden of ["Web Save", "Restrained by Web", "Escape Web", "Burning Web Damage", "WEB_ACTIVITY_REFERENCES", "WEB_FLAG_KEY"]) {
-    assert.equal(source.includes(forbidden), false, `generic lifecycle source must not contain '${forbidden}'`);
-  }
-});
 
 
 

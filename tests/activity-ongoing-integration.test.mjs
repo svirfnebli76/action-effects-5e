@@ -69,10 +69,10 @@ test("ActivityExecutionService preserves CAT/Midi workflow outcomes and de-dupli
   const previousGame = globalThis.game;
   const socket = new FakeSocket();
   const authority = { getPrimaryGm: () => ({ id: "gm" }) };
-  const activity = { id: "web-save", uuid: "Item.web.Activity.web-save", name: "Web Save" };
+  const activity = { id: "fixture-save", uuid: "Item.fixture.Activity.fixture-save", name: "Fixture Save" };
   const item = {
     documentName: "Item",
-    uuid: "Item.web",
+    uuid: "Item.fixture",
     system: { activities: new Map([[activity.id, activity]]) }
   };
   const actor = { uuid: "Actor.target" };
@@ -83,7 +83,7 @@ test("ActivityExecutionService preserves CAT/Midi workflow outcomes and de-dupli
     getStatus: () => ({ active: true, capabilities: { completeActivityUse: true } }),
     getActivityByIdentifier: () => null,
     completeActivityUse: async (_activity, targets) => ({
-      id: "Workflow.web-save",
+      id: "Workflow.fixture-save",
       saves: new Set(),
       failedSaves: new Set(targets)
     })
@@ -94,9 +94,9 @@ test("ActivityExecutionService preserves CAT/Midi workflow outcomes and de-dupli
   try {
     const first = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Web Save",
+      activityReference: "Fixture Save",
       targetTokenUuids: [token.uuid],
-      idempotencyKey: "web-save-test"
+      idempotencyKey: "fixture-save-test"
     });
     assert.equal(first.executed, true);
     assert.equal(first.via, "cat-midi");
@@ -105,9 +105,9 @@ test("ActivityExecutionService preserves CAT/Midi workflow outcomes and de-dupli
 
     const duplicate = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Web Save",
+      activityReference: "Fixture Save",
       targetTokenUuids: [token.uuid],
-      idempotencyKey: "web-save-test"
+      idempotencyKey: "fixture-save-test"
     });
     assert.equal(duplicate.executed, false);
     assert.equal(duplicate.reason, "duplicate");
@@ -127,30 +127,30 @@ test("OngoingEffectService can derive an escape grant from a source Item Activit
   globalThis.game = { user: { id: "gm", isGM: true }, settings: { get: () => false } };
 
   const escapeActivity = {
-    id: "escape-web",
-    name: "Escape Web",
+    id: "escape-fixture",
+    name: "Escape Fixture",
     toObject: () => ({
-      _id: "escape-web",
+      _id: "escape-fixture",
       type: "check",
-      name: "Escape Web",
+      name: "Escape Fixture",
       check: { ability: "str", associated: ["ath"], dc: { calculation: "", formula: "0" } },
       consumption: { targets: [], scaling: { allowed: false, max: "" } }
     })
   };
   const sourceItem = {
     documentName: "Item",
-    uuid: "Item.web-source",
-    name: "Web",
-    img: "icons/web.webp",
+    uuid: "Item.fixture-source",
+    name: "Fixture Area",
+    img: "icons/fixture.webp",
     system: { activities: new Map([[escapeActivity.id, escapeActivity]]) },
     toObject: () => ({
-      name: "Web",
+      name: "Fixture Area",
       type: "spell",
-      img: "icons/web.webp",
+      img: "icons/fixture.webp",
       system: {
-        description: { value: "Web", chat: "" },
+        description: { value: "Fixture Area", chat: "" },
         source: { custom: "" },
-        identifier: "web"
+        identifier: "fixture-area"
       },
       flags: {}
     })
@@ -164,8 +164,8 @@ test("OngoingEffectService can derive an escape grant from a source Item Activit
       createdItemData = structuredClone(data[0]);
       const created = {
         documentName: "Item",
-        id: "web-escape-grant",
-        uuid: "Actor.target.Item.web-escape-grant",
+        id: "fixture-escape-grant",
+        uuid: "Actor.target.Item.fixture-escape-grant",
         parent: actor,
         actor,
         name: data[0].name,
@@ -180,18 +180,18 @@ test("OngoingEffectService can derive an escape grant from a source Item Activit
   };
   const effect = {
     documentName: "ActiveEffect",
-    id: "restrained-web",
-    uuid: "Actor.target.ActiveEffect.restrained-web",
+    id: "restrained-fixture",
+    uuid: "Actor.target.ActiveEffect.restrained-fixture",
     parent: actor,
     origin: sourceItem.uuid,
-    name: "Restrained by Web",
+    name: "Fixture Restraint",
     flags: {
       [MODULE_ID]: {
         [ONGOING_ACTION_EFFECT_FLAG]: {
           enabled: true,
           sourceActivity: {
-            activityReference: "Escape Web",
-            itemName: "Web — Escape",
+            activityReference: "Escape Fixture",
+            itemName: "Fixture Area — Escape",
             activityPatch: {
               "check.dc.calculation": "",
               "check.dc.formula": "15"
@@ -215,13 +215,13 @@ test("OngoingEffectService can derive an escape grant from a source Item Activit
     const grant = await service.ensureGrant(effect);
     assert.equal(grant.created, true);
     assert.equal(createdItemData.type, "feat");
-    assert.equal(createdItemData.name, "Web — Escape");
-    const activity = createdItemData.system.activities["escape-web"];
+    assert.equal(createdItemData.name, "Fixture Area — Escape");
+    const activity = createdItemData.system.activities["escape-fixture"];
     assert.equal(activity.check.dc.formula, "15");
     const grantFlag = createdItemData.flags[MODULE_ID][ONGOING_ACTION_ITEM_FLAG];
     assert.equal(grantFlag.sourceEffectUuid, effect.uuid);
     assert.equal(grantFlag.sourceItemUuid, sourceItem.uuid);
-    assert.equal(grantFlag.sourceActivity, "Escape Web");
+    assert.equal(grantFlag.sourceActivity, "Escape Fixture");
     assert.equal(effect.flags[MODULE_ID][ONGOING_ACTION_EFFECT_FLAG].grantedItemUuid, grant.item.uuid);
   } finally {
     documents.clear();
@@ -285,8 +285,8 @@ test("ActivityExecutionService fails closed on an unresolved explicit target wit
   const previousGame = globalThis.game;
   const socket = new FakeSocket();
   const authority = { getPrimaryGm: () => ({ id: "gm" }) };
-  const activity = { id: "web-save", uuid: "Item.web.Activity.web-save", name: "Web Save", type: "save" };
-  const item = { documentName: "Item", uuid: "Item.web", system: { activities: new Map([[activity.id, activity]]) } };
+  const activity = { id: "fixture-save", uuid: "Item.fixture.Activity.fixture-save", name: "Fixture Save", type: "save" };
+  const item = { documentName: "Item", uuid: "Item.fixture", system: { activities: new Map([[activity.id, activity]]) } };
   let uses = 0;
   const catSpell = {
     getStatus: () => ({ active: true, capabilities: { completeActivityUse: true } }),
@@ -303,9 +303,9 @@ test("ActivityExecutionService fails closed on an unresolved explicit target wit
   try {
     const first = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Web Save",
+      activityReference: "Fixture Save",
       targetTokenUuids: ["Scene.test.Token.missing"],
-      idempotencyKey: "web-target-retry"
+      idempotencyKey: "fixture-target-retry"
     });
     assert.equal(first.executed, false);
     assert.equal(first.reason, "target-unavailable");
@@ -316,9 +316,9 @@ test("ActivityExecutionService fails closed on an unresolved explicit target wit
     documents.set(token.uuid, token);
     const retry = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Web Save",
+      activityReference: "Fixture Save",
       targetTokenUuids: [token.uuid],
-      idempotencyKey: "web-target-retry"
+      idempotencyKey: "fixture-target-retry"
     });
     assert.equal(retry.executed, true);
     assert.equal(uses, 1);
@@ -334,15 +334,15 @@ test("ActivityExecutionService preserves TokenDocument targets and pins CAT exec
   const socket = new FakeSocket();
   const authority = { getPrimaryGm: () => ({ id: "gm" }) };
   const activity = {
-    id: "web-save",
-    uuid: "Item.web.Activity.web-save",
-    name: "Web Save",
+    id: "fixture-save",
+    uuid: "Item.fixture.Activity.fixture-save",
+    name: "Fixture Save",
     type: "save",
     actor: { uuid: "Actor.caster" }
   };
   const item = {
     documentName: "Item",
-    uuid: "Item.web",
+    uuid: "Item.fixture",
     system: { activities: new Map([[activity.id, activity]]) }
   };
   const tokenObject = {
@@ -367,7 +367,7 @@ test("ActivityExecutionService preserves TokenDocument targets and pins CAT exec
       receivedTargets = targets;
       receivedOptions = structuredClone(options);
       return {
-        id: "Workflow.web-save-authority",
+        id: "Workflow.fixture-save-authority",
         failedSaves: new Set(targets)
       };
     }
@@ -387,9 +387,9 @@ test("ActivityExecutionService preserves TokenDocument targets and pins CAT exec
   try {
     const result = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Web Save",
+      activityReference: "Fixture Save",
       targetTokenUuids: [tokenDocument.uuid],
-      idempotencyKey: "web-save-authority-contract",
+      idempotencyKey: "fixture-save-authority-contract",
       options: { configureDialog: false }
     });
 
@@ -411,8 +411,8 @@ test("ActivityExecutionService preserves an explicit CAT execution userId overri
   const previousGame = globalThis.game;
   const socket = new FakeSocket();
   const authority = { getPrimaryGm: () => ({ id: "gm" }) };
-  const activity = { id: "web-save", uuid: "Item.web.Activity.web-save", name: "Web Save", type: "save" };
-  const item = { documentName: "Item", uuid: "Item.web", system: { activities: new Map([[activity.id, activity]]) } };
+  const activity = { id: "fixture-save", uuid: "Item.fixture.Activity.fixture-save", name: "Fixture Save", type: "save" };
+  const item = { documentName: "Item", uuid: "Item.fixture", system: { activities: new Map([[activity.id, activity]]) } };
   const token = { documentName: "Token", uuid: "Scene.test.Token.target", actor: { uuid: "Actor.target" } };
   let receivedOptions = null;
   const catSpell = {
@@ -431,9 +431,9 @@ test("ActivityExecutionService preserves an explicit CAT execution userId overri
   try {
     const result = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Web Save",
+      activityReference: "Fixture Save",
       targetTokenUuids: [token.uuid],
-      idempotencyKey: "web-save-explicit-user",
+      idempotencyKey: "fixture-save-explicit-user",
       options: { userId: "explicit-user" }
     });
     assert.equal(result.executed, true);
@@ -448,8 +448,8 @@ test("ActivityExecutionService releases an idempotency claim when CAT/Midi execu
   const previousGame = globalThis.game;
   const socket = new FakeSocket();
   const authority = { getPrimaryGm: () => ({ id: "gm" }) };
-  const activity = { id: "burn", uuid: "Item.web.Activity.burn", name: "Burning Web Damage", type: "damage" };
-  const item = { documentName: "Item", uuid: "Item.web", system: { activities: new Map([[activity.id, activity]]) } };
+  const activity = { id: "burn", uuid: "Item.fixture.Activity.burn", name: "Fixture Burning Damage", type: "damage" };
+  const item = { documentName: "Item", uuid: "Item.fixture", system: { activities: new Map([[activity.id, activity]]) } };
   const token = { documentName: "Token", uuid: "Scene.test.Token.target", actor: { uuid: "Actor.target" } };
   let attempts = 0;
   const catSpell = {
@@ -469,16 +469,16 @@ test("ActivityExecutionService releases an idempotency claim when CAT/Midi execu
   try {
     await assert.rejects(() => service.execute({
       itemUuid: item.uuid,
-      activityReference: "Burning Web Damage",
+      activityReference: "Fixture Burning Damage",
       targetTokenUuids: [token.uuid],
-      idempotencyKey: "web-burn-retry"
+      idempotencyKey: "fixture-burn-retry"
     }), /synthetic CAT failure/);
 
     const retry = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Burning Web Damage",
+      activityReference: "Fixture Burning Damage",
       targetTokenUuids: [token.uuid],
-      idempotencyKey: "web-burn-retry"
+      idempotencyKey: "fixture-burn-retry"
     });
     assert.equal(retry.executed, true);
     assert.equal(attempts, 2);
@@ -495,12 +495,12 @@ test("ActivityExecutionService refuses targeted native fallback when CAT complet
   const authority = { getPrimaryGm: () => ({ id: "gm" }) };
   let nativeUses = 0;
   const activity = {
-    id: "web-save",
-    name: "Web Save",
+    id: "fixture-save",
+    name: "Fixture Save",
     type: "save",
     async use() { nativeUses += 1; return { id: "Workflow.native" }; }
   };
-  const item = { documentName: "Item", uuid: "Item.web", system: { activities: new Map([[activity.id, activity]]) } };
+  const item = { documentName: "Item", uuid: "Item.fixture", system: { activities: new Map([[activity.id, activity]]) } };
   const token = { documentName: "Token", uuid: "Scene.test.Token.target", actor: { uuid: "Actor.target" } };
   const catSpell = {
     getStatus: () => ({ active: true, capabilities: { completeActivityUse: false } }),
@@ -514,7 +514,7 @@ test("ActivityExecutionService refuses targeted native fallback when CAT complet
   try {
     const result = await service.execute({
       itemUuid: item.uuid,
-      activityReference: "Web Save",
+      activityReference: "Fixture Save",
       targetTokenUuids: [token.uuid],
       idempotencyKey: "no-cat-targeted-fallback"
     });
