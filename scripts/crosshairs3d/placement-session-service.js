@@ -70,14 +70,19 @@ export class Crosshair3dPlacementSessionService {
     }
     const freeLine = baseShape.type === "free-line";
     const self = ["cone", "line"].includes(baseShape.type);
+    const placementMode = String(options.placement?.mode ?? "").trim().toLowerCase();
+    const sourceBoundPrism = baseShape.type === CROSSHAIR_3D_SHAPES.PRISM && placementMode === "source";
     if (baseShape.type === "cone" && options.remote === true) throw new Error("Remote cone placement is not part of this checkpoint.");
-    const max = Number(options.range?.max ?? options.maxRange ?? (self ? baseShape.length : 60));
+    if (sourceBoundPrism && options.remote === true) {
+      throw new Error("Source-bound Prism placement cannot also be remote.");
+    }
+    const max = Number(options.range?.max ?? options.maxRange ?? ((self || sourceBoundPrism) ? baseShape.length : 60));
     if (!(Number.isFinite(max) && max > 0)) throw new Error("range.max must be a positive finite number.");
     options = { ...options, range: { policy: freeLine ? "endpoints" : "origin", ...options.range, max } };
     if (freeLine && !["center", "origin", "endpoints"].includes(options.range.policy)) throw new Error("Freely placed Line requires range.policy: center, origin, or endpoints.");
-    const allowedRotation = ["prism", "free-line"].includes(baseShape.type);
+    const allowedRotation = ["prism", "free-line"].includes(baseShape.type) && !sourceBoundPrism;
     const capabilities = Object.freeze({
-      elevation: options.capabilities?.elevation !== false,
+      elevation: !sourceBoundPrism && options.capabilities?.elevation !== false,
       rotation: allowedRotation && options.capabilities?.rotation !== false,
       resize: freeLine && options.capabilities?.resize !== false,
       los: options.capabilities?.los === true
@@ -85,15 +90,21 @@ export class Crosshair3dPlacementSessionService {
     const headingYaw = normalizeDegrees(input.yaw ?? source.document.rotation ?? 0);
     const arcPitch = self ? normalizeDegrees(input.pitch ?? 0) : 0;
     const orientation = this.#canonicalSelfOrientation(headingYaw, arcPitch);
+    let sourceAnchor = null;
     let initialPoint = self ? this.#resolveSelfApex(source, orientation.yaw, orientation.pitch, metrics, sourceVolume, baseShape.type)
       : input.origin ? { ...baseShape.origin } : { x: (sourceVolume.minX + sourceVolume.maxX) / 2, y: (sourceVolume.minY + sourceVolume.maxY) / 2, z: sourceVolume.bottom };
+    if (sourceBoundPrism) {
+      const placement = this.#resolveSourceBoundPrism(source, headingYaw, metrics, sourceVolume, baseShape);
+      sourceAnchor = placement.anchor;
+      initialPoint = placement.center;
+    }
     if (baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE) initialPoint = this.#snapSphereCenter(initialPoint, metrics);
     const intent = { point: initialPoint, yaw: self ? orientation.yaw : headingYaw, headingYaw,
-      pitch: self ? orientation.pitch : 0, arcPitch, length: baseShape.length,
+      pitch: self ? orientation.pitch : 0, arcPitch, length: baseShape.length, sourceAnchor,
       manualElevation: false, selectedAbsoluteZ: initialPoint.z };
     const session = {
       id: globalThis.foundry?.utils?.randomID?.(12) ?? `${Date.now()}-${Math.random()}`,
-      source, sourceVolume, scene: canvas.scene, metrics, baseShape, options, freeLine, self, capabilities, intent,
+      source, sourceVolume, scene: canvas.scene, metrics, baseShape, options, freeLine, self, sourceBoundPrism, capabilities, intent,
       propagationSelection,
       originalTargetIds: tokenIds(globalThis.game?.user?.targets), current: this.#revisions.create({ ...intent, shape: baseShape, targets: [], valid: false }),
       presentation: null,
@@ -128,6 +139,7 @@ export class Crosshair3dPlacementSessionService {
       return Object.freeze({ cancelled: false, revision, shape: revision.shape, targets,
         targetIds: Object.freeze(tokenIds(targets)), targetUuids: Object.freeze(targets.map(t => t.document?.uuid ?? t.uuid).filter(Boolean)),
         placementPoint: Object.freeze({ ...revision.point }), yaw: revision.yaw, pitch: revision.pitch,
+        sourceAnchor: revision.sourceAnchor ? Object.freeze({ ...revision.sourceAnchor }) : null,
         originLevelId: session.originLevelId ?? null,
         propagation: revision.propagation ?? null,
         persistentRegion: session.persistentRegion ?? null });
@@ -143,7 +155,8 @@ export class Crosshair3dPlacementSessionService {
   #enqueue(session, reason) {
     if (session.closed) return null;
     const request = { serial: ++session.requestedSerial, reason,
-      state: { ...session.intent, point: { ...session.intent.point } } };
+      state: { ...session.intent, point: { ...session.intent.point },
+        sourceAnchor: session.intent.sourceAnchor ? { ...session.intent.sourceAnchor } : null } };
     request.presentation = this.#present(session, request);
     session.pending = request;
     this.#startDrain(session);
@@ -155,6 +168,17 @@ export class Crosshair3dPlacementSessionService {
       const orientation = this.#canonicalSelfOrientation(state.headingYaw, state.arcPitch);
       Object.assign(state, orientation);
       state.point = this.#resolveSelfApex(session.source, state.yaw, state.pitch, session.metrics, session.sourceVolume, session.baseShape.type);
+    } else if (session.sourceBoundPrism) {
+      const placement = this.#resolveSourceBoundPrism(
+        session.source,
+        state.headingYaw,
+        session.metrics,
+        session.sourceVolume,
+        session.baseShape
+      );
+      state.yaw = normalizeDegrees(state.headingYaw);
+      state.sourceAnchor = placement.anchor;
+      state.point = placement.center;
     }
     const shape = this.#shapeForState(session.baseShape, state);
     const direction = session.self ? this.#geometry.direction(shape) : null;
@@ -191,7 +215,12 @@ export class Crosshair3dPlacementSessionService {
       try {
         if (presentation.valid) this.#stats.propagationStarts++;
         propagation = presentation.valid
-          ? await this.#resolvePropagation(session, presentation.shape, request.serial)
+          ? await this.#resolvePropagation(
+            session,
+            presentation.shape,
+            request.serial,
+            presentation.sourceAnchor
+          )
           : null;
       } catch (error) {
         if (session.closed) return;
@@ -273,6 +302,7 @@ export class Crosshair3dPlacementSessionService {
   }
   #validState(session, state) {
     if (session.self) return this.#validateLos(session, state.point);
+    if (session.sourceBoundPrism) return this.#validateLos(session, state.sourceAnchor ?? state.point);
     if (session.freeLine) return this.#freeLineValid(session, state);
     const distance = session.baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE
       ? this.#range.distanceFromVolumeCornerToPoint(session.sourceVolume, state.point)
@@ -332,6 +362,21 @@ export class Crosshair3dPlacementSessionService {
         const o = this.#canonicalSelfOrientation(headingYaw, state.arcPitch);
         this.#accept(session, { ...state, ...o, headingYaw,
           point: this.#resolveSelfApex(session.source, o.yaw, o.pitch, session.metrics, session.sourceVolume, session.baseShape.type) }, "move-aim");
+      } else if (session.sourceBoundPrism) {
+        const doc = session.source.document;
+        const dx = world.x - (doc.x + doc.width * session.metrics.size / 2);
+        const dy = world.y - (doc.y + doc.height * session.metrics.size / 2);
+        if (Math.hypot(dx, dy) < 1e-7) return;
+        const headingYaw = normalizeDegrees(Math.atan2(dy, dx) * 180 / Math.PI);
+        const placement = this.#resolveSourceBoundPrism(
+          session.source,
+          headingYaw,
+          session.metrics,
+          session.sourceVolume,
+          session.baseShape
+        );
+        this.#accept(session, { ...state, headingYaw, yaw: headingYaw,
+          point: placement.center, sourceAnchor: placement.anchor }, "move-aim");
       } else {
         const point = this.#resolveRemoteMovePoint(session, world, session.sourceVolume.bottom);
         this.#accept(session, { ...state, point, selectedAbsoluteZ: state.manualElevation ? state.selectedAbsoluteZ : point.z }, "move");
@@ -474,10 +519,11 @@ export class Crosshair3dPlacementSessionService {
     catch (_error) { return false; }
   }
 
-  async #resolvePropagation(session, shape, requestSerial = session.requestedSerial) {
+  async #resolvePropagation(session, shape, requestSerial = session.requestedSerial, sourceAnchor = null) {
+    const origin = session.options.propagation?.origin ?? sourceAnchor ?? shape.origin;
     if (!this.#propagation) {
       const mask = this.#cells?.rasterize?.(shape, { grid: session.metrics.grid });
-      return Object.freeze({ mode: "none", shape, grid: session.metrics.grid, origin: shape.origin,
+      return Object.freeze({ mode: "none", shape, grid: session.metrics.grid, origin,
         support: shape.type === "sphere" ? "chart-cell" : "continuous-primitive", cells: mask?.cells ?? null });
     }
     const mode = session.propagationSelection.mode;
@@ -505,7 +551,7 @@ export class Crosshair3dPlacementSessionService {
       grid: session.metrics.grid,
       mode,
       environment,
-      origin: session.options.propagation?.origin ?? shape.origin,
+      origin,
       connectors: session.options.propagation?.connectors ?? [],
       signal
     });
@@ -588,6 +634,28 @@ export class Crosshair3dPlacementSessionService {
       if (!best || delta < best.delta) best = { ...candidate, delta };
     }
     return best?.phase ?? current;
+  }
+
+
+  #resolveSourceBoundPrism(source, yaw, metrics, sourceVolume, shape) {
+    const anchor = this.#resolveSelfApex(
+      source,
+      yaw,
+      0,
+      metrics,
+      sourceVolume,
+      CROSSHAIR_3D_SHAPES.LINE
+    );
+    const radians = normalizeDegrees(yaw) * Math.PI / 180;
+    const halfLength = shape.length / 2;
+    return {
+      anchor,
+      center: {
+        x: anchor.x + Math.cos(radians) * halfLength,
+        y: anchor.y + Math.sin(radians) * halfLength,
+        z: sourceVolume.bottom
+      }
+    };
   }
 
   #resolveSelfApex(source, yaw, pitch, metrics, sourceVolume, shapeType) {

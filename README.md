@@ -93,6 +93,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.5 installation
+
+Install the complete module folder and reload Foundry. v0.4.5.5 adds reusable source-bound Prism/Cube placement with a continuously sliding source-edge anchor, MOVE-only manipulation, and None/Direct/Spread support. Direct/Spread originate from the source edge rather than the Prism center. Ordinary freely placed Prism/Cube behavior is unchanged. This release is rebased onto the corrected v0.4.5.4-with-compendiums baseline and preserves those compendiums. Run `docs/acceptance-crosshairs3d-v0.4.5.5.txt` as the primary GM for the focused live acceptance.
+
 ## v0.4.5.3 installation
 
 Install the complete module folder and reload Foundry. v0.4.5.3 replaces sampled hidden Line traversal with exact analytic OBB-vs-cell support and explicitly retires Cone Spread. Cone None/Direct, Sphere, Prism, Cylinder, the 50% authoritative affected-cell rule, orthogonal-only Spread, the 10% contiguous shared-face opening rule, and the accepted target-preview responsiveness architecture remain unchanged. Run `docs/acceptance-crosshairs3d-v0.4.5.3.txt` as the primary GM.

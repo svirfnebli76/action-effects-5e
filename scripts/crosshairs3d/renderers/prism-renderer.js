@@ -9,6 +9,7 @@ export function createRenderer(context) {
   const scale = metrics.size / metrics.distance;
   const unit = String(scene.grid.units || "ft");
   const RANGE = Number(options.range?.max ?? options.maxRange ?? 60);
+  const sourceBound = String(options.placement?.mode ?? "").trim().toLowerCase() === "source";
   const toPixel = point => metricsService.distanceToPixels(point, metrics);
   const sourceCenterPixels = toPixel({ x: (sourceVolume.minX + sourceVolume.maxX) / 2,
     y: (sourceVolume.minY + sourceVolume.maxY) / 2, z: sourceVolume.bottom });
@@ -616,26 +617,30 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
       if (redrawShape) {
         drawing.clear();
 
-        const boundary = freeLineRangeBoundary(
-          sourceVolume,
-          RANGE,
-          current.point.z
-        ).map(toPixel);
+        if (!sourceBound) {
+          const boundary = freeLineRangeBoundary(
+            sourceVolume,
+            RANGE,
+            current.point.z
+          ).map(toPixel);
 
-        if (options.range?.showBoundary !== false && boundary.length) {
-          drawing.lineStyle(1.5, RANGE_RING_COLOR, RANGE_RING_ALPHA);
-          drawing.drawPolygon(boundary.flatMap(point => [point.x, point.y]));
+          if (options.range?.showBoundary !== false && boundary.length) {
+            drawing.lineStyle(1.5, RANGE_RING_COLOR, RANGE_RING_ALPHA);
+            drawing.drawPolygon(boundary.flatMap(point => [point.x, point.y]));
+          }
         }
 
         drawPrism(current.point, current.yaw);
-        drawSourceTracer(
-          toPixel({
-            x: (sourceVolume.minX + sourceVolume.maxX) / 2,
-            y: (sourceVolume.minY + sourceVolume.maxY) / 2,
-            z: sourceVolume.bottom
-          }),
-          center
-        );
+        if (!sourceBound) {
+          drawSourceTracer(
+            toPixel({
+              x: (sourceVolume.minX + sourceVolume.maxX) / 2,
+              y: (sourceVolume.minY + sourceVolume.maxY) / 2,
+              z: sourceVolume.bottom
+            }),
+            center
+          );
+        }
         drawBottomCenterMarker(center);
       }
 

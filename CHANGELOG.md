@@ -1,3 +1,12 @@
+## 0.4.5.5 — Source-bound Prism/Cube placement
+
+- Adds reusable source-bound placement for Prism/Cube geometry through `placement: { mode: "source" }`. The source anchor slides continuously around the source Token perimeter and the Prism center remains one half-length outward from that anchor, preserving a full outward-facing box without corner attachment.
+- Source-bound Prism is MOVE-only: independent Shift rotation, Ctrl elevation, and Alt resize are disabled. Ordinary freely placed Prism/Cube behavior is unchanged.
+- None, Direct, and Spread remain supported. Direct/Spread physical propagation uses the source-edge anchor for this placement mode rather than the Prism center; CAT propagation overrides continue to resolve normally.
+- Source-bound Prism presentation omits the remote-placement range boundary and source tracer while retaining the existing Prism rules volume, rasterization, targeting, target-preview scheduling, and final-confirmation authority. Contradictory `remote: true` configuration is rejected.
+- Adds four focused source-bound Prism/configuration regressions. The focused Prism tests pass. The full suite contains 489 tests; one unrelated pre-existing Web runtime-boundary failure already present in the authoritative v0.4.5.4-with-compendiums baseline remains unchanged.
+- Rebased onto the corrected v0.4.5.4-with-compendiums authority. Compendium packs, assets, Region-cell infrastructure, Web runtime code, and unrelated crosshair geometry remain unchanged.
+
 ## 0.4.5.4 — Foundry v14 Spread wall-probe precision correction
 
 - Corrects the generic Spread shared-face movement-Wall probe so each perpendicular collision ray extends at least one canvas pixel to either side of the tested face. Live Foundry v14 diagnostics showed the prior `gridDistance * 1e-4` inset produced a 0.02-pixel total ray on a 100 px / 5 ft grid, below Foundry's reliable movement-collision precision; a 2-pixel total ray was the first consistently detected length.

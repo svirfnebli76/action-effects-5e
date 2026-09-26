@@ -65,6 +65,103 @@ test('source-driven line aims with the mouse and has no Rotate mode', async () =
   h.service.cancel(); await p;
 });
 
+test('source-bound prism edge-locks to the source, extends outward, and exposes MOVE only', async () => {
+  const h = harness(); let revision;
+  const p = h.service.show({
+    source: h.source,
+    shape: { type: 'prism', length: 15, width: 15, height: 15 },
+    placement: { mode: 'source' },
+    onRevision: value => revision = value
+  });
+  await h.flush();
+
+  assert.deepEqual(revision.sourceAnchor, { x: 5, y: 2.5, z: 0 });
+  assert.deepEqual(revision.point, { x: 12.5, y: 2.5, z: 0 });
+  assert.deepEqual(revision.shape.origin, revision.point);
+
+  h.dispatch('pointermove', { clientX: 50, clientY: 800 });
+  await h.flush();
+  assert.ok(Math.abs(revision.yaw - 90) < 1e-8);
+  assert.deepEqual(revision.sourceAnchor, { x: 2.5, y: 5, z: 0 });
+  assert.ok(Math.abs(revision.point.x - 2.5) < 1e-8);
+  assert.ok(Math.abs(revision.point.y - 12.5) < 1e-8);
+  assert.equal(revision.point.z, 0);
+  assert.equal(Math.hypot(
+    revision.point.x - revision.sourceAnchor.x,
+    revision.point.y - revision.sourceAnchor.y
+  ), 7.5);
+
+  const beforeModifiers = revision;
+  h.dispatch('wheel', { shiftKey: true, deltaY: -1 });
+  h.dispatch('wheel', { ctrlKey: true, deltaY: -1 });
+  h.dispatch('wheel', { altKey: true, deltaY: -1 });
+  await h.flush();
+  assert.equal(revision, beforeModifiers);
+  assert.ok(!h.records.texts.some(text => ['SHIFT', 'CTRL', 'ALT'].includes(text.text)));
+
+  await h.confirm();
+  const result = await p;
+  assert.equal(result.cancelled, false);
+  assert.deepEqual(result.sourceAnchor, revision.sourceAnchor);
+  assert.deepEqual(result.shape.origin, result.placementPoint);
+  assert.ok(h.clean());
+});
+
+test('source-bound prism uses its source-edge anchor as the None/Direct/Spread propagation origin', async () => {
+  for (const mode of ['none', 'direct', 'spread']) {
+    const propagationOrigins = [];
+    const h = harness({ placementDependencies: {
+      propagationModes: new Crosshair3dPropagationModeService(),
+      propagationEnvironment: { create: () => ({}) },
+      propagation: { async resolve({ shape, grid, origin, mode: resolvedMode }) {
+        propagationOrigins.push({ ...origin });
+        return Object.freeze({
+          mode: resolvedMode,
+          shape,
+          grid,
+          origin: Object.freeze({ ...origin }),
+          support: 'continuous-primitive',
+          cells: Object.freeze([])
+        });
+      } }
+    } });
+    let revision;
+    const p = h.service.show({
+      source: h.source,
+      shape: { type: 'cube', size: 15 },
+      placement: { mode: 'source' },
+      propagation: { itemDefault: mode, override: 'default' },
+      onRevision: value => revision = value
+    });
+    await h.flush();
+    h.dispatch('pointermove', { clientX: 800, clientY: 50 });
+    await h.flush();
+    await h.confirm();
+    const result = await p;
+
+    assert.equal(result.propagation.mode, mode);
+    assert.deepEqual(result.propagation.origin, result.sourceAnchor);
+    assert.ok(propagationOrigins.length >= 1);
+    assert.deepEqual(propagationOrigins.at(-1), result.sourceAnchor);
+    assert.deepEqual(result.shape.origin, result.placementPoint);
+    assert.ok(h.clean());
+  }
+});
+
+test('source-bound prism rejects contradictory remote placement', async () => {
+  const h = harness();
+  await assert.rejects(
+    h.service.show({
+      source: h.source,
+      shape: { type: 'prism', length: 15, width: 15, height: 15 },
+      placement: { mode: 'source' },
+      remote: true
+    }),
+    /cannot also be remote/
+  );
+  assert.ok(h.clean());
+});
+
 for (const length of [25, 26, 50, 51]) test(`cone ${length} ft elevation tier`, async () => {
   const h = harness(); const p = h.service.show({ source: h.source, shape: { type: 'cone', length } });
   await h.flush(); h.dispatch('pointermove'); h.dispatch('wheel', { ctrlKey: true, deltaY: -1 }); await h.flush();

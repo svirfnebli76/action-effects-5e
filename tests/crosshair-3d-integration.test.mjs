@@ -316,3 +316,28 @@ test("Cone None and Direct remain valid configured propagation modes", async () 
     assert.equal(resolved.provenance.propagation.mode, mode);
   }
 });
+
+
+test("configured source-bound Prism preserves placement mode and supports CAT None, Direct, and Spread", async () => {
+  const configuration = baseConfig({
+    shape: { type: "prism", length: 15, width: 15, height: 15 },
+    placement: { mode: "source" },
+    capabilities: { elevation: false, rotation: false, resize: false },
+    propagation: { mode: "direct" }
+  });
+
+  for (const override of ["none", "direct", "spread"]) {
+    const f = fixture({ placementResult: { cancelled: false, targetIds: [], shape: { type: "prism" } } });
+    const source = { id: "source" };
+    const result = await f.service.show({
+      source,
+      configuration,
+      catOptions: { propagation: override }
+    });
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls[0].placement.mode, "source");
+    assert.equal(f.calls[0].propagation.itemDefault, "direct");
+    assert.equal(f.calls[0].propagation.override, override);
+    assert.equal(result.provenance.propagation.mode, override);
+  }
+});
