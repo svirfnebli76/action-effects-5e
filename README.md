@@ -76,6 +76,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.8 installation
+
+Install the complete module folder and reload Foundry. v0.4.5.8 adds generic Sneak Attack eligibility through AC5E, strict stable-identifier child Activity resolution, semantic target translation, authority-safe child Midi workflow execution/linkage, explicit resource controls, and richer child workflow result capture. No Rogue feature rules are hard-coded. This release also carries the isolated Web CAT publication metadata correction already accepted live; Web mechanics are unchanged.
+
 ## v0.4.5.7 installation
 
 Install the complete module folder and reload Foundry. v0.4.5.7 adds the generic Phase A Sneak Attack declaration foundation: one inert DAE declaration field, independent per-change scanning with provenance, robust declaration parsing, DAE source-Item resolution, read-only CAT provider validation, generic declaration compilation/order/conflict diagnostics, and public inspection APIs. No Rogue feature rules are hard-coded. Existing 3D Crosshairs, Region-local 3D Cell State, compendium Items, and assets are unchanged.

@@ -115,7 +115,10 @@ export class ActionEffects5eApi {
     spellModifierEvents,
     ongoingEffects,
     activities,
+    ac5eEligibility,
     sneakAttackDeclarations,
+    sneakAttackEligibility,
+    sneakAttackActivities,
     regions,
     regionCells,
     regionOccupancy,
@@ -310,6 +313,12 @@ export class ActionEffects5eApi {
     });
 
     this.interoperability = Object.freeze({
+      ac5e: Object.freeze({
+        evaluateCondition: (request) => ac5eEligibility.evaluateCondition(request),
+        buildSandbox: (request) => ac5eEligibility.buildSandbox(request),
+        getStatus: () => ac5eEligibility.getStatus(),
+        getStats: () => ac5eEligibility.getStats()
+      }),
       automatedAnimations: Object.freeze({
         getStatus: () => automatedAnimations.getStatus(),
         getStats: () => automatedAnimations.getStats()
@@ -387,6 +396,19 @@ export class ActionEffects5eApi {
         compileActor: (actor) => sneakAttackDeclarations.compileActor(actor),
         getStatus: () => sneakAttackDeclarations.getStatus(),
         getStats: () => sneakAttackDeclarations.getStats()
+      }),
+      eligibility: Object.freeze({
+        evaluate: (entry, context) => sneakAttackEligibility.evaluate(entry, context),
+        evaluateAll: (entries, context) => sneakAttackEligibility.evaluateAll(entries, context),
+        getStatus: () => sneakAttackEligibility.getStatus(),
+        getStats: () => sneakAttackEligibility.getStats()
+      }),
+      activities: Object.freeze({
+        resolve: (entryOrItem, options) => sneakAttackActivities.resolve(entryOrItem, options),
+        resolveSemanticTargets: (semanticTarget, context) => sneakAttackActivities.resolveSemanticTargets(semanticTarget, context),
+        execute: (entry, context) => sneakAttackActivities.execute(entry, context),
+        getStatus: () => sneakAttackActivities.getStatus(),
+        getStats: () => sneakAttackActivities.getStats()
       })
     });
 

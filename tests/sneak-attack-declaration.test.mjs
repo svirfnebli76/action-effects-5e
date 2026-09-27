@@ -297,7 +297,26 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
     spellModifierEvents: stub,
     ongoingEffects: stub,
     activities: stub,
+    ac5eEligibility: {
+      evaluateCondition: request => ({ ok: true, eligible: true, request }),
+      buildSandbox: request => ({ ok: true, sandbox: request }),
+      getStatus: () => ({ active: true }),
+      getStats: () => ({})
+    },
     sneakAttackDeclarations: declarations,
+    sneakAttackEligibility: {
+      evaluate: (entry, context) => ({ ok: true, eligible: true, entry, context }),
+      evaluateAll: entries => ({ ok: true, eligible: entries, ineligible: [] }),
+      getStatus: () => ({ active: true }),
+      getStats: () => ({})
+    },
+    sneakAttackActivities: {
+      resolve: (entry, options) => ({ resolved: true, entry, options }),
+      resolveSemanticTargets: target => ({ resolved: true, targetUuids: [target] }),
+      execute: async () => ({ executed: true }),
+      getStatus: () => ({ active: true }),
+      getStats: () => ({})
+    },
     regions: stub,
     regionCells: stub,
     regionOccupancy: stub,
@@ -360,4 +379,8 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
     declarations: []
   });
   assert.equal(api.interoperability.cat.provider.getStatus().active, true);
+  assert.equal(api.interoperability.ac5e.getStatus().active, true);
+  assert.equal(api.sneakAttack.eligibility.evaluate({ declaration: { id: "trip" } }, {}).eligible, true);
+  assert.equal(api.sneakAttack.activities.resolve({ declaration: { activity: "trip" } }, {}).resolved, true);
+  assert.equal((await api.sneakAttack.activities.execute({}, {})).executed, true);
 });

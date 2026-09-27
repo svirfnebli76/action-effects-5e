@@ -69,7 +69,7 @@ test("ActivityExecutionService preserves CAT/Midi workflow outcomes and de-dupli
   const previousGame = globalThis.game;
   const socket = new FakeSocket();
   const authority = { getPrimaryGm: () => ({ id: "gm" }) };
-  const activity = { id: "fixture-save", uuid: "Item.fixture.Activity.fixture-save", name: "Fixture Save" };
+  const activity = { id: "fixture-save", uuid: "Item.fixture.Activity.fixture-save", name: "Fixture Save", identifier: "fixture-save", type: "save" };
   const item = {
     documentName: "Item",
     uuid: "Item.fixture",
@@ -84,8 +84,19 @@ test("ActivityExecutionService preserves CAT/Midi workflow outcomes and de-dupli
     getActivityByIdentifier: () => null,
     completeActivityUse: async (_activity, targets) => ({
       id: "Workflow.fixture-save",
+      targets: new Set(targets),
       saves: new Set(),
-      failedSaves: new Set(targets)
+      failedSaves: new Set(targets),
+      damageList: [{
+        tokenUuid: token.uuid,
+        actorUuid: actor.uuid,
+        appliedDamage: 7,
+        totalDamage: 7,
+        oldHP: 20,
+        newHP: 13,
+        oldTempHP: 0,
+        newTempHP: 0
+      }]
     })
   };
   const service = new ActivityExecutionService({ socket, authority, catSpell });
@@ -100,7 +111,19 @@ test("ActivityExecutionService preserves CAT/Midi workflow outcomes and de-dupli
     });
     assert.equal(first.executed, true);
     assert.equal(first.via, "cat-midi");
+    assert.equal(first.activityIdentifier, "fixture-save");
+    assert.deepEqual(first.workflowTargetUuids, [token.uuid]);
     assert.deepEqual(first.failedSaves, [token.uuid]);
+    assert.deepEqual(first.damageList, [{
+      tokenUuid: token.uuid,
+      actorUuid: actor.uuid,
+      appliedDamage: 7,
+      totalDamage: 7,
+      oldHP: 20,
+      newHP: 13,
+      oldTempHP: 0,
+      newTempHP: 0
+    }]);
     assert.doesNotThrow(() => JSON.stringify(first));
 
     const duplicate = await service.execute({

@@ -222,6 +222,16 @@ export class ActivityExecutionService {
 
   #serializeOutcome({ workflow, item, activity, targets, claim, viaCat }) {
     const uuids = list => [...new Set(asArray(list).map(uuidOf).filter(Boolean))];
+    const damageList = asArray(workflow?.damageList).map(entry => ({
+      tokenUuid: uuidOf(entry?.tokenUuid ? { uuid: entry.tokenUuid } : entry?.token ?? entry?.tokenDocument),
+      actorUuid: entry?.actorUuid ?? entry?.actor?.uuid ?? null,
+      appliedDamage: Number.isFinite(Number(entry?.appliedDamage)) ? Number(entry.appliedDamage) : null,
+      totalDamage: Number.isFinite(Number(entry?.totalDamage)) ? Number(entry.totalDamage) : null,
+      oldHP: Number.isFinite(Number(entry?.oldHP)) ? Number(entry.oldHP) : null,
+      newHP: Number.isFinite(Number(entry?.newHP)) ? Number(entry.newHP) : null,
+      oldTempHP: Number.isFinite(Number(entry?.oldTempHP)) ? Number(entry.oldTempHP) : null,
+      newTempHP: Number.isFinite(Number(entry?.newTempHP)) ? Number(entry.newTempHP) : null
+    }));
     return {
       executed: true,
       via: viaCat ? "cat-midi" : "activity",
@@ -230,12 +240,15 @@ export class ActivityExecutionService {
       itemUuid: item?.uuid ?? null,
       activityUuid: activity?.uuid ?? null,
       activityId: activity?.id ?? activity?._id ?? null,
+      activityIdentifier: activity?.identifier ?? activity?.system?.identifier ?? null,
       activityType: activity?.type ?? null,
       targetUuids: [...new Set(targets.map(uuidOf).filter(Boolean))],
+      workflowTargetUuids: uuids(workflow?.targets),
       saves: uuids(workflow?.saves),
       failedSaves: uuids(workflow?.failedSaves),
       hitTargets: uuids(workflow?.hitTargets),
-      missedTargets: uuids(workflow?.missedTargets ?? workflow?.missTargets)
+      missedTargets: uuids(workflow?.missedTargets ?? workflow?.missTargets),
+      damageList
     };
   }
 

@@ -1,3 +1,13 @@
+## 0.4.5.8 — Sneak Attack eligibility and child Activity infrastructure
+
+- Adds the generic Phase B Sneak Attack eligibility layer using AC5E's public `evaluationData()` and `safeEval(..., mode: "condition")` helpers; AE5E does not implement a competing expression engine.
+- Adds strict Sneak Attack child Activity resolution by stable Activity identifier with optional Activity-type integrity assertions and fail-safe diagnostics for missing, ambiguous, or mismatched Activities.
+- Adds semantic target translation for `sneakTarget`, `self`, `parentTargets`, and `parentHitTargets`, preserving the committed Sneak Attack target independently of current user targeting.
+- Reuses the existing authority-safe Activity execution service for child Midi workflows, adds parent/transaction linkage metadata, explicit no-consumption controls, and richer JSON-safe workflow result summaries.
+- Adds focused regression coverage for AC5E availability/evaluation, stable Activity resolution, semantic targeting, linkage, resource controls, and child-workflow result capture.
+- Publishes the already-authored Web Item to CAT by adding only `flags.cat.automation.source = "action-effects-5e"` and `flags.cat.automation.version = "1.0.0"`; no Web mechanics, Activities, macros, or effects are changed.
+- Existing 3D Crosshairs, Region-local 3D Cell State, movement, displacement, relationship, and animation infrastructure are unchanged.
+
 ## 0.4.5.7 — Sneak Attack declaration infrastructure
 
 - Adds the generic Phase A Sneak Attack declaration foundation without adding Rogue feature rules to AE5E.

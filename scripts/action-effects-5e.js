@@ -12,6 +12,7 @@ import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { CatAutomationRegistry } from "./integrations/cat-automation-registry.js";
 import { CatAutomationProviderAdapter } from "./integrations/cat-automation-provider-adapter.js";
+import { Ac5eEligibilityAdapter } from "./integrations/ac5e-eligibility-adapter.js";
 import { CatMetadataAuthoringService, isValidAutomationVersion } from "./authoring/cat-metadata-authoring-service.js";
 import { CatConfigurationAuthoringService } from "./authoring/cat-configuration-authoring-service.js";
 import { CatMetadataContextMenuService } from "./authoring/cat-metadata-context-menu-service.js";
@@ -67,6 +68,8 @@ import { ActivityExecutionService } from "./activities/activity-execution-servic
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
+import { SneakAttackEligibilityService } from "./sneak-attack/eligibility-service.js";
+import { SneakAttackActivityService } from "./sneak-attack/activity-service.js";
 import { RegionAuthorityService } from "./regions/region-authority-service.js";
 import { RegionCellStateService } from "./regions/region-cell-state-service.js";
 import { RegionOccupancyService } from "./regions/region-occupancy-service.js";
@@ -99,6 +102,7 @@ const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const catAutomationRegistry = new CatAutomationRegistry();
 const catAutomationProvider = new CatAutomationProviderAdapter();
+const ac5eEligibility = new Ac5eEligibilityAdapter();
 const catMetadataAuthoring = new CatMetadataAuthoringService();
 const catConfigurationAuthoring = new CatConfigurationAuthoringService();
 const catMetadataContextMenu = new CatMetadataContextMenuService({
@@ -185,6 +189,8 @@ const sneakAttackDeclarations = new SneakAttackDeclarationService({
   parser: sneakAttackDeclarationParser,
   catAutomation: catAutomationProvider
 });
+const sneakAttackEligibility = new SneakAttackEligibilityService({ ac5e: ac5eEligibility });
+const sneakAttackActivities = new SneakAttackActivityService({ activities, catSpell });
 const regions = new RegionAuthorityService({ socket, authority: reactionAuthority });
 const regionCells = new RegionCellStateService({ socket, authority: reactionAuthority, regions });
 const regionOccupancy = new RegionOccupancyService({ cells: regionCells });
@@ -445,7 +451,10 @@ const api = new ActionEffects5eApi({
   spellModifierEvents,
   ongoingEffects,
   activities,
+  ac5eEligibility,
   sneakAttackDeclarations,
+  sneakAttackEligibility,
+  sneakAttackActivities,
   regions,
   regionCells,
   regionOccupancy,
