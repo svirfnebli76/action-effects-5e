@@ -4,6 +4,8 @@ import test from "node:test";
 import { Ac5eEligibilityAdapter } from "../scripts/integrations/ac5e-eligibility-adapter.js";
 import { SneakAttackEligibilityService } from "../scripts/sneak-attack/eligibility-service.js";
 import { SneakAttackActivityService } from "../scripts/sneak-attack/activity-service.js";
+import { SneakAttackTurnTrackerService } from "../scripts/sneak-attack/turn-tracker-service.js";
+import { SneakAttackTransactionService } from "../scripts/sneak-attack/transaction-service.js";
 
 function activityCollection(values) {
   return new Map(values.map(activity => [activity.id, activity]));
@@ -142,7 +144,7 @@ test("Sneak Attack eligibility service evaluates declaration conditions independ
     subjectToken: { id: "rogue" },
     opponentToken: { id: "target" },
     activity: { id: "weapon-attack", item: { id: "rapier" } },
-    transaction: { id: "tx", targetUuid: "Scene.s.Token.target" },
+    transaction: { id: "tx", sneakTargetUuid: "Scene.s.Token.target" },
     parentWorkflow: { id: "parent", activity: { uuid: "Item.rapier.Activity.attack" } }
   };
   const result = service.evaluateAll([allow, deny, unconditional], context);
@@ -202,7 +204,8 @@ test("Sneak Attack activity semantic targets are explicit and transaction-bound"
     targets: new Set([{ uuid: "Token.one" }, { uuid: "Token.two" }]),
     hitTargets: new Set([{ uuid: "Token.two" }])
   };
-  assert.deepEqual(service.resolveSemanticTargets("sneakTarget", { transaction: { targetUuid: "Token.sneak" } }).targetUuids, ["Token.sneak"]);
+  assert.deepEqual(service.resolveSemanticTargets("sneakTarget", { transaction: { sneakTargetUuid: "Token.sneak" } }).targetUuids, ["Token.sneak"]);
+  assert.deepEqual(service.resolveSemanticTargets("sneakTarget", { transaction: { targetUuid: "Token.legacy" } }).targetUuids, ["Token.legacy"], "legacy transaction.targetUuid remains supported");
   assert.deepEqual(service.resolveSemanticTargets("self", { subjectToken: { document: { uuid: "Token.self" } } }).targetUuids, ["Token.self"]);
   assert.deepEqual(service.resolveSemanticTargets("parentTargets", { parentWorkflow }).targetUuids, ["Token.one", "Token.two"]);
   assert.deepEqual(service.resolveSemanticTargets("parentHitTargets", { parentWorkflow }).targetUuids, ["Token.two"]);
@@ -234,7 +237,7 @@ test("Sneak Attack activity execution translates resource/dialog policy, parent 
   const catSpell = { getActivityByIdentifier: () => trip, getStatus: () => ({ active: true }) };
   const service = new SneakAttackActivityService({ activities, catSpell });
   const outcome = await service.execute(entry, {
-    transaction: { id: "tx-123", targetUuid: "Scene.test.Token.target" },
+    transaction: { id: "tx-123", sneakTargetUuid: "Scene.test.Token.target" },
     parentWorkflow: { id: "parent-workflow", activity: { uuid: "Actor.rogue.Item.rapier.Activity.attack" } }
   });
 
@@ -256,4 +259,57 @@ test("Sneak Attack activity execution translates resource/dialog policy, parent 
   });
   assert.equal(outcome.resolvedActivity.identifier, "trip");
   assert.equal(outcome.semanticTarget, "sneakTarget");
+});
+
+
+test("Phase C transaction snapshots feed Phase B eligibility and semantic targeting without aliases", () => {
+  const turns = new SneakAttackTurnTrackerService();
+  const transactions = new SneakAttackTransactionService({ turns });
+  const actor = {
+    uuid: "Actor.rogue",
+    getFlag: () => null
+  };
+  const subjectToken = { uuid: "Scene.test.Token.rogue", actor };
+  const targetUuid = "Scene.test.Token.target";
+  const created = transactions.create({
+    actor,
+    subjectToken,
+    sneakTargetUuid: targetUuid,
+    combat: null,
+    id: "tx-phase-e-contract"
+  });
+
+  assert.equal(created.created, true);
+  assert.equal(created.transaction.sneakTargetUuid, targetUuid);
+  assert.equal(created.transaction.targetUuid, undefined, "transaction model intentionally exposes sneakTargetUuid, not a synthetic targetUuid alias");
+
+  const calls = [];
+  const eligibility = new SneakAttackEligibilityService({
+    ac5e: {
+      evaluateCondition(request) {
+        calls.push(request);
+        return { ok: true, eligible: true, reason: null, result: true };
+      },
+      getStatus: () => ({ active: true }),
+      getStats: () => ({})
+    }
+  });
+  const entry = makeEntry({ condition: "allow" });
+  const eligible = eligibility.evaluate(entry, {
+    subjectToken,
+    opponentToken: { uuid: targetUuid, actor: { uuid: "Actor.target" } },
+    transaction: created.transaction
+  });
+  assert.equal(eligible.eligible, true);
+  assert.equal(calls[0].context.sneakTargetUuid, targetUuid);
+
+  const activities = new SneakAttackActivityService({
+    activities: { getStats: () => ({}) },
+    catSpell: { getStatus: () => ({}) }
+  });
+  const targetResolution = activities.resolveSemanticTargets("sneakTarget", {
+    transaction: created.transaction
+  });
+  assert.equal(targetResolution.resolved, true);
+  assert.deepEqual(targetResolution.targetUuids, [targetUuid]);
 });

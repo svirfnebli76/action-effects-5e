@@ -156,7 +156,7 @@ export class SneakAttackActivityService {
     const parentWorkflow = context?.parentWorkflow ?? null;
     switch (target) {
       case "sneakTarget": {
-        const uuid = context?.transaction?.targetUuid ?? context?.targetUuid ?? context?.sneakTargetUuid ?? null;
+        const uuid = context?.transaction?.sneakTargetUuid ?? context?.transaction?.targetUuid ?? context?.targetUuid ?? context?.sneakTargetUuid ?? null;
         return uuid ? { resolved: true, targetUuids: [uuid], reason: null } : { resolved: false, targetUuids: [], reason: "sneak-target-unavailable" };
       }
       case "self": {

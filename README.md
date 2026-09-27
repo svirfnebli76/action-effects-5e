@@ -76,6 +76,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.12 installation
+
+Install the complete module folder and reload Foundry. v0.4.5.12 corrects the generic Sneak Attack service-to-service target contract so eligibility and child Activity semantic targeting consume the canonical Phase C `transaction.sneakTargetUuid` field directly, with the legacy `transaction.targetUuid` spelling retained only as a compatibility fallback. No Sneak Attack Item, Rogue feature rules, compendium content, 3D Crosshairs, Region-local 3D Cell State, packs, or assets are changed.
+
 ## v0.4.5.11 installation
 
 Install the complete module folder and reload Foundry. v0.4.5.11 adds generic Sneak Attack parent-workflow damage infrastructure: callers provide an already-final damage formula, while AE5E validates the committed parent transaction and delegates DamageRoll construction, critical conversion, damage-type inheritance, and attachment to CAT's `workflowUtils.bonusDamage()` on the existing Midi parent workflow. No Sneak Attack Item, Rogue scaling table, feature-specific Rogue rules, compendium content, 3D Crosshairs, Region-local 3D Cell State, or assets are changed.

@@ -1,3 +1,10 @@
+## 0.4.5.12 — Sneak Attack transaction target contract correction
+
+- Corrects the Phase E integration contract so generic Sneak Attack eligibility and child-Activity semantic targeting consume the canonical Phase C transaction field `sneakTargetUuid` directly.
+- Retains the earlier `transaction.targetUuid` spelling only as a compatibility fallback for callers that still supply it.
+- Adds an integration regression that creates a real Phase C transaction snapshot and feeds it directly into Phase B eligibility and semantic targeting without any synthetic alias.
+- No Sneak Attack Item, Rogue feature rules, CAT provider behavior, DAE declaration grammar, parent-damage behavior, compendium content, 3D Crosshairs, Region-local 3D Cell State, packs, or assets are changed.
+
 ## 0.4.5.11 — Sneak Attack parent-workflow damage infrastructure
 
 - Adds the generic Phase D Sneak Attack parent-damage bridge without adding Rogue feature rules or a Sneak Attack Item to AE5E. Callers supply the already-final damage formula after transaction choices are resolved.

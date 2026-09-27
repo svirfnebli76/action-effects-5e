@@ -15,7 +15,7 @@ function transactionContext(context = {}, entry = null) {
     transactionId: transaction?.id ?? context?.transactionId ?? null,
     parentWorkflowId: context?.parentWorkflow?.id ?? context?.parentWorkflowId ?? null,
     parentActivityUuid: context?.parentWorkflow?.activity?.uuid ?? context?.parentActivityUuid ?? null,
-    sneakTargetUuid: transaction?.targetUuid ?? context?.targetUuid ?? context?.sneakTargetUuid ?? null,
+    sneakTargetUuid: transaction?.sneakTargetUuid ?? transaction?.targetUuid ?? context?.targetUuid ?? context?.sneakTargetUuid ?? null,
     declaration: snapshotEntry(entry)
   };
 }
