@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.5.9";
+export const MODULE_VERSION = "0.4.5.10";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -178,6 +178,19 @@ export const SNEAK_ATTACK_DECLARATION_TYPES = Object.freeze({
   RULE: "rule",
   OPTION_MODIFIER: "optionModifier",
   TRANSACTION_RIDER: "transactionRider"
+});
+
+// Sneak Attack transaction/turn runtime state. This is generic broker state,
+// not Item content and not part of the DAE declaration transport key.
+export const SNEAK_ATTACK_TRANSACTION_SCHEMA_VERSION = 1;
+export const SNEAK_ATTACK_USAGE_SCHEMA_VERSION = 1;
+export const SNEAK_ATTACK_USAGE_FLAG = "sneakAttackUsage";
+export const SNEAK_ATTACK_MAX_RECENT_TRANSACTIONS = 50;
+export const SNEAK_ATTACK_TRANSACTION_STATES = Object.freeze({
+  OPEN: "open",
+  COMMITTED: "committed",
+  DECLINED: "declined",
+  BLOCKED: "blocked"
 });
 
 export const SME_PHASES = Object.freeze({

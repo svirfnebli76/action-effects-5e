@@ -78,6 +78,10 @@ import {
   SNEAK_ATTACK_DECLARATION_KEY,
   SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION,
   SNEAK_ATTACK_DECLARATION_TYPES,
+  SNEAK_ATTACK_TRANSACTION_SCHEMA_VERSION,
+  SNEAK_ATTACK_USAGE_SCHEMA_VERSION,
+  SNEAK_ATTACK_USAGE_FLAG,
+  SNEAK_ATTACK_TRANSACTION_STATES,
   TELEPORT_POLICIES
 } from "./core/constants.js";
 import { CROSSHAIR_3D_SHAPES } from "./crosshairs3d/geometry-service.js";
@@ -119,6 +123,8 @@ export class ActionEffects5eApi {
     sneakAttackDeclarations,
     sneakAttackEligibility,
     sneakAttackActivities,
+    sneakAttackTurns,
+    sneakAttackTransactions,
     regions,
     regionCells,
     regionOccupancy,
@@ -225,6 +231,10 @@ export class ActionEffects5eApi {
       SNEAK_ATTACK_DECLARATION_KEY,
       SNEAK_ATTACK_CHANGE_TYPE,
       SNEAK_ATTACK_DECLARATION_TYPES,
+      SNEAK_ATTACK_TRANSACTION_SCHEMA_VERSION,
+      SNEAK_ATTACK_USAGE_SCHEMA_VERSION,
+      SNEAK_ATTACK_USAGE_FLAG,
+      SNEAK_ATTACK_TRANSACTION_STATES,
       REGION_AUTHORITY_FLAG,
       REGION_CELL_FLAG,
       REGION_CELL_SCHEMA_VERSION,
@@ -409,6 +419,26 @@ export class ActionEffects5eApi {
         execute: (entry, context) => sneakAttackActivities.execute(entry, context),
         getStatus: () => sneakAttackActivities.getStatus(),
         getStats: () => sneakAttackActivities.getStats()
+      }),
+      turns: Object.freeze({
+        resolve: (combat) => sneakAttackTurns.resolveTurn(combat),
+        inspect: (actor, options) => sneakAttackTurns.inspect(actor, options),
+        isAvailable: (actor, options) => sneakAttackTurns.isAvailable(actor, options),
+        commit: (actor, options) => sneakAttackTurns.commit(actor, options),
+        getStatus: () => sneakAttackTurns.getStatus(),
+        getStats: () => sneakAttackTurns.getStats()
+      }),
+      transactions: Object.freeze({
+        create: (request) => sneakAttackTransactions.create(request),
+        setSelections: (transactionId, selectedDeclarationIds, options) => sneakAttackTransactions.setSelections(transactionId, selectedDeclarationIds, options),
+        recordChildOutcome: (transactionId, declarationId, outcome) => sneakAttackTransactions.recordChildOutcome(transactionId, declarationId, outcome),
+        canCommit: (transactionId, options) => sneakAttackTransactions.canCommit(transactionId, options),
+        commitOnOk: (transactionId, options) => sneakAttackTransactions.commitOnOk(transactionId, options),
+        decline: (transactionId, options) => sneakAttackTransactions.decline(transactionId, options),
+        get: (transactionId) => sneakAttackTransactions.get(transactionId),
+        getRecent: () => sneakAttackTransactions.getRecent(),
+        getStatus: () => sneakAttackTransactions.getStatus(),
+        getStats: () => sneakAttackTransactions.getStats()
       })
     });
 

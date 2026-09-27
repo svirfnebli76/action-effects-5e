@@ -1,3 +1,13 @@
+## 0.4.5.10 — Sneak Attack transaction and combat-turn infrastructure
+
+- Adds the generic Phase C Sneak Attack transaction model with unique transaction IDs, committed sneak-target UUIDs, parent workflow/activity linkage, declaration selections, caller-supplied dice accounting, child-workflow result storage, and diagnostic history.
+- Adds current-combat-turn tracking keyed by combat ID, round, turn index, and active combatant identity so own-turn and off-turn Sneak Attack usage windows are independent rather than once-per-round.
+- Adds explicit `commitOnOk()` and `decline()` transaction boundaries: OK commits usage immediately for the current Foundry turn, while Do Not Use leaves usage untouched; stale dialogs fail closed if the combat turn changes before commitment.
+- Persists only the latest tracked usage receipt on the actor under the module runtime flag; outside combat remains intentionally untracked because Foundry has no authoritative current turn.
+- Exposes turn inspection/commit and transaction create/select/record/commit/decline diagnostics through `api.sneakAttack.turns` and `api.sneakAttack.transactions`.
+- Adds eight Phase C regressions covering own-turn use, off-turn reactions, same-turn blocking, next-turn availability, round rollover, Do Not Use, OK idempotency, stale-turn protection, target retention, dice accounting, and child-result capture.
+- No Sneak Attack Item, Cunning Strike/Devious Strikes Item, Rogue scaling table, feature-specific rules, compendium content, 3D Crosshairs, Region-local 3D Cell State, or assets are changed.
+
 ## 0.4.5.9 — AC5E eligibility debug-contract correction
 
 - Corrects the Phase B AC5E adapter so AE5E boolean debug state is not forwarded directly to AC5E `safeEval()`, whose `debug` parameter is mutable metadata.

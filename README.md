@@ -76,9 +76,9 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.5.9 installation
+## v0.4.5.10 installation
 
-Install the complete module folder and reload Foundry. v0.4.5.9 corrects the AC5E eligibility adapter so AE5E boolean debug state is never forwarded directly to AC5E safeEval metadata. This prevents AC5E condition evaluation from throwing before evaluating expressions such as `true` or `false`. No Sneak Attack rules, Activity behavior, CAT/DAE infrastructure, 3D Crosshairs, Region-local 3D Cell State, compendium content, or assets are otherwise changed.
+Install the complete module folder and reload Foundry. v0.4.5.10 adds generic Sneak Attack transaction and combat-turn usage infrastructure: transactions retain the committed target and generic selection/result state, while once-per-turn usage is keyed to the actual Foundry combat turn and is committed only at the explicit OK boundary. Do Not Use does not consume usage, and outside combat remains intentionally untracked. No Sneak Attack Item, Rogue feature rules, compendium content, 3D Crosshairs, Region-local 3D Cell State, or assets are changed.
 
 ## v0.4.5.8 installation
 

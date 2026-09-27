@@ -5,7 +5,9 @@ import {
   MODULE_ID,
   SNEAK_ATTACK_CHANGE_TYPE,
   SNEAK_ATTACK_DECLARATION_KEY,
-  SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION
+  SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION,
+  SNEAK_ATTACK_USAGE_FLAG,
+  SNEAK_ATTACK_TRANSACTION_STATES
 } from "../scripts/core/constants.js";
 import { CatAutomationProviderAdapter } from "../scripts/integrations/cat-automation-provider-adapter.js";
 import { SneakAttackDeclarationParser } from "../scripts/sneak-attack/declaration-parser.js";
@@ -317,6 +319,26 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
       getStatus: () => ({ active: true }),
       getStats: () => ({})
     },
+    sneakAttackTurns: {
+      resolveTurn: combat => ({ key: combat?.id ?? "turn" }),
+      inspect: () => ({ ok: true, available: true }),
+      isAvailable: () => true,
+      commit: async () => ({ committed: true }),
+      getStatus: () => ({ outsideCombatPolicy: "untracked" }),
+      getStats: () => ({})
+    },
+    sneakAttackTransactions: {
+      create: request => ({ created: true, request }),
+      setSelections: () => ({ updated: true }),
+      recordChildOutcome: () => ({ recorded: true }),
+      canCommit: () => ({ available: true }),
+      commitOnOk: async () => ({ committed: true }),
+      decline: () => ({ declined: true }),
+      get: id => ({ id }),
+      getRecent: () => [],
+      getStatus: () => ({ activeTransactions: 0 }),
+      getStats: () => ({})
+    },
     regions: stub,
     regionCells: stub,
     regionOccupancy: stub,
@@ -372,6 +394,8 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
 
   assert.equal(api.constants.SNEAK_ATTACK_DECLARATION_KEY, SNEAK_ATTACK_DECLARATION_KEY);
   assert.equal(api.constants.SNEAK_ATTACK_CHANGE_TYPE, SNEAK_ATTACK_CHANGE_TYPE);
+  assert.equal(api.constants.SNEAK_ATTACK_USAGE_FLAG, SNEAK_ATTACK_USAGE_FLAG);
+  assert.equal(api.constants.SNEAK_ATTACK_TRANSACTION_STATES.OPEN, SNEAK_ATTACK_TRANSACTION_STATES.OPEN);
   assert.equal(api.sneakAttack.declarations.parse("trip").declaration.id, "trip");
   assert.deepEqual(await api.sneakAttack.declarations.compileActor({ id: "rogue" }), {
     ok: true,
@@ -383,4 +407,8 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
   assert.equal(api.sneakAttack.eligibility.evaluate({ declaration: { id: "trip" } }, {}).eligible, true);
   assert.equal(api.sneakAttack.activities.resolve({ declaration: { activity: "trip" } }, {}).resolved, true);
   assert.equal((await api.sneakAttack.activities.execute({}, {})).executed, true);
+  assert.equal(api.sneakAttack.turns.isAvailable({}), true);
+  assert.equal((await api.sneakAttack.turns.commit({}, { transactionId: "tx" })).committed, true);
+  assert.equal(api.sneakAttack.transactions.create({}).created, true);
+  assert.equal((await api.sneakAttack.transactions.commitOnOk("tx")).committed, true);
 });

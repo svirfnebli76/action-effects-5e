@@ -70,6 +70,8 @@ import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
 import { SneakAttackEligibilityService } from "./sneak-attack/eligibility-service.js";
 import { SneakAttackActivityService } from "./sneak-attack/activity-service.js";
+import { SneakAttackTurnTrackerService } from "./sneak-attack/turn-tracker-service.js";
+import { SneakAttackTransactionService } from "./sneak-attack/transaction-service.js";
 import { RegionAuthorityService } from "./regions/region-authority-service.js";
 import { RegionCellStateService } from "./regions/region-cell-state-service.js";
 import { RegionOccupancyService } from "./regions/region-occupancy-service.js";
@@ -191,6 +193,8 @@ const sneakAttackDeclarations = new SneakAttackDeclarationService({
 });
 const sneakAttackEligibility = new SneakAttackEligibilityService({ ac5e: ac5eEligibility });
 const sneakAttackActivities = new SneakAttackActivityService({ activities, catSpell });
+const sneakAttackTurns = new SneakAttackTurnTrackerService();
+const sneakAttackTransactions = new SneakAttackTransactionService({ turns: sneakAttackTurns });
 const regions = new RegionAuthorityService({ socket, authority: reactionAuthority });
 const regionCells = new RegionCellStateService({ socket, authority: reactionAuthority, regions });
 const regionOccupancy = new RegionOccupancyService({ cells: regionCells });
@@ -455,6 +459,8 @@ const api = new ActionEffects5eApi({
   sneakAttackDeclarations,
   sneakAttackEligibility,
   sneakAttackActivities,
+  sneakAttackTurns,
+  sneakAttackTransactions,
   regions,
   regionCells,
   regionOccupancy,
