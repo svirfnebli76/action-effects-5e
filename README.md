@@ -76,6 +76,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.13 installation
+
+Install the complete module folder and reload Foundry. v0.4.5.13 adds an empty public `Class Features` Item compendium under the existing `Action Effects 5E` compendium folder and exposes that pack through AE5E's established CAT public-automation registration allowlist. No Sneak Attack Item or Rogue-specific rules are added; the accepted v0.4.5.12 Sneak Attack infrastructure remains unchanged.
+
 ## v0.4.5.12 installation
 
 Install the complete module folder and reload Foundry. v0.4.5.12 corrects the generic Sneak Attack service-to-service target contract so eligibility and child Activity semantic targeting consume the canonical Phase C `transaction.sneakTargetUuid` field directly, with the legacy `transaction.targetUuid` spelling retained only as a compatibility fallback. No Sneak Attack Item, Rogue feature rules, compendium content, 3D Crosshairs, Region-local 3D Cell State, packs, or assets are changed.

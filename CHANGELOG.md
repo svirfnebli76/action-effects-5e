@@ -1,3 +1,11 @@
+## 0.4.5.13 — Class Features compendium foundation
+
+- Adds a new empty public Item compendium named `Class Features` at `packs/class-features`.
+- Adds a `Class Features` child folder under the existing `Action Effects 5E` compendium folder and places the new pack there.
+- Adds `action-effects-5e.class-features` to AE5E's explicit CAT public-automation pack allowlist so future class-feature Items in this pack can register through the established CAT metadata pipeline.
+- Adds focused regression coverage for the manifest declaration, pack-folder grouping, LevelDB pack presence, and CAT public-pack exposure.
+- No Sneak Attack Item or Rogue-specific rules are added in this release; the accepted Sneak Attack infrastructure from v0.4.5.12 is unchanged.
+
 ## 0.4.5.12 — Sneak Attack transaction target contract correction
 
 - Corrects the Phase E integration contract so generic Sneak Attack eligibility and child-Activity semantic targeting consume the canonical Phase C transaction field `sneakTargetUuid` directly.

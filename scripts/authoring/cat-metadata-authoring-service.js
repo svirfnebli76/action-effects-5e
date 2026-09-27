@@ -16,7 +16,8 @@ export const CAT_PUBLIC_AUTOMATION_PACK_IDS = Object.freeze([
   `${MODULE_ID}.spells-level-7`,
   `${MODULE_ID}.spells-level-8`,
   `${MODULE_ID}.spells-level-9`,
-  `${MODULE_ID}.actions-common`
+  `${MODULE_ID}.actions-common`,
+  `${MODULE_ID}.class-features`
 ]);
 
 export const CAT_INTERNAL_PACK_IDS = Object.freeze([
