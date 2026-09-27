@@ -1,3 +1,13 @@
+## 0.4.5.11 — Sneak Attack parent-workflow damage infrastructure
+
+- Adds the generic Phase D Sneak Attack parent-damage bridge without adding Rogue feature rules or a Sneak Attack Item to AE5E. Callers supply the already-final damage formula after transaction choices are resolved.
+- Delegates bonus DamageRoll construction, critical-hit conversion, parent damage-type inheritance, and attachment to the existing parent Midi workflow to CAT `workflowUtils.bonusDamage()`, preserving the live-accepted parent-workflow architecture.
+- Adds transaction-bound validation requiring a committed transaction and matching parent workflow before injection, plus bounded per-workflow/transaction duplicate protection.
+- Exposes `api.sneakAttack.damage.inject(...)`, `injectForTransaction(...)`, status, and diagnostics/statistics for generic Item/broker consumers.
+- Extends the CAT spell/workflow adapter with characterized `bonusDamage()` capability detection and forwarding.
+- Adds six Phase D regressions covering normal damage, critical delegation, default/explicit damage type behavior, transaction binding, duplicate prevention, CAT failure/retry, and fail-safe invalid requests.
+- No Sneak Attack Item, Cunning Strike/Devious Strikes Item, Rogue scaling table, feature-specific rules, compendium content, 3D Crosshairs, Region-local 3D Cell State, or assets are changed.
+
 ## 0.4.5.10 — Sneak Attack transaction and combat-turn infrastructure
 
 - Adds the generic Phase C Sneak Attack transaction model with unique transaction IDs, committed sneak-target UUIDs, parent workflow/activity linkage, declaration selections, caller-supplied dice accounting, child-workflow result storage, and diagnostic history.

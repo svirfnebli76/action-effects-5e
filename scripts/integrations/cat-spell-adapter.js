@@ -64,6 +64,7 @@ export class CatSpellAdapter {
     syntheticActivities: 0,
     syntheticItems: 0,
     completeActivityUses: 0,
+    bonusDamageCalls: 0,
     rollUtilityCalls: 0,
     damageRollRebuildCalls: 0,
     damageRollRetagCalls: 0,
@@ -115,6 +116,7 @@ export class CatSpellAdapter {
         getActivityByIdentifier: functionAvailable(itemUtils?.getActivityByIdentifier),
         getItemDamageTypes: functionAvailable(itemUtils?.getItemDamageTypes),
         completeActivityUse: functionAvailable(workflowUtils?.completeActivityUse),
+        bonusDamage: functionAvailable(workflowUtils?.bonusDamage),
         rollDiceSync: functionAvailable(rollUtils?.rollDiceSync),
         rollDice: functionAvailable(rollUtils?.rollDice),
         getRollsTotal: functionAvailable(rollUtils?.getRollsTotal),
@@ -295,6 +297,17 @@ export class CatSpellAdapter {
     const fn = this.#require("workflowUtils", "completeActivityUse");
     this.#stats.completeActivityUses += 1;
     return fn(activity, targets, options);
+  }
+
+  bonusDamage(workflow, formula, options = {}) {
+    const fn = this.#require("workflowUtils", "bonusDamage");
+    this.#stats.bonusDamageCalls += 1;
+    this.#record("bonusDamage", {
+      workflowId: workflow?.id ?? workflow?.uuid ?? null,
+      formula: String(formula),
+      options
+    });
+    return fn(workflow, formula, options);
   }
 
   rollDiceSync(...args) { return this.#callRoll("rollDiceSync", args); }

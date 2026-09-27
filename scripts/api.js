@@ -125,6 +125,7 @@ export class ActionEffects5eApi {
     sneakAttackActivities,
     sneakAttackTurns,
     sneakAttackTransactions,
+    sneakAttackDamage,
     regions,
     regionCells,
     regionOccupancy,
@@ -439,6 +440,12 @@ export class ActionEffects5eApi {
         getRecent: () => sneakAttackTransactions.getRecent(),
         getStatus: () => sneakAttackTransactions.getStatus(),
         getStats: () => sneakAttackTransactions.getStats()
+      }),
+      damage: Object.freeze({
+        inject: (workflow, options) => sneakAttackDamage.inject(workflow, options),
+        injectForTransaction: (workflow, transaction, options) => sneakAttackDamage.injectForTransaction(workflow, transaction, options),
+        getStatus: () => sneakAttackDamage.getStatus(),
+        getStats: () => sneakAttackDamage.getStats()
       })
     });
 

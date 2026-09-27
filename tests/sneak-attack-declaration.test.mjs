@@ -339,6 +339,12 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
       getStatus: () => ({ activeTransactions: 0 }),
       getStats: () => ({})
     },
+    sneakAttackDamage: {
+      inject: async () => ({ injected: true }),
+      injectForTransaction: async () => ({ injected: true, transactionId: "tx" }),
+      getStatus: () => ({ bonusDamageAvailable: true }),
+      getStats: () => ({})
+    },
     regions: stub,
     regionCells: stub,
     regionOccupancy: stub,
@@ -411,4 +417,7 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
   assert.equal((await api.sneakAttack.turns.commit({}, { transactionId: "tx" })).committed, true);
   assert.equal(api.sneakAttack.transactions.create({}).created, true);
   assert.equal((await api.sneakAttack.transactions.commitOnOk("tx")).committed, true);
+  assert.equal((await api.sneakAttack.damage.inject({}, { formula: "1d6" })).injected, true);
+  assert.equal((await api.sneakAttack.damage.injectForTransaction({}, { id: "tx" }, { formula: "1d6" })).transactionId, "tx");
+  assert.equal(api.sneakAttack.damage.getStatus().bonusDamageAvailable, true);
 });
