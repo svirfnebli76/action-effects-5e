@@ -139,12 +139,21 @@ export class Ac5eEligibilityAdapter {
 
     try {
       const ac5e = this.#ac5eAccessor();
-      const raw = ac5e.safeEval({
+      // AC5E treats `debug` as a mutable metadata object (it assigns
+      // `debug.log` internally). Never forward AE5E's boolean debug switch
+      // directly; `false` would throw before the expression is evaluated.
+      const debugMetadata = debug && typeof debug === "object"
+        ? { ...debug }
+        : debug === true
+          ? {}
+          : undefined;
+      const request = {
         expression: normalizedExpression,
         sandbox: built.sandbox,
-        mode: "condition",
-        debug
-      });
+        mode: "condition"
+      };
+      if (debugMetadata !== undefined) request.debug = debugMetadata;
+      const raw = ac5e.safeEval(request);
       const eligible = Boolean(raw);
       if (eligible) this.#stats.trueResults += 1;
       else this.#stats.falseResults += 1;

@@ -1,3 +1,10 @@
+## 0.4.5.9 — AC5E eligibility debug-contract correction
+
+- Corrects the Phase B AC5E adapter so AE5E boolean debug state is not forwarded directly to AC5E `safeEval()`, whose `debug` parameter is mutable metadata.
+- Omits `debug` for the normal false/default path, passes an empty metadata object for explicit debug mode, and shallow-copies supplied debug metadata objects.
+- Adds a regression reproducing AC5E 14.533.18-style `debug.log` mutation; literal true/false condition evaluation no longer fails before expression evaluation.
+- No Sneak Attack rules, child Activity behavior, CAT/DAE infrastructure, 3D Crosshairs, Region-local 3D Cell State, compendium content, or assets are changed.
+
 ## 0.4.5.8 — Sneak Attack eligibility and child Activity infrastructure
 
 - Adds the generic Phase B Sneak Attack eligibility layer using AC5E's public `evaluationData()` and `safeEval(..., mode: "condition")` helpers; AE5E does not implement a competing expression engine.

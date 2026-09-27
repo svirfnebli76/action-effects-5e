@@ -67,7 +67,35 @@ test("AC5E eligibility adapter uses evaluationData + safeEval condition mode and
   assert.equal(safeEvalArgs.mode, "condition");
   assert.equal(safeEvalArgs.expression, "hasAdvantage");
   assert.equal(safeEvalArgs.sandbox.ae5e.transactionId, "tx-1");
+  assert.equal(safeEvalArgs.debug, undefined, "boolean false must not be forwarded as AC5E debug metadata");
   assert.equal(adapter.getStats().trueResults, 1);
+});
+
+test("AC5E eligibility adapter normalizes AE5E boolean debug switches to AC5E metadata objects", () => {
+  const seen = [];
+  const adapter = new Ac5eEligibilityAdapter({
+    moduleAccessor: () => ({ active: true, version: "14.533.18" }),
+    ac5eAccessor: () => ({
+      evaluationData: () => ({ actor: {} }),
+      safeEval(args) {
+        seen.push(args);
+        let debug = args.debug;
+        debug ??= {};
+        debug.log = undefined;
+        return args.expression === "true";
+      }
+    })
+  });
+
+  const defaultResult = adapter.evaluateCondition({ expression: "true" });
+  const debugResult = adapter.evaluateCondition({ expression: "true", debug: true });
+
+  assert.equal(defaultResult.ok, true);
+  assert.equal(defaultResult.eligible, true);
+  assert.equal(seen[0].debug, undefined);
+  assert.equal(debugResult.ok, true);
+  assert.equal(debugResult.eligible, true);
+  assert.deepEqual(seen[1].debug, { log: undefined });
 });
 
 test("AC5E eligibility adapter fails closed when unavailable or evaluation throws", () => {
