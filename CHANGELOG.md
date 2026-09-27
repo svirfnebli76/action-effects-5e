@@ -1,3 +1,12 @@
+## 0.4.5.7 — Sneak Attack declaration infrastructure
+
+- Adds the generic Phase A Sneak Attack declaration foundation without adding Rogue feature rules to AE5E.
+- Registers the single declarative Active Effect transport key `flags.action-effects-5e.sneakAttack` and scans matching changes independently to preserve effect and Item provenance.
+- Adds a robust quote/parenthesis/escape-aware declaration parser with numeric/boolean normalization, unknown-field preservation, and fail-safe diagnostics.
+- Resolves declaration source Items through DAE, validates current CAT provider ownership read-only, and compiles generic broker/option/rule/option-modifier/transaction-rider declarations with level/order sorting and conflict checks.
+- Exposes declaration diagnostics and read-only CAT provider inspection through the public AE5E API.
+- Adds focused Phase A regression coverage; existing 3D Crosshairs, Region-local 3D Cell State, compendiums, and assets are unchanged.
+
 ## 0.4.5.6
 
 - Removed obsolete spell-specific Web runtime/development remnants and stale public test hooks.

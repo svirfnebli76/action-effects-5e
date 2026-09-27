@@ -76,6 +76,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.7 installation
+
+Install the complete module folder and reload Foundry. v0.4.5.7 adds the generic Phase A Sneak Attack declaration foundation: one inert DAE declaration field, independent per-change scanning with provenance, robust declaration parsing, DAE source-Item resolution, read-only CAT provider validation, generic declaration compilation/order/conflict diagnostics, and public inspection APIs. No Rogue feature rules are hard-coded. Existing 3D Crosshairs, Region-local 3D Cell State, compendium Items, and assets are unchanged.
+
 ## v0.4.5.6 installation
 
 Install the complete module folder and reload Foundry. v0.4.5.6 is a source-architecture cleanup release: obsolete Item-specific development/runtime remnants are removed, retained generic tests use neutral fixtures, and a redundant legacy Region-cell simulation wrapper is retired in favor of the existing Region-local 3D Cell State foundation/stress coverage. Compendium Items and Region-local 3D Cell State behavior are unchanged.

@@ -74,6 +74,10 @@ import {
   SELECTION_INDICATOR_SOUND_VOLUME,
   SELECTION_INDICATOR_CORNER_OFFSET_FACTOR,
   SELECTION_INDICATOR_SCALE,
+  SNEAK_ATTACK_CHANGE_TYPE,
+  SNEAK_ATTACK_DECLARATION_KEY,
+  SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION,
+  SNEAK_ATTACK_DECLARATION_TYPES,
   TELEPORT_POLICIES
 } from "./core/constants.js";
 import { CROSSHAIR_3D_SHAPES } from "./crosshairs3d/geometry-service.js";
@@ -98,6 +102,7 @@ export class ActionEffects5eApi {
     catMovement,
     catSpell,
     catAutomationRegistry,
+    catAutomationProvider,
     catMetadataAuthoring,
     catConfigurationAuthoring,
     catMetadataContextMenu,
@@ -110,6 +115,7 @@ export class ActionEffects5eApi {
     spellModifierEvents,
     ongoingEffects,
     activities,
+    sneakAttackDeclarations,
     regions,
     regionCells,
     regionOccupancy,
@@ -212,6 +218,10 @@ export class ActionEffects5eApi {
       ONGOING_ACTION_ITEM_FLAG,
       ONGOING_ACTION_PROMPT_TIMEOUT_MS,
       ONGOING_ACTION_TIMINGS,
+      SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION,
+      SNEAK_ATTACK_DECLARATION_KEY,
+      SNEAK_ATTACK_CHANGE_TYPE,
+      SNEAK_ATTACK_DECLARATION_TYPES,
       REGION_AUTHORITY_FLAG,
       REGION_CELL_FLAG,
       REGION_CELL_SCHEMA_VERSION,
@@ -313,6 +323,12 @@ export class ActionEffects5eApi {
           refreshPublicCompendiums: () => catAutomationRegistry.refreshPublicCompendiums(),
           reconcilePublicCompendiums: () => catAutomationRegistry.reconcilePublicCompendiums()
         }),
+        provider: Object.freeze({
+          getCurrentAutomation: (item) => catAutomationProvider.getCurrentAutomation(item),
+          getProviderState: (item, options) => catAutomationProvider.getProviderState(item, options),
+          getStatus: () => catAutomationProvider.getStatus(),
+          getStats: () => catAutomationProvider.getStats()
+        }),
         spell: Object.freeze({
           getStatus: () => catSpell.getStatus(),
           getStats: () => catSpell.getStats()
@@ -361,6 +377,17 @@ export class ActionEffects5eApi {
     this.activities = Object.freeze({
       execute: (request) => activities.execute(request),
       getStats: () => activities.getStats()
+    });
+
+    this.sneakAttack = Object.freeze({
+      declarations: Object.freeze({
+        parse: (value) => sneakAttackDeclarations.parse(value),
+        scanActor: (actor) => sneakAttackDeclarations.scanActor(actor),
+        resolveProvenance: (effect, actor) => sneakAttackDeclarations.resolveProvenance(effect, actor),
+        compileActor: (actor) => sneakAttackDeclarations.compileActor(actor),
+        getStatus: () => sneakAttackDeclarations.getStatus(),
+        getStats: () => sneakAttackDeclarations.getStats()
+      })
     });
 
     this.ongoingEffects = Object.freeze({

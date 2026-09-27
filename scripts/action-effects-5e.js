@@ -11,6 +11,7 @@ import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
 import { CatAutomationRegistry } from "./integrations/cat-automation-registry.js";
+import { CatAutomationProviderAdapter } from "./integrations/cat-automation-provider-adapter.js";
 import { CatMetadataAuthoringService, isValidAutomationVersion } from "./authoring/cat-metadata-authoring-service.js";
 import { CatConfigurationAuthoringService } from "./authoring/cat-configuration-authoring-service.js";
 import { CatMetadataContextMenuService } from "./authoring/cat-metadata-context-menu-service.js";
@@ -63,6 +64,9 @@ import { SpellModifierEngine } from "./spell-modifiers/spell-modifier-engine.js"
 import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-event-adapter.js";
 import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.js";
 import { ActivityExecutionService } from "./activities/activity-execution-service.js";
+import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
+import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
+import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
 import { RegionAuthorityService } from "./regions/region-authority-service.js";
 import { RegionCellStateService } from "./regions/region-cell-state-service.js";
 import { RegionOccupancyService } from "./regions/region-occupancy-service.js";
@@ -94,6 +98,7 @@ const movementSpending = new MovementSpendService({ socket, accounting: movement
 const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
 const catAutomationRegistry = new CatAutomationRegistry();
+const catAutomationProvider = new CatAutomationProviderAdapter();
 const catMetadataAuthoring = new CatMetadataAuthoringService();
 const catConfigurationAuthoring = new CatConfigurationAuthoringService();
 const catMetadataContextMenu = new CatMetadataContextMenuService({
@@ -173,6 +178,13 @@ const spellModifiers = new SpellModifierEngine({
 const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifiers, authority: reactionAuthority });
 const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
+const sneakAttackDeclarationParser = new SneakAttackDeclarationParser();
+const sneakAttackDae = new SneakAttackDaeDeclarationService();
+const sneakAttackDeclarations = new SneakAttackDeclarationService({
+  dae: sneakAttackDae,
+  parser: sneakAttackDeclarationParser,
+  catAutomation: catAutomationProvider
+});
 const regions = new RegionAuthorityService({ socket, authority: reactionAuthority });
 const regionCells = new RegionCellStateService({ socket, authority: reactionAuthority, regions });
 const regionOccupancy = new RegionOccupancyService({ cells: regionCells });
@@ -420,6 +432,7 @@ const api = new ActionEffects5eApi({
   catMovement,
   catSpell,
   catAutomationRegistry,
+  catAutomationProvider,
   catMetadataAuthoring,
   catConfigurationAuthoring,
   catMetadataContextMenu,
@@ -432,6 +445,7 @@ const api = new ActionEffects5eApi({
   spellModifierEvents,
   ongoingEffects,
   activities,
+  sneakAttackDeclarations,
   regions,
   regionCells,
   regionOccupancy,
@@ -492,6 +506,7 @@ Hooks.once("init", () => {
   Logger.log("Initializing module foundation.");
   registerSettings();
   catAutomationRegistry.initialize();
+  sneakAttackDeclarations.initialize();
   catMetadataContextMenu.initialize();
   movementAccounting.initialize();
   environmentBehaviors.initialize();
@@ -518,6 +533,7 @@ Hooks.once("ready", async () => {
   }
 
   const status = dependencies.validate({ notify: true });
+  sneakAttackDeclarations.initialize();
   if (!status.healthy) {
     Logger.error("Foundation services were not started because required dependencies are unavailable.");
     return;

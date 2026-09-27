@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.5.3";
+export const MODULE_VERSION = "0.4.5.7";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -165,6 +165,19 @@ export const ONGOING_ACTION_PROMPT_TIMEOUT_MS = 10_000;
 export const ONGOING_ACTION_TIMINGS = Object.freeze({
   TURN_START: "turnStart",
   TURN_END: "turnEnd"
+});
+
+// Sneak Attack automation-family declaration transport. AE5E owns only the
+// generic broker/runtime contract; Item content owns feature-specific rules.
+export const SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION = 1;
+export const SNEAK_ATTACK_DECLARATION_KEY = `flags.${MODULE_ID}.sneakAttack`;
+export const SNEAK_ATTACK_CHANGE_TYPE = `${MODULE_ID}.sneakAttackDeclaration`;
+export const SNEAK_ATTACK_DECLARATION_TYPES = Object.freeze({
+  BROKER: "broker",
+  OPTION: "option",
+  RULE: "rule",
+  OPTION_MODIFIER: "optionModifier",
+  TRANSACTION_RIDER: "transactionRider"
 });
 
 export const SME_PHASES = Object.freeze({
