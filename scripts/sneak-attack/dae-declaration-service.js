@@ -1,5 +1,5 @@
 import {
-  SNEAK_ATTACK_CHANGE_TYPE,
+  AE5E_CHANGE_TYPE,
   SNEAK_ATTACK_DECLARATION_KEY
 } from "../core/constants.js";
 
@@ -56,8 +56,10 @@ function defaultDaeAccessor() {
  * DAE/Foundry-facing transport for Sneak Attack declarations.
  *
  * Declarations are inert data: this service registers the editor-facing field
- * and custom Foundry v14 change type, scans individual Active Effect changes,
- * and delegates origin-chain resolution to DAE. It never mutates Actor data.
+ * and AE5E's generic Foundry v14 change type, scans individual Active Effect
+ * changes, and delegates origin-chain resolution to DAE. It never mutates
+ * Actor data. The declaration key, not the generic AE5E type, determines the
+ * Sneak Attack consumer.
  */
 export class SneakAttackDaeDeclarationService {
   #daeAccessor;
@@ -101,8 +103,8 @@ export class SneakAttackDaeDeclarationService {
         const config = this.#configAccessor?.();
         const changeTypes = config?.ActiveEffect?.changeTypes;
         if (changeTypes && typeof changeTypes === "object") {
-          changeTypes[SNEAK_ATTACK_CHANGE_TYPE] = {
-            label: "AE5E Sneak Attack Declaration",
+          changeTypes[AE5E_CHANGE_TYPE] = {
+            label: "AE5E",
             defaultPriority: 0
           };
           this.#status.foundryChangeTypeRegistered = true;
@@ -134,7 +136,7 @@ export class SneakAttackDaeDeclarationService {
       active: Boolean(module?.active),
       version: module?.version ?? null,
       declarationKey: SNEAK_ATTACK_DECLARATION_KEY,
-      changeType: SNEAK_ATTACK_CHANGE_TYPE,
+      changeType: AE5E_CHANGE_TYPE,
       foundryChangeTypeRegistered: this.#status.foundryChangeTypeRegistered,
       daeAutoFieldRegistered: this.#status.daeAutoFieldRegistered,
       daeAutoFieldAvailable: typeof dae?.addAutoFields === "function" || this.#status.daeAutoFieldAvailable,

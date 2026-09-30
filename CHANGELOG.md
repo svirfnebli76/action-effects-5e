@@ -1,3 +1,12 @@
+## 0.4.5.14 — Generic lowercase AE5E Active Effect change type
+
+- Replaces the Sneak-Attack-specific custom Active Effect change type with the generic lowercase type `action-effects-5e.ae5e`, displayed in the Foundry/DAE editor simply as `AE5E`.
+- Fixes DAE v14 authoring compatibility: DAE normalizes change-type IDs to lowercase while rendering changes, so the prior camelCase `action-effects-5e.sneakAttackDeclaration` ID could not remain selected and fell back to `Custom`.
+- Keeps `flags.action-effects-5e.sneakAttack` as the authoritative Sneak Attack declaration key; the generic AE5E type is only an authoring/type marker and does not determine which subsystem consumes a declaration.
+- Publishes `AE5E_CHANGE_TYPE` through the public constants API and preserves `SNEAK_ATTACK_CHANGE_TYPE` as a compatibility alias to the new generic type.
+- Adds regression coverage requiring the registered AE5E type ID to be lowercase and preserving the inert/no-handler contract.
+- No compendium content, Item mechanics, Sneak Attack transaction behavior, declaration grammar, CAT ownership rules, or Cunning Strike data are changed in source.
+
 ## 0.4.5.13 — Class Features compendium foundation
 
 - Adds a new empty public Item compendium named `Class Features` at `packs/class-features`.

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   MODULE_ID,
+  AE5E_CHANGE_TYPE,
   SNEAK_ATTACK_CHANGE_TYPE,
   SNEAK_ATTACK_DECLARATION_KEY,
   SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION,
@@ -36,7 +37,7 @@ function makeEffect(id, values, { disabled = false, isSuppressed = false, active
     active,
     changes: values.map((value, index) => ({
       key: SNEAK_ATTACK_DECLARATION_KEY,
-      type: SNEAK_ATTACK_CHANGE_TYPE,
+      type: AE5E_CHANGE_TYPE,
       priority: index,
       value
     }))
@@ -114,11 +115,13 @@ test("DAE declaration integration registers one inert Foundry change type and on
   assert.equal(status.foundryChangeTypeRegistered, true);
   assert.equal(status.daeAutoFieldRegistered, true);
   assert.deepEqual(autoFields, [SNEAK_ATTACK_DECLARATION_KEY]);
-  assert.deepEqual(config.ActiveEffect.changeTypes[SNEAK_ATTACK_CHANGE_TYPE], {
-    label: "AE5E Sneak Attack Declaration",
+  assert.deepEqual(config.ActiveEffect.changeTypes[AE5E_CHANGE_TYPE], {
+    label: "AE5E",
     defaultPriority: 0
   });
-  assert.equal("handler" in config.ActiveEffect.changeTypes[SNEAK_ATTACK_CHANGE_TYPE], false);
+  assert.equal("handler" in config.ActiveEffect.changeTypes[AE5E_CHANGE_TYPE], false);
+  assert.equal(AE5E_CHANGE_TYPE, AE5E_CHANGE_TYPE.toLowerCase());
+  assert.equal(SNEAK_ATTACK_CHANGE_TYPE, AE5E_CHANGE_TYPE);
 });
 
 test("DAE scanner preserves individual same-key declarations and ignores inapplicable effects", () => {
@@ -399,6 +402,7 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
   });
 
   assert.equal(api.constants.SNEAK_ATTACK_DECLARATION_KEY, SNEAK_ATTACK_DECLARATION_KEY);
+  assert.equal(api.constants.AE5E_CHANGE_TYPE, AE5E_CHANGE_TYPE);
   assert.equal(api.constants.SNEAK_ATTACK_CHANGE_TYPE, SNEAK_ATTACK_CHANGE_TYPE);
   assert.equal(api.constants.SNEAK_ATTACK_USAGE_FLAG, SNEAK_ATTACK_USAGE_FLAG);
   assert.equal(api.constants.SNEAK_ATTACK_TRANSACTION_STATES.OPEN, SNEAK_ATTACK_TRANSACTION_STATES.OPEN);

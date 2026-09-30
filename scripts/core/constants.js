@@ -167,11 +167,19 @@ export const ONGOING_ACTION_TIMINGS = Object.freeze({
   TURN_END: "turnEnd"
 });
 
+// Generic AE5E Active Effect authoring marker. Keep the type ID lowercase:
+// DAE v14 normalizes change-type IDs to lowercase while rendering the editor.
+// The Active Effect key determines which AE5E subsystem consumes the value.
+export const AE5E_CHANGE_TYPE = `${MODULE_ID}.ae5e`;
+
 // Sneak Attack automation-family declaration transport. AE5E owns only the
 // generic broker/runtime contract; Item content owns feature-specific rules.
 export const SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION = 1;
 export const SNEAK_ATTACK_DECLARATION_KEY = `flags.${MODULE_ID}.sneakAttack`;
-export const SNEAK_ATTACK_CHANGE_TYPE = `${MODULE_ID}.sneakAttackDeclaration`;
+// Backward-compatible public alias. Sneak Attack declarations now use AE5E's
+// generic lowercase Active Effect change type; the declaration key determines
+// which AE5E subsystem consumes the payload.
+export const SNEAK_ATTACK_CHANGE_TYPE = AE5E_CHANGE_TYPE;
 export const SNEAK_ATTACK_DECLARATION_TYPES = Object.freeze({
   BROKER: "broker",
   OPTION: "option",
