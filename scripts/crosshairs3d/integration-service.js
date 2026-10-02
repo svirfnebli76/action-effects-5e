@@ -1,3 +1,4 @@
+import { validateChevronOptions } from "./chevron-path-service.js";
 import { MODULE_ID } from "../core/constants.js";
 import {
   CROSSHAIR_3D_PROPAGATION_MODES,
@@ -121,6 +122,9 @@ export class Crosshair3dIntegrationService {
   getCatPropagationConfig(input = {}) {
     const descriptor = clone(CROSSHAIR_3D_CAT_PROPAGATION_CONFIG);
     const requestedShape = typeof input === "string" ? input : input?.shapeType ?? input?.shape ?? input;
+    if (shapeType(requestedShape) === "chevron") {
+      descriptor.options = descriptor.options.filter(option => ["default", "none"].includes(option.value));
+    }
     if (shapeType(requestedShape) === "cone") {
       descriptor.options = descriptor.options.filter(option => option.value !== CROSSHAIR_3D_PROPAGATION_MODES.SPREAD);
     }
@@ -340,6 +344,9 @@ export class Crosshair3dIntegrationService {
       if (configuration[key] !== undefined && typeof configuration[key] !== "boolean") {
         errors.push(`${key} must be true or false.`);
       }
+    }
+    if (shapeType(configuration) === "chevron") {
+      try { validateChevronOptions(configuration); } catch (error) { errors.push(error.message); }
     }
     return errors;
   }

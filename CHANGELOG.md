@@ -1,3 +1,15 @@
+## 0.4.5.15 — Chevron Indicator and waypoint placement
+
+- Adds a PIXI-only Chevron Indicator to Action Effects 3D Crosshairs with single-point and waypoint-path placement modes. This selector is not an affected-area geometry primitive.
+- Shares the existing PIXI renderer lifecycle and one-active-placement gate with all area crosshairs; adds AbortSignal, source-change, browser-blur, and canvas-teardown cleanup.
+- Provides `crosshairs3d.chevron.showPoint()` and `showPath()` convenience calls, low-level `show({ shape: { type: "chevron" } })`, and stored Item/Activity configuration through `showConfigured()`.
+- Preserves Ctrl-click waypoint creation, plain-click route confirmation, right-click undo (cancel when empty), and Escape cancellation. Ctrl-wheel elevation respects the suite's reverse-wheel preference.
+- Adds snapped path-distance preview and caller-supplied limits; over-limit previews are red and cannot be fixed as waypoints or confirmed. Flat movement uses native equal-cost grid diagonals; vertical travel uses the accepted prototype's equal-cost XYZ policy. Point mode defaults to Euclidean distance from the source center.
+- Preserves the 110% inward chevrons, pulse, grey arrowed path, elevation gradient, change-only waypoint markers, and 16px bold labels with a 2px black stroke. Label texture resolution starts at 2 and follows the suite's shared zoom-resolution helper.
+- Returns immutable Scene-unit XYZ points plus pixel-center waypoints. Placement neither moves Tokens nor changes user targets. Movement execution, terrain, movement types/consumption, opportunity attacks, and item rules remain caller responsibilities.
+- Adds focused point/path, range, measurement-cache, configured-call, session-exclusion, and cleanup regression coverage. Existing area geometry/propagation behavior is unchanged.
+- No compendium payload is included in this release. Existing pack declarations and assets are retained unchanged.
+
 ## 0.4.5.14 — Generic lowercase AE5E Active Effect change type
 
 - Replaces the Sneak-Attack-specific custom Active Effect change type with the generic lowercase type `action-effects-5e.ae5e`, displayed in the Foundry/DAE editor simply as `AE5E`.

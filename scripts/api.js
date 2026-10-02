@@ -697,6 +697,13 @@ export class ActionEffects5eApi {
         getStats: () => crosshairs3dIntegration.getStats(),
         getRecent: () => crosshairs3dIntegration.getRecent()
       }),
+      chevron: Object.freeze({
+        show: (options = {}) => crosshairs3dPlacement.show({ ...options, shape: { type: "chevron" } }),
+        showPoint: (options = {}) => crosshairs3dPlacement.show({ ...options, shape: { type: "chevron" },
+          placement: { ...options.placement, mode: "point" } }),
+        showPath: (options = {}) => crosshairs3dPlacement.show({ ...options, shape: { type: "chevron" },
+          placement: { ...options.placement, mode: "path" } })
+      }),
       showConfigured: (options) => crosshairs3dIntegration.show(options),
       show: (options) => crosshairs3dPlacement.show(options),
       cancel: () => crosshairs3dPlacement.cancel(),

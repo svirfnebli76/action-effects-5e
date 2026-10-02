@@ -1,3 +1,4 @@
+import { Crosshair3dChevronPlacementService } from "./chevron-placement-service.js";
 import { freeLineEndpoints, freeLineWithinRange, constrainFreeLineChange } from "./free-line-placement.js";
 import { Logger } from "../core/logger.js";
 import { MODULE_ID, SETTINGS } from "../core/constants.js";
@@ -21,6 +22,7 @@ const yieldToMainThread = async () => {
 export class Crosshair3dPlacementSessionService {
   #geometry; #cells; #tokens; #range; #revisions; #targeting; #metrics; #surfaces; #renderer; #elevationGauge;
   #propagation; #propagationModes; #propagationEnvironment; #persistentAreas;
+  #chevron;
   #active = null;
   #stats = { sessions: 0, confirmed: 0, cancelled: 0, errors: 0, revisions: 0, presentations: 0,
     targetRecalculations: 0, staleDiscards: 0, coalescedRequests: 0, propagationStarts: 0, wheelEvents: 0 };
@@ -29,6 +31,7 @@ export class Crosshair3dPlacementSessionService {
     this.#geometry = geometry; this.#cells = cells; this.#tokens = tokens; this.#range = range; this.#revisions = revisions;
     this.#targeting = targeting; this.#metrics = metrics; this.#surfaces = surfaces;
     this.#renderer = renderer; this.#elevationGauge = elevationGauge;
+    this.#chevron = new Crosshair3dChevronPlacementService({ metrics, renderer });
     this.#propagation = propagation; this.#propagationModes = propagationModes;
     this.#propagationEnvironment = propagationEnvironment; this.#persistentAreas = persistentAreas;
   }
@@ -39,6 +42,7 @@ export class Crosshair3dPlacementSessionService {
 
   async show(options = {}) {
     if (this.#active) throw new Error("Only one local Action Effects 3D Crosshairs placement session may be active at a time.");
+    if (String(options.shape?.type ?? "").trim().toLowerCase() === "chevron") return this.#showChevron(options);
     const canvas = globalThis.canvas;
     if (!canvas?.ready) throw new Error("Action Effects 3D Crosshairs requires an active Scene canvas.");
     const source = options.source?.object ?? options.source?.document?.object ?? options.source;
@@ -150,6 +154,26 @@ export class Crosshair3dPlacementSessionService {
       Logger.error("Action Effects 3D Crosshairs placement failed.", error);
       throw error;
     } finally { this.#cleanup(session); }
+  }
+
+  async #showChevron(options) {
+    const selection = this.#propagationModes?.resolve?.({ itemDefault: options.propagation?.mode ?? "none", ...options.propagation })
+      ?? { mode: options.propagation?.mode ?? options.propagation?.override ?? options.propagation?.itemDefault ?? "none" };
+    if (selection.mode !== "none") throw new Error("Chevron placement supports None propagation only.");
+    const session = { id: globalThis.foundry?.utils?.randomID?.(12) ?? `${Date.now()}`,
+      finish: () => this.#chevron.cancel() };
+    this.#active = session;
+    this.#stats.sessions++;
+    try {
+      const result = await this.#chevron.show(options);
+      this.#stats[result.cancelled ? "cancelled" : "confirmed"]++;
+      return result;
+    } catch (error) {
+      this.#stats.errors++;
+      throw error;
+    } finally {
+      if (this.#active === session) this.#active = null;
+    }
   }
 
   #enqueue(session, reason) {

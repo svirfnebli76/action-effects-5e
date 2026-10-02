@@ -5,7 +5,9 @@ import { createRenderer as cone } from "./renderers/cone-renderer.js";
 import { createRenderer as freeLine } from "./renderers/free-line-renderer.js";
 import { createRenderer as sourceLine } from "./renderers/source-line-renderer.js";
 
-const renderers = Object.freeze({ prism, cylinder, sphere, cone, "free-line": freeLine, line: sourceLine });
+import { createRenderer as chevron } from "./renderers/chevron-renderer.js";
+
+const renderers = Object.freeze({ chevron, prism, cylinder, sphere, cone, "free-line": freeLine, line: sourceLine });
 /** Every session owns its complete PIXI tree, including partial-init cleanup. */
 export class Crosshair3dPixiPlacementRenderer {
   #root = null;

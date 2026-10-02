@@ -25,6 +25,9 @@ export class Crosshair3dPropagationModeService {
     if (normalizedShapeType(shapeOrType) === "cone" && mode === CROSSHAIR_3D_PROPAGATION_MODES.SPREAD) {
       throw new RangeError("Cone does not support Spread propagation. Use None or Direct.");
     }
+    if (normalizedShapeType(shapeOrType) === "chevron" && mode !== CROSSHAIR_3D_PROPAGATION_MODES.NONE) {
+      throw new RangeError("Chevron placement supports None propagation only.");
+    }
     return mode;
   }
 
