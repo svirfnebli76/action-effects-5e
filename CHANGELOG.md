@@ -1,3 +1,10 @@
+# v0.4.5.16 — Chevron movement cost
+
+- Opt-in `movement: { enabled: true, action: "walk" }` uses native Token terrain processing and movement cost for path limits and the counter.
+- Results retain physical `distance` and add `cost`, `movementDistance`, and `movementAction`; `remaining` uses cost.
+- Default Chevron behavior is unchanged. Terrain Mapper is optional.
+- Rechecks cost at confirmation and on relevant Region/Actor changes; no calculations on pulse frames or mouse changes within the same snapped square.
+
 ## 0.4.5.15 — Chevron Indicator and waypoint placement
 
 - Adds a PIXI-only Chevron Indicator to Action Effects 3D Crosshairs with single-point and waypoint-path placement modes. This selector is not an affected-area geometry primitive.

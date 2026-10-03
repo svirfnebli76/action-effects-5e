@@ -14,7 +14,20 @@ export function validateChevronOptions(options = {}) {
   if (elevationStep !== undefined && !(Number.isFinite(Number(elevationStep)) && Number(elevationStep) > 0)) {
     throw new Error("Chevron controls.elevationStep must be positive and finite.");
   }
-  return { mode, max, metric, elevation: options.capabilities?.elevation !== false };
+  const movement = options.movement;
+  if (movement !== undefined && (!movement || typeof movement !== "object" || Array.isArray(movement))) {
+    throw new Error("Chevron movement must be an options object.");
+  }
+  if (movement?.enabled !== undefined && typeof movement.enabled !== "boolean") {
+    throw new Error("Chevron movement.enabled must be true or false.");
+  }
+  if (movement?.enabled && (mode !== "path" || metric !== "grid")) {
+    throw new Error("Chevron movement cost requires grid-metric path placement.");
+  }
+  if (movement?.enabled && (typeof movement.action !== "string" || !movement.action.trim())) {
+    throw new Error("Chevron movement.action must identify a native movement action.");
+  }
+  return { mode, max, metric, movement: movement?.enabled ? { action: movement.action } : null, elevation: options.capabilities?.elevation !== false };
 }
 
 export function assertChevronGrid(grid, origin, size, distance) {
@@ -57,4 +70,27 @@ export function chevronElevationChanges(origin, waypoints) {
     const change = point.elevation - (index ? waypoints[index - 1] : origin).elevation;
     return change ? [{ point, change }] : [];
   });
+}
+
+/** Use Foundry's token-specific terrain/cost pipeline; Terrain Mapper is optional. */
+export function measureChevronMovement(points, { source, size, action }) {
+  const document = source.document;
+  const requested = points.filter((point, index) => !index ||
+    point.x !== points[index - 1].x || point.y !== points[index - 1].y ||
+    point.elevation !== points[index - 1].elevation).map(point => ({
+      x: point.x - document.width * size / 2,
+      y: point.y - document.height * size / 2,
+      elevation: point.elevation, action,
+      width: document.width, height: document.height, depth: document.depth,
+      shape: document.shape, level: document.level,
+      explicit: true, checkpoint: true, snapped: true, intermediate: false
+    }));
+  const terrainPath = source.createTerrainMovementPath(requested, { preview: true });
+  if (!Array.isArray(terrainPath) || !terrainPath.length) throw new Error("Invalid native Chevron terrain path.");
+  const result = source.measureMovementPath(terrainPath, { preview: true });
+  if (!Number.isFinite(result.distance) || result.distance < 0 ||
+      typeof result.cost !== "number" || Number.isNaN(result.cost) || result.cost < 0) {
+    throw new Error("Invalid native Chevron movement measurement.");
+  }
+  return { cost: result.cost, movementDistance: result.distance, movementAction: action };
 }

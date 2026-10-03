@@ -90,7 +90,7 @@ export function createRenderer({ parent, metrics, options }) {
         if (!same(point, cursor)) label(`${change > 0 ? "↑" : "↓"}${display(Math.abs(change))} ${units}`, point, -12, true);
       }
       if (delta) label(`Elevation ${delta > 0 ? "+" : ""}${display(delta)} ${units}`, cursor, -size * 0.62, true);
-      label(`${display(distance)}/${display(max)} ${units}`, cursor, size * 0.62, false, !valid);
+      label(`${display(revision.cost ?? distance)}/${display(max)} ${units}`, cursor, size * 0.62, false, !valid);
       updateTextResolution(labels);
     },
     frame(now) {

@@ -1,6 +1,6 @@
 import { MODULE_ID, SETTINGS } from "../core/constants.js";
 import { Logger } from "../core/logger.js";
-import { validateChevronOptions, assertChevronGrid, measureChevronPath } from "./chevron-path-service.js";
+import { validateChevronOptions, assertChevronGrid, measureChevronPath, measureChevronMovement } from "./chevron-path-service.js";
 
 const same = (a, b) => a.x === b.x && a.y === b.y && a.elevation === b.elevation;
 const stop = event => { event.preventDefault?.(); event.stopImmediatePropagation?.(); event.stopPropagation?.(); };
@@ -21,6 +21,16 @@ export class Crosshair3dChevronPlacementService {
     if (!source?.document) throw new Error("Chevron placement requires a source Token.");
     if (!canvas.grid?.isSquare || typeof canvas.grid.getCenterPoint !== "function") {
       throw new Error("Chevron placement currently requires a square-grid Scene.");
+    }
+    if (config.movement) {
+      if (typeof source.createTerrainMovementPath !== "function" || typeof source.measureMovementPath !== "function") {
+        throw new Error("Chevron movement cost requires native Token terrain and measurement APIs.");
+      }
+      const action = globalThis.CONFIG?.Token?.movement?.actions?.[config.movement.action];
+      if (!action || action.measure === false || action.teleport ||
+          (typeof action.canSelect === "function" && !action.canSelect(source.document))) {
+        throw new Error("Chevron movement action must be selectable, measured, and non-teleporting.");
+      }
     }
     const doc = source.document, metrics = this.#metrics.resolve();
     if (config.mode === "path" && (doc.width !== 1 || doc.height !== 1)) {
@@ -65,15 +75,22 @@ export class Crosshair3dChevronPlacementService {
         (event.clientY - bounds.top) * screen.height / bounds.height));
       return { ...canvas.grid.getCenterPoint(world), elevation: cursor.elevation };
     };
+    const measure = points => {
+      const distance = measureChevronPath(points, { ...metrics, grid: canvas.grid, metric: config.metric });
+      const movement = config.movement ? measureChevronMovement(points, {
+        source, size: metrics.size, action: config.movement.action
+      }) : {};
+      return { distance, ...movement };
+    };
     const publish = () => {
       if (closed) return;
       const points = [origin, ...waypoints, cursor], nextKey = JSON.stringify(points);
       if (nextKey === key) return;
-      const distance = measureChevronPath(points, { ...metrics, grid: canvas.grid, metric: config.metric });
+      const measured = measure(points), used = measured.cost ?? measured.distance;
       key = nextKey;
       revision = Object.freeze({ origin: Object.freeze({ ...origin }), cursor: Object.freeze({ ...cursor }),
-        waypoints: frozenPoints(waypoints), distance, max: config.max,
-        remaining: Math.max(0, config.max - distance), valid: distance <= config.max + 1e-6,
+        waypoints: frozenPoints(waypoints), ...measured, max: config.max,
+        remaining: Math.max(0, config.max - used), valid: used <= config.max + 1e-6,
         mode: config.mode, metric: config.metric });
       this.#renderer.update(revision, "MOVE");
       if (typeof options.onRevision === "function") {
@@ -154,9 +171,9 @@ export class Crosshair3dChevronPlacementService {
         if (config.mode === "path" && event.ctrlKey) publish();
         else {
           const finalPoints = config.mode === "path" ? waypoints : [{ ...cursor }];
-          const finalDistance = measureChevronPath([origin, ...finalPoints], { ...metrics, grid: canvas.grid, metric: config.metric });
-          if (finalDistance > config.max + 1e-6) throw new Error("Confirmed Chevron path exceeds its limit.");
-          session.finish({ points: finalPoints.map(point => ({ ...point })), distance: finalDistance });
+          const finalMeasurement = measure([origin, ...finalPoints]);
+          if ((finalMeasurement.cost ?? finalMeasurement.distance) > config.max + 1e-6) throw new Error("Confirmed Chevron path exceeds its limit.");
+          session.finish({ points: finalPoints.map(point => ({ ...point })), ...finalMeasurement });
         }
       });
       for (const type of ["mousedown", "mouseup", "click", "dblclick", "contextmenu"]) {
@@ -172,6 +189,16 @@ export class Crosshair3dChevronPlacementService {
       for (const name of ["updateToken", "deleteToken"]) hook(name, document => {
         if (document.id === doc.id && document.parent?.id === scene.id) session.finish(null);
       });
+      if (config.movement) {
+        const refreshCost = () => { key = null; publish(); };
+        for (const name of ["createRegion", "updateRegion", "deleteRegion", "createRegionBehavior", "updateRegionBehavior", "deleteRegionBehavior"]) {
+          hook(name, document => {
+            const parentScene = document.documentName === "RegionBehavior" ? document.parent?.parent : document.parent;
+            if (parentScene?.id === scene.id) refreshCost();
+          });
+        }
+        hook("updateActor", actor => { if (actor.id === source.actor?.id) refreshCost(); });
+      }
       tick = () => {
         try {
           if (closed) return;
@@ -195,7 +222,10 @@ export class Crosshair3dChevronPlacementService {
       return Object.freeze({ cancelled: false, mode: config.mode, metric: config.metric,
         origin: canonicalOrigin, waypoints: canonicalPoints, pixelWaypoints, placementPoint: destination,
         destination, pixelDestination: Object.freeze({ ...(confirmed.points.at(-1) ?? origin) }),
-        distance: confirmed.distance, max: config.max, remaining: Math.max(0, config.max - confirmed.distance),
+        distance: confirmed.distance,
+        ...(config.movement ? { cost: confirmed.cost, movementDistance: confirmed.movementDistance,
+          movementAction: confirmed.movementAction } : {}),
+        max: config.max, remaining: Math.max(0, config.max - (confirmed.cost ?? confirmed.distance)),
         sourceUuid: doc.uuid, sceneId: scene.id,
         targetIds: Object.freeze([]), targets: Object.freeze([]), propagation: null, persistentRegion: null });
     } finally {

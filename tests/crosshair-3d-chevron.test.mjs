@@ -258,3 +258,80 @@ test('raw Chevron rejects propagation, persistence, and invalid limits before a 
     assert.ok(h.clean());
   }
 });
+
+function setupMovement(cost = distance => distance + (distance >= 40 ? 10 : 0)) {
+  const h = setup();
+  globalThis.CONFIG = { Token: { movement: { actions: { walk: { measure: true, teleport: false, canSelect: () => true } } } } };
+  h.costCalls = 0;
+  h.source.createTerrainMovementPath = (points, options) => {
+    assert.equal(options.preview, true);
+    assert.equal(points[0].x, 0);
+    assert.equal(points[0].y, 0);
+    assert.ok(points.every(point => point.action === 'walk'));
+    return points;
+  };
+  h.source.measureMovementPath = (points, options) => {
+    assert.equal(options.preview, true); h.costCalls++;
+    const distance = canvas.grid.measurePath(points).distance;
+    return { distance, cost: cost(distance) };
+  };
+  return h;
+}
+const movementOptions = h => ({ ...options(h), movement: { enabled: true, action: 'walk' } });
+
+test('movement counter and confirmation use cost while preserving physical distance', async () => {
+  const h = setupMovement(); let revision;
+  const p = h.service.show({ ...movementOptions(h), onRevision: r => { revision = r; } });
+  await click(h, { clientX: 950, clientY: 50, ctrlKey: true });
+  assert.equal(revision.distance, 45); assert.equal(revision.cost, 55);
+  assert.equal(revision.valid, false); assert.equal(revision.waypoints.length, 0);
+  await click(h, { clientX: 950, clientY: 50 });
+  assert.equal(h.service.getStats().active, true);
+  h.dispatch('pointermove', { clientX: 850, clientY: 50 });
+  assert.equal(revision.distance, 40); assert.equal(revision.cost, 50);
+  assert.equal(revision.remaining, 0); assert.equal(revision.valid, true);
+  assert.ok(h.records.texts.some(t => !t.destroyed && t.text === '50/50 ft'));
+  await click(h, { clientX: 850, clientY: 50 });
+  const r = await p;
+  assert.equal(r.distance, 40); assert.equal(r.cost, 50);
+  assert.equal(r.movementDistance, 40); assert.equal(r.movementAction, 'walk');
+  assert.equal(r.remaining, 0); assert.ok(h.clean());
+});
+
+test('movement cost recomputes on square changes and Region changes, never on pulse frames', async () => {
+  const h = setupMovement(); let revision;
+  const p = h.service.show({ ...movementOptions(h), onRevision: r => { revision = r; } });
+  h.dispatch('pointermove', { clientX: 810, clientY: 50 });
+  const before = h.costCalls;
+  for (let i = 0; i < 10; i++) { h.dispatch('pointermove', { clientX: 811 + i, clientY: 50 }); await h.tick(); }
+  assert.equal(h.costCalls, before);
+  h.source.measureMovementPath = () => ({ distance: 40, cost: 60 });
+  h.hook('updateRegion', { documentName: 'Region', parent: canvas.scene });
+  assert.equal(revision.cost, 60); assert.equal(revision.valid, false);
+  h.service.cancel(); await p; assert.ok(h.clean());
+});
+
+test('infinite native costs block placement and malformed measurements clean the session', async () => {
+  let h = setupMovement(distance => distance ? Infinity : 0);
+  let p = h.service.show(movementOptions(h));
+  await click(h, { clientX: 250, clientY: 50 });
+  assert.equal(h.service.getStats().active, true);
+  h.service.cancel(); await p; assert.ok(h.clean());
+  h = setupMovement();
+  h.source.measureMovementPath = () => ({ distance: 0, cost: NaN });
+  await assert.rejects(h.service.show(movementOptions(h)), /Invalid native/);
+  assert.ok(h.clean());
+});
+
+test('invalid movement options fail before opening placement', async () => {
+  const h = setupMovement();
+  for (const extra of [
+    { movement: { enabled: true, action: 'missing' } },
+    { movement: { enabled: true } },
+    { movement: { enabled: 'yes', action: 'walk' } },
+    { movement: { enabled: true, action: 'walk' }, range: { max: 50, metric: 'euclidean' } }
+  ]) { await assert.rejects(h.service.show({ ...options(h), ...extra })); assert.ok(h.clean()); }
+  delete h.source.createTerrainMovementPath;
+  await assert.rejects(h.service.show(movementOptions(h)), /native Token/);
+  assert.ok(h.clean());
+});
