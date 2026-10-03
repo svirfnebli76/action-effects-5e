@@ -7,6 +7,7 @@ import { SocketService } from "./core/socket-service.js";
 import { MovementRegistry } from "./movement/movement-registry.js";
 import { MovementAccountingService } from "./movement/movement-accounting-service.js";
 import { MovementSpendService } from "./movement/movement-spend-service.js";
+import { MovementProtectionService } from "./movement/movement-protection-service.js";
 import { MovementService } from "./movement/movement-service.js";
 import { CatMovementAdapter } from "./integrations/cat-movement-adapter.js";
 import { CatSpellAdapter } from "./integrations/cat-spell-adapter.js";
@@ -100,6 +101,7 @@ const compatibility = new CompatibilityService();
 const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const movementAccounting = new MovementAccountingService();
+const movementProtection = new MovementProtectionService();
 const movementSpending = new MovementSpendService({ socket, accounting: movementAccounting });
 const catMovement = new CatMovementAdapter({ socket });
 const catSpell = new CatSpellAdapter();
@@ -441,6 +443,7 @@ const api = new ActionEffects5eApi({
   movement,
   movementAccounting,
   movementSpending,
+  movementProtection,
   catMovement,
   catSpell,
   catAutomationRegistry,
@@ -527,6 +530,7 @@ Hooks.once("init", () => {
   sneakAttackDeclarations.initialize();
   catMetadataContextMenu.initialize();
   movementAccounting.initialize();
+  movementProtection.initialize();
   environmentBehaviors.initialize();
 
   const module = game.modules.get(MODULE_ID);

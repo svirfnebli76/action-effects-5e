@@ -1,3 +1,12 @@
+# v0.4.5.17 — Chevron movement instructions and scoped OA protection
+
+- Moves the accepted 20px PIXI movement instruction panel into the Chevron renderer, with a 1.5-grid clearance and positioning opposite the cursor.
+- Adds `movement.instructions` (default true for movement-enabled paths) and `movement.opportunityAttackImmunity` (default false). The immunity notice describes the caller's planned protection; placement itself remains read-only.
+- Adds reusable `movement.beginOpportunityAttackImmunity()` and `withOpportunityAttackImmunity()` APIs. Transaction-owned effects apply the prepared Gambit OA flag only for the execution window and preserve other immunity contributions on cleanup.
+- Registers narrow Active Effect scrolling-label suppression through module-owned libWrapper initialization on every client. Unrelated labels continue normally.
+- Gambit's Premades and Terrain Mapper remain optional. Live Gambit v14 engine acceptance remains pending provider availability.
+- Includes no compendium data or sources; pack declarations are unchanged.
+
 # v0.4.5.16 — Chevron movement cost
 
 - Opt-in `movement: { enabled: true, action: "walk" }` uses native Token terrain processing and movement cost for path limits and the counter.

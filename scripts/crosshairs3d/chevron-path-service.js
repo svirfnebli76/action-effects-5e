@@ -27,6 +27,10 @@ export function validateChevronOptions(options = {}) {
   if (movement?.enabled && (typeof movement.action !== "string" || !movement.action.trim())) {
     throw new Error("Chevron movement.action must identify a native movement action.");
   }
+  for (const key of ["instructions", "opportunityAttackImmunity"]) {
+    if (movement?.[key] !== undefined && typeof movement[key] !== "boolean") throw new Error(`Chevron movement.${key} must be true or false.`);
+  }
+  if (movement?.opportunityAttackImmunity && !movement.enabled) throw new Error("Chevron immunity notice requires movement placement.");
   return { mode, max, metric, movement: movement?.enabled ? { action: movement.action } : null, elevation: options.capabilities?.elevation !== false };
 }
 

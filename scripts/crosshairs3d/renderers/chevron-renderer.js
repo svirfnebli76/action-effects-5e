@@ -1,3 +1,4 @@
+import { createInstructionPanel } from "./chevron-instructions.js";
 import { updateTextResolution } from "./shared.js";
 import { chevronElevationChanges } from "../chevron-path-service.js";
 
@@ -29,6 +30,8 @@ export function createRenderer({ parent, metrics, options }) {
     indicator.addChild(arm);
     return arm;
   });
+  let panel = null;
+  const instructionOptions = options.movement?.instructions;
   let labels = [], lastPalette = null;
   const started = performance.now();
   const units = globalThis.canvas.scene.grid.units || "units";
@@ -66,6 +69,10 @@ export function createRenderer({ parent, metrics, options }) {
   return {
     update(revision) {
       const { origin, cursor, waypoints, distance, max, valid } = revision;
+      if (options.movement?.enabled && instructionOptions !== false) {
+        panel ??= createInstructionPanel(root, origin, size, options.movement.opportunityAttackImmunity === true);
+        panel.update(cursor);
+      }
       indicator.position.set(cursor.x, cursor.y);
       const delta = cursor.elevation - origin.elevation;
       const ratio = Math.round(Math.min(1, Math.abs(delta) / max) * 32) / 32;
@@ -94,6 +101,7 @@ export function createRenderer({ parent, metrics, options }) {
       updateTextResolution(labels);
     },
     frame(now) {
+      panel?.frame();
       const pulse = (Math.sin((now - started) / 1300 * Math.PI * 2) + 1) / 2;
       indicator.alpha = 0.82 + pulse * 0.18;
       const offset = (pulse - 0.5) * size * 0.024;
@@ -101,6 +109,8 @@ export function createRenderer({ parent, metrics, options }) {
       updateTextResolution(labels);
     },
     clear() {
+      panel?.destroy();
+      panel = null;
       root.parent?.removeChild(root);
       root.destroy({ children: true });
       labels = [];

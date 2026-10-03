@@ -155,3 +155,7 @@ Install the complete module folder and reload Foundry. v0.4.4.38 hardens Checkpo
 Sequencer is required for AE5E automations. The placement system itself uses native PIXI and pointer input. The legacy `ae5e.crosshairs` API is removed; existing Items will be migrated after Checkpoint 4. Use `docs/testing.md` for live acceptance.
 
 v0.4.4.37 completes Checkpoint 3 propagation and persistent-area generation. Placement revisions now resolve `none`, `direct`, or `spread` against the authoritative 3D cell mask before collecting targets. Direct uses physical movement-blocking Walls and Surfaces; Spread crosses only sufficiently open shared cell faces. Confirmed persistent placements create one broad native Foundry Region carrying the exact AE5E 3D cell state. Chart-authoritative Sphere cells remain unchanged.
+
+## v0.4.5.17 movement infrastructure
+
+The Chevron renderer now owns the accepted movement instruction panel. The public movement API also provides scoped, transaction-owned opportunity-attack protection and module-owned suppression of its temporary effect's scrolling labels. See [Chevron placement API](CHEVRON_CROSSHAIR.md) for configuration and cleanup contracts. Withdraw's speed allowance, Sequencer motion, and visual effects remain in the caller macro.

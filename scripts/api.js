@@ -104,6 +104,7 @@ export class ActionEffects5eApi {
     movement,
     movementAccounting,
     movementSpending,
+    movementProtection,
     catMovement,
     catSpell,
     catAutomationRegistry,
@@ -570,6 +571,9 @@ export class ActionEffects5eApi {
     });
 
     this.movement = Object.freeze({
+      beginOpportunityAttackImmunity: (subject, options) => movementProtection.begin(subject, options),
+      withOpportunityAttackImmunity: (subject, options, callback) => movementProtection.withImmunity(subject, options, callback),
+      getProtectionStatus: () => movementProtection.getStatus(),
       registerConsumer: (config) => movement.registerConsumer(config),
       unregisterConsumer: (id) => movement.unregisterConsumer(id),
       createOperationOptions: (metadata) => movement.createOperationOptions(metadata),
