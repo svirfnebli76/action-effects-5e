@@ -81,10 +81,10 @@ await (async () => {
 
     const ae5e = game.modules.get("action-effects-5e");
     const crosshairs = ae5e?.api?.crosshairs3d;
-    if (!ae5e?.active || ae5e.version !== "0.4.5.17" ||
+    if (!ae5e?.active || ae5e.version !== "0.4.5.18" ||
         typeof crosshairs?.chevron?.showPath !== "function" ||
         typeof ae5e.api?.movement?.beginOpportunityAttackImmunity !== "function") {
-      throw new Error("Install AE5E 0.4.5.17 and reload Foundry first.");
+      throw new Error("Install AE5E 0.4.5.18 and reload Foundry first.");
     }
     const sequencer = game.modules.get("sequencer");
     manager = globalThis.Sequencer?.MotionManager;

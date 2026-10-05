@@ -39,7 +39,7 @@ export class CatMetadataAuthoringTestSuite {
 
       const pack = game.packs.get(packId);
       if (!pack) throw new Error(`Could not find ${packId}.`);
-      const index = await pack.getIndex({ fields: ["name", "type", "system.identifier", "system.source.rules", CAT_AUTOMATION_SOURCE_FLAG, CAT_AUTOMATION_VERSION_FLAG] });
+      const index = await pack.getIndex({ fields: ["name", "type", "system.identifier", "system.source", CAT_AUTOMATION_SOURCE_FLAG, CAT_AUTOMATION_VERSION_FLAG] });
       const entry = [...index].find(document => document.system?.identifier === identifier);
       if (!entry) throw new Error(`Could not find identifier '${identifier}' in ${packId}.`);
       const canonical = await pack.getDocument(entry._id);

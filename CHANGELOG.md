@@ -1,3 +1,11 @@
+# v0.4.5.18 — D&D5e 6 compendium source-index compatibility
+
+- Fixes the D&D5e 6 / Foundry v14 compendium-index collision that produced `Cannot create property 'rules' on number '1'` during CAT public-pack readiness checks.
+- CAT readiness indexing now requests the D&D5e 6 parent field `system.source` and continues reading `entry.system.source.rules`, instead of explicitly requesting the nested `system.source.rules` field that Foundry merges with the system-provided parent index field.
+- Updates CAT live/dev acceptance probes to use the D&D5e 6-safe parent-field request and adds regression coverage requiring production readiness indexing to include `system.source` and exclude `system.source.rules`.
+- Repairs a pre-existing test-only Class Features LevelDB assertion to follow the pack's `CURRENT` manifest pointer instead of a historical manifest filename; pack bytes are unchanged.
+- No Item, compendium, pack, asset, CAT metadata, Sneak Attack declaration, or automation behavior is migrated or changed.
+
 # v0.4.5.17 — Chevron movement instructions and scoped OA protection
 
 - Moves the accepted 20px PIXI movement instruction panel into the Chevron renderer, with a 1.5-grid clearance and positioning opposite the cursor.

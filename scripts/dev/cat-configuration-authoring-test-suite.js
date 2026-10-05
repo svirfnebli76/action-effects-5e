@@ -98,7 +98,7 @@ export class CatConfigurationAuthoringTestSuite {
           "name",
           "type",
           "system.identifier",
-          "system.source.rules",
+          "system.source",
           "flags.cat.automation.source",
           "flags.cat.automation.version",
           CAT_CONFIGURATION_SCHEMA_FLAG

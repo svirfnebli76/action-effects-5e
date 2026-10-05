@@ -46,7 +46,7 @@ export class CatMetadataContextMenuTestSuite {
 
       const pack = game.packs.get(packId);
       if (!pack) throw new Error(`Could not find ${packId}.`);
-      const index = await pack.getIndex({ fields: ["name", "type", "system.identifier", "system.source.rules", "flags.cat.automation.source", "flags.cat.automation.version"] });
+      const index = await pack.getIndex({ fields: ["name", "type", "system.identifier", "system.source", "flags.cat.automation.source", "flags.cat.automation.version"] });
       const entry = [...index].find(document => document.system?.identifier === identifier);
       if (!entry) throw new Error(`Could not find identifier '${identifier}' in ${packId}.`);
       const canonical = await pack.getDocument(entry._id);

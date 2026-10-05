@@ -17,7 +17,7 @@ export const CAT_AUTOMATION_SOURCE_NAME = MODULE_TITLE;
 
 const CAT_AUTOMATION_INDEX_FIELDS = Object.freeze([
   "system.identifier",
-  "system.source.rules",
+  "system.source",
   "flags.cat.automation.source",
   "flags.cat.automation.version",
   CAT_CONFIGURATION_SCHEMA_FLAG,

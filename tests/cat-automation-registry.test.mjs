@@ -53,7 +53,9 @@ function makePack(id, entries) {
       type: "Item",
       packageName: CAT_AUTOMATION_SOURCE_ID
     },
-    async getIndex() {
+    indexRequests: [],
+    async getIndex({ fields = [] } = {}) {
+      this.indexRequests.push([...fields]);
       return [...entries];
     }
   };
@@ -179,6 +181,15 @@ test("CAT provider registers only metadata-ready packs from the explicit public 
   assert.equal(stats.missingPacks, 1);
   assert.equal(status.lastError, null);
   assert.equal(status.stage, "public-compendiums");
+
+  // D&D5e 6 already includes the parent `system.source` field in normal Item
+  // compendium indexes. Requesting both that parent and `system.source.rules`
+  // makes Foundry v14's server-side index projection collide. AE5E readiness
+  // checks must therefore request only the parent source object and read
+  // `.rules` from it afterward. The second ready-pack request is CAT itself.
+  const readinessFields = readyPack.indexRequests[0];
+  assert.equal(readinessFields.includes("system.source"), true);
+  assert.equal(readinessFields.includes("system.source.rules"), false);
 });
 
 test("CAT public pack gate rejects invalid source/version/core metadata instead of publishing CAT version 0", async () => {

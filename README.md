@@ -76,6 +76,10 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.18 D&D5e 6 compendium indexing compatibility
+
+D&D5e 6 adds the parent Item field `system.source` to normal compendium indexes. AE5E CAT readiness checks now request that parent object instead of adding the nested `system.source.rules` field, avoiding Foundry v14's parent/child projection collision while preserving the existing `entry.system.source.rules` metadata contract. This release does not modify compendium or Item data.
+
 ## v0.4.5.15 Chevron Indicator
 
 The suite now includes reusable single-point and waypoint-path selection. See [Chevron placement API](CHEVRON_CROSSHAIR.md) for configuration, controls, coordinates, result fields, and current scope.

@@ -28,8 +28,11 @@ test("Class Features compendium is declared, grouped, present, and CAT-public", 
 
   const packPath = path.join(ROOT, pack.path);
   assert.equal(fs.existsSync(packPath), true);
-  assert.equal(fs.existsSync(path.join(packPath, "CURRENT")), true);
-  assert.equal(fs.existsSync(path.join(packPath, "MANIFEST-000190")), true);
+  const currentPath = path.join(packPath, "CURRENT");
+  assert.equal(fs.existsSync(currentPath), true);
+  const currentManifest = fs.readFileSync(currentPath, "utf8").trim();
+  assert.match(currentManifest, /^MANIFEST-\d+$/);
+  assert.equal(fs.existsSync(path.join(packPath, currentManifest)), true);
 
   assert.equal(
     CAT_PUBLIC_AUTOMATION_PACK_IDS.includes("action-effects-5e.class-features"),
