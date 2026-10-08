@@ -1,3 +1,13 @@
+# v0.4.5.19 — Foundry v14 Custom ActiveEffect declarations
+
+- Removes the abandoned AE5E ActiveEffect change-type registration, configuration accessor, registration status, and public AE5E_CHANGE_TYPE / SNEAK_ATTACK_CHANGE_TYPE constants.
+- Reads Sneak Attack declarations from system.changes and accepts only exact type: "custom" changes on flags.action-effects-5e.sneakAttack. Diagnostic snapshots record type and phase; no legacy mode reader or fallback remains.
+- Audits every production ActiveEffect reader/writer: no CONST.ACTIVE_EFFECT_MODES or numeric change.mode logic exists in this baseline; the OA immunity writer already uses system.changes with type: "override" and phase: "final" and is retained.
+- Enforces the declaration-owned max-selections rule at transaction selection, rejecting invalid limits and over-limit selections without mutating the previous selection. No Rogue level or feature-name rules are hardcoded.
+- Adds v14 transport, non-Custom/legacy rejection, Cunning Strike Trip/Poison/Withdraw, Improved Cunning Strike max-selections=2, one-option, invalid-limit, and unchanged-state regression coverage.
+- Makes the syntax-check utility use fileURLToPath so it can run on Windows as well as Unix; updates the Withdraw live acceptance probe's required version.
+- Retains all compendium paths, directory entries, file bytes, pack declarations/folders, and assets exactly as supplied in the authoritative v0.4.5.18 archive. No migration or pack export is performed.
+
 # v0.4.5.18 — D&D5e 6 compendium source-index compatibility
 
 - Fixes the D&D5e 6 / Foundry v14 compendium-index collision that produced `Cannot create property 'rules' on number '1'` during CAT public-pack readiness checks.

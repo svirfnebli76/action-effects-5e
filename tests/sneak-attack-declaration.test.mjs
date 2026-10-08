@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 
 import {
   MODULE_ID,
-  AE5E_CHANGE_TYPE,
-  SNEAK_ATTACK_CHANGE_TYPE,
   SNEAK_ATTACK_DECLARATION_KEY,
   SNEAK_ATTACK_DECLARATION_SCHEMA_VERSION,
   SNEAK_ATTACK_USAGE_FLAG,
@@ -14,6 +12,7 @@ import { CatAutomationProviderAdapter } from "../scripts/integrations/cat-automa
 import { SneakAttackDeclarationParser } from "../scripts/sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "../scripts/sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "../scripts/sneak-attack/declaration-service.js";
+import { SneakAttackTransaction } from "../scripts/sneak-attack/transaction.js";
 
 function makeItem(id, { identifier = id, provider = MODULE_ID, name = id } = {}) {
   return {
@@ -35,12 +34,13 @@ function makeEffect(id, values, { disabled = false, isSuppressed = false, active
     disabled,
     isSuppressed,
     active,
-    changes: values.map((value, index) => ({
+    system: { changes: values.map((value, index) => ({
       key: SNEAK_ATTACK_DECLARATION_KEY,
-      type: AE5E_CHANGE_TYPE,
+      type: "custom",
+      phase: "final",
       priority: index,
       value
-    }))
+    })) }
   };
 }
 
@@ -54,7 +54,6 @@ function makeFixture({ providerForItem = item => item.provider } = {}) {
   const config = { ActiveEffect: { changeTypes: {} } };
   const dae = new SneakAttackDaeDeclarationService({
     daeAccessor: () => daeApi,
-    configAccessor: () => config,
     moduleAccessor: () => ({ active: true, version: "14.0.13" })
   });
   const parser = new SneakAttackDeclarationParser();
@@ -108,20 +107,113 @@ test("Sneak Attack parser fails safely on malformed structure and repeated field
   assert.equal(duplicate.diagnostics.some(entry => entry.code === "duplicate-field"), true);
 });
 
-test("DAE declaration integration registers one inert Foundry change type and one DAE auto field", () => {
+test("DAE declaration integration registers the declaration field once without registering a change type", () => {
   const { service, autoFields, config } = makeFixture();
-  const status = service.initialize();
+  const previous = globalThis.CONFIG;
+  globalThis.CONFIG = config;
+  Object.freeze(config.ActiveEffect.changeTypes);
+  try {
+    const status = service.initialize();
+    assert.equal(status.changeType, "custom");
+    assert.equal(status.daeAutoFieldRegistered, true);
+    assert.equal(status.lastError, null);
+    service.initialize();
+    assert.deepEqual(autoFields, [SNEAK_ATTACK_DECLARATION_KEY]);
+    assert.deepEqual(config.ActiveEffect.changeTypes, {});
+  } finally {
+    if (previous === undefined) delete globalThis.CONFIG;
+    else globalThis.CONFIG = previous;
+  }
+});
 
-  assert.equal(status.foundryChangeTypeRegistered, true);
-  assert.equal(status.daeAutoFieldRegistered, true);
-  assert.deepEqual(autoFields, [SNEAK_ATTACK_DECLARATION_KEY]);
-  assert.deepEqual(config.ActiveEffect.changeTypes[AE5E_CHANGE_TYPE], {
-    label: "AE5E",
-    defaultPriority: 0
+test("v14 scanner uses system.changes exclusively and never reads legacy mode or the deprecated changes accessor", () => {
+  const { dae } = makeFixture();
+  const effect = makeEffect("v14", ["schema=1;type=option;id=trip"]);
+  Object.defineProperty(effect, "changes", { get() { throw new Error("Deprecated changes accessed"); } });
+  Object.defineProperty(effect.system.changes[0], "mode", { get() { throw new Error("Legacy mode accessed"); } });
+  const records = dae.scanActor({ appliedEffects: [effect] });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].snapshot.change.type, "custom");
+  assert.equal(records[0].snapshot.change.phase, "final");
+  assert.equal("mode" in records[0].snapshot.change, false);
+  assert.deepEqual(dae.scanActor({ appliedEffects: [{ changes: effect.system.changes }] }), []);
+});
+
+test("v14 scanner rejects non-custom, missing, numeric, and abandoned AE5E types without a mode fallback", async () => {
+  const { service, itemByEffect } = makeFixture();
+  for (const type of ["add", "multiply", "override", "upgrade", "downgrade", "AE5E",
+    "action-effects-5e.ae5e", "action-effects-5e.sneakAttackDeclaration", "Custom", 0, null, undefined]) {
+    const effect = makeEffect("rejected", ["schema=1;type=option;id=trip"]);
+    const change = effect.system.changes[0];
+    if (type === undefined) delete change.type;
+    else change.type = type;
+    change.mode = 0;
+    itemByEffect.set(effect, makeItem("cunning-strike"));
+    const result = await service.compileActor({ appliedEffects: [effect] });
+    assert.equal(result.summary.scanned, 0, String(type));
+    assert.deepEqual(result.declarations, [], String(type));
+  }
+  const wrongKey = makeEffect("wrong-key", ["schema=1;type=option;id=trip"]);
+  wrongKey.system.changes[0].key = "flags.action-effects-5e.other";
+  assert.deepEqual(service.scanActor({ appliedEffects: [wrongKey] }), []);
+});
+
+test("Custom Cunning Strike Trip, Poison, and Withdraw retain provenance and Improved Cunning Strike enforces max-selections=2", async () => {
+  const { service, itemByEffect } = makeFixture();
+  const cunning = makeEffect("cunning-strike", [
+    "schema=1;type=option;id=trip;level=5;order=10;cost=1;executor=activity;activity=trip;target=sneakTarget",
+    "schema=1;type=option;id=poison;level=5;order=20;cost=1;executor=activity;activity=poison;target=sneakTarget",
+    "schema=1;type=option;id=withdraw;level=5;order=30;cost=1;executor=activity;activity=withdraw;target=subjectToken"
+  ]);
+  const improved = makeEffect("improved-cunning-strike", [
+    "schema=1;type=rule;id=max-selections;level=11;value=2"
+  ]);
+  itemByEffect.set(cunning, makeItem("cunning-strike"));
+  itemByEffect.set(improved, makeItem("improved-cunning-strike"));
+  const actor = { uuid: "Actor.rogue", appliedEffects: [improved, cunning] };
+  const result = await service.compileActor(actor);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.declarations.map(entry => entry.declaration.id),
+    ["trip", "poison", "withdraw", "max-selections"]);
+  for (const entry of result.declarations.slice(0, 3)) {
+    assert.equal(entry.declaration.activity, entry.declaration.id);
+    assert.equal(entry.declaration.cost, 1);
+    assert.equal(entry.provenance.sourceItemIdentifier, "cunning-strike");
+    assert.equal(entry.transport.change.type, "custom");
+  }
+  assert.equal(result.declarations[2].declaration.target, "subjectToken");
+  assert.equal(result.declarations[3].provenance.sourceItemIdentifier, "improved-cunning-strike");
+  assert.equal(result.declarations[3].declaration.value, "2");
+  const transaction = new SneakAttackTransaction({
+    id: "v14-regression", actor, sneakTargetUuid: "Scene.scene.Token.target",
+    declarations: result.declarations, totalDice: 6
   });
-  assert.equal("handler" in config.ActiveEffect.changeTypes[AE5E_CHANGE_TYPE], false);
-  assert.equal(AE5E_CHANGE_TYPE, AE5E_CHANGE_TYPE.toLowerCase());
-  assert.equal(SNEAK_ATTACK_CHANGE_TYPE, AE5E_CHANGE_TYPE);
+  for (const pair of [["trip", "poison"], ["trip", "withdraw"], ["poison", "withdraw"]]) {
+    const selected = transaction.setSelections(pair);
+    assert.equal(selected.updated, true);
+    assert.deepEqual(selected.transaction.selectedDeclarationIds, pair);
+    assert.deepEqual(selected.transaction.dice, { total: 6, spent: 2, remaining: 4 });
+  }
+  const before = transaction.toJSON();
+  const three = transaction.setSelections(["trip", "poison", "withdraw"]);
+  assert.equal(three.updated, false);
+  assert.equal(three.reason, "max-selections-exceeded");
+  assert.deepEqual(transaction.toJSON(), before);
+});
+
+test("declaration-owned selection limits reject invalid values and retain ordinary Cunning Strike's one-option limit", () => {
+  const options = ["trip", "poison", "withdraw"].map(id => ({ declaration: { type: "option", id, cost: 1 } }));
+  for (const value of ["1", "0", "garbage", "", "-1", "1.5", null, false, Infinity, 9007199254740992]) {
+    const transaction = new SneakAttackTransaction({
+      id: "limit", actorUuid: "Actor.rogue", sneakTargetUuid: "Token.target", totalDice: 6,
+      declarations: [...options, { declaration: { type: "rule", id: "max-selections", value } }]
+    });
+    const result = transaction.setSelections(["trip", "withdraw"]);
+    assert.equal(result.updated, false);
+    assert.equal(result.reason, ["1", "0"].includes(value) ? "max-selections-exceeded" : "invalid-max-selections");
+    assert.deepEqual(transaction.selectedDeclarationIds, []);
+    if (value === "1") assert.equal(transaction.setSelections(["trip"]).updated, true);
+  }
 });
 
 test("DAE scanner preserves individual same-key declarations and ignores inapplicable effects", () => {
@@ -147,7 +239,6 @@ test("DAE scanner preserves individual same-key declarations and ignores inappli
 test("DAE provenance resolution fails closed when its origin-chain resolver is unavailable", async () => {
   const dae = new SneakAttackDaeDeclarationService({
     daeAccessor: () => ({ addAutoFields() {} }),
-    configAccessor: () => ({ ActiveEffect: { changeTypes: {} } }),
     moduleAccessor: () => ({ active: true, version: "14.0.13" })
   });
 
@@ -402,8 +493,8 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
   });
 
   assert.equal(api.constants.SNEAK_ATTACK_DECLARATION_KEY, SNEAK_ATTACK_DECLARATION_KEY);
-  assert.equal(api.constants.AE5E_CHANGE_TYPE, AE5E_CHANGE_TYPE);
-  assert.equal(api.constants.SNEAK_ATTACK_CHANGE_TYPE, SNEAK_ATTACK_CHANGE_TYPE);
+  assert.equal("AE5E_CHANGE_TYPE" in api.constants, false);
+  assert.equal("SNEAK_ATTACK_CHANGE_TYPE" in api.constants, false);
   assert.equal(api.constants.SNEAK_ATTACK_USAGE_FLAG, SNEAK_ATTACK_USAGE_FLAG);
   assert.equal(api.constants.SNEAK_ATTACK_TRANSACTION_STATES.OPEN, SNEAK_ATTACK_TRANSACTION_STATES.OPEN);
   assert.equal(api.sneakAttack.declarations.parse("trip").declaration.id, "trip");

@@ -95,6 +95,21 @@ export class SneakAttackTransaction {
     const missingIds = selected.filter(id => !byId.has(id));
     if (missingIds.length) return { updated: false, reason: "declaration-unavailable", missingIds, transaction: this.toJSON() };
 
+    // Item declarations own the limit; the generic transaction enforces it.
+    const selectionRule = this.entries.find(entry =>
+      entry?.declaration?.type === "rule" && entry.declaration.id === "max-selections");
+    if (selectionRule) {
+      const raw = selectionRule.declaration.value;
+      const maxSelections = typeof raw === "number" || (typeof raw === "string" && /^\d+$/.test(raw))
+        ? Number(raw) : NaN;
+      if (!Number.isSafeInteger(maxSelections) || maxSelections < 0) {
+        return { updated: false, reason: "invalid-max-selections", transaction: this.toJSON() };
+      }
+      if (selected.length > maxSelections) {
+        return { updated: false, reason: "max-selections-exceeded", maxSelections, transaction: this.toJSON() };
+      }
+    }
+
     let spent = 0;
     for (const id of selected) {
       const entry = byId.get(id);

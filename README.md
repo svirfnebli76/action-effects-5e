@@ -76,6 +76,12 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.19 Foundry v14 ActiveEffect declarations
+
+Sneak Attack declarations use Foundry's built-in Custom change type in `effect.system.changes`: `{ key: "flags.action-effects-5e.sneakAttack", type: "custom", phase: "final", value: "schema=1;type=option;id=trip;..." }`. AE5E no longer registers an AE5E-specific change type or exports `AE5E_CHANGE_TYPE` / `SNEAK_ATTACK_CHANGE_TYPE`. Non-Custom changes and legacy numeric modes are not consumed.
+
+The declaration-owned `type=rule;id=max-selections;value=2` limit is enforced by the generic transaction service. Item content continues to own the options, costs, targets, and feature rules. This complete archive includes the original v0.4.5.18 compendium bytes and assets unchanged.
+
 ## v0.4.5.18 D&D5e 6 compendium indexing compatibility
 
 D&D5e 6 adds the parent Item field `system.source` to normal compendium indexes. AE5E CAT readiness checks now request that parent object instead of adding the nested `system.source.rules` field, avoiding Foundry v14's parent/child projection collision while preserving the existing `entry.system.source.rules` metadata contract. This release does not modify compendium or Item data.

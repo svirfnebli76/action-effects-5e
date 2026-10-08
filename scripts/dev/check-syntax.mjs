@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 async function collectJavaScriptFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -15,7 +16,7 @@ async function collectJavaScriptFiles(directory) {
   return files;
 }
 
-const files = await collectJavaScriptFiles(new URL("..", import.meta.url).pathname);
+const files = await collectJavaScriptFiles(fileURLToPath(new URL("..", import.meta.url)));
 let failed = false;
 
 for (const file of files) {
