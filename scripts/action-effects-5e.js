@@ -532,6 +532,9 @@ socket.initialize();
 Hooks.once("init", () => {
   Logger.log("Initializing module foundation.");
   registerSettings();
+  // Restored chat messages render before ready; register presentation hooks now.
+  activityCards.initialize();
+  chatCardAdapter.initialize();
   catAutomationRegistry.initialize();
   sneakAttackDeclarations.initialize();
   catMetadataContextMenu.initialize();
@@ -589,8 +592,6 @@ Hooks.once("ready", async () => {
   reactionEvents.initialize();
   spellModifierEvents.initialize();
   ongoingEffects.initialize();
-  activityCards.initialize();
-  chatCardAdapter.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

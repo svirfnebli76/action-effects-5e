@@ -1,3 +1,8 @@
+# v0.4.5.22 — Chat card reload rendering
+
+- Registers Activity card and Chat Card Adapter hooks during init, before restored chat messages render. Saved contributions and layouts no longer depend on asynchronous ready services finishing before the first render.
+- Adds startup regression coverage for a saved contribution rendered before ready. No Item mechanics or compendium payloads changed. Live Foundry reload verification remains pending.
+
 # v0.4.5.21 — Item-owned Chat Card Adapter
 
 - Adds snapshotted Item/Activity HTML layouts with named native-component slots and Activity overrides.
