@@ -44,7 +44,7 @@ export function presentationHTML(html, data = {}, { layout = false } = {}) {
           const colon = declaration.indexOf(":");
           const property = declaration.slice(0, colon).trim().toLowerCase();
           const value = declaration.slice(colon + 1).trim();
-          const sizeVariable = ["--ae5e-icon-size", "--ae5e-title-size", "--ae5e-target-name-size"].includes(property) && /^\d{1,3}px$/.test(value);
+          const sizeVariable = ["--ae5e-icon-size", "--ae5e-title-size", "--ae5e-target-name-size", "--ae5e-save-total-size", "--ae5e-save-dc-size"].includes(property) && /^\d{1,3}px$/.test(value);
           if (colon < 0 || (!CSS.has(property) && !sizeVariable) || /[\\<>@]|url\s*\(|expression\s*\(|var\s*\(|!important/i.test(value)) {
             throw new Error(`Unsupported card style: ${property}`);
           }

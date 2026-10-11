@@ -85,3 +85,5 @@ Live acceptance: load the package on every client, then test a native spell cont
 `chatCard.titlePrefix` is author-owned plain text (up to 160 characters), snapshotted with the layout and displayed above the completed title beside the native icon. The module supplies no feature-specific prefix.
 
 Layout slots can opt into `ae5e-align-left` (description), `ae5e-align-center` (use/outcome), and `ae5e-save-compact` (saves). Compact saves retain the native success/failure icon and roll total, hide the added outcome/Roll words, add an outcome-colored 2px portrait ring and a 6px heading gap. `--ae5e-target-name-size:18px` sets target text size; long names and centered sentences wrap. These are presentation choices only and do not affect automation or message visibility.
+
+Compact save rows vertically center target names. Optional `--ae5e-save-total-size:12px` and `--ae5e-save-dc-size:12px` control the native total and DC badge sizes independently of the name. Both default to 12px and retain native roll tooltips.

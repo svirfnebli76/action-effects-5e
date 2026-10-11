@@ -1,3 +1,9 @@
+# v0.4.5.28 — Compact save row text alignment
+
+- Vertically centers compact target names and their native name stacks with consistent line height.
+- Adds author-owned --ae5e-save-total-size and --ae5e-save-dc-size variables (12px defaults) and tighter DC badge padding to leave more room for names.
+- No compendium payloads or Item mechanics changed.
+
 # v0.4.5.27 — Author-selected card presentation
 
 - Supports snapshotted author-owned titlePrefix text and optional layout classes for left/center alignment and compact save rows with outcome-colored portrait rings, smaller names and label-free totals.
