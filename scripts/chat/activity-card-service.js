@@ -97,7 +97,7 @@ export class ActivityCardService {
     }
   }
 
-  async complete(workflow) {
+  async complete(workflow, { controlsResolved = false } = {}) {
     const data = policy(workflow);
     if (!data || workflow.aborted) return { updated: false, reason: "not-configured-or-aborted" };
     const message = workflow.chatCard ?? game.messages?.get(workflow.itemCardId);
@@ -110,10 +110,12 @@ export class ActivityCardService {
       sourceName: workflow.token?.name ?? workflow.actor?.name ?? message.speaker?.alias ?? "Source",
       workflowId: workflow.id ?? workflow.uuid ?? null,
       parentWorkflowId: workflow.workflowOptions?.triggeringWorkflowId ?? null,
+      controlsResolved: controlsResolved === true,
       targets: []
     };
     if (data.kind === "movement") {
       snapshot.result = movementOutcome(workflow[data.outcomeKey], workflow.token?.document?.parent?.grid?.units ?? globalThis.canvas?.scene?.grid?.units ?? "", data);
+      snapshot.controlsResolved &&= ["completed", "cancelled", "no-movement"].includes(workflow[data.outcomeKey]?.status);
     } else {
       // An effect automation may still be finishing native status creation. This
       // bounded wait observes state only; it never applies or deletes an effect.
@@ -127,10 +129,16 @@ export class ActivityCardService {
         if (!missing) break;
         await new Promise(resolve => setTimeout(resolve, 25));
       }
-      snapshot.targets = targets.map(token => ({
-        uuid: uuidOf(token),
-        result: effectOutcome(before?.get(uuidOf(token)), state(token, workflow, data), data, saveOutcome(workflow, token))
-      }));
+      snapshot.targets = targets.map(token => {
+        const current = state(token, workflow, data);
+        const saveResult = saveOutcome(workflow, token);
+        const effectConfirmed = data.nativeStatus ? current.status
+          : current.effects.length > 0 && (!data.status || current.status);
+        return { uuid: uuidOf(token), saveResult, effectConfirmed,
+          result: effectOutcome(before?.get(uuidOf(token)), current, data, saveResult) };
+      });
+      snapshot.controlsResolved &&= snapshot.targets.length > 0 && snapshot.targets.every(target =>
+        target.saveResult === "passed" || (target.saveResult === "failed" && target.effectConfirmed));
     }
     await message.setFlag(MODULE_ID, FLAG, snapshot);
     this.#before.delete(workflow);
@@ -138,6 +146,7 @@ export class ActivityCardService {
   }
 
   render(message, html) {
+    if (message.flags?.[MODULE_ID]?.chatCard?.layout) return;
     const snapshot = message.flags?.[MODULE_ID]?.[FLAG];
     if (snapshot?.schema !== 1 || !message.isContentVisible || message.blind
       || html.hidden || html.style.display === "none" || html.querySelector(".ae5e-activity-card-intro")) return;

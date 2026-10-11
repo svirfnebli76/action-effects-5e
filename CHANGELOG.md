@@ -1,3 +1,12 @@
+# v0.4.5.21 — Item-owned Chat Card Adapter
+
+- Adds snapshotted Item/Activity HTML layouts with named native-component slots and Activity overrides.
+- Adds persistent, independently updatable Item contributions to existing native or custom cards; receiving spells need no configuration.
+- Keeps native rolls, listeners, masked results and application mechanics. Provides opt-in completed save rows, 48px icons and 16px bold titles; authors control layout and typography on Items.
+- Requires an explicit Item completion signal before hiding completed targeting/effect controls; pending/manual interactions retain native presentation.
+- Validates restricted presentation HTML, escapes flat template values and serializes same-client contribution writes. Adds generic regression coverage and authoring documentation.
+- Install ZIP excludes the entire packs/ directory. Manifest pack declarations are preserved. No compendium or production Item was changed. Live Foundry acceptance remains pending.
+
 # v0.4.5.20 — Opt-in Activity chat-card infrastructure
 
 - Adds shared completed-Activity card presentation via declarative `flags.action-effects-5e.activityCard` policies and `api.chatCards.completeActivity(workflow)`.

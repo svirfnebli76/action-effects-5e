@@ -76,7 +76,7 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
-## v0.4.5.20 Activity chat-card infrastructure
+## v0.4.5.21 Activity chat-card infrastructure
 
 Install the complete module folder and reload Foundry and connected clients. This release adds opt-in completed-Activity card formatting. Items supply their own presentation policy at `flags.action-effects-5e.activityCard` and call `api.chatCards.completeActivity(workflow)` after their automation finishes. The service observes native save/effect outcomes and reuses already-masked Midi result nodes and tooltips. It retains native controls and summary-mode fallback.
 
@@ -175,3 +175,5 @@ v0.4.4.37 completes Checkpoint 3 propagation and persistent-area generation. Pla
 ## v0.4.5.17 movement infrastructure
 
 The Chevron renderer now owns the accepted movement instruction panel. The public movement API also provides scoped, transaction-owned opportunity-attack protection and module-owned suppression of its temporary effect's scrolling labels. See [Chevron placement API](CHEVRON_CROSSHAIR.md) for configuration and cleanup contracts. Withdraw's speed allowance, Sequencer motion, and visual effects remain in the caller macro.
+
+The opt-in [Chat Card Adapter](docs/chat-card-adapter.md) supports Item-owned layouts and persistent contributions to existing cards. Release ZIPs exclude all compendium payloads; retain the installed packs/ directory when applying an update.

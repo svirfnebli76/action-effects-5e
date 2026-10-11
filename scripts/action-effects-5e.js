@@ -67,6 +67,7 @@ import { SpellModifierEventAdapter } from "./spell-modifiers/spell-modifier-even
 import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.js";
 import { ActivityExecutionService } from "./activities/activity-execution-service.js";
 import { ActivityCardService } from "./chat/activity-card-service.js";
+import { ChatCardAdapter } from "./chat/chat-card-adapter.js";
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
@@ -189,6 +190,7 @@ const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifie
 const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const activityCards = new ActivityCardService();
+const chatCardAdapter = new ChatCardAdapter();
 const sneakAttackDeclarationParser = new SneakAttackDeclarationParser();
 const sneakAttackDae = new SneakAttackDaeDeclarationService();
 const sneakAttackDeclarations = new SneakAttackDeclarationService({
@@ -441,6 +443,7 @@ async function bootstrapAcceptedCatMetadata() {
 }
 const api = new ActionEffects5eApi({
   activityCards,
+  chatCardAdapter,
   dependencies,
   compatibility,
   movement,
@@ -587,6 +590,7 @@ Hooks.once("ready", async () => {
   spellModifierEvents.initialize();
   ongoingEffects.initialize();
   activityCards.initialize();
+  chatCardAdapter.initialize();
   compatibility.refresh();
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);

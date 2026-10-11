@@ -360,3 +360,41 @@
   font-size: 1.05rem;
   font-weight: 700;
 }
+
+/* Chat Card Adapter: styles apply only inside opt-in Item-owned frames. */
+.message .message-content .chat-card .ae5e-card-frame [data-ae5e-slot="header"] .card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message .message-content .chat-card .ae5e-card-frame [data-ae5e-slot="header"] .card-header .name-stacked .title {
+  font-size: var(--ae5e-title-size, 16px);
+  font-weight: 700;
+}
+.message .message-content .chat-card .ae5e-card-frame [data-ae5e-slot="header"] :is(.activity-icon, .item-icon, .activity-icon img, .item-icon img, .activity-icon dnd5e-icon) {
+  --size: var(--ae5e-icon-size, 48px);
+  width: var(--ae5e-icon-size, 48px);
+  inline-size: var(--ae5e-icon-size, 48px);
+  block-size: var(--ae5e-icon-size, 48px);
+  height: var(--ae5e-icon-size, 48px);
+  flex: 0 0 var(--ae5e-icon-size, 48px);
+}
+.message .message-content .chat-card .ae5e-card-frame .card-description { display: block; }
+.message .message-content .chat-card .ae5e-card-frame .card-description .wrapper { padding: 0; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 3px;
+}
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-passed { background-color: #2d5137; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-failed { background-color: #63353d; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-row .midi-qol-save-img { width: 24px; height: 24px; border-radius: 50%; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-row .midi-qol-save-name { flex: 1; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-label { font-size: 12px; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-dc { white-space: nowrap; padding: 2px 5px; background-color: #ffffff20; border-radius: 3px; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-row .midi-qol-save-total { font-weight: 700; }
+.message .message-content .chat-card .ae5e-card-frame .ae5e-save-row { color: #eee; }
+.message .message-content .chat-card .ae5e-card-frame [hidden], .ae5e-card-contribution[hidden] { display: none; }
+.ae5e-card-contribution { margin: 8px 0; }

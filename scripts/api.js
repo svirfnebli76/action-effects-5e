@@ -98,6 +98,7 @@ import {
 export class ActionEffects5eApi {
   constructor({
     activityCards,
+    chatCardAdapter,
     dependencies,
     compatibility,
     movement,
@@ -182,7 +183,12 @@ export class ActionEffects5eApi {
     this.version = MODULE_VERSION;
 
     this.chatCards = Object.freeze({
-      completeActivity: workflow => activityCards.complete(workflow)
+      completeActivity: async (workflow, options) => {
+        await chatCardAdapter.snapshotLayout(workflow);
+        return activityCards.complete(workflow, options);
+      },
+      upsertContribution: (subject, contribution) => chatCardAdapter.upsertContribution(subject, contribution),
+      removeContribution: (subject, id) => chatCardAdapter.removeContribution(subject, id)
     });
 
     this.constants = Object.freeze({
