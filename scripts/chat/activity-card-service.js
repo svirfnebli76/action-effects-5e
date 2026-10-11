@@ -25,9 +25,14 @@ function matchingEffects(actor, itemUuid, data) {
 
 function state(token, workflow, data) {
   const actor = actorOf(token);
+  const overTimeUuid = data.saveMode === "repeat" ? workflow.workflowOptions?.overTimeEffectUuid : null;
+  const effects = overTimeUuid ? values(actor?.effects).filter(effect =>
+    effect.uuid === overTimeUuid && effect.name === data.effectName
+    && !effect.disabled && !effect.isSuppressed) : matchingEffects(actor, workflow.item.uuid, data);
   return {
     status: data.status ? values(actor?.statuses).includes(data.status) : false,
-    effects: matchingEffects(actor, workflow.item.uuid, data).map(effect => ({
+    presentEffectUuids: values(actor?.effects).map(effect => effect.uuid),
+    effects: effects.map(effect => ({
       uuid: effect.uuid,
       timing: JSON.stringify({ duration: effect.duration, start: effect._source?.start })
     }))
@@ -57,6 +62,21 @@ export function effectOutcome(before, current, data, outcome) {
   return `${data.result}${unchanged ? " (already present)" : ""}${data.duration ? ` — ${data.duration}` : ""}.`;
 }
 
+/** Repeat saves observe the original effect, never a new application. */
+export function repeatSaveOutcome(before, current, data, outcome) {
+  const original = before?.effects?.map(effect => effect.uuid) ?? [];
+  const confirmed = original.length > 0 && (outcome === "passed"
+    ? original.every(uuid => !current.presentEffectUuids.includes(uuid))
+    : outcome === "failed" && original.some(uuid => current.effects.some(effect => effect.uuid === uuid))
+      && (!data.status || current.status));
+  const result = outcome === "passed"
+    ? confirmed ? data.passedResult ?? "Effect ended." : "Effect removal was not confirmed."
+    : outcome === "failed"
+      ? confirmed ? data.failedResult ?? "Effect remains active." : "Continued effect was not confirmed."
+      : "Save result unavailable; effect outcome not confirmed.";
+  return { confirmed, result };
+}
+
 export function movementOutcome(value, units = "", presentation = {}) {
   switch (value?.status) {
     case "completed": return `Movement completed. Allowance used: ${value.cost} / ${value.allowance} ${units}.${presentation.completedText ? ` ${presentation.completedText}` : ""}`;
@@ -70,6 +90,7 @@ export function movementOutcome(value, units = "", presentation = {}) {
 /** Opt-in presentation for completed usage cards; native documents and rolls stay intact. */
 export class ActivityCardService {
   #before = new WeakMap();
+  #pending = new WeakMap();
   #registered = false;
 
   initialize() {
@@ -97,13 +118,42 @@ export class ActivityCardService {
     }
   }
 
-  async complete(workflow, { controlsResolved = false } = {}) {
+  async complete(workflow, options = {}) {
+    const data = policy(workflow);
+    if (data?.kind !== "save" || data.saveMode !== "repeat") return this.#complete(workflow, options);
+    if (workflow.aborted) return { updated: false, reason: "not-configured-or-aborted" };
+    const message = workflow.chatCard ?? game.messages?.get(workflow.itemCardId);
+    if (!message?.isOwner) return { updated: false, reason: "message-unavailable-or-not-owned" };
+    const before = this.#before.get(workflow);
+    const pending = this.#pending.get(workflow);
+    if (pending && pending.before === before) return pending.scheduled;
+    // Midi deletes an ActivityOverTime effect AFTER completeActivityUse returns.
+    // Returning a scheduled result lets that workflow finish instead of waiting
+    // inside its Item macro for a deletion that cannot yet happen.
+    const completion = new Promise(resolve => setTimeout(() => {
+      void this.#complete(workflow, options, before).then(result => {
+        if (this.#pending.get(workflow)?.scheduled === scheduled) this.#pending.delete(workflow);
+        resolve(result);
+      }, error => {
+        if (this.#pending.get(workflow)?.scheduled === scheduled) this.#pending.delete(workflow);
+        console.error(`${MODULE_ID} | Repeat-save presentation failed`, error);
+        resolve({ updated: false, reason: "presentation-failed" });
+      });
+    }, 0));
+    const scheduled = { updated: false, scheduled: true, messageId: message.id, completion };
+    this.#pending.set(workflow, { before, scheduled });
+    return scheduled;
+  }
+
+  async #complete(workflow, { controlsResolved = false } = {}, before = this.#before.get(workflow)) {
     const data = policy(workflow);
     if (!data || workflow.aborted) return { updated: false, reason: "not-configured-or-aborted" };
     const message = workflow.chatCard ?? game.messages?.get(workflow.itemCardId);
     if (!message?.isOwner) return { updated: false, reason: "message-unavailable-or-not-owned" };
     const targets = values(workflow.targets);
-    const before = this.#before.get(workflow);
+    if (data.saveMode === "repeat" && this.#before.get(workflow) !== before) {
+      return { updated: false, reason: "superseded-by-new-save" };
+    }
     const snapshot = {
       schema: 1, kind: data.kind, title: data.title,
       activityName: workflow.activity.name, icon: workflow.activity.img ?? workflow.item.img,
@@ -113,7 +163,30 @@ export class ActivityCardService {
       controlsResolved: controlsResolved === true,
       targets: []
     };
-    if (data.kind === "movement") {
+    if (data.kind === "save" && data.saveMode === "repeat") {
+      snapshot.saveMode = "repeat";
+      // Observe at most two seconds without blocking Midi's cleanup. No effect
+      // is applied, disabled or deleted by this service.
+      for (let attempt = 0; attempt < 80; attempt++) {
+        const pending = targets.some(token => {
+          const prior = before?.get(uuidOf(token));
+          if (!prior?.effects.length || saveOutcome(workflow, token) !== "passed") return false;
+          return !repeatSaveOutcome(prior, state(token, workflow, data), data, "passed").confirmed;
+        });
+        if (!pending || workflow.aborted || this.#before.get(workflow) !== before) break;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      if (workflow.aborted) return { updated: false, reason: "not-configured-or-aborted" };
+      snapshot.targets = targets.map(token => {
+        const current = state(token, workflow, data);
+        const saveResult = saveOutcome(workflow, token);
+        const outcome = repeatSaveOutcome(before?.get(uuidOf(token)), current, data, saveResult);
+        return { uuid: uuidOf(token), saveResult, effectConfirmed: current.effects.length > 0,
+          outcomeConfirmed: outcome.confirmed, result: outcome.result };
+      });
+      snapshot.controlsResolved &&= snapshot.targets.length > 0
+        && snapshot.targets.every(target => target.outcomeConfirmed);
+    } else if (data.kind === "movement") {
       snapshot.result = movementOutcome(workflow[data.outcomeKey], workflow.token?.document?.parent?.grid?.units ?? globalThis.canvas?.scene?.grid?.units ?? "", data);
       snapshot.controlsResolved &&= ["completed", "cancelled", "no-movement"].includes(workflow[data.outcomeKey]?.status);
     } else {
@@ -140,8 +213,16 @@ export class ActivityCardService {
       snapshot.controlsResolved &&= snapshot.targets.length > 0 && snapshot.targets.every(target =>
         target.saveResult === "passed" || (target.saveResult === "failed" && target.effectConfirmed));
     }
+    if (snapshot.saveMode === "repeat" && this.#before.get(workflow) !== before) {
+      return { updated: false, reason: "superseded-by-new-save" };
+    }
+    if (!message.isOwner || (message.collection && !message.collection.has(message.id))) {
+      return { updated: false, reason: "message-unavailable-or-not-owned" };
+    }
     await message.setFlag(MODULE_ID, FLAG, snapshot);
-    this.#before.delete(workflow);
+    if (snapshot.saveMode !== "repeat" || snapshot.targets.every(target => target.outcomeConfirmed)) {
+      this.#before.delete(workflow);
+    }
     return { updated: true, messageId: message.id };
   }
 

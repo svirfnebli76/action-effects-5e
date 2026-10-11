@@ -1,3 +1,9 @@
+# v0.4.5.31 — Repeat-save card outcomes
+
+- Adds Activity-authored saveMode: "repeat", passedResult and failedResult policies. Observes the specific existing over-time effect rather than a new application; successful saves confirm its removal, failed saves confirm its continuation.
+- Defers repeat presentation completion without blocking Midi's post-workflow effect cleanup. Observes removal for up to two seconds; unconfirmed/unresolved results preserve controls. Uses the explicit overtime effect UUID when provided, preserving unrelated effects and conditions.
+- Deduplicates pending completion calls and drops superseded captures or unavailable messages. Initial saves, movement and the 8-second interim fallback remain unchanged. No compendium payloads or Item rules changed.
+
 # v0.4.5.30 — Keep interim cards hidden through presentation completion
 
 - Stops releasing interim save cards on Midi RollComplete, which can precede asynchronous author completion macros. AE5E presentation completion remains the reveal signal.

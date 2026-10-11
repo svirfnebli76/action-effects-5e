@@ -142,3 +142,122 @@ test("explicit control completion does not hide an unresolved or unconfirmed eff
   await service.complete(workflow);
   assert.equal(message.flags[MODULE].activityCard.controlsResolved, false);
 });
+
+function repeatFixture() {
+  const f = fixture({ saveMode: "repeat", nativeStatus: false, status: "poisoned", effectName: "Carrier",
+    passedResult: "This effect ended.", failedResult: "This effect continues." });
+  const effect = { uuid: "Actor.Target.ActiveEffect.Repeat", name: "Carrier", origin: f.workflow.item.uuid, duration: {} };
+  f.token.actor.effects.push(effect);
+  f.token.actor.statuses.add("poisoned");
+  f.workflow.workflowOptions.overTimeEffectUuid = effect.uuid;
+  return { ...f, effect };
+}
+
+test("repeat completion returns before removal and observes the specific over-time effect", async () => {
+  const service = new ActivityCardService();
+  const { workflow, token, message, effect } = repeatFixture();
+  // Midi can clone the source Item onto another actor. The explicit overtime
+  // UUID still identifies the effect independently of that synthetic Item UUID.
+  workflow.item.uuid = "Actor.Synthetic.Item.I";
+  token.actor.effects.push({ ...effect, uuid: "Other", origin: "Actor.Other.Item.Other" });
+  await service.capture(workflow);
+  workflow.saves.add(token);
+  const scheduled = await service.complete(workflow, { controlsResolved: true });
+  assert.equal(scheduled.scheduled, true);
+  assert.equal(message.flags[MODULE]?.activityCard, undefined);
+  // Deletion only happens after the calling Item macro returns.
+  setTimeout(() => { token.actor.effects = token.actor.effects.filter(e => e.uuid !== effect.uuid); }, 35);
+  assert.equal((await scheduled.completion).updated, true);
+  const snapshot = message.flags[MODULE].activityCard;
+  assert.equal(snapshot.saveMode, "repeat");
+  assert.equal(snapshot.targets[0].result, "This effect ended.");
+  assert.equal(snapshot.targets[0].effectConfirmed, false);
+  assert.equal(snapshot.targets[0].outcomeConfirmed, true);
+  assert.equal(snapshot.controlsResolved, true);
+  assert.equal(token.actor.effects[0].uuid, "Other");
+  assert.ok(token.actor.statuses.has("poisoned")); // Other sources are not removed.
+});
+
+test("failed repeat save confirms continuation without a new application or duration reset", async () => {
+  const service = new ActivityCardService();
+  const { workflow, token, message, effect } = repeatFixture();
+  const original = structuredClone(effect);
+  await service.capture(workflow);
+  const scheduled = await service.complete(workflow, { controlsResolved: true });
+  const duplicate = await service.complete(workflow, { controlsResolved: true });
+  assert.equal(duplicate.completion, scheduled.completion);
+  await scheduled.completion;
+  assert.equal(message.flags[MODULE].activityCard.targets[0].result, "This effect continues.");
+  assert.equal(message.flags[MODULE].activityCard.controlsResolved, true);
+  assert.deepEqual(token.actor.effects, [original]);
+});
+
+test("passed repeat save with an undeleted effect stays unconfirmed and keeps controls", async () => {
+  const service = new ActivityCardService();
+  const { workflow, token, message, effect } = repeatFixture();
+  await service.capture(workflow);
+  workflow.saves.add(token);
+  effect.disabled = true; // Disabling alone is not observed deletion.
+  await (await service.complete(workflow, { controlsResolved: true })).completion;
+  assert.equal(message.flags[MODULE].activityCard.targets[0].result, "Effect removal was not confirmed.");
+  assert.equal(message.flags[MODULE].activityCard.controlsResolved, false);
+  assert.equal(token.actor.effects[0], effect);
+  // Retain captured identity for a later explicit presentation retry.
+  token.actor.effects = [];
+  await (await service.complete(workflow, { controlsResolved: true })).completion;
+  assert.equal(message.flags[MODULE].activityCard.targets[0].result, "This effect ended.");
+});
+
+test("repeat save without captured state or with an unresolved roll never claims an outcome", async () => {
+  const service = new ActivityCardService();
+  const { workflow, token, message } = repeatFixture();
+  await (await service.complete(workflow, { controlsResolved: true })).completion;
+  assert.equal(message.flags[MODULE].activityCard.controlsResolved, false);
+  await service.capture(workflow);
+  workflow.saveDisplayData = [];
+  await (await service.complete(workflow, { controlsResolved: true })).completion;
+  assert.match(message.flags[MODULE].activityCard.targets[0].result, /Save result unavailable/);
+  assert.equal(message.flags[MODULE].activityCard.controlsResolved, false);
+});
+
+test("repeat continuation cannot be confirmed by a same-named unrelated effect", async () => {
+  const service = new ActivityCardService();
+  const { workflow, token, message, effect } = repeatFixture();
+  await service.capture(workflow);
+  token.actor.effects = [{ ...effect, uuid: "Other", origin: "Actor.Other.Item.I" }];
+  await (await service.complete(workflow, { controlsResolved: true })).completion;
+  assert.equal(message.flags[MODULE].activityCard.targets[0].result, "Continued effect was not confirmed.");
+  assert.equal(message.flags[MODULE].activityCard.controlsResolved, false);
+});
+
+test("repeat presentation drops deleted or unowned messages and superseded captures", async () => {
+  for (const condition of ["deleted", "unowned", "superseded", "aborted"]) {
+    const service = new ActivityCardService();
+    const { workflow, token, message } = repeatFixture();
+    await service.capture(workflow);
+    const scheduled = await service.complete(workflow, { controlsResolved: true });
+    if (condition === "deleted") message.collection = new Map();
+    if (condition === "unowned") message.isOwner = false;
+    if (condition === "superseded") await service.capture(workflow);
+    if (condition === "aborted") workflow.aborted = true;
+    const result = await scheduled.completion;
+    assert.equal(result.updated, false, condition);
+    assert.equal(message.flags[MODULE]?.activityCard, undefined, condition);
+  }
+});
+
+test("a repeat reroll replaces a pending observation without allowing the old snapshot to overwrite it", async () => {
+  const service = new ActivityCardService();
+  const { workflow, token, message } = repeatFixture();
+  await service.capture(workflow);
+  workflow.saves.add(token);
+  const first = await service.complete(workflow, { controlsResolved: true });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await service.capture(workflow);
+  workflow.saves.clear();
+  const second = await service.complete(workflow, { controlsResolved: true });
+  assert.notEqual(first.completion, second.completion);
+  assert.equal((await second.completion).updated, true);
+  assert.equal((await first.completion).updated, false);
+  assert.equal(message.flags[MODULE].activityCard.targets[0].result, "This effect continues.");
+});

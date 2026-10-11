@@ -39,3 +39,13 @@ All connected clients must load the new AE5E runtime. Per-client rendering uses 
 Results are historical snapshots, not live effect-expiry trackers. A new save clears prior presentation while it is pending; a subsequent completion captures the new result. Manual changes after completion require another completion call to update the snapshot. Repeat activities and unrelated Items are untouched unless explicitly configured by their author.
 
 The schema-1 contract is provisional pending live Foundry/Midi/CAT acceptance. Development coverage includes source qualification, immunity/status checks, asynchronous status creation, reroll invalidation, ownership, and caller-owned movement text.
+
+## Repeat saves (v0.4.5.31)
+
+A save Activity can author `saveMode: "repeat"` plus `passedResult` and `failedResult` strings on its `activityCard` policy. Keep `kind: "save"`, `effectName` and optional `status`; this mode observes an existing effect, not a new application. Generic default results are "Effect ended." and "Effect remains active.".
+
+Midi ActivityOverTime deletes a successful-save effect after completeActivityUse returns. Consequently, `completeActivity(workflow, options)` for repeat policies returns `{ updated: false, scheduled: true, messageId, completion }` promptly and schedules the observer outside the Item macro. Do not await `completion` inside the workflow's completion macro: that could delay the cleanup being observed. The completion Promise is for callers outside the executing workflow, including development checks.
+
+The observer checks for up to two seconds. A passed save requires disappearance of the captured effect document; disabling it alone does not prove removal. A failed save requires that the same captured source effect remains active and any requested status is present. Midi's explicit `workflowOptions.overTimeEffectUuid` identifies the particular over-time effect, including synthetic Item cases; otherwise existing source-qualified matching applies. Unrelated same-named effects and native conditions are never removed by this presentation service.
+
+Repeat snapshots add `saveMode: "repeat"` and per-target `outcomeConfirmed`. Completed controls are suppressed only if all observed outcomes are confirmed and the caller requested `controlsResolved: true`. Missing baseline, unresolved saves or unconfirmed removal/continuation retain controls. A reroll capture supersedes earlier pending presentation, and unavailable/unowned messages are not written. Initial-save and movement contracts are unchanged. Use Activity-owned description and title/prefix wording appropriate for a repeat attempt; repeat save rules and effect deletion remain with Midi and the Item.
