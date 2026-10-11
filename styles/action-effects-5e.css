@@ -406,7 +406,7 @@
 /* Rebuilt targeting/save-summary rows may be inserted outside the adapter slot.
    The completion marker is set only for opted-in, confirmed-complete layouts.
    Preserve native roll rows and damage-application controls. */
-.message .message-content.ae5e-controls-resolved :is(recorded-targets, effect-application, .dcc-card-targets, .dcc-pending-save),
+.message .message-content.ae5e-controls-resolved :is(recorded-targets, effect-application, .dcc-card-targets, .dcc-pending-save, .dcc-roll-row.dcc-save-row),
 .message .message-content.ae5e-controls-resolved .icon-row:not(:is(
   .midi-results *,
   damage-application *,

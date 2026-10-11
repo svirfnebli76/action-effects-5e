@@ -1,3 +1,8 @@
+# v0.4.5.26 — Completed save tray header suppression
+
+- Suppresses the entire rebuilt DCC save-row container on opted-in, confirmed-complete adapted cards, including its shield, collapse control and DC badge.
+- Retains the main save heading/result row, pending cards and damage controls. No compendium payloads or Item mechanics changed.
+
 # v0.4.5.25 — Rebuilt completed card controls
 
 - Marks the adapted content host only when opted-in control completion is confirmed. Suppresses targeting and save-summary rows rebuilt outside the controls slot, including DCC pending-save placeholders.
