@@ -1,6 +1,14 @@
 import { MODULE_ID } from "../core/constants.js";
 
 const FLAG = "chatCard";
+const INTERIM_TIMEOUT = 15000;
+// Match Midi's chat-save policy. Unknown settings fail open.
+function automaticSaves() {
+  const settings = globalThis.MidiQOL?.configSettings?.();
+  const modes = [settings?.rollNPCLinkedSaves, settings?.rollNPCSaves, settings?.playerRollSaves];
+  return Boolean(settings?.autoCheckSaves && settings.autoCheckSaves !== "none"
+    && modes.every(mode => typeof mode === "string" && !["none", "chat"].includes(mode)));
+}
 const SLOTS = new Set(["header", "description", "flavor", "use", "attack", "hits", "saves", "damage", "utility", "outcome", "controls", "modifications"]);
 const SELECTORS = {
   header: ".card-header", description: ".card-description", flavor: ".card-flavor",
@@ -68,12 +76,14 @@ export function itemPresentation(activity) {
   return { schema: 1, enabled: true, layout: value.layout,
     titlePrefix: typeof value.titlePrefix === "string" ? value.titlePrefix.slice(0, 160) : "",
     saveStyle: value.saveStyle === "target" ? "target" : "native",
-    hideCompletedControls: value.hideCompletedControls === true };
+    hideCompletedControls: value.hideCompletedControls === true,
+    hideUntilComplete: value.hideUntilComplete === true };
 }
 
 export class ChatCardAdapter {
   #registered = false;
   #writes = new Map();
+  #interim = new Map();
 
   initialize() {
     if (this.#registered) return;
@@ -83,6 +93,9 @@ export class ChatCardAdapter {
         const value = itemPresentation(activity);
         if (!value) return;
         presentationHTML(value.layout, {}, { layout: true });
+        if (value.hideUntilComplete && activity.type === "save" && automaticSaves()) {
+          value.interimStartedAt = Date.now();
+        }
         config.data.flags ??= {};
         config.data.flags[MODULE_ID] ??= {};
         config.data.flags[MODULE_ID][FLAG] = value;
@@ -92,6 +105,49 @@ export class ChatCardAdapter {
       try { this.render(message, html); }
       catch (error) { console.error(`${MODULE_ID} | Chat card adapter retained native presentation`, error); }
     });
+    Hooks.on("midi-qol.RollComplete", workflow => {
+      // A workflow can finish without the author's completion bridge running.
+      // Persist the release so all clients and subsequent reloads reveal it.
+      void this.#releaseInterim(workflow).catch(error =>
+        console.warn(`${MODULE_ID} | Could not release interim card; timeout remains active`, error));
+    });
+    Hooks.on("deleteChatMessage", message => this.#clearInterim(message.id));
+  }
+
+  #clearInterim(id) {
+    const pending = this.#interim.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pending.html.classList.remove("ae5e-card-interim");
+    this.#interim.delete(id);
+  }
+
+  async #releaseInterim(workflow) {
+    const message = this.message(workflow);
+    const policy = message?.flags?.[MODULE_ID]?.[FLAG];
+    if (!policy?.interimStartedAt || policy.interimReleased
+      || message.flags?.[MODULE_ID]?.activityCard?.schema === 1) return;
+    this.#clearInterim(message.id);
+    return this.#write(message, current => current.update({
+      [`flags.${MODULE_ID}.${FLAG}.interimReleased`]: true
+    }));
+  }
+
+  #deferInterim(message, html, policy, snapshot) {
+    this.#clearInterim(message.id);
+    const started = policy.interimStartedAt;
+    const remaining = INTERIM_TIMEOUT - (Date.now() - started);
+    if (!policy.hideUntilComplete || policy.interimReleased || snapshot?.schema === 1
+      || !Number.isFinite(started) || started > Date.now() || remaining <= 0
+      || !automaticSaves()) return;
+    // Never hide a usable roll, consumption or template-placement button.
+    const manual = [...html.querySelectorAll("button[data-action]")].some(button =>
+      !button.disabled && !button.hasAttribute("disabled") && !hidden(button)
+      && /^(roll|consume|placeTemplate)/.test(button.dataset.action ?? ""));
+    if (manual) return;
+    html.classList.add("ae5e-card-interim");
+    const timer = setTimeout(() => this.#clearInterim(message.id), remaining);
+    this.#interim.set(message.id, { html, timer });
   }
 
   async snapshotLayout(workflow) {
@@ -149,8 +205,8 @@ export class ChatCardAdapter {
 
   render(message, html) {
     const policy = message.flags?.[MODULE_ID]?.[FLAG];
-    if (!policy || !message.isContentVisible || message.blind || hidden(html)
-      || html.querySelector(".ae5e-card-frame, .ae5e-card-contribution")) return;
+    this.#clearInterim(message.id);
+    if (!policy || !message.isContentVisible || message.blind || hidden(html)) return;
     const content = html.querySelector(".message-content");
     const card = content?.querySelector(".chat-card");
     const header = card?.querySelector(".card-header");
@@ -165,6 +221,8 @@ export class ChatCardAdapter {
       ...value, fragment: presentationHTML(value.html)
     }));
     const snapshot = message.flags?.[MODULE_ID]?.activityCard;
+    this.#deferInterim(message, html, policy, snapshot);
+    if (html.querySelector(".ae5e-card-frame, .ae5e-card-contribution")) return;
     let frame = null;
     if (fragment) {
       frame = document.createElement("div");

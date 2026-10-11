@@ -1,3 +1,9 @@
+# v0.4.5.29 — Optional interim save card suppression
+
+- Adds author-owned hideUntilComplete for automatic save Activities, snapshotted when creating the usage card. The message remains available to Midi while hidden; an AE5E completion snapshot reveals the formatted card.
+- Retains cards for chat/manual saves and usable native roll, consumption or template buttons. Workflow completion without a presentation snapshot releases the card; stalled processing reveals it after 15 seconds. Historical cards remain visible.
+- No compendium payloads or Item mechanics changed.
+
 # v0.4.5.28 — Compact save row text alignment
 
 - Vertically centers compact target names and their native name stacks with consistent line height.

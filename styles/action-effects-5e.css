@@ -474,3 +474,6 @@
 )):not(:has(.dice-roll, damage-application, midi-damage-application, .midi-qol-damage-roll, .midi-qol-attack-roll)) {
   display: none !important;
 }
+
+/* Opted-in automatic save cards remain documents while their interim DOM is hidden. */
+.message.ae5e-card-interim { display: none !important; }

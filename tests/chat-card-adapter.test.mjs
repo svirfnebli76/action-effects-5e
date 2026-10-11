@@ -67,7 +67,7 @@ test('adapter registers once; unconfigured usage creation leaves existing flags 
   const hooks=new Map();let count=0;
   globalThis.Hooks={on:(name,fn)=>{count++;hooks.set(name,fn);}};
   const adapter=new ChatCardAdapter();adapter.initialize();adapter.initialize();
-  assert.equal(count,2);
+  assert.equal(count,4);
   const config={data:{flags:{other:{value:1}}}};
   hooks.get('dnd5e.preCreateUsageMessage')({flags:{}},config);
   assert.deepEqual(config,{data:{flags:{other:{value:1}}}});
@@ -83,4 +83,14 @@ test('author-owned title prefix is captured, bounded and disabled with presentat
  assert.equal(itemPresentation(activity).titlePrefix,'');
  activity.flags[M].chatCard.enabled=false;
  assert.equal(itemPresentation(activity),null);
+});
+
+test('interim suppression is explicitly authored and defaults off', () => {
+  const policy={schema:1,enabled:true,layout:'<div data-ae5e-slot="header"></div>'};
+  const activity={flags:{[M]:{chatCard:policy}}};
+  assert.equal(itemPresentation(activity).hideUntilComplete,false);
+  policy.hideUntilComplete=true;
+  assert.equal(itemPresentation(activity).hideUntilComplete,true);
+  policy.hideUntilComplete="true";
+  assert.equal(itemPresentation(activity).hideUntilComplete,false);
 });

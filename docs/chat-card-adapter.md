@@ -87,3 +87,9 @@ Live acceptance: load the package on every client, then test a native spell cont
 Layout slots can opt into `ae5e-align-left` (description), `ae5e-align-center` (use/outcome), and `ae5e-save-compact` (saves). Compact saves retain the native success/failure icon and roll total, hide the added outcome/Roll words, add an outcome-colored 2px portrait ring and a 6px heading gap. `--ae5e-target-name-size:18px` sets target text size; long names and centered sentences wrap. These are presentation choices only and do not affect automation or message visibility.
 
 Compact save rows vertically center target names. Optional `--ae5e-save-total-size:12px` and `--ae5e-save-dc-size:12px` control the native total and DC badge sizes independently of the name. Both default to 12px and retain native roll tooltips.
+
+## Optional interim save-card suppression (v0.4.5.29)
+
+Set `chatCard.hideUntilComplete: true` on an already configured save Activity to hide its initial usage card while automatic saves process. The creation hook snapshots an `interimStartedAt` timestamp only for save Activities with known automatic Midi save settings. The ChatMessage remains available to Midi; no roll, permission, visibility mode or automation behavior changes. An AE5E `activityCard` completion snapshot reveals the card even if manual resolution remains.
+
+Manual/chat-save settings and usable native roll, consumption or template-placement buttons keep the card visible. Unknown settings fail open. Midi RollComplete without an AE5E snapshot releases it across clients. After 15 seconds, a local timer reveals a stalled card; the deadline derives from the saved timestamp and does not restart on rerender or reload. Existing unstamped cards stay visible. Deleted cards cancel the timer. The option defaults off and does not suppress attack/damage or movement Activities. Author completion macros remain required for the finished custom presentation.
