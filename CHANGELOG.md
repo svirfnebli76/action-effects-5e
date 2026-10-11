@@ -1,3 +1,9 @@
+# v0.4.5.25 — Rebuilt completed card controls
+
+- Marks the adapted content host only when opted-in control completion is confirmed. Suppresses targeting and save-summary rows rebuilt outside the controls slot, including DCC pending-save placeholders.
+- Keeps pending/unconfirmed cards, native roll rows and damage-application controls available. The scoped rule also covers rows inserted after the adapter hook.
+- No compendium payloads or Item mechanics changed. Live compatibility verification remains pending.
+
 # v0.4.5.24 — Completed card control suppression
 
 - Explicitly suppresses the controls slot and redundant native save summaries on completed adapted cards, including custom-element content populated after rendering.

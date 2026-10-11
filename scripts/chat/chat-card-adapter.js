@@ -276,6 +276,9 @@ export class ChatCardAdapter {
     // targeting/effect controls; default behavior preserves all interactions.
     if (policy.hideCompletedControls && snapshot.controlsResolved === true
       && (snapshot.kind === "movement" || complete)) {
+      // Keep completion on the content host too. Other renderers can rebuild
+      // rows outside our controls slot after this hook; scoped CSS still applies.
+      content.classList.add("ae5e-controls-resolved");
       // Suppress the slot as well: native custom elements may build children
       // after this hook, and system/theme display rules can override [hidden].
       const controls = frame.querySelector('[data-ae5e-slot="controls"]');

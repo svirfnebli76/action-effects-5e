@@ -402,3 +402,20 @@
 /* Native cards and themes explicitly set display on rows and custom elements.
    Only adapter-confirmed redundant presentation receives this marker. */
 .message .message-content .ae5e-card-suppressed { display: none !important; }
+
+/* Rebuilt targeting/save-summary rows may be inserted outside the adapter slot.
+   The completion marker is set only for opted-in, confirmed-complete layouts.
+   Preserve native roll rows and damage-application controls. */
+.message .message-content.ae5e-controls-resolved :is(recorded-targets, effect-application, .dcc-card-targets, .dcc-pending-save),
+.message .message-content.ae5e-controls-resolved .icon-row:not(:is(
+  .midi-results *,
+  damage-application *,
+  midi-damage-application *,
+  [data-ae5e-slot="attack"] *,
+  [data-ae5e-slot="hits"] *,
+  [data-ae5e-slot="saves"] *,
+  [data-ae5e-slot="damage"] *,
+  [data-ae5e-slot="utility"] *
+)):not(:has(.dice-roll, damage-application, midi-damage-application, .midi-qol-damage-roll, .midi-qol-attack-roll)) {
+  display: none !important;
+}
