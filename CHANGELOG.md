@@ -1,3 +1,9 @@
+# v0.4.5.30 — Keep interim cards hidden through presentation completion
+
+- Stops releasing interim save cards on Midi RollComplete, which can precede asynchronous author completion macros. AE5E presentation completion remains the reveal signal.
+- Automatic-save buttons no longer trigger the manual-control fallback merely because their native button remains enabled. Other manual roll, consumption and placement buttons stay accessible; manual/chat-save settings still fail open.
+- Reduces the stalled-card fallback from 15 seconds to 8 seconds as requested. Existing authored policies need no reconfiguration. No compendium payloads or Item mechanics changed.
+
 # v0.4.5.29 — Optional interim save card suppression
 
 - Adds author-owned hideUntilComplete for automatic save Activities, snapshotted when creating the usage card. The message remains available to Midi while hidden; an AE5E completion snapshot reveals the formatted card.

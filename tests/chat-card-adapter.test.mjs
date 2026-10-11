@@ -67,7 +67,7 @@ test('adapter registers once; unconfigured usage creation leaves existing flags 
   const hooks=new Map();let count=0;
   globalThis.Hooks={on:(name,fn)=>{count++;hooks.set(name,fn);}};
   const adapter=new ChatCardAdapter();adapter.initialize();adapter.initialize();
-  assert.equal(count,4);
+  assert.equal(count,3);
   const config={data:{flags:{other:{value:1}}}};
   hooks.get('dnd5e.preCreateUsageMessage')({flags:{}},config);
   assert.deepEqual(config,{data:{flags:{other:{value:1}}}});

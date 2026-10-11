@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../core/constants.js";
 
 const FLAG = "chatCard";
-const INTERIM_TIMEOUT = 15000;
+const INTERIM_TIMEOUT = 8000;
 // Match Midi's chat-save policy. Unknown settings fail open.
 function automaticSaves() {
   const settings = globalThis.MidiQOL?.configSettings?.();
@@ -105,12 +105,6 @@ export class ChatCardAdapter {
       try { this.render(message, html); }
       catch (error) { console.error(`${MODULE_ID} | Chat card adapter retained native presentation`, error); }
     });
-    Hooks.on("midi-qol.RollComplete", workflow => {
-      // A workflow can finish without the author's completion bridge running.
-      // Persist the release so all clients and subsequent reloads reveal it.
-      void this.#releaseInterim(workflow).catch(error =>
-        console.warn(`${MODULE_ID} | Could not release interim card; timeout remains active`, error));
-    });
     Hooks.on("deleteChatMessage", message => this.#clearInterim(message.id));
   }
 
@@ -122,17 +116,6 @@ export class ChatCardAdapter {
     this.#interim.delete(id);
   }
 
-  async #releaseInterim(workflow) {
-    const message = this.message(workflow);
-    const policy = message?.flags?.[MODULE_ID]?.[FLAG];
-    if (!policy?.interimStartedAt || policy.interimReleased
-      || message.flags?.[MODULE_ID]?.activityCard?.schema === 1) return;
-    this.#clearInterim(message.id);
-    return this.#write(message, current => current.update({
-      [`flags.${MODULE_ID}.${FLAG}.interimReleased`]: true
-    }));
-  }
-
   #deferInterim(message, html, policy, snapshot) {
     this.#clearInterim(message.id);
     const started = policy.interimStartedAt;
@@ -140,9 +123,11 @@ export class ChatCardAdapter {
     if (!policy.hideUntilComplete || policy.interimReleased || snapshot?.schema === 1
       || !Number.isFinite(started) || started > Date.now() || remaining <= 0
       || !automaticSaves()) return;
-    // Never hide a usable roll, consumption or template-placement button.
+    // Automatic save/check buttons can remain enabled while Midi processes them.
+    // Other usable roll, consumption and placement buttons still require access.
     const manual = [...html.querySelectorAll("button[data-action]")].some(button =>
       !button.disabled && !button.hasAttribute("disabled") && !hidden(button)
+      && !["rollSave", "rollCheck"].includes(button.dataset.action)
       && /^(roll|consume|placeTemplate)/.test(button.dataset.action ?? ""));
     if (manual) return;
     html.classList.add("ae5e-card-interim");
