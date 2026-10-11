@@ -1,3 +1,8 @@
+# v0.4.5.23 — Native v14 contribution deletion
+
+- Removes chat card contributions with Foundry v14 ForcedDeletion instead of deprecated -=key syntax.
+- Adds regression coverage for sibling/layout preservation and repeated removal. No compendium payloads or Item mechanics changed.
+
 # v0.4.5.22 — Chat card reload rendering
 
 - Registers Activity card and Chat Card Adapter hooks during init, before restored chat messages render. Saved contributions and layouts no longer depend on asynchronous ready services finishing before the first render.

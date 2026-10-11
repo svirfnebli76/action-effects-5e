@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ChatCardAdapter, itemPresentation } from '../scripts/chat/chat-card-adapter.js';
 const M = 'action-effects-5e';
+class ForcedDeletion {}
+globalThis.foundry = { data: { operators: { ForcedDeletion } } };
 test('activity overrides Item presentation; disabled activity does not inherit enabled Item', () => {
   const parent = {schema:1,enabled:true,layout:'<div data-ae5e-slot="header"></div>'};
   const activity = { item:{flags:{[M]:{chatCard:parent}}}, flags:{} };
@@ -35,7 +37,25 @@ test('removal requires ownership and touches only the selected contribution', as
   assert.equal((await adapter.removeContribution(message,'distant')).updated,false);
   message.isOwner=true;
   await adapter.removeContribution(message,'distant');
-  assert.deepEqual(updates,[{[`flags.${M}.chatCard.contributions.-=distant`]:null}]);
+  assert.deepEqual(updates,[{[`flags.${M}.chatCard.contributions.distant`]:new ForcedDeletion()}]);
+});
+test('v14 contribution deletion preserves sibling contributions and layout flags', async () => {
+  const contributions = { distant: { html: '<p>Distant</p>' }, empowered: { html: '<p>Empowered</p>' } };
+  const flags = { schema: 1, enabled: true, layout: '<div data-ae5e-slot="header"></div>', contributions };
+  const before = structuredClone(flags);
+  const message = { documentName: 'ChatMessage', id: 'M', isOwner: true, async update(patch) {
+    for (const [path, operator] of Object.entries(patch)) {
+      assert.ok(operator instanceof ForcedDeletion);
+      assert.ok(!path.includes('-='));
+      const id = path.slice(`flags.${M}.chatCard.contributions.`.length);
+      delete contributions[id];
+    }
+  } };
+  const adapter = new ChatCardAdapter();
+  await adapter.removeContribution(message, 'distant');
+  assert.deepEqual(flags, { ...before, contributions: { empowered: before.contributions.empowered } });
+  await adapter.removeContribution(message, 'distant');
+  assert.deepEqual(flags, { ...before, contributions: { empowered: before.contributions.empowered } });
 });
 test('same-client writes serialize and recover after a failed document update', async () => {
   const adapter=new ChatCardAdapter();const order=[];let n=0;

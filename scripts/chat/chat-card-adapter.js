@@ -139,7 +139,9 @@ export class ChatCardAdapter {
   async removeContribution(subject, id) {
     if (!validId(id)) throw new Error("Invalid contribution ID.");
     return this.#write(subject, async message => {
-      await message.update({ [`flags.${MODULE_ID}.${FLAG}.contributions.-=${id}`]: null });
+      await message.update({
+        [`flags.${MODULE_ID}.${FLAG}.contributions.${id}`]: new foundry.data.operators.ForcedDeletion()
+      });
       return { updated: true, messageId: message.id, id };
     });
   }
