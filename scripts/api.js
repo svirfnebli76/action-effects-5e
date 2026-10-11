@@ -97,6 +97,7 @@ import {
 
 export class ActionEffects5eApi {
   constructor({
+    activityCards,
     dependencies,
     compatibility,
     movement,
@@ -179,6 +180,10 @@ export class ActionEffects5eApi {
     socket
   }) {
     this.version = MODULE_VERSION;
+
+    this.chatCards = Object.freeze({
+      completeActivity: workflow => activityCards.complete(workflow)
+    });
 
     this.constants = Object.freeze({
       MODULE_ID,

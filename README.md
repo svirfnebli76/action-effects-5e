@@ -76,6 +76,12 @@ Infrastructure builds must not modify `packs/` or `assets/` unless an isolated I
 
 Historical release details are retained in `CHANGELOG.md`.
 
+## v0.4.5.20 Activity chat-card infrastructure
+
+Install the complete module folder and reload Foundry and connected clients. This release adds opt-in completed-Activity card formatting. Items supply their own presentation policy at `flags.action-effects-5e.activityCard` and call `api.chatCards.completeActivity(workflow)` after their automation finishes. The service observes native save/effect outcomes and reuses already-masked Midi result nodes and tooltips. It retains native controls and summary-mode fallback.
+
+Items own titles, statuses/effect names, duration text, movement outcome fields and completion text. This release installs no item-specific macro or configuration. Existing compendiums and assets are included unchanged. See [Activity card API](docs/activity-cards.md) for the generic contract. Development checks pass; real Foundry/Midi/CAT acceptance remains pending.
+
 ## v0.4.5.19 Foundry v14 ActiveEffect declarations
 
 Sneak Attack declarations use Foundry's built-in Custom change type in `effect.system.changes`: `{ key: "flags.action-effects-5e.sneakAttack", type: "custom", phase: "final", value: "schema=1;type=option;id=trip;..." }`. AE5E no longer registers an AE5E-specific change type or exports `AE5E_CHANGE_TYPE` / `SNEAK_ATTACK_CHANGE_TYPE`. Non-Custom changes and legacy numeric modes are not consumed.

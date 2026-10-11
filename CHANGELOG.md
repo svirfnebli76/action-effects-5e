@@ -1,3 +1,12 @@
+# v0.4.5.20 — Opt-in Activity chat-card infrastructure
+
+- Adds shared completed-Activity card presentation via declarative `flags.action-effects-5e.activityCard` policies and `api.chatCards.completeActivity(workflow)`.
+- Captures native save outcomes and source-qualified effect/status observations without applying effects or rolling dice; invalidates old presentation while a save reroll is pending.
+- Reuses native Midi save nodes, viewer-masked totals/DCs and tooltips; preserves action/effect controls and falls back to native summaries when Midi rows are unavailable.
+- Supports caller-selected movement outcome fields and caller-owned completion text. Feature names, durations, activation timing and opportunity-attack rules remain in item automation/configuration.
+- Adds neutral infrastructure regression coverage. No item configuration, migration, or strike macro is installed by the module.
+- Complete archive retains existing packs, assets, pack declarations and folders unchanged. Live Foundry acceptance remains pending.
+
 # v0.4.5.19 — Foundry v14 Custom ActiveEffect declarations
 
 - Removes the abandoned AE5E ActiveEffect change-type registration, configuration accessor, registration status, and public AE5E_CHANGE_TYPE / SNEAK_ATTACK_CHANGE_TYPE constants.
