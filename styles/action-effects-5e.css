@@ -399,6 +399,39 @@
 .message .message-content .chat-card .ae5e-card-frame [hidden], .ae5e-card-contribution[hidden] { display: none; }
 .ae5e-card-contribution { margin: 8px 0; }
 
+/* Optional author-selected presentation classes on Item/Activity layout slots. */
+.message .ae5e-card-frame .ae5e-title-prefix {
+  display: block;
+  font-size: var(--ae5e-title-size, 16px);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.message .ae5e-card-frame .ae5e-align-left :is(.card-description, .card-description *) {
+  text-align: left !important;
+}
+.message .ae5e-card-frame .ae5e-align-center,
+.message .ae5e-card-frame .ae5e-align-center p {
+  text-align: center !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.message .ae5e-card-frame .ae5e-save-compact .midi-qol-save-heading { margin-bottom: 6px; }
+.message .ae5e-card-frame .ae5e-save-compact .ae5e-save-label { display: none !important; }
+.message .ae5e-card-frame .ae5e-save-compact .ae5e-save-row .midi-qol-save-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.message .ae5e-card-frame .ae5e-save-compact .ae5e-save-row .midi-qol-save-name .title {
+  font-size: var(--ae5e-target-name-size, 18px) !important;
+  white-space: normal;
+}
+.message .ae5e-card-frame .ae5e-save-compact .ae5e-save-row .midi-qol-save-img {
+  box-sizing: border-box;
+  border: 2px solid;
+}
+.message .ae5e-card-frame .ae5e-save-compact .ae5e-save-passed .midi-qol-save-img { border-color: #55b875; }
+.message .ae5e-card-frame .ae5e-save-compact .ae5e-save-failed .midi-qol-save-img { border-color: #df6673; }
+
 /* Native cards and themes explicitly set display on rows and custom elements.
    Only adapter-confirmed redundant presentation receives this marker. */
 .message .message-content .ae5e-card-suppressed { display: none !important; }

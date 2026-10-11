@@ -79,3 +79,9 @@ Allowed HTML: div, section, p, span, strong, b, em, i, small, br, ul, ol, li, h3
 Regression tests cover policy precedence, authority, path validation and serialized update recovery. A separate local DOM harness checks native node/listener preservation, masked/hidden/concealed/blind views, pending controls, Item templates, multiple contributions, updates, reload persistence and escaping. The existing Activity formatter remains available when no new layout is configured.
 
 Live acceptance: load the package on every client, then test a native spell contribution on GM and player, a late update and removal, rerender/reload, attack/damage tooltips and Apply/undo. Test completed Trip passed/failed rows, short description, icon/title sizing, multi-target saves, rerolls, summary-only settings and private/blind messages. Any unsupported component remains native. Metamagic casting hooks and payment behavior are separate Stage 0 work, not delivered by this adapter.
+
+## Optional presentation refinements
+
+`chatCard.titlePrefix` is author-owned plain text (up to 160 characters), snapshotted with the layout and displayed above the completed title beside the native icon. The module supplies no feature-specific prefix.
+
+Layout slots can opt into `ae5e-align-left` (description), `ae5e-align-center` (use/outcome), and `ae5e-save-compact` (saves). Compact saves retain the native success/failure icon and roll total, hide the added outcome/Roll words, add an outcome-colored 2px portrait ring and a 6px heading gap. `--ae5e-target-name-size:18px` sets target text size; long names and centered sentences wrap. These are presentation choices only and do not affect automation or message visibility.

@@ -72,3 +72,15 @@ test('adapter registers once; unconfigured usage creation leaves existing flags 
   hooks.get('dnd5e.preCreateUsageMessage')({flags:{}},config);
   assert.deepEqual(config,{data:{flags:{other:{value:1}}}});
 });
+
+test('author-owned title prefix is captured, bounded and disabled with presentation', () => {
+ const layout='<div data-ae5e-slot="header"></div>';
+ const activity={flags:{[M]:{chatCard:{schema:1,enabled:true,layout,titlePrefix:'Sneak Attack:'}}}};
+ assert.equal(itemPresentation(activity).titlePrefix,'Sneak Attack:');
+ activity.flags[M].chatCard.titlePrefix='x'.repeat(200);
+ assert.equal(itemPresentation(activity).titlePrefix.length,160);
+ activity.flags[M].chatCard.titlePrefix={};
+ assert.equal(itemPresentation(activity).titlePrefix,'');
+ activity.flags[M].chatCard.enabled=false;
+ assert.equal(itemPresentation(activity),null);
+});

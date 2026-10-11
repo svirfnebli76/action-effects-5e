@@ -44,7 +44,7 @@ export function presentationHTML(html, data = {}, { layout = false } = {}) {
           const colon = declaration.indexOf(":");
           const property = declaration.slice(0, colon).trim().toLowerCase();
           const value = declaration.slice(colon + 1).trim();
-          const sizeVariable = ["--ae5e-icon-size", "--ae5e-title-size"].includes(property) && /^\d{1,3}px$/.test(value);
+          const sizeVariable = ["--ae5e-icon-size", "--ae5e-title-size", "--ae5e-target-name-size"].includes(property) && /^\d{1,3}px$/.test(value);
           if (colon < 0 || (!CSS.has(property) && !sizeVariable) || /[\\<>@]|url\s*\(|expression\s*\(|var\s*\(|!important/i.test(value)) {
             throw new Error(`Unsupported card style: ${property}`);
           }
@@ -66,6 +66,7 @@ export function itemPresentation(activity) {
   const value = activity?.flags?.[MODULE_ID]?.[FLAG] ?? activity?.item?.flags?.[MODULE_ID]?.[FLAG];
   if (value?.schema !== 1 || value.enabled !== true || typeof value.layout !== "string") return null;
   return { schema: 1, enabled: true, layout: value.layout,
+    titlePrefix: typeof value.titlePrefix === "string" ? value.titlePrefix.slice(0, 160) : "",
     saveStyle: value.saveStyle === "target" ? "target" : "native",
     hideCompletedControls: value.hideCompletedControls === true };
 }
@@ -216,6 +217,12 @@ export class ChatCardAdapter {
     header.querySelector(".chevron")?.remove();
     const title = header.querySelector(".name-stacked .title");
     if (title) title.textContent = snapshot.title;
+    if (title && policy.titlePrefix) {
+      const prefix = document.createElement("span");
+      prefix.className = "ae5e-title-prefix";
+      prefix.textContent = policy.titlePrefix;
+      title.before(prefix);
+    }
     header.querySelector(".subtitle")?.remove();
     if (header.querySelector(".activity-icon")) header.querySelector(".item-icon")?.remove();
     const description = frame.querySelector(".card-description");
@@ -259,7 +266,9 @@ export class ChatCardAdapter {
           const nativeDC = saves.querySelector(".midi-qol-saveDC");
           if (nativeDC && !hidden(nativeDC)) {
             const dc = document.createElement("span"); dc.className = "ae5e-save-dc";
-            dc.textContent = `DC ${nativeDC.textContent.trim()}`; row.append(dc);
+            const text = nativeDC.textContent.trim();
+            dc.textContent = /^DC\b/i.test(text) ? text : `DC ${text}`;
+            row.append(dc);
           }
         }
         const detail = snapshot.targets.find(target => target.uuid === rowUuid(row));

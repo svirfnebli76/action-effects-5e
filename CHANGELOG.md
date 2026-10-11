@@ -1,3 +1,9 @@
+# v0.4.5.27 — Author-selected card presentation
+
+- Supports snapshotted author-owned titlePrefix text and optional layout classes for left/center alignment and compact save rows with outcome-colored portrait rings, smaller names and label-free totals.
+- Normalizes native save DC text so labels already containing DC are not prefixed twice. Preserves native roll nodes, masking and completion suppression.
+- No compendium payloads or production Items changed automatically.
+
 # v0.4.5.26 — Completed save tray header suppression
 
 - Suppresses the entire rebuilt DCC save-row container on opted-in, confirmed-complete adapted cards, including its shield, collapse control and DC badge.
