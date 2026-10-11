@@ -270,15 +270,24 @@ export class ChatCardAdapter {
           outcome.append(p);
         }
       }
-      content.querySelectorAll(".card-summary").forEach(node => { node.hidden = true; });
+      content.querySelectorAll(".card-summary").forEach(suppressPresentation);
     }
     // Only an explicit automation completion signal authorizes hiding manual
     // targeting/effect controls; default behavior preserves all interactions.
     if (policy.hideCompletedControls && snapshot.controlsResolved === true
       && (snapshot.kind === "movement" || complete)) {
-      cardControls(content).forEach(node => { node.hidden = true; });
+      // Suppress the slot as well: native custom elements may build children
+      // after this hook, and system/theme display rules can override [hidden].
+      const controls = frame.querySelector('[data-ae5e-slot="controls"]');
+      if (controls) suppressPresentation(controls);
+      cardControls(content).forEach(suppressPresentation);
     }
   }
+}
+
+function suppressPresentation(node) {
+  node.hidden = true;
+  node.classList.add("ae5e-card-suppressed");
 }
 
 function cardControls(content) {

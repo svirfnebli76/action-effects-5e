@@ -398,3 +398,7 @@
 .message .message-content .chat-card .ae5e-card-frame .ae5e-save-row { color: #eee; }
 .message .message-content .chat-card .ae5e-card-frame [hidden], .ae5e-card-contribution[hidden] { display: none; }
 .ae5e-card-contribution { margin: 8px 0; }
+
+/* Native cards and themes explicitly set display on rows and custom elements.
+   Only adapter-confirmed redundant presentation receives this marker. */
+.message .message-content .ae5e-card-suppressed { display: none !important; }

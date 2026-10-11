@@ -1,3 +1,9 @@
+# v0.4.5.24 — Completed card control suppression
+
+- Explicitly suppresses the controls slot and redundant native save summaries on completed adapted cards, including custom-element content populated after rendering.
+- Uses an adapter-scoped display rule that wins over system/theme row styles. Pending or unconfirmed save/effect controls remain available; native damage application is retained.
+- No compendium payloads or Item mechanics changed. Live layout verification remains pending.
+
 # v0.4.5.23 — Native v14 contribution deletion
 
 - Removes chat card contributions with Foundry v14 ForcedDeletion instead of deprecated -=key syntax.
