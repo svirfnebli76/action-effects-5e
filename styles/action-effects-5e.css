@@ -458,6 +458,28 @@
    Only adapter-confirmed redundant presentation receives this marker. */
 .message .message-content .ae5e-card-suppressed { display: none !important; }
 
+/* Explicit per-message switches. CSS also catches controls built asynchronously
+   after the render hook. Damage rolls, saves and their native data are retained. */
+.message .message-content.ae5e-hide-initial-targeting :is(
+  recorded-targets,
+  .dcc-card-targets,
+  .icon-row:has(> .target-source-toggle)
+):not(.card-tray *, damage-application *, midi-damage-application *) {
+  display: none !important;
+}
+.message .message-content.ae5e-hide-initial-saves :is(
+  .midi-qol-saves-display,
+  .card-summary:has(.save-summary),
+  .dcc-pending-save,
+  .dcc-roll-row.dcc-save-row
+) { display: none !important; }
+.message .message-content.ae5e-hide-initial-damage-application :is(
+  .card-tray.damage-tray,
+  .card-tray:has(damage-application, midi-damage-application),
+  damage-application,
+  midi-damage-application
+) { display: none !important; }
+
 /* Rebuilt targeting/save-summary rows may be inserted outside the adapter slot.
    The completion marker is set only for opted-in, confirmed-complete layouts.
    Preserve native roll rows and damage-application controls. */

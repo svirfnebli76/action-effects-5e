@@ -1,3 +1,16 @@
+# v0.4.5.32 — Independent native-card section presentation
+
+- Adds explicit per-message switches for initial targeting, saving-throw data,
+  and the manual damage-application tray. Each switch is independent and defaults
+  off for unconfigured messages. Item automation supplies resolved CAT values.
+- Adds `chatCards.setSections(workflowOrMessage, policy)` for owned-message
+  snapshots, with serialized writes and unchanged-policy deduplication.
+- Keeps native nodes, rolls, application data and listeners intact. Scoped CSS
+  survives rerender/reload and custom-element updates on all clients. Damage
+  rolls and consumption remain visible; separate results cards are unaffected.
+- No compendium payloads or Item rules changed. Live Foundry GM/player acceptance
+  is still required.
+
 # v0.4.5.31 — Repeat-save card outcomes
 
 - Adds Activity-authored saveMode: "repeat", passedResult and failedResult policies. Observes the specific existing over-time effect rather than a new application; successful saves confirm its removal, failed saves confirm its continuation.

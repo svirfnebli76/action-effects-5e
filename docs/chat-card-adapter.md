@@ -1,5 +1,54 @@
 # AE5E Chat Card Adapter (v0.4.5.21)
 
+## Independent native-card sections (v0.4.5.32)
+
+An Item automation may independently suppress initial-card targeting, save data,
+and the manual damage-application tray. This is a per-message presentation
+snapshot; it requires no replacement layout and has no AE5E-wide default. The
+Item owns its CAT option definitions, defaults and preference reads.
+
+At Midi `preItemRoll`, place the resolved booleans on the **current cast's**
+`args[0].options.message.data.flags`:
+
+```js
+message.data.flags["action-effects-5e"].initialCardSections = {
+  schema: 1,
+  targeting: true,
+  saves: true,
+  damageApplication: true
+};
+```
+
+Here `true` means suppress that section. Initialize missing parent objects while
+preserving other flags. For an existing usage ChatMessage, or as an after-save
+fallback, use its actual Workflow or explicit ChatMessage:
+
+```js
+await game.modules.get("action-effects-5e").api.chatCards.setSections(workflow, {
+  schema: 1, targeting: true, saves: false, damageApplication: true
+});
+```
+
+Writes require message ownership, serialize with other adapter writes, and skip
+identical snapshots. Every option must be a boolean; invalid policies fail open
+when rendering and are rejected by the write API. A later explicit all-false
+snapshot restores the same DOM nodes and event listeners. Absent flags leave
+unrelated cards, existing compact layouts and separate result messages alone.
+
+The renderer places scoped classes on the message-content host on every render,
+including reload/popout/player renders. CSS handles controls created later by
+native custom elements. Target suppression excludes targeting inside application
+trays. Save suppression covers the Midi results block and native save summary;
+it does not delete rolls or change challenge visibility. Damage-application
+suppression hides its Apply tray but preserves the damage roll, consumption
+controls, native data and automatic HP updates. Authors who require manual
+application must leave that checkbox unchecked to expose the native tray.
+
+Run `tests/chat-card-sections-browser.html` in a local browser to exercise all
+eight combinations with representative native markup. Actual Foundry/Midi
+GM/player rendering, automation timing, Apply/undo and popouts still require live
+acceptance.
+
 Opt-in presentation infrastructure for Foundry 14 / D&D5e 6.0.6 / Midi-QOL 14.6. Native usage messages, rolls, targeting, effect application and damage application remain authoritative. No Items or compendiums are configured by installing this module. Live GM/player acceptance is required before treating this release as proven in a world.
 
 ## Item-owned layouts

@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AE5E card section browser checks</title>
+<link rel="stylesheet" href="../styles/action-effects-5e.css">
+<pre id="report">RUNNING</pre>
+<script type="module">
+import { ChatCardAdapter } from '../scripts/chat/chat-card-adapter.js';
+const report = document.querySelector('#report');
+const check = (condition, message) => { if (!condition) throw Error(message); };
+const visible = node => {
+  for (; node; node = node.parentElement) {
+    if (getComputedStyle(node).display === 'none') return false;
+  }
+  return true;
+};
+const fixture = () => {
+  const host = document.createElement('div');
+  host.className = 'message';
+  host.innerHTML = `<div class="message-content">
+    <div class="chat-card">
+      <header class="card-header">Thunderwave</header>
+      <recorded-targets data-test="targeting"><section class="icon-row">
+        <button class="target-source-toggle">Targets</button></section></recorded-targets>
+      <div class="midi-qol-damage-roll" data-test="damage">2d8: 9</div>
+      <div class="midi-qol-saves-display" data-test="saves">DC 15: Ally 10</div>
+      <div class="card-summary" data-test="summary"><div class="save-summary">Save summary</div></div>
+      <button data-action="consume" data-test="consume">Consume</button>
+    </div>
+    <div class="card-tray damage-tray" data-test="apply">
+      <label>Apply</label><damage-application>
+        <recorded-targets data-test="apply-targets">Ally</recorded-targets>
+        <button data-test="apply-button">Apply damage</button>
+      </damage-application>
+    </div>
+  </div>`;
+  document.body.append(host);
+  return host;
+};
+try {
+  const adapter = new ChatCardAdapter();
+  for (let bits = 0; bits < 8; bits++) {
+    const host = fixture();
+    const get = id => host.querySelector(`[data-test="${id}"]`);
+    const targeting = Boolean(bits & 1), saves = Boolean(bits & 2), damageApplication = Boolean(bits & 4);
+    const message = { id: `cast-${bits}`, isContentVisible: true, flags: {
+      'action-effects-5e': { initialCardSections: { schema: 1, targeting, saves, damageApplication } }
+    } };
+    const original = get('apply-button');
+    let clicks = 0;
+    original.addEventListener('click', () => clicks++);
+    adapter.render(message, host);
+    check(visible(get('targeting')) === !targeting, `${bits}: targeting`);
+    check(visible(get('saves')) === !saves, `${bits}: saves`);
+    check(visible(get('summary')) === !saves, `${bits}: summary`);
+    check(visible(get('apply')) === !damageApplication, `${bits}: apply tray`);
+    check(visible(get('apply-targets')) === !damageApplication, `${bits}: targeting must not hide damage-tray targets`);
+    check(visible(get('damage')), `${bits}: damage roll retained`);
+    check(visible(get('consume')), `${bits}: consume control retained`);
+    const late = document.createElement('div');
+    late.className = 'midi-qol-saves-display';
+    late.textContent = 'Late save render';
+    host.querySelector('.chat-card').append(late);
+    check(visible(late) === !saves, `${bits}: late native render`);
+    // Turning every option off restores the same nodes and listeners.
+    message.flags['action-effects-5e'].initialCardSections = {
+      schema: 1, targeting: false, saves: false, damageApplication: false
+    };
+    adapter.render(message, host);
+    for (const id of ['targeting', 'saves', 'summary', 'apply']) check(visible(get(id)), `${bits}: restore ${id}`);
+    check(get('apply-button') === original, `${bits}: native node identity`);
+    original.click();
+    check(clicks === 1, `${bits}: native listener retained`);
+    host.remove();
+  }
+  const resultHost = fixture();
+  resultHost.querySelector('.chat-card').classList.add('ae5e-thunderwave-results-card');
+  adapter.render({ id: 'results', flags: {} }, resultHost);
+  check(visible(resultHost.querySelector('[data-test="saves"]')), 'Results card must stay visible');
+  resultHost.remove();
+  report.textContent = 'PASS: 8 section combinations; initial targeting independent from damage-tray targets; saves and native summary; Apply tray; damage roll and consume retained; late-rendered nodes; restoration; listener preservation; separate results message.';
+} catch (error) {
+  report.textContent = `FAIL: ${error.stack}`;
+}
+</script>

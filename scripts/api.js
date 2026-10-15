@@ -183,6 +183,7 @@ export class ActionEffects5eApi {
     this.version = MODULE_VERSION;
 
     this.chatCards = Object.freeze({
+      setSections: (subject, options) => chatCardAdapter.setSections(subject, options),
       completeActivity: async (workflow, options) => {
         await chatCardAdapter.snapshotLayout(workflow);
         return activityCards.complete(workflow, options);
