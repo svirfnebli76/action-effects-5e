@@ -2,6 +2,10 @@
 
 Action Effects 5E (AE5E) provides reusable D&D5e automation infrastructure for Foundry VTT. Individual Items remain responsible for their own game rules; AE5E provides generic capabilities that multiple unrelated automations can reuse.
 
+The Metamagic Stage 1 source preview has an [Item/casting contract](docs/metamagic-stage-1-contract.md)
+and [local installation and GM acceptance guide](docs/metamagic-stage-1-acceptance.md).
+It prepares the first Distant Spell slice; live Foundry acceptance remains pending.
+
 ## Architecture boundary
 
 AE5E runtime may own reusable infrastructure such as:

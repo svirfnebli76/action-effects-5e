@@ -1,0 +1,34 @@
+{
+  "main": {
+    "version": 1, "family": "metamagic", "type": "main", "id": "metamagic",
+    "enabled": true, "learnedOptions": ["distant-spell"], "optionChoices": 2, "selectionLimit": 1,
+    "resource": { "identifier": "sorcery-points" },
+    "catalogue": { "source": "ae5e-stage1-test", "rules": "2024", "pack": null }
+  },
+  "distant": {
+    "version": 1, "family": "metamagic", "type": "option", "id": "distant-spell",
+    "enabled": true, "cost": 1,
+    "tooltip": "Double a spell's numerical range of at least 5 feet, or change Touch to 30 feet, for this casting only.",
+    "rules": { "minimumFeet": 5, "multiplier": 2, "touch": { "value": 30, "units": "ft" } },
+    "execution": { "macroUuid": "REPLACE_WITH_CREATED_MACRO_UUID" },
+    "presentation": { "html": "<p><strong>{{options}}</strong> — {{outcome}}. Cost: {{cost}} Sorcery Point(s).</p>" },
+    "catalogue": { "source": "ae5e-stage1-test", "rules": "2024", "pack": null }
+  },
+  "ringGrantingDistant": {
+    "version": 1, "family": "metamagic", "type": "provider", "id": "ring-of-distant-magic",
+    "enabled": true, "activation": { "equipped": true, "attuned": true }, "grants": ["distant-spell"]
+  },
+  "ringAddingChoice": {
+    "version": 1, "family": "metamagic", "type": "provider", "id": "ring-of-metamagic-knowledge",
+    "enabled": true, "activation": { "equipped": true, "attuned": true }, "choiceBonus": 1
+  },
+  "featureAllowingTwo": {
+    "version": 1, "family": "metamagic", "type": "provider", "id": "combined-metamagic",
+    "enabled": true, "selectionLimit": 2
+  },
+  "costAdjustmentExample": {
+    "version": 1, "family": "metamagic", "type": "provider", "id": "example-point-discount",
+    "enabled": false,
+    "costAdjustments": [{ "optionIds": ["distant-spell"], "amount": -1, "label": "Example one-point reduction" }]
+  }
+}

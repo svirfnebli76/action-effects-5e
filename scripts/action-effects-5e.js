@@ -68,6 +68,8 @@ import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.j
 import { ActivityExecutionService } from "./activities/activity-execution-service.js";
 import { ActivityCardService } from "./chat/activity-card-service.js";
 import { ChatCardAdapter } from "./chat/chat-card-adapter.js";
+import { MetamagicDeclarationService } from "./metamagic/declaration-service.js";
+import { MetamagicCastingService } from "./metamagic/casting-service.js";
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
@@ -191,6 +193,8 @@ const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAut
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const activityCards = new ActivityCardService();
 const chatCardAdapter = new ChatCardAdapter();
+const metamagicDeclarations = new MetamagicDeclarationService();
+const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations, prompts: choicePrompts, cards: chatCardAdapter });
 const sneakAttackDeclarationParser = new SneakAttackDeclarationParser();
 const sneakAttackDae = new SneakAttackDaeDeclarationService();
 const sneakAttackDeclarations = new SneakAttackDeclarationService({
@@ -442,6 +446,8 @@ async function bootstrapAcceptedCatMetadata() {
   return { skipped: false, changed };
 }
 const api = new ActionEffects5eApi({
+  metamagicDeclarations,
+  metamagicCasting,
   activityCards,
   chatCardAdapter,
   dependencies,
@@ -591,6 +597,7 @@ Hooks.once("ready", async () => {
   automatedAnimations.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();
+  metamagicCasting.initialize();
   ongoingEffects.initialize();
   compatibility.refresh();
 

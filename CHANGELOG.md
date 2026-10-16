@@ -1,3 +1,18 @@
+# Metamagic Stage 1 — Source preview (16 October 2026)
+
+- Adds versioned Item declarations for main, provider and option roles, learned
+  choice reconciliation, equipment grants, combination limits and fixed costs.
+- Adds casting-local option execution through Item-referenced Script Macros,
+  stable casting/event identity, native consumption targets and result receipts.
+- Provides a Distant Spell example, clean test-actor installer, diagnostics,
+  cleanup, contracts and GM acceptance instructions. Reuses the existing point
+  pool, prompt/indicator and native-card contribution services.
+- Repository checks are separate from pending live Foundry acceptance. Player
+  authority, continuations and automated Counterspell are not accepted by this
+  draft. Manifest/version, existing compendiums and assets remain unchanged.
+- Published as a source preview with user authorization. Live Foundry acceptance
+  remains pending; this does not certify a completed Metamagic suite.
+
 # v0.4.5.32 — Independent native-card section presentation
 
 - Adds explicit per-message switches for initial targeting, saving-throw data,

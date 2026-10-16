@@ -97,6 +97,8 @@ import {
 
 export class ActionEffects5eApi {
   constructor({
+    metamagicDeclarations,
+    metamagicCasting,
     activityCards,
     chatCardAdapter,
     dependencies,
@@ -404,6 +406,16 @@ export class ActionEffects5eApi {
     });
     this.sme = smeApi;
     this.spellModifiers = smeApi;
+
+    this.metamagic = Object.freeze({
+      readDeclaration: item => metamagicDeclarations.read(item),
+      reconcile: actor => metamagicDeclarations.compile(actor),
+      learn: (actor, optionIds) => metamagicDeclarations.learn(actor, optionIds),
+      begin: (workflow, options) => metamagicCasting.begin(workflow, options),
+      getCasting: subject => metamagicCasting.get(subject),
+      getRecentCastings: () => metamagicCasting.recent(),
+      eventIdentity: (castingId, event) => metamagicCasting.eventIdentity(castingId, event)
+    });
 
     this.activities = Object.freeze({
       execute: (request) => activities.execute(request),
