@@ -195,7 +195,7 @@ possibly additional infrastructure before production use.
 Records use workflow WeakMap/WeakRef associations; diagnostic history is bounded
 to 100 latest casting snapshots, including selected/native-consumption stages
 that may never reach completion. These snapshots are not cancellation/refund
-claims. `runtimeRevision: "activity-source-bridge-1"` and `activityChecks` show
+claims. `runtimeRevision: "activity-source-bridge-2"` and `activityChecks` show
 expected, receiver, prepared-child, parent-source and workflow values at each
 observed boundary. Abandoned live records
 can be inspected by workflow while it exists; no timer refunds them. The message
@@ -256,3 +256,15 @@ range change; no extra standalone Stage 0 reload probe is scheduled.
 Preserve the Stage 0 final isolation report's raw false matrix flag and reviewed
 reporting-defect explanation. It is not a reason to repeat the accepted range,
 refund, concentration or standalone reload probes.
+
+
+## Formula-field preparation
+
+D&D5e 6.0.6 RangeField.value is a FormulaField extending StringField. Its parent
+source stores `"60"`; native final preparation evaluates the live distance to
+`60`. The source update and native final preparation are separate operations.
+The current child is finalized through Item.prepareFinalAttributes. Detached
+receivers still held by Midi are updated and then finalized through their native
+Activity.prepareFinalData. The prepared child is not source-updated again after
+final preparation. Strict pre-payment validation remains in place on effective
+values; it is not replaced with loose string/number equality.

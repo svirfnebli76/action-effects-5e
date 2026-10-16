@@ -46,16 +46,26 @@ function setup({ range = { value: 30, units: "ft", override: false }, available 
         updateSource(updates) {
           for (const [path, value] of Object.entries(updates)) setPath(data, path, value);
           hydrateItem();
+        }, prepareFinalAttributes() {
+          for (const activity of this.system.activities) activity.prepareFinalData();
         } };
       const hydrateItem = () => {
         spell.flags = copy(data.flags);
         spell.system = { range: copy(data.system.range), activities: new Collection() };
         for (const [id, raw] of Object.entries(data.system.activities)) {
+          // D&D5e RangeField.value is a FormulaField (a StringField), then
+          // prepareFinalData evaluates it to the live numeric distance.
+          if (raw.range.value != null) raw.range.value = String(raw.range.value);
           const source = copy(raw);
           const activity = { id, actor, item: spell, _source: source,
             updateSource(updates) {
               for (const [path, value] of Object.entries(updates)) setPath(source, path, value);
+              if (source.range.value != null) source.range.value = String(source.range.value);
               hydrateActivity();
+            }, prepareFinalData() {
+              hydrateActivity();
+              if (["ft", "mi", "m", "km"].includes(this.range.units)) this.range.value = Number(this.range.value);
+              else this.range.value = null;
             } };
           const hydrateActivity = () => {
             activity.range = copy(source.range.override ? source.range : { ...spell.system.range, override: false });
@@ -66,6 +76,7 @@ function setup({ range = { value: 30, units: "ft", override: false }, available 
         }
       };
       hydrateItem();
+      spell.prepareFinalAttributes();
       return spell.system.activities.get("activity");
     }
     const spell = { id: original.id, uuid: original.uuid, actor, type: "spell", flags: copy(from?.item.flags ?? original.flags),
@@ -494,12 +505,13 @@ test("Distant range survives parent Item re-preparation, native cloning and scal
   const f = setup({ sourceBacked: true });
   await f.service.begin(f.workflow, { chooser: chooseDistant });
   const castItem = f.workflow.activity.item;
-  assert.equal(castItem._source.system.activities.activity.range.value, 60);
+  assert.equal(castItem._source.system.activities.activity.range.value, "60");
   assert.equal(castItem.system.activities.get("activity").range.value, 60);
   const native = f.activityClone(f.workflow.activity);
   assert.equal(native.range.value, 60, "native use must clone the selected range from parent source");
   assert.equal(f.service.prepareNative(native), true);
   native.item.updateSource({ "flags.dnd5e.scaling": 1 });
+  native.item.prepareFinalAttributes(); // Native _prepareUsageScaling finalizes after the flag update.
   const scaled = native.item.system.activities.get("activity");
   assert.equal(scaled.range.value, 60, "native scaling must not restore the ordinary range");
   const { delta } = nativeConsumption(f, scaled);
@@ -524,7 +536,8 @@ test("casting-local Item preparation restores the native Actor flag even on fail
   const f = setup({ sourceBacked: true });
   f.actor._embeddedPreparation = false;
   let prepared = 0;
-  f.workflow.activity.item.prepareFinalAttributes = () => { prepared++; };
+  const originalPrepare = f.workflow.activity.item.prepareFinalAttributes.bind(f.workflow.activity.item);
+  f.workflow.activity.item.prepareFinalAttributes = () => { prepared++; originalPrepare(); };
   await f.service.begin(f.workflow, { chooser: chooseDistant });
   assert.equal(f.actor._embeddedPreparation, false);
   assert.equal(prepared, 1);
@@ -543,8 +556,19 @@ test("lost Activity range rejects the native payment plan and remains visible in
   native.range.value = 30;
   assert.equal(f.service.validateConsumption(native, { item: [{ _id: "pool", "system.uses.spent": 4 }], delete: [] }), false);
   const report = f.service.recent()[0];
-  assert.equal(report.runtimeRevision, "activity-source-bridge-1");
+  assert.equal(report.runtimeRevision, "activity-source-bridge-2");
   assert.equal(report.activityChecks.at(-1).receiver["range.value"], 30);
   assert.equal(report.activityChecks.at(-1).expected["range.value"], 60);
   assert.equal(f.pool.system.uses.value, 4);
+});
+
+test("native FormulaField source remains a string while original and rebuilt receivers are numeric", async () => {
+  const f = setup({ sourceBacked: true });
+  await f.service.begin(f.workflow, { chooser: chooseDistant });
+  const snapshot = f.service.get(f.workflow).activityChecks.at(-1);
+  assert.equal(snapshot.parentSource["range.value"], "60");
+  for (const key of ["receiver", "prepared", "workflow"]) assert.equal(snapshot[key]["range.value"], 60, key);
+  assert.equal(f.workflow.activity.item._source.system.activities.activity.range.value, "60");
+  assert.equal(f.pool.system.uses.value, 4, "preparation does not spend points");
+  assert.equal(f.original.system.range.value, 30);
 });

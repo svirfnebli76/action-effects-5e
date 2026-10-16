@@ -86,7 +86,7 @@ export class MetamagicCastingService {
       throw new Error("Casting-local Activity/Item copy is unavailable; source Items must remain unchanged.");
     }
     const record = {
-      version: 1, runtimeRevision: "activity-source-bridge-1", castingId: randomId(), parentCastingId: null, state: "preparing",
+      version: 1, runtimeRevision: "activity-source-bridge-2", castingId: randomId(), parentCastingId: null, state: "preparing",
       initiatorUserId, controllerUserId: initiatorUserId, executionUserId: game.user.id,
       casterActorUuid: actor.uuid, casterTokenUuid: workflow.token?.document?.uuid ?? workflow.token?.uuid ?? null,
       sourceItemUuid: actor.items.get(item.id)?.uuid ?? item.uuid, sourceActivityId: activity.id,
@@ -244,11 +244,15 @@ export class MetamagicCastingService {
           else delete actor._embeddedPreparation;
         }
       }
-      item.prepareFinalAttributes?.();
       const prepared = item.system?.activities?.get?.(activity.id);
       const receivers = new Set([activity, prepared].filter(Boolean));
       if (record.workflow.activity?.item === item && record.workflow.activity.id === activity.id) receivers.add(record.workflow.activity);
-      for (const receiver of receivers) receiver.updateSource(updates);
+      // Parent updates already contain the fresh child's patch. Only obsolete
+      // receivers need their detached source updated. Updating a prepared child
+      // afterward would undo FormulaField evaluation (60 becomes source "60").
+      for (const receiver of receivers) if (receiver !== prepared) receiver.updateSource(updates);
+      item.prepareFinalAttributes?.();
+      for (const receiver of receivers) if (receiver !== prepared) receiver.prepareFinalData?.();
       this.#captureActivity(record, activity, stage);
       for (const receiver of receivers) {
         for (const [path, expected] of Object.entries(record.activityUpdates)) {

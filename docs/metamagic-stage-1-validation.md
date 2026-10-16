@@ -74,3 +74,23 @@ a lost range patch before accepting a native debit plan. Casting snapshots retai
 expected/actual values through post-use, even without workflow completion.
 The native lifecycle is still modeled in these tests, not executed in Foundry.
 A new live 45-foot retry and its actual Sorcery Point balance remain pending.
+
+
+## Confirmed formula/prepared-value mismatch
+
+The user's captured revision-1 diagnostic identifies the immediate rejection:
+expected range was numeric 60, the prepared child was numeric 60, and the original
+receiver/workflow and parent source held formula string "60". No native debit
+existed; the live point balance remained four. The patch was present, and the
+strict guard rejected the unfinalized receiver rather than a reverted range.
+
+Pinned native RangeField and FormulaField confirm string source storage and
+numeric final preparation. The earlier source-backed model omitted this field
+cleaning. Updating that model reproduced the user's exact rejection before the
+fix. Revision 2 finalizes detached receivers with native prepareFinalData and
+avoids source-updating the already prepared child afterward. Numerical, Touch,
+scaling, source-isolation and pre-payment-loss checks pass, including an explicit
+assertion that parent source "60" and effective receiver 60 coexist correctly.
+The focused suite now has 36 passing checks. No strict value guard was weakened
+and no source Item, Macro definition, pool or compendium was changed. Live
+confirmation of the next 45-foot casting remains pending.
