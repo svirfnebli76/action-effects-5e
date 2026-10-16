@@ -133,8 +133,13 @@ subsequent native spell configuration stops casting before any payment.
 
 Range updates and a temporary cast marker apply only to an established
 casting-local Item/Activity clone. Canonical embedded source documents are
-rejected, rather than modified temporarily and restored later. The native
-`preUseActivity` clone receives the already-calculated values again, idempotently.
+rejected, rather than modified temporarily and restored later. The patch and casting marker are written together to the local parent Item source
+at `system.activities.<activityId>.*`, using native embedded/final preparation and
+restoring the prior preparation flag. Existing Activity receivers and the newly
+prepared child receive the same fixed values. This keeps native use/scaling clones
+from restoring ordinary spell range. Native `preUseActivity` and pre-consumption
+preparation repeat those fixed values idempotently. The pre-write payment gate
+rejects a lost selection patch before accepting the native debit plan.
 At `preActivityConsumption` (after native configuration/scaling), the service
 appends one native `itemUses` target for the total modifier cost and includes it
 in consumption even if spell-slot consumption is disabled. The target cannot be
@@ -188,7 +193,11 @@ payment recovery, or concurrent native bulk writes; these require acceptance and
 possibly additional infrastructure before production use.
 
 Records use workflow WeakMap/WeakRef associations; diagnostic history is bounded
-to 100 completed/unmodified/rejected/unconfirmed receipts. Abandoned live records
+to 100 latest casting snapshots, including selected/native-consumption stages
+that may never reach completion. These snapshots are not cancellation/refund
+claims. `runtimeRevision: "activity-source-bridge-1"` and `activityChecks` show
+expected, receiver, prepared-child, parent-source and workflow values at each
+observed boundary. Abandoned live records
 can be inspected by workflow while it exists; no timer refunds them. The message
 receipt is historical evidence, not an outstanding credit to spend or refund on
 startup. Distant creates no ongoing ActiveEffect, grant, or concentration anchor.

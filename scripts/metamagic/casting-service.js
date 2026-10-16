@@ -5,6 +5,7 @@ import { Logger } from "../core/logger.js";
 const CAST_FLAG = "casting";
 const clone = value => duplicateSafely(value);
 const marker = activity => activity?.item?.flags?.[MODULE_ID]?.[CAST_FLAG];
+const property = (object, path) => path.split(".").reduce((value, key) => value?.[key], object);
 const workflowFrom = args => args.flatMap(value => [value, value?.workflow, value?.config?.workflow, value?.usage?.workflow])
   .find(value => value?.actor && value?.activity);
 
@@ -39,6 +40,7 @@ export class MetamagicCastingService {
     on("dnd5e.preActivityConsumption", (activity, usage, message) => this.prepareConsumption(activity, usage, message));
     on("dnd5e.activityConsumption", (activity, usage, message, updates) => this.validateConsumption(activity, updates));
     on("dnd5e.postActivityConsumption", (activity, usage, message) => this.recordConsumption(activity, message));
+    on("dnd5e.postUseActivity", activity => this.observeNative(activity));
     on("midi-qol.premades.postPreambleComplete", (...args) => this.commit(workflowFrom(args)));
     on("midi-qol.RollComplete", (...args) => this.complete(workflowFrom(args)));
     on("midi-qol.premades.postRollFinished", (...args) => this.complete(workflowFrom(args)));
@@ -84,13 +86,13 @@ export class MetamagicCastingService {
       throw new Error("Casting-local Activity/Item copy is unavailable; source Items must remain unchanged.");
     }
     const record = {
-      version: 1, castingId: randomId(), parentCastingId: null, state: "preparing",
+      version: 1, runtimeRevision: "activity-source-bridge-1", castingId: randomId(), parentCastingId: null, state: "preparing",
       initiatorUserId, controllerUserId: initiatorUserId, executionUserId: game.user.id,
       casterActorUuid: actor.uuid, casterTokenUuid: workflow.token?.document?.uuid ?? workflow.token?.uuid ?? null,
       sourceItemUuid: actor.items.get(item.id)?.uuid ?? item.uuid, sourceActivityId: activity.id,
       provenance: { cachedFor: item.flags?.dnd5e?.cachedFor ?? null, cause: null },
       resourceId: compiled.resourceId, resourceUuid: compiled.resourceUuid,
-      selected: [], totalCost: 0, activityUpdates: {}, nativeDebit: null,
+      selected: [], totalCost: 0, activityUpdates: {}, activityChecks: [], nativeDebit: null,
       refundOwner: "native-activity", refundStatus: "not-requested-by-ae5e",
       workflow, actor, nativeActivities: new WeakSet(), consumptionIndexes: new WeakMap()
     };
@@ -186,11 +188,9 @@ export class MetamagicCastingService {
     }
     const pool = record.actor.items.get(record.resourceId);
     if (record.totalCost > Number(pool?.system?.uses?.value)) throw new Error("Combined option cost is unaffordable.");
-    record.workflow.activity.updateSource(record.activityUpdates);
-    record.workflow.activity.item.updateSource({ [`flags.${MODULE_ID}.${CAST_FLAG}`]: {
-      version: 1, castingId: record.castingId, initiatorUserId: record.initiatorUserId
-    } });
+    if (!this.#applyActivity(record, record.workflow.activity, "selected")) throw new Error(record.error);
     record.state = "selected";
+    this.#remember(record);
     return true;
   }
 
@@ -207,14 +207,70 @@ export class MetamagicCastingService {
     return false;
   }
 
+  #captureActivity(record, activity, stage) {
+    const values = subject => Object.fromEntries(Object.keys(record.activityUpdates).map(path => [path, clone(property(subject, path))]));
+    const item = activity.item;
+    const current = item.system?.activities?.get?.(activity.id) ?? activity;
+    const raw = item._source?.system?.activities?.[activity.id]
+      ?? property(item, `system.activities.${activity.id}`);
+    record.activityChecks.push({ stage, expected: clone(record.activityUpdates),
+      receiver: values(activity), prepared: values(current), parentSource: raw ? values(raw) : null,
+      workflow: values(record.workflow.activity) });
+    record.activityChecks = record.activityChecks.slice(-8);
+  }
+
+  #applyActivity(record, activity, stage, extraUpdates = {}) {
+    const item = activity.item;
+    if (record.actor.items.get(item.id) === item) return this.#veto(record, "A source Item cannot receive casting-local changes.");
+    const updates = { ...record.activityUpdates, ...extraUpdates };
+    const parentUpdates = Object.fromEntries(Object.entries(updates).map(([path, value]) => [
+      `system.activities.${activity.id}.${path}`, clone(value)
+    ]));
+    parentUpdates[`flags.${MODULE_ID}.${CAST_FLAG}`] = {
+      version: 1, castingId: record.castingId, initiatorUserId: record.initiatorUserId
+    };
+    try {
+      // Item flags/scaling can reconstruct Activities. Persist the patch in the
+      // local parent's source together with the marker before touching receivers.
+      const actor = item.actor;
+      const hadPreparationFlag = actor && Object.hasOwn(actor, "_embeddedPreparation");
+      const previousPreparationFlag = actor?._embeddedPreparation;
+      try {
+        if (actor) actor._embeddedPreparation = true;
+        item.updateSource(parentUpdates);
+      } finally {
+        if (actor) {
+          if (hadPreparationFlag) actor._embeddedPreparation = previousPreparationFlag;
+          else delete actor._embeddedPreparation;
+        }
+      }
+      item.prepareFinalAttributes?.();
+      const prepared = item.system?.activities?.get?.(activity.id);
+      const receivers = new Set([activity, prepared].filter(Boolean));
+      if (record.workflow.activity?.item === item && record.workflow.activity.id === activity.id) receivers.add(record.workflow.activity);
+      for (const receiver of receivers) receiver.updateSource(updates);
+      this.#captureActivity(record, activity, stage);
+      for (const receiver of receivers) {
+        for (const [path, expected] of Object.entries(record.activityUpdates)) {
+          if (JSON.stringify(property(receiver, path)) !== JSON.stringify(expected)) {
+            return this.#veto(record, `The casting-local Activity did not retain '${path}'; casting was stopped before payment.`);
+          }
+        }
+      }
+      return true;
+    } catch (error) {
+      return this.#veto(record, `Casting-local Activity preparation failed: ${error.message}`);
+    }
+  }
+
   prepareNative(activity) {
     const record = this.#nativeRecord(activity);
     if (!record) return !marker(activity);
     if (!["selected", "native-prepared"].includes(record.state)) return false;
     if (record.actor.items.get(activity.item.id) === activity.item) return this.#veto(record, "A source Activity cannot receive casting-local changes.");
-    // The native use() clone may have been freshly prepared/scaled from source.
-    activity.updateSource(record.activityUpdates);
+    if (!this.#applyActivity(record, activity, "native-prepared")) return false;
     record.state = "native-prepared";
+    this.#remember(record);
     return true;
   }
 
@@ -239,7 +295,8 @@ export class MetamagicCastingService {
       return this.#veto(record, "The linked Activity already consumes this point pool; a combined-cost adapter is required.");
     }
     // One native target for the aggregate modifier price. Do not implement a second debit/refund engine.
-    let index = record.consumptionIndexes.get(activity);
+    let index = record.consumptionIndexes.get(activity.item);
+    const extraUpdates = {};
     if (index == null && record.totalCost > 0) {
       const targets = activity.consumption.targets.map(target => target.toObject ? target.toObject() : clone(target));
       if (targets.some(target => target.type === "itemUses" && target.target === record.resourceId)) {
@@ -247,9 +304,10 @@ export class MetamagicCastingService {
       }
       index = targets.length;
       targets.push({ type: "itemUses", target: record.resourceId, value: String(record.totalCost), scaling: { mode: "", formula: "" } });
-      activity.updateSource({ "consumption.targets": targets });
-      record.consumptionIndexes.set(activity, index);
+      extraUpdates["consumption.targets"] = targets;
     }
+    if (!this.#applyActivity(record, activity, "pre-consumption", extraUpdates)) return false;
+    if (index != null) record.consumptionIndexes.set(activity.item, index);
     if (index != null) {
       if (usage.consume === false) usage.consume = { action: false, spellSlot: false, resources: [index] };
       else if (usage.consume !== true) {
@@ -261,6 +319,7 @@ export class MetamagicCastingService {
     }
     record.provenance.cause = usage.cause?.activity ?? null;
     record.nativeActivities.add(activity);
+    this.#remember(record);
     return true;
   }
 
@@ -268,6 +327,14 @@ export class MetamagicCastingService {
     const record = this.#nativeRecord(activity);
     if (!record) return !marker(activity);
     if (!record.nativeActivities.has(activity) || record.nativeDebit) return false;
+    const prepared = activity.item.system?.activities?.get?.(activity.id) ?? activity;
+    for (const receiver of [activity, prepared, record.workflow.activity]) {
+      if (Object.entries(record.activityUpdates).some(([path, expected]) => JSON.stringify(property(receiver, path)) !== JSON.stringify(expected))) {
+        this.#captureActivity(record, activity, "pre-write-mismatch");
+        this.#remember(record);
+        return this.#veto(record, "Selected Activity changes were lost before native consumption; no modifier payment was accepted.");
+      }
+    }
     if (!record.totalCost) return true;
     const pool = record.actor.items.get(record.resourceId);
     const changes = updates.item?.filter(update => update._id === pool?.id) ?? [];
@@ -282,11 +349,21 @@ export class MetamagicCastingService {
     record.nativeDebit = { resourceUuid: record.resourceUuid, amount: record.totalCost,
       deltas: clone(message?.data?.system?.deltas ?? null), owner: "native-activity" };
     record.state = "consumed";
+    this.#captureActivity(record, activity, "post-consumption");
+    this.#remember(record);
     if (message?.data) {
       message.data.flags ??= {};
       message.data.flags[MODULE_ID] ??= {};
       message.data.flags[MODULE_ID].castingReceipt = this.#snapshot(record);
     }
+  }
+
+  observeNative(activity) {
+    const record = this.#nativeRecord(activity);
+    if (!record) return true;
+    this.#captureActivity(record, activity, "post-use");
+    this.#remember(record);
+    return true;
   }
 
   async commit(workflow) {
@@ -339,10 +416,14 @@ export class MetamagicCastingService {
     return clone(data);
   }
 
-  #archive(record) {
-    this.#records.delete(record.castingId);
+  #remember(record) {
     this.#recent = this.#recent.filter(entry => entry.castingId !== record.castingId);
     this.#recent.unshift(this.#snapshot(record));
     this.#recent.length = Math.min(this.#recent.length, 100);
+  }
+
+  #archive(record) {
+    this.#records.delete(record.castingId);
+    this.#remember(record);
   }
 }

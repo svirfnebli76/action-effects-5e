@@ -30,7 +30,7 @@ function item(actor, id, declaration, system = {}) {
   return result;
 }
 
-function setup({ range = { value: 30, units: "ft", override: false }, available = 4, resolve = null } = {}) {
+function setup({ range = { value: 30, units: "ft", override: false }, available = 4, resolve = null, sourceBacked = false } = {}) {
   const actor = { uuid: "Actor.caster", isOwner: true, items: new Collection() };
   const main = item(actor, "main", examples.main);
   const option = item(actor, "option", examples.distant);
@@ -38,6 +38,36 @@ function setup({ range = { value: 30, units: "ft", override: false }, available 
   const original = item(actor, "spell", null, { range: copy(range) });
   original.type = "spell";
   function activityClone(from = null) {
+    if (sourceBacked) {
+      // Native use/scaling works from the parent Item source, not detached live Activity fields.
+      const data = copy(from?.item._source ?? { flags: original.flags, system: { range,
+        activities: { activity: { range, consumption: { targets: [] } } } } });
+      const spell = { id: original.id, uuid: original.uuid, actor, type: "spell", _source: data,
+        updateSource(updates) {
+          for (const [path, value] of Object.entries(updates)) setPath(data, path, value);
+          hydrateItem();
+        } };
+      const hydrateItem = () => {
+        spell.flags = copy(data.flags);
+        spell.system = { range: copy(data.system.range), activities: new Collection() };
+        for (const [id, raw] of Object.entries(data.system.activities)) {
+          const source = copy(raw);
+          const activity = { id, actor, item: spell, _source: source,
+            updateSource(updates) {
+              for (const [path, value] of Object.entries(updates)) setPath(source, path, value);
+              hydrateActivity();
+            } };
+          const hydrateActivity = () => {
+            activity.range = copy(source.range.override ? source.range : { ...spell.system.range, override: false });
+            activity.consumption = copy(source.consumption);
+          };
+          hydrateActivity();
+          spell.system.activities.set(id, activity);
+        }
+      };
+      hydrateItem();
+      return spell.system.activities.get("activity");
+    }
     const spell = { id: original.id, uuid: original.uuid, actor, type: "spell", flags: copy(from?.item.flags ?? original.flags),
       updateSource(updates) { for (const [path, value] of Object.entries(updates)) setPath(this, path, value); } };
     return { id: "activity", actor, item: spell, range: copy(from?.range ?? range),
@@ -410,7 +440,7 @@ test("runtime hook wiring is idempotent and synchronous vetoes remain synchronou
     const f = setup();
     f.service.initialize();
     f.service.initialize();
-    assert.equal(handlers.size, 8);
+    assert.equal(handlers.size, 9);
     await f.service.begin(f.workflow, { chooser: chooseDistant });
     const native = f.activityClone(f.workflow.activity);
     assert.equal(handlers.get("dnd5e.preUseActivity")(native), true);
@@ -458,4 +488,63 @@ test("Midi hook envelopes normalize workflow/config/usage transports from Stage 
     await handlers.get("midi-qol.premades.postRollFinished")(f.workflow);
     assert.deepEqual(seen, [f.workflow, f.workflow, f.workflow, f.workflow]);
   } finally { globalThis.Hooks = previous; }
+});
+
+test("Distant range survives parent Item re-preparation, native cloning and scaling", async () => {
+  const f = setup({ sourceBacked: true });
+  await f.service.begin(f.workflow, { chooser: chooseDistant });
+  const castItem = f.workflow.activity.item;
+  assert.equal(castItem._source.system.activities.activity.range.value, 60);
+  assert.equal(castItem.system.activities.get("activity").range.value, 60);
+  const native = f.activityClone(f.workflow.activity);
+  assert.equal(native.range.value, 60, "native use must clone the selected range from parent source");
+  assert.equal(f.service.prepareNative(native), true);
+  native.item.updateSource({ "flags.dnd5e.scaling": 1 });
+  const scaled = native.item.system.activities.get("activity");
+  assert.equal(scaled.range.value, 60, "native scaling must not restore the ordinary range");
+  const { delta } = nativeConsumption(f, scaled);
+  assert.equal(delta, 1);
+  assert.equal(scaled.item.system.activities.get("activity").range.value, 60, "adding payment must retain range");
+  assert.equal(f.workflow.activity.range.value, 60, "Midi's original Activity receiver must also retain range");
+  assert.equal(f.original.system.range.value, 30);
+  assert.equal(f.activityClone().range.value, 30, "later ordinary casting starts from canonical source");
+});
+
+test("Touch range survives native Item cloning without modifying the canonical spell", async () => {
+  const f = setup({ sourceBacked: true, range: { value: null, units: "touch", override: false } });
+  await f.service.begin(f.workflow, { chooser: chooseDistant });
+  const native = f.activityClone(f.workflow.activity);
+  assert.equal(native.range.units, "ft");
+  assert.equal(native.range.value, 30);
+  assert.equal(native.range.override, true);
+  assert.equal(f.original.system.range.units, "touch");
+});
+
+test("casting-local Item preparation restores the native Actor flag even on failure", async () => {
+  const f = setup({ sourceBacked: true });
+  f.actor._embeddedPreparation = false;
+  let prepared = 0;
+  f.workflow.activity.item.prepareFinalAttributes = () => { prepared++; };
+  await f.service.begin(f.workflow, { chooser: chooseDistant });
+  assert.equal(f.actor._embeddedPreparation, false);
+  assert.equal(prepared, 1);
+  const g = setup();
+  g.workflow.activity.item.updateSource = () => { assert.equal(g.actor._embeddedPreparation, true); throw new Error("rejected source update"); };
+  await assert.rejects(g.service.begin(g.workflow, { chooser: chooseDistant }), /rejected source update/);
+  assert.equal(Object.hasOwn(g.actor, "_embeddedPreparation"), false);
+  assert.equal(g.pool.system.uses.value, 4);
+});
+
+test("lost Activity range rejects the native payment plan and remains visible in diagnostics", async () => {
+  const f = setup();
+  await f.service.begin(f.workflow, { chooser: chooseDistant });
+  const native = f.activityClone(f.workflow.activity);
+  f.service.prepareConsumption(native, { consume: true });
+  native.range.value = 30;
+  assert.equal(f.service.validateConsumption(native, { item: [{ _id: "pool", "system.uses.spent": 4 }], delete: [] }), false);
+  const report = f.service.recent()[0];
+  assert.equal(report.runtimeRevision, "activity-source-bridge-1");
+  assert.equal(report.activityChecks.at(-1).receiver["range.value"], 30);
+  assert.equal(report.activityChecks.at(-1).expected["range.value"], 60);
+  assert.equal(f.pool.system.uses.value, 4);
 });

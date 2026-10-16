@@ -140,3 +140,20 @@ No automated output is evidence that the user has run the GM table above.
 Stage 1 completion requires the live Distant selection/payment/cast/cleanup slice
 in addition to these code checks. The contracts and ordered backlog are in
 [metamagic-stage-1-contract.md](metamagic-stage-1-contract.md). GitHub publication is authorized; live GM acceptance remains the next gate.
+
+
+## Applying the casting-local range correction
+
+After the chooser/45-foot failure, update the module source and reload the GM's
+browser page so the revised casting service is loaded. Keep the installed test
+Items and their Macro; this fix does not change their definitions or require
+reinstallation. Before retrying, inspect the existing pool. If the failed test
+has not returned to its four-point baseline, report the actual balance rather
+than manually resetting it or casting again.
+
+On the next single Distant attempt, the inspector should show
+`runtimeRevision: "activity-source-bridge-1"`. Its `activityChecks` record
+`range.value: 60`, `range.units: "ft"` and `range.override: true` in the relevant
+receivers and parent source. A selected/consumed snapshot alone does not prove
+commitment or a refund. Retain the actual point balance and any range warning
+along with this report; do not repeatedly recast on a failed boundary.

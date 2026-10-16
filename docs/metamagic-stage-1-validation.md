@@ -49,3 +49,28 @@ source. It also awaits installation at module level so callers receive failures.
 Three installer regression checks pass: root hosting, path-prefix hosting and
 404 failure before any Item/Macro writes. Installer syntax and diff checks pass.
 These checks do not replace live casting acceptance.
+
+
+## Casting-local range source correction
+
+The first live numerical Distant attempt showed the chooser, but Midi rejected
+a target at 45 feet using the ordinary 30-foot range. That attempt is not a
+passing Distant acceptance result; no point-balance/refund conclusion was supplied.
+
+A new source-backed regression reproduced numerical and Touch range loss when
+the local parent Item rebuilt/cloned its Activities. Pinned D&D5e 6.0.6 source
+shows native use clones the parent Item, native scaling updates its source and
+reacquires the child, while PseudoDocument.updateSource only prepares its own
+model. The fix atomically places the Activity patch and casting marker into the
+casting-local parent source, prepares its attributes using the native pattern,
+and updates both existing and reconstructed receivers. It also preserves the
+local native consumption target through Activity reconstruction. Canonical Item
+data remains untouched.
+
+The latest repository gate passes all 56 test files and the 147-file production
+syntax check. The focused suite now has 35 passing checks, including source-backed numerical
+and Touch clones, native scaling, preparation flag restoration and rejection of
+a lost range patch before accepting a native debit plan. Casting snapshots retain
+expected/actual values through post-use, even without workflow completion.
+The native lifecycle is still modeled in these tests, not executed in Foundry.
+A new live 45-foot retry and its actual Sorcery Point balance remain pending.
