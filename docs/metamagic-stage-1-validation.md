@@ -39,3 +39,13 @@ No claim is made that the full Stage 1 completion gate has passed. Use the
 exercise the actual Distant selection/payment/cast/cleanup path. Keep the broader
 restrictions in the [contract](metamagic-stage-1-contract.md) until their specific
 adapters and acceptance are complete.
+
+## Installer route correction
+
+The first live installation attempt failed before world writes because Foundry's
+route helper removed a directory's trailing slash. The installer now resolves
+complete filenames through the route helper for both declarations and the Macro
+source. It also awaits installation at module level so callers receive failures.
+Three installer regression checks pass: root hosting, path-prefix hosting and
+404 failure before any Item/Macro writes. Installer syntax and diff checks pass.
+These checks do not replace live casting acceptance.

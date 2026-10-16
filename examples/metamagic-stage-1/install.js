@@ -3,7 +3,7 @@
  * Creates only tagged test Items on that caster and one new world Script Macro.
  * Never edits character legacy Items, macros, pools, or compendiums.
  */
-(async () => {
+await (async () => {
   const scope = "action-effects-5e";
   const tag = "metamagic-stage-1";
   if (!game.user.isGM) throw new Error("Run as GM.");
@@ -21,11 +21,14 @@
     console.log(`AE5E Stage 1 already installed; no changes.\n${JSON.stringify(api.metamagic.reconcile(actor), null, 2)}`);
     return;
   }
-  const route = foundry.utils.getRoute?.(`modules/${scope}/examples/metamagic-stage-1/`) ?? `modules/${scope}/examples/metamagic-stage-1/`;
-  const response = await fetch(`${route}declarations.json`);
+  const assetUrl = filename => {
+    const path = `modules/${scope}/examples/metamagic-stage-1/${filename}`;
+    return new URL(foundry.utils.getRoute?.(path) ?? path, location.origin).href;
+  };
+  const response = await fetch(assetUrl("declarations.json"));
   if (!response.ok) throw new Error(`Declaration fixture download failed (${response.status}).`);
   const definitions = await response.json();
-  const { distantSpell } = await import(`${window.location.origin}/${route.replace(/^\//, "")}distant-spell.mjs`);
+  const { distantSpell } = await import(assetUrl("distant-spell.mjs"));
   let macro = game.macros.find(document => document.flags?.[scope]?.testFixture === tag);
   let createdMacro = false;
   if (!macro) {
