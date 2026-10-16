@@ -195,7 +195,7 @@ possibly additional infrastructure before production use.
 Records use workflow WeakMap/WeakRef associations; diagnostic history is bounded
 to 100 latest casting snapshots, including selected/native-consumption stages
 that may never reach completion. These snapshots are not cancellation/refund
-claims. `runtimeRevision: "activity-source-bridge-2"` and `activityChecks` show
+claims. `runtimeRevision: "activity-source-bridge-3"` and `activityChecks` show
 expected, receiver, prepared-child, parent-source and workflow values at each
 observed boundary. Abandoned live records
 can be inspected by workflow while it exists; no timer refunds them. The message

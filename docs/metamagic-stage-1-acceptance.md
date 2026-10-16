@@ -152,7 +152,7 @@ has not returned to its four-point baseline, report the actual balance rather
 than manually resetting it or casting again.
 
 On the next single Distant attempt, the inspector should show
-`runtimeRevision: "activity-source-bridge-2"`. Its `activityChecks` record
+`runtimeRevision: "activity-source-bridge-3"`. Its `activityChecks` record
 `range.value: 60`, `range.units: "ft"` and `range.override: true` in the relevant
 live receivers. Parent-source `range.value` is the formula string `"60"`; that
 is correct native storage, while prepared receivers should report numeric `60`.

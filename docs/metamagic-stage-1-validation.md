@@ -94,3 +94,28 @@ assertion that parent source "60" and effective receiver 60 coexist correctly.
 The focused suite now has 36 passing checks. No strict value guard was weakened
 and no source Item, Macro definition, pool or compendium was changed. Live
 confirmation of the next 45-foot casting remains pending.
+
+
+## Confirmed post-use override loss
+
+Stage 0's range proof remains accepted. The revision-2 live report retained
+numeric Activity range 60 through post-use but lost `range.override` on the
+actual receiver/workflow. Midi 14.6.2's
+[`activityRanges` helper](https://gitlab.com/tposney/midi-qol/-/blob/v14.6.2/src/module/utils.ts#L3471-3479)
+then prefers the Item's ordinary range 30. The supplied installed checker/use
+source confirms this call path. A native debit was recorded, and the reported
+pool returned to four after the failed range check; this is not a successful cast.
+
+Revision 3 restores the already selected Activity patch to matching casting-local
+receivers at post-use, before Midi's range check. It does not rerun the option
+Macro, add another consumption target, bypass range validation, or issue a refund.
+A restoration failure leaves commitment unconfirmed; post-use cancellation alone
+does not establish refund ownership. Snapshots include the pre-restoration state.
+
+The source-backed test fixture previously aliased Item and Activity range objects,
+masking the Item fallback. They are now independent. The regression first failed
+with effective Midi range 30 despite Activity value 60, then passed with range 60
+and exactly one native debit. Source isolation and a later ordinary 30-foot cast
+also pass. The focused suite passes 38 checks; the repository gate passes all 56
+test files and the 147-file production syntax check. Live Foundry confirmation
+remains pending. Existing fixture Items and Macro definitions need no reinstall.

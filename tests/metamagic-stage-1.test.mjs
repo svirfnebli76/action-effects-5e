@@ -40,8 +40,8 @@ function setup({ range = { value: 30, units: "ft", override: false }, available 
   function activityClone(from = null) {
     if (sourceBacked) {
       // Native use/scaling works from the parent Item source, not detached live Activity fields.
-      const data = copy(from?.item._source ?? { flags: original.flags, system: { range,
-        activities: { activity: { range, consumption: { targets: [] } } } } });
+      const data = copy(from?.item._source ?? { flags: original.flags, system: { range: copy(range),
+        activities: { activity: { range: copy(range), consumption: { targets: [] } } } } });
       const spell = { id: original.id, uuid: original.uuid, actor, type: "spell", _source: data,
         updateSource(updates) {
           for (const [path, value] of Object.entries(updates)) setPath(data, path, value);
@@ -556,7 +556,7 @@ test("lost Activity range rejects the native payment plan and remains visible in
   native.range.value = 30;
   assert.equal(f.service.validateConsumption(native, { item: [{ _id: "pool", "system.uses.spent": 4 }], delete: [] }), false);
   const report = f.service.recent()[0];
-  assert.equal(report.runtimeRevision, "activity-source-bridge-2");
+  assert.equal(report.runtimeRevision, "activity-source-bridge-3");
   assert.equal(report.activityChecks.at(-1).receiver["range.value"], 30);
   assert.equal(report.activityChecks.at(-1).expected["range.value"], 60);
   assert.equal(f.pool.system.uses.value, 4);
@@ -570,5 +570,45 @@ test("native FormulaField source remains a string while original and rebuilt rec
   for (const key of ["receiver", "prepared", "workflow"]) assert.equal(snapshot[key]["range.value"], 60, key);
   assert.equal(f.workflow.activity.item._source.system.activities.activity.range.value, "60");
   assert.equal(f.pool.system.uses.value, 4, "preparation does not spend points");
+  assert.equal(f.original.system.range.value, 30);
+});
+
+test("post-use loss of override must not send Midi's effective range back to the Item's 30 feet", async () => {
+  // Midi 14.6.2 utils.ts activityRanges: without own.override, Item range wins.
+  const midiNormalRange = activity => activity.range.override
+    ? activity.range.value || activity.range.reach || 0
+    : Number(activity.item.system.range?.value) || activity.range.value || activity.range.reach || 0;
+  const f = setup({ sourceBacked: true });
+  await f.service.begin(f.workflow, { chooser: chooseDistant });
+  const native = f.activityClone(f.workflow.activity);
+  nativeConsumption(f, native);
+  f.workflow.activity = native; // Midi's native hook points the workflow at this receiver.
+  delete native.range.override; // Exact post-use shape in the supplied live diagnostic.
+  assert.equal(native.range.value, 60);
+  assert.equal(midiNormalRange(native), 30, "60 in the live field alone does not satisfy Midi's range resolver");
+  assert.equal(f.service.observeNative(native), true);
+  assert.equal(midiNormalRange(native), 60);
+  assert.equal(native.range.override, true);
+  assert.equal(native.consumption.targets.length, 1);
+  assert.equal(f.pool.system.uses.value, 3, "restoring metadata must not debit again");
+  assert.equal(f.service.get(f.workflow).nativeDebit.amount, 1);
+  assert.equal(f.original.system.range.value, 30);
+  assert.equal(midiNormalRange(f.activityClone()), 30, "an unrelated later cast keeps ordinary range");
+});
+
+test("post-use restoration failure remains unconfirmed without inventing a refund or charging again", async () => {
+  const f = setup({ sourceBacked: true });
+  await f.service.begin(f.workflow, { chooser: chooseDistant });
+  const native = f.activityClone(f.workflow.activity);
+  nativeConsumption(f, native);
+  f.workflow.activity = native;
+  delete native.range.override;
+  native.item.updateSource = () => { throw new Error("post-use preparation unavailable"); };
+  assert.equal(f.service.observeNative(native), false);
+  assert.equal(await f.service.commit(f.workflow), false);
+  await f.service.complete(f.workflow);
+  assert.equal(f.service.get(f.workflow).state, "unconfirmed");
+  assert.equal(f.pool.system.uses.value, 3);
+  assert.equal(f.service.get(f.workflow).nativeDebit.amount, 1);
   assert.equal(f.original.system.range.value, 30);
 });

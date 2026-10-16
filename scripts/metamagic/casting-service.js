@@ -86,7 +86,7 @@ export class MetamagicCastingService {
       throw new Error("Casting-local Activity/Item copy is unavailable; source Items must remain unchanged.");
     }
     const record = {
-      version: 1, runtimeRevision: "activity-source-bridge-2", castingId: randomId(), parentCastingId: null, state: "preparing",
+      version: 1, runtimeRevision: "activity-source-bridge-3", castingId: randomId(), parentCastingId: null, state: "preparing",
       initiatorUserId, controllerUserId: initiatorUserId, executionUserId: game.user.id,
       casterActorUuid: actor.uuid, casterTokenUuid: workflow.token?.document?.uuid ?? workflow.token?.uuid ?? null,
       sourceItemUuid: actor.items.get(item.id)?.uuid ?? item.uuid, sourceActivityId: activity.id,
@@ -257,7 +257,9 @@ export class MetamagicCastingService {
       for (const receiver of receivers) {
         for (const [path, expected] of Object.entries(record.activityUpdates)) {
           if (JSON.stringify(property(receiver, path)) !== JSON.stringify(expected)) {
-            return this.#veto(record, `The casting-local Activity did not retain '${path}'; casting was stopped before payment.`);
+            return this.#veto(record, `The casting-local Activity did not retain '${path}'; ${record.nativeDebit
+              ? "native consumption has occurred and modifier completion is unconfirmed."
+              : "casting was stopped before payment."}`);
           }
         }
       }
@@ -365,6 +367,17 @@ export class MetamagicCastingService {
   observeNative(activity) {
     const record = this.#nativeRecord(activity);
     if (!record) return true;
+    this.#captureActivity(record, activity, "post-use-before");
+    const receivers = new Set([activity, record.workflow.activity].filter(receiver => this.#nativeRecord(receiver) === record));
+    for (const receiver of receivers) {
+      const changed = Object.entries(record.activityUpdates).some(([path, expected]) => JSON.stringify(property(receiver, path)) !== JSON.stringify(expected));
+      if (changed && !this.#applyActivity(record, receiver, "post-use-restored")) {
+        record.postUseMutationFailed = true;
+        this.#remember(record);
+        // Native post-use false suppresses subsequent actions; it does not refund.
+        return false;
+      }
+    }
     this.#captureActivity(record, activity, "post-use");
     this.#remember(record);
     return true;
@@ -373,6 +386,7 @@ export class MetamagicCastingService {
   async commit(workflow) {
     const record = this.#byWorkflow.get(workflow);
     if (!record || record.state === "unmodified" || record.state === "rejected" || record.committedAt) return true;
+    if (record.postUseMutationFailed) return this.#veto(record, "Modifier preparation failed after native consumption; completion is unconfirmed and resource recovery requires the native owner.");
     if (!record.nativeDebit) {
       record.error = "Native consumption confirmation is missing; do not resolve a paid modifier.";
       globalThis.ui?.notifications?.error?.(`AE5E: ${record.error}`);
