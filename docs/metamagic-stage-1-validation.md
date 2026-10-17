@@ -1,5 +1,11 @@
 # Stage 1 draft validation — 16 October 2026
 
+> Historical Stage 1 record. v0.4.5.36 removes this singleton/world-Macro
+> execution path and its installer at the user's request. Do not use these
+> installation or manual-learn instructions. Use the
+> [Development 3 authoring guide](metamagic-development-3-authoring.md).
+
+
 Baseline: `3897427c0824de69e373682fe1ee2a116141fcc3` (AE5E 0.4.5.32).
 Repository validation below was completed before publication. The user authorized
 GitHub publication on 16 October 2026. Publication is based on the newer

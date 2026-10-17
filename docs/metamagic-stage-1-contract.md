@@ -1,5 +1,11 @@
 # Metamagic Stage 1 contract — source preview
 
+> Historical Stage 1 record. v0.4.5.36 removes this singleton/world-Macro
+> execution path and its installer at the user's request. Do not use these
+> installation or manual-learn instructions. Use the
+> [Development 3 authoring guide](metamagic-development-3-authoring.md).
+
+
 Baseline: remote and local `3897427c0824de69e373682fe1ee2a116141fcc3`,
 AE5E 0.4.5.32. The remote was checked read-only on 16 October 2026; there are no
 repository `AGENTS.md` instructions. The supplied Stage 0 closeout and Stage 1
@@ -36,7 +42,7 @@ level, feature names, or legacy CPR/Gambits flags as rules. In this slice there 
 one active main Item per caster. A disabled or absent main leaves normal casts alone.
 
 The five required examples and an inactive discount example are in
-[declarations.json](../examples/metamagic-stage-1/declarations.json). The ring
+[declarations.json](https://github.com/svirfnebli76/action-effects-5e/blob/71b5c69cf1d4e829e50cd4cecf89cc9faf5176e5/examples/metamagic-stage-1/declarations.json). The ring
 grant requires a Distant definition Item on the actor but does not count as a
 learned choice. Unequipping/removing the ring removes only its provenance.
 An option that is also learned remains available once. A choice-bonus ring

@@ -5,6 +5,18 @@ This is the current continuation plan. Where older Stage 1 draft documents
 describe a single declaration per Item or direct execution of a standalone
 world Macro UUID, this agreement supersedes those designs.
 
+## Later user clarification — 16 October 2026
+
+After the editor gate passed, the user confirmed that learned options should be
+discovered automatically from the actor's option Items. No manual learned-ID
+list is required. The user then explicitly retired the original tagged test
+Metamagic Items and authorized removing their singleton/world-Macro runtime
+immediately, rather than retaining a compatibility branch during authoring.
+The old installer is removed. This supersedes transition-preservation timing
+below; existing live documents and compendium contents are not automatically
+deleted or converted. Continue manual Item authoring together in chat, section
+by section. See [the current guide](metamagic-development-3-authoring.md).
+
 ## Agreed sequence
 
 1. Build and validate the shared AE5E declaration infrastructure first: family

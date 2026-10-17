@@ -14,15 +14,27 @@ and recovery of the saved records after that blocked save. The editor gate has
 passed. Menus remain exclusive to approved AE5E compendiums; no global Item-sheet
 entry point is desired.
 
-The source Metamagic casting path still uses the preserved legacy singleton and
-standalone Macro execution contract. Its replacement with collection discovery
-and an Item-owned broker/option bridge is the next implementation step; the
-finished Metamagic/Distant path is not accepted yet. Existing test Items and the
-standalone test Macro have been retained while that replacement is prepared.
-The separate disposable `AE5E Verification — Declarations` Item has saved records
-`verification-base` (optionChoices 3) and `verification-copy` (optionChoices 4).
-This checkpoint supersedes older implementation-status statements below; see
-[the current infrastructure guide](item-declaration-infrastructure.md).
+The v0.4.5.36 continuation replaces the singleton/world-Macro runtime with
+collection-only discovery and CAT Embedded Item macros. The base Item owns the
+chooser; options own their behavior. Learned access comes automatically from the
+actor's option Items, not a manually populated base ID list. The user explicitly
+authorized removing the old runtime and installer immediately because the tagged
+AE5E Test Metamagic Items will not be reused. This supersedes all earlier
+instructions in this handoff to preserve that execution path during transition.
+Live Items are not automatically deleted; existing compendiums, Sorcery Points,
+Wild Magic macros and Sneak Attack/Devious Strikes remain protected.
+
+The base Metamagic Item is being manually authored in AE5E Class Features, with
+identifier `metamagic`, 2024 source PHB page 141, Sorcerer level 2, Passive Trait,
+no limited-use maximum, Activities, Effects or Advancement. The user wants to
+continue its authoring section by section in chat. Its `base` declaration may
+still contain the old empty `learnedOptions` template field; it is inert and may
+be removed. Do not tell the user to fill it manually.
+
+See [the current authoring/runtime guide](metamagic-development-3-authoring.md)
+for exact CAT names/passes, pasteable Item macro files, source-only installation
+and remaining live acceptance. The new casting path is not yet live-accepted.
+The disposable editor verification Item is separate from the new feature.
 
 ## Immediate objective and precedence
 

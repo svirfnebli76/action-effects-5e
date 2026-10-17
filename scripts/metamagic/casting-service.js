@@ -1,4 +1,4 @@
-import { MODULE_ID, SELECTION_INDICATOR_ROLES } from "../core/constants.js";
+import { MODULE_ID } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 
@@ -12,19 +12,18 @@ const workflowFrom = args => args.flatMap(value => [value, value?.workflow, valu
 /** Coordinates Item-provided options. It contains no option rules or names. */
 export class MetamagicCastingService {
   #declarations;
-  #prompts;
   #cards;
-  #resolve;
+  #executors;
+  #starting = new WeakMap();
   #byWorkflow = new WeakMap();
   #records = new Map();
   #recent = [];
   #hooks = [];
 
-  constructor({ declarations, prompts, cards, resolve = uuid => globalThis.fromUuid(uuid) }) {
+  constructor({ declarations, cards, executors }) {
     this.#declarations = declarations;
-    this.#prompts = prompts;
     this.#cards = cards;
-    this.#resolve = resolve;
+    this.#executors = executors;
   }
 
   initialize() {
@@ -65,21 +64,76 @@ export class MetamagicCastingService {
     return JSON.stringify([castingId, phase, targetActorUuid, targetTokenUuid, rollId]);
   }
 
-  async begin(workflow, { chooser = null, initiatorUserId = game.user.id, parentCastingId = null, continuation = false } = {}) {
+  async begin(workflow, options = {}) {
+    if (!workflow) return true;
+    if (this.#starting.has(workflow)) return this.#starting.get(workflow);
+    const existing = this.#byWorkflow.get(workflow);
+    if (existing) return existing.preparing ?? existing.state !== "rejected";
+    const starting = this.#start(workflow, options);
+    this.#starting.set(workflow, starting);
+    try { return await starting; }
+    finally { this.#starting.delete(workflow); }
+  }
+
+  #context(workflow) {
+    return { subjectToken: workflow.token?.document ?? workflow.token,
+      activity: workflow.activity, item: workflow.activity?.item,
+      context: { casterActorUuid: workflow.actor?.uuid } };
+  }
+
+  async #start(workflow, { initiatorUserId = game.user.id, parentCastingId = null, continuation = false } = {}) {
     if (!workflow || (workflow.item ?? workflow.activity?.item)?.type !== "spell") return true;
     if (initiatorUserId !== game.user.id || (workflow.userId && workflow.userId !== game.user.id)) return true;
     const actor = workflow.actor ?? workflow.item?.actor ?? workflow.activity?.actor;
     // No declarations means no participation, not an error for ordinary casts.
-    if (![...(actor?.items ?? [])].some(item => {
-      const raw = item.flags?.[MODULE_ID]?.metamagic;
-      return raw?.type === "main" && raw.enabled !== false;
-    })) return true;
+    if (!this.#declarations.hasBase(actor)) return true;
     const existing = this.#byWorkflow.get(workflow);
     if (existing) return existing.preparing ?? existing.state !== "rejected";
     if (!actor?.isOwner) throw new Error("The initiating user must own the caster.");
     if (continuation || parentCastingId) throw new Error("Continuation execution requires a validated parent adapter and is not enabled in this first slice.");
-    const compiled = this.#declarations.compile(actor);
+    const compiled = this.#declarations.compile(actor, this.#context(workflow));
+    if (compiled.participating === false) return true;
     if (!compiled.ready) throw new Error(compiled.diagnostics.map(entry => entry.message).join(" "));
+    return this.#broker(workflow, actor, compiled, initiatorUserId);
+  }
+
+  async #broker(workflow, actor, compiled, initiatorUserId) {
+    if (!this.#executors) throw new Error("The Item-owned macro adapter is unavailable.");
+    let calls = 0;
+    let began = false;
+    let result;
+    let beginError;
+    let open = true;
+    try {
+      const response = await this.#executors.execute({ actor, sourceUuid: compiled.mainUuid, identity: compiled.mainIdentity,
+        family: "metamagic", declaration: compiled.mainDeclaration, kind: "broker", phase: "begin",
+        context: { actor, workflow, initiatorUserId,
+          begin: async (source, chooser) => {
+            try {
+              calls += 1;
+              if (!open || calls !== 1 || source?.uuid !== compiled.mainUuid || actor.items.get(source.id) !== source || typeof chooser !== "function") {
+                throw new Error("The base Item must start its broker exactly once with an Item-owned chooser.");
+              }
+              const current = this.#declarations.compile(actor, this.#context(workflow));
+              if (!current.ready || current.mainIdentity !== compiled.mainIdentity
+                || JSON.stringify(current.mainDeclaration) !== JSON.stringify(compiled.mainDeclaration)) throw new Error("The base declaration changed before brokering.");
+              result = await this.#beginCompiled(workflow, actor, current, chooser, initiatorUserId);
+              began = true;
+              return result;
+            } catch (error) { beginError = error; throw error; }
+          } }
+      });
+      if (calls !== 1 || !began || response !== result) throw new Error("The base Item did not complete its broker request.");
+      return result;
+    } catch (error) {
+      error = beginError ?? error; // CAT catches script errors; retain AE5E's precise rejection reason.
+      const record = this.#byWorkflow.get(workflow);
+      if (record) { record.state = "rejected"; record.error = error.message; this.#archive(record); }
+      throw error;
+    } finally { open = false; }
+  }
+
+  async #beginCompiled(workflow, actor, compiled, chooser, initiatorUserId) {
     const activity = workflow.activity;
     const item = activity?.item;
     if (!item?.updateSource || !activity?.updateSource || actor.items.get(item.id) === item) {
@@ -92,6 +146,7 @@ export class MetamagicCastingService {
       sourceItemUuid: actor.items.get(item.id)?.uuid ?? item.uuid, sourceActivityId: activity.id,
       provenance: { cachedFor: item.flags?.dnd5e?.cachedFor ?? null, cause: null },
       resourceId: compiled.resourceId, resourceUuid: compiled.resourceUuid,
+      mode: "collection", mainIdentity: compiled.mainIdentity,
       selected: [], totalCost: 0, activityUpdates: {}, activityChecks: [], nativeDebit: null,
       refundOwner: "native-activity", refundStatus: "not-requested-by-ae5e",
       workflow, actor, nativeActivities: new WeakSet(), consumptionIndexes: new WeakMap()
@@ -107,15 +162,10 @@ export class MetamagicCastingService {
   }
 
   async #optionResult(option, phase, record) {
-    const macro = await this.#resolve(option.declaration.execution.macroUuid);
-    if (macro?.documentName !== "Macro" || typeof macro.execute !== "function"
-      || macro.type !== "script" || macro.canExecute === false) throw new Error(`Executable unavailable for ${option.label}.`);
-    return macro.execute({
-      phase, declaration: clone(option.declaration),
+    return this.#executors.execute({ actor: record.actor, sourceUuid: option.sourceUuid, identity: option.identity,
+      family: "metamagic", declaration: option.declaration, kind: "option", phase,
       context: { castingId: record.castingId, actor: record.actor, workflow: record.workflow,
-        activity: record.workflow.activity, item: record.workflow.activity.item,
-        initiatorUserId: record.initiatorUserId }
-    });
+        activity: record.workflow.activity, item: record.workflow.activity.item, initiatorUserId: record.initiatorUserId } });
   }
 
   async #offers(compiled, record) {
@@ -136,28 +186,9 @@ export class MetamagicCastingService {
 
   async #prepare(record, compiled, chooser) {
     const offers = await this.#offers(compiled, record);
-    let selectedIds = [];
-    if (chooser) selectedIds = await chooser({ casting: this.#snapshot(record), offers: clone(offers), selectionLimit: compiled.selectionLimit });
-    else {
-      // Reuse the existing controller-routed prompt and its indicator/audio lease.
-      while (selectedIds.length < compiled.selectionLimit) {
-        const spent = offers.filter(entry => selectedIds.includes(entry.id)).reduce((sum, entry) => sum + entry.cost, 0);
-        const remaining = offers.filter(entry => !selectedIds.includes(entry.id));
-        if (!remaining.length) break;
-        const id = await this.#prompts.choose({
-          actor: record.actor, tokenUuid: record.casterTokenUuid, controllerUserId: record.controllerUserId,
-          role: SELECTION_INDICATOR_ROLES.ORIGINATOR, title: "Metamagic", prompt: "Choose an option, or continue casting without another option.",
-          reason: "metamagic-choice", allowCancel: true, cancelLabel: "Continue casting",
-          choices: remaining.map(offer => ({ id: offer.id, label: offer.label,
-            detail: `${offer.cost} Sorcery Point(s). ${offer.declaration.tooltip}${offer.reason ? ` ${offer.reason}` : ""}`,
-            disabled: offer.disabled || spent + offer.cost > offer.available }))
-            .concat({ id: "__finish", label: "Continue casting" }),
-          defaultChoiceId: "__finish"
-        });
-        if (id == null || id === "__finish") break;
-        selectedIds.push(id);
-      }
-    }
+    if (record.state !== "preparing") throw new Error("The broker request is no longer active.");
+    const selectedIds = await chooser({ casting: this.#snapshot(record), offers: clone(offers), selectionLimit: compiled.selectionLimit });
+    if (record.state !== "preparing") throw new Error("The broker request is no longer active.");
     if (!Array.isArray(selectedIds) || new Set(selectedIds).size !== selectedIds.length
       || selectedIds.length > compiled.selectionLimit || selectedIds.some(id => !offers.some(offer => offer.id === id && !offer.disabled))) {
       throw new Error("Invalid modifier selection.");
@@ -168,15 +199,15 @@ export class MetamagicCastingService {
       return true;
     }
     // Re-read after awaiting the chooser: grants, attunement, prices and pool may have changed.
-    const current = this.#declarations.compile(record.actor);
-    if (!current.ready || current.resourceUuid !== record.resourceUuid || selectedIds.length > current.selectionLimit) throw new Error("Caster declarations changed while choosing.");
+    const current = this.#declarations.compile(record.actor, this.#context(record.workflow));
+    if (!this.#sameBase(current, record) || selectedIds.length > current.selectionLimit) throw new Error("Caster declarations changed while choosing.");
     const fresh = await this.#offers(current, record);
     for (const id of selectedIds) {
       const option = fresh.find(entry => entry.id === id);
       const offered = offers.find(entry => entry.id === id);
-      if (!option || option.disabled || JSON.stringify(option.declaration) !== JSON.stringify(offered.declaration)
-        || option.sourceUuid !== offered.sourceUuid || option.cost !== offered.cost) throw new Error("An option changed while choosing; cast again to review it.");
+      if (!option || option.disabled || !this.#sameOption(option, offered)) throw new Error("An option changed while choosing; cast again to review it.");
       const prepared = await this.#optionResult(option, "prepare", record);
+      if (record.state !== "preparing") throw new Error("The broker request is no longer active.");
       if (!prepared?.activityUpdates || typeof prepared.activityUpdates !== "object" || Array.isArray(prepared.activityUpdates)) throw new Error("Option did not return Activity updates.");
       for (const [path, value] of Object.entries(prepared.activityUpdates)) {
         if (!path || /(^|\.)(__proto__|prototype|constructor|_id|consumption|flags)(\.|$)/.test(path)
@@ -192,6 +223,18 @@ export class MetamagicCastingService {
     record.state = "selected";
     this.#remember(record);
     return true;
+  }
+
+  #sameBase(compiled, record) {
+    return compiled.ready && compiled.resourceUuid === record.resourceUuid
+      && compiled.mainIdentity === record.mainIdentity;
+  }
+
+  #sameOption(option, previous) {
+    return option.sourceUuid === previous.sourceUuid && option.identity === previous.identity && option.cost === previous.cost
+      && JSON.stringify(option.declaration) === JSON.stringify(previous.declaration)
+      && JSON.stringify(option.provenance) === JSON.stringify(previous.provenance)
+      && JSON.stringify(option.adjustments) === JSON.stringify(previous.adjustments);
   }
 
   #nativeRecord(activity) {
@@ -296,11 +339,10 @@ export class MetamagicCastingService {
     if (!pool || !Number.isFinite(Number(pool.system?.uses?.value)) || record.totalCost > Number(pool.system?.uses?.value)) {
       return this.#veto(record, "The point pool is missing or no longer affordable; cast again.");
     }
-    const current = this.#declarations.compile(record.actor);
-    if (!current.ready || current.resourceUuid !== record.resourceUuid || record.selected.length > current.selectionLimit
+    const current = this.#declarations.compile(record.actor, this.#context(record.workflow));
+    if (!this.#sameBase(current, record) || record.selected.length > current.selectionLimit
       || record.selected.some(selected => !current.options.some(option => option.id === selected.id
-        && option.sourceUuid === selected.sourceUuid && option.cost === selected.cost
-        && JSON.stringify(option.declaration) === JSON.stringify(selected.declaration)))) {
+        && this.#sameOption(option, selected)))) {
       return this.#veto(record, "Option access or price changed during native spell configuration; cast again.");
     }
     const linked = usage.cause?.activity ? activity.getLinkedActivity?.(usage.cause.activity) : null;

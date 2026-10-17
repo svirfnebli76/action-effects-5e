@@ -1,0 +1,25 @@
+{
+  "base": {
+    "id": "base", "type": "main",
+    "optionChoices": 2, "selectionLimit": 1,
+    "resource": { "identifier": "sorcery-points" }
+  },
+  "distant": {
+    "id": "distant-spell", "type": "option", "cost": 1,
+    "tooltip": "Double a spell's numerical range of at least 5 feet, or change Touch to 30 feet, for this casting only.",
+    "acquisition": "learned",
+    "rules": { "minimumFeet": 5, "multiplier": 2, "touch": { "value": 30, "units": "ft" } },
+    "execution": { "interface": "cat-embedded", "name": "Distant Spell" },
+    "presentation": { "html": "<p><strong>{{options}}</strong> — {{outcome}}. Cost: {{cost}} Sorcery Point(s).</p>" }
+  },
+  "ringGrant": {
+    "id": "ring-grant", "type": "provider", "grants": ["distant-spell"],
+    "activation": { "equipped": true, "attuned": true }
+  },
+  "extraChoice": { "id": "extra-choice", "type": "provider", "choiceBonus": 1 },
+  "combination": { "id": "combination", "type": "provider", "selectionLimit": 2 },
+  "discount": {
+    "id": "discount", "type": "provider",
+    "costAdjustments": [{ "optionIds": ["distant-spell"], "amount": -1, "label": "One-point reduction" }]
+  }
+}

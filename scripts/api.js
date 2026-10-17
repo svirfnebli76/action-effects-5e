@@ -432,8 +432,7 @@ export class ActionEffects5eApi {
 
     this.metamagic = Object.freeze({
       readDeclaration: item => metamagicDeclarations.read(item),
-      reconcile: actor => metamagicDeclarations.compile(actor),
-      learn: (actor, optionIds) => metamagicDeclarations.learn(actor, optionIds),
+      reconcile: (actor, context) => metamagicDeclarations.compile(actor, context),
       begin: (workflow, options) => metamagicCasting.begin(workflow, options),
       getCasting: subject => metamagicCasting.get(subject),
       getRecentCastings: () => metamagicCasting.recent(),

@@ -1,4 +1,18 @@
-# Shared Item declarations — v0.4.5.35
+# Shared Item declarations — editor baseline v0.4.5.35
+
+## v0.4.5.36 continuation
+
+The editor verification described here is complete. The new collection-only
+Metamagic runtime and CAT Item-owned authoring path are documented in
+[the current guide](metamagic-development-3-authoring.md). That guide supersedes
+this document's earlier statements about preserving the singleton/world-Macro
+runtime or waiting to build its replacement. The user explicitly retired those
+test fixtures and authorized removing their execution code immediately. Existing
+world documents are not automatically removed. Keep live compendium edits when
+installing the source overlay.
+
+The following sections record the infrastructure/editor implementation and its
+verification history; use the current guide for Metamagic execution and setup.
 
 Implementation started 16 October 2026 (America/Los_Angeles), following the
 [approved plan](metamagic-approved-build-and-test-plan.md) and

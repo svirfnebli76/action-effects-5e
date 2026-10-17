@@ -69,6 +69,7 @@ import { ActivityExecutionService } from "./activities/activity-execution-servic
 import { ActivityCardService } from "./chat/activity-card-service.js";
 import { ChatCardAdapter } from "./chat/chat-card-adapter.js";
 import { MetamagicDeclarationService } from "./metamagic/declaration-service.js";
+import { CatDeclarationMacroAdapter } from "./integrations/cat-declaration-macro-adapter.js";
 import { DeclarationFamilyRegistry } from "./declarations/family-registry.js";
 import { DeclarationCollectionService } from "./declarations/collection-service.js";
 import { registerMetamagicFamily } from "./declarations/metamagic-family.js";
@@ -202,8 +203,10 @@ const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAut
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const activityCards = new ActivityCardService();
 const chatCardAdapter = new ChatCardAdapter();
-const metamagicDeclarations = new MetamagicDeclarationService();
-const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations, prompts: choicePrompts, cards: chatCardAdapter });
+const metamagicDeclarations = new MetamagicDeclarationService({ collections: itemDeclarations });
+const declarationMacros = new CatDeclarationMacroAdapter();
+const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations,
+  cards: chatCardAdapter, executors: declarationMacros });
 const sneakAttackDeclarationParser = new SneakAttackDeclarationParser();
 const sneakAttackDae = new SneakAttackDaeDeclarationService();
 const sneakAttackDeclarations = new SneakAttackDeclarationService({

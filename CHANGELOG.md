@@ -1,3 +1,20 @@
+# v0.4.5.36 — CAT Item-owned Metamagic and retirement of the preview
+
+- Connects versioned declaration collections to CAT Embedded Item macros using
+  CAT's public Called dispatcher in the verified preTargetingV2 window. The base
+  Item owns the chooser and Distant Spell's Item owns its rules; no new code
+  interpreter or option catalogue is introduced.
+- Discovers learned options from owned actor Items automatically, with capacity,
+  grant-only access, conditions, full source/record provenance and stale checks.
+- Removes the singleton reader, standalone world-Macro launcher, manual learn
+  API, built-in chooser and Stage 1 test installer immediately at the user's
+  request. Existing documents are not automatically changed or deleted.
+- Retains and regression-tests the casting-local parent range bridge, native
+  payment/refund ownership and receipts through the new CAT path. Preserves
+  Sneak Attack/Devious Strikes, compendiums, assets and compendium-only menus.
+- Supplies manual authoring instructions and pasteable base/Distant CAT macros.
+  Installed Foundry acceptance remains required before moving to another option.
+
 # v0.4.5.35 — JSON line numbers and reliable declaration selection
 
 - Updates the edited row label in place instead of rebuilding the list when

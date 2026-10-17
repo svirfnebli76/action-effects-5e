@@ -1,5 +1,11 @@
 # Stage 1 local installation and GM acceptance
 
+> Historical Stage 1 record. v0.4.5.36 removes this singleton/world-Macro
+> execution path and its installer at the user's request. Do not use these
+> installation or manual-learn instructions. Use the
+> [Development 3 authoring guide](metamagic-development-3-authoring.md).
+
+
 Status: **Stage 1 source preview; Foundry acceptance pending**. Do not describe
 the scripted repository models as live casting, range, resource or player tests.
 The user authorized GitHub publication on 16 October 2026. This source preview
@@ -31,7 +37,7 @@ Restart/reload Foundry after local file replacement. This is the necessary
 implementation load, not another standalone persistence probe.
 
 Run as GM. No combat is required for installation. Control exactly one disposable
-caster token and paste [install.js](../examples/metamagic-stage-1/install.js) into
+caster token and paste [install.js](https://github.com/svirfnebli76/action-effects-5e/blob/71b5c69cf1d4e829e50cd4cecf89cc9faf5176e5/examples/metamagic-stage-1/install.js) into
 the browser console. It creates only two new tagged test feature Items on that
 caster and one tagged world Script Macro, pins the existing point pool, and
 prints serialized installation details. The main Item holds learned choices;
@@ -40,7 +46,7 @@ The world Script Macro remains editable independently of the module catalogue.
 Running the installer again preserves existing tagged Items and their IDs.
 
 Confirm the installed versions using
-[inspect.js](../examples/metamagic-stage-1/inspect.js), also GM-only and read-only.
+[inspect.js](https://github.com/svirfnebli76/action-effects-5e/blob/71b5c69cf1d4e829e50cd4cecf89cc9faf5176e5/examples/metamagic-stage-1/inspect.js), also GM-only and read-only.
 Stage 0 investigated Foundry 14.369, D&D5e 6.0.6, Midi 14.6.2, CAT 0.1.2 and DAE
 14.6.1. If these differ, record the actual versions before relying on hook/API
 compatibility. The console output is chunked serialized text, not expandable
@@ -93,7 +99,7 @@ await api.metamagic.learn(actor, ["distant-spell"]);
 console.log(JSON.stringify(api.metamagic.reconcile(actor), null, 2));
 ```
 
-Provider examples are in [declarations.json](../examples/metamagic-stage-1/declarations.json).
+Provider examples are in [declarations.json](https://github.com/svirfnebli76/action-effects-5e/blob/71b5c69cf1d4e829e50cd4cecf89cc9faf5176e5/examples/metamagic-stage-1/declarations.json).
 Only add them to **new disposable test Items**. The installer does not equip
 rings or create these optional provider fixtures automatically. A new option's
 definition and Script Macro must be added to the test actor before learning or
@@ -121,7 +127,7 @@ needed. Later persisted options require the combined startup/reconstruction gate
 specified in the contract. Seeking's late reclassification remains restricted.
 
 After all test casts finish, run
-[cleanup.js](../examples/metamagic-stage-1/cleanup.js) as GM with the same caster
+[cleanup.js](https://github.com/svirfnebli76/action-effects-5e/blob/71b5c69cf1d4e829e50cd4cecf89cc9faf5176e5/examples/metamagic-stage-1/cleanup.js) as GM with the same caster
 controlled. It removes only tagged feature Items, never the pool/spells/legacy
 Items. Completed test casts legitimately consumed points; cleanup does not refund
 them. Optional provider fixtures added manually must be removed manually. The
