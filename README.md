@@ -2,9 +2,15 @@
 
 Action Effects 5E (AE5E) provides reusable D&D5e automation infrastructure for Foundry VTT. Individual Items remain responsible for their own game rules; AE5E provides generic capabilities that multiple unrelated automations can reuse.
 
-The Metamagic Stage 1 source preview has an [Item/casting contract](docs/metamagic-stage-1-contract.md)
-and [local installation and GM acceptance guide](docs/metamagic-stage-1-acceptance.md).
-It prepares the first Distant Spell slice; live Foundry acceptance remains pending.
+Metamagic Development 3 follows the [approved build/test plan](docs/metamagic-approved-build-and-test-plan.md)
+and [handoff](docs/metamagic-development-3-handoff.md). The first shared declaration/editor
+implementation is published as **v0.4.5.33**, with
+[source-overlay installation and the API guide](docs/item-declaration-infrastructure.md).
+Installed Foundry editor verification remains pending.
+Keep the current Metamagic test Items until those checks pass. The older
+[Stage 1 contract](docs/metamagic-stage-1-contract.md) and
+[acceptance guide](docs/metamagic-stage-1-acceptance.md) describe the preserved preview;
+their singleton/world-Macro design is superseded by the approved plan.
 
 ## Architecture boundary
 

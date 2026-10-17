@@ -352,6 +352,24 @@
 }
 
 /* v0.4.4.8 Action Effects 3D Crosshair settings -------------------------- */
+.ae5e-options-tabs, .ae5e-declaration-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.ae5e-cat-options-editor [hidden] { display: none !important; }
+.ae5e-options-tabs [aria-pressed="true"] { font-weight: bold; outline: 1px solid currentColor; }
+.ae5e-declaration-layout { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(22rem, 3fr); gap: 1rem; margin-top: 1rem; }
+.ae5e-declaration-layout aside { max-height: 34rem; overflow: auto; overflow-wrap: anywhere; }
+.ae5e-declaration-layout aside button { display: block; width: 100%; text-align: left; margin-block: 0.3rem; }
+.ae5e-declaration-layout aside [aria-pressed="true"] { outline: 1px solid currentColor; }
+.ae5e-declaration-detail { min-width: 0; }
+.ae5e-declaration-detail p { overflow-wrap: anywhere; }
+.ae5e-cat-options-editor [data-options-status], .ae5e-cat-options-editor [data-declaration-preserved] { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ae5e-item-options-button { flex: 0 0 auto; width: auto; padding-inline: 0.4rem; }
+
 .ae5e-settings-section-heading {
   grid-column: 1 / -1;
   margin: 1rem 0 0.35rem;

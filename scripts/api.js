@@ -97,6 +97,9 @@ import {
 
 export class ActionEffects5eApi {
   constructor({
+    declarationFamilies,
+    itemDeclarations,
+    itemOptionsAuthoring,
     metamagicDeclarations,
     metamagicCasting,
     activityCards,
@@ -307,7 +310,27 @@ export class ActionEffects5eApi {
       getPreferredController: (options) => compatibility.getPreferredController(options)
     });
 
+    this.declarations = Object.freeze({
+      registerFamily: definition => declarationFamilies.register(definition),
+      getFamily: id => declarationFamilies.get(id),
+      listFamilies: () => declarationFamilies.list(),
+      validateRecord: (family, record) => declarationFamilies.validateRecord(family, record),
+      registerConsumer: (family, id, consumer) => declarationFamilies.registerConsumer(family, id, consumer),
+      consume: (family, id, entries, context) => declarationFamilies.consume(family, id, entries, context),
+      read: (item, family) => itemDeclarations.read(item, family),
+      discover: items => itemDeclarations.discover(items),
+      evaluate: (entry, context) => itemDeclarations.evaluate(entry, context),
+      resolveGrants: request => itemDeclarations.resolveGrants(request),
+      previewMigration: (item, family) => itemDeclarations.migrate(item, family)
+    });
+
     this.authoring = Object.freeze({
+      itemOptions: Object.freeze({
+        canEdit: item => itemOptionsAuthoring.canEdit(item),
+        createDraft: item => itemOptionsAuthoring.createDraft(item),
+        save: draft => itemOptionsAuthoring.save(draft),
+        openEditor: item => catMetadataContextMenu.openOptionsEditor(item)
+      }),
       cat: Object.freeze({
         isValidVersion: (value) => catMetadataAuthoring.isValidVersion(value),
         validateItem: (document) => catMetadataAuthoring.validateItem(document),

@@ -1,0 +1,107 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AE5E Item Options browser checks</title>
+<link rel="stylesheet" href="../styles/action-effects-5e.css">
+<div id="editor"></div><pre id="result">RUNNING</pre>
+<script type="module">
+import { fixture, envelope } from "./helpers/declaration-fixtures.mjs";
+import { mountItemOptionsEditor, openItemOptionsEditor } from "../scripts/authoring/item-options-editor.js";
+import { CatMetadataContextMenuService } from "../scripts/authoring/cat-metadata-context-menu-service.js";
+const root = document.querySelector("#editor");
+const find = selector => root.querySelector(selector);
+const click = selector => find(selector).click();
+const change = (selector, value, event = "change") => {
+  const field = find(selector); field.value = value; field.dispatchEvent(new Event(event, { bubbles: true }));
+};
+const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const checks = [];
+const check = (condition, message) => { assert(condition, message); checks.push(message); };
+try {
+  const { item, authoring, writes } = fixture();
+  item.name = '<img src="bad" onerror="window.BAD=true">';
+  item.flags["action-effects-5e"].unknown = envelope([{ id: "preserve" }]);
+  const before = JSON.stringify(item);
+  let cancelled = false;
+  let saved = false;
+  const draft = authoring.createDraft(item);
+  mountItemOptionsEditor(root, { draft, authoring, onSave: () => { saved = true; }, onCancel: () => { cancelled = true; } });
+  click('[data-options-tab="declarations"]');
+  check(!find('[data-options-panel="declarations"]').hidden && find('[data-options-panel="cat"]').hidden, "top-level tab switching works");
+  check(writes.length === 0 && root.querySelectorAll("img").length === 0, "opening creates nothing and Item names are escaped");
+  check(find("[data-declaration-preserved]").textContent.includes("Unknown declaration family"), "unknown data is disclosed and preserved");
+  change("[data-declaration-family]", "future");
+  change("[data-declaration-id]", "first");
+  click("[data-declaration-add]");
+  change("[data-declaration-json]", '{"id":"first","settings":{"draft":true}}', "input");
+  change("[data-declaration-id]", "second");
+  click("[data-declaration-add]");
+  root.querySelectorAll("[data-row]")[0].click();
+  check(find("[data-declaration-json]").value.includes('"draft":true'), "switching rows preserves typed draft edits");
+  check(find("[data-declaration-destination]").textContent.includes("flags.action-effects-5e.future"), "selected family, id and registered destination are explicit");
+  change("[data-declaration-id]", "first");
+  click("[data-declaration-duplicate]");
+  check(find("[data-options-status]").textContent.includes("unique"), "duplicate requires a fresh id");
+  change("[data-declaration-id]", "copy");
+  click("[data-declaration-duplicate]");
+  check(root.querySelectorAll("[data-row]").length === 3 && JSON.parse(find("[data-declaration-json]").value).settings.draft, "duplicate preserves record data with a new id");
+  click("[data-declaration-remove]");
+  check(root.querySelectorAll("[data-row]").length === 2, "remove deletes only the selected row");
+  change("[data-declaration-json]", '{"id":"broken",', "input");
+  root.querySelectorAll("[data-row]")[1].click();
+  click("[data-options-save]");
+  await tick();
+  check(writes.length === 0 && find("[data-options-status]").textContent.includes("Invalid JSON"), "invalid unselected row prevents all writes");
+  click("[data-options-cancel]");
+  check(cancelled && JSON.stringify(item) === before, "cancel discards drafts without mutation");
+
+  const fresh = authoring.createDraft(item);
+  mountItemOptionsEditor(root, { draft: fresh, authoring, onSave: () => { saved = true; }, onCancel: () => {} });
+  click('[data-options-tab="declarations"]');
+  change("[data-declaration-family]", "future");
+  change("[data-declaration-id]", "finished");
+  click("[data-declaration-add]");
+  click("[data-options-save]");
+  await tick();
+  check(saved && writes.length === 1 && item.flags["action-effects-5e"].future.declarations[0].id === "finished", "Save All persists validated declarations once");
+
+  const sheet = document.createElement("div");
+  sheet.innerHTML = '<header class="window-header"></header>';
+  document.body.append(sheet);
+  const service = new CatMetadataContextMenuService({ authoring: {}, configurationAuthoring: { getStatus: () => ({}) }, itemOptionsAuthoring: authoring });
+  check(service.addItemSheetOptionsButton({ document: item, element: sheet }), "world/owned Item sheet gets a visible entry point");
+  check(!service.addItemSheetOptionsButton({ document: item, element: sheet }) && sheet.querySelectorAll("button").length === 1, "repeated sheet renders do not duplicate entry points");
+  const foreign = { ...item, pack: "thirdparty.features" };
+  check(!service.addItemSheetOptionsButton({ document: foreign, element: sheet }), "third-party compendium sheet has no authoring entry point");
+
+  // Exercise DialogV2 host lifecycle independently of the rendered editor mount.
+  const dialogs = [];
+  globalThis.foundry = { applications: { api: { DialogV2: class {
+    constructor(options) { this.options = options; this.events = {}; dialogs.push(this); }
+    addEventListener(name, callback) { this.events[name] = callback; }
+    async render() { this.element = document.createElement("div"); this.element.innerHTML = this.options.content; document.body.append(this.element); }
+    async close() { this.element.remove(); this.events.close?.(); }
+  } } } };
+  let pending = openItemOptionsEditor(item, { authoring });
+  await tick();
+  dialogs.at(-1).element.querySelector("[data-options-cancel]").click();
+  check((await pending).cancelled, "Dialog Cancel settles the editor result");
+  pending = openItemOptionsEditor(item, { authoring });
+  await tick();
+  await dialogs.at(-1).close();
+  check((await pending).cancelled, "closing the window discards the draft");
+  let releaseSave;
+  pending = openItemOptionsEditor(item, { authoring: {
+    createDraft: item => authoring.createDraft(item),
+    save: draft => new Promise(resolve => { releaseSave = async () => resolve(await authoring.save(draft)); })
+  } });
+  await tick();
+  const savingDialog = dialogs.at(-1);
+  savingDialog.element.querySelector("[data-options-save]").click();
+  await savingDialog.close();
+  check(savingDialog.element.isConnected, "window cannot report cancellation during an in-flight save");
+  await releaseSave();
+  check((await pending).saved && !savingDialog.element.isConnected, "successful save settles and closes the dialog");
+  document.querySelector("#result").textContent = `PASS ${checks.length} browser checks\n${checks.join("\n")}`;
+} catch (error) { document.querySelector("#result").textContent = `FAIL ${error.stack}`; }
+</script>

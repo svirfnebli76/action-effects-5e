@@ -1,3 +1,18 @@
+# v0.4.5.33 — Shared Item declaration infrastructure
+
+- Adds registered family schemas/templates, versioned multi-record Item
+  collections, stable source/family/record identities, validation, discovery,
+  activation, AC5E eligibility forwarding and grant provenance/ambiguity handling.
+- Extends Edit Item Options with CAT Configuration and AE5E Declarations tabs,
+  grouped draft records, Add/Duplicate/Remove, validation and Save All Changes.
+  GM users can author new world/owned Items from their sheet header.
+- Preserves CAT preferences, unrelated/unknown data, legacy singleton declarations,
+  existing Sneak Attack/Devious Strikes and the Metamagic source preview. No
+  compendiums, assets, test Items or resources are converted or removed.
+- This is the infrastructure slice. Installed Foundry editor verification and the
+  finished Item-owned Metamagic broker/Distant path remain pending. See
+  `docs/item-declaration-infrastructure.md` for source-overlay installation.
+
 # Metamagic Stage 1 — Source preview (16 October 2026)
 
 - Adds versioned Item declarations for main, provider and option roles, learned

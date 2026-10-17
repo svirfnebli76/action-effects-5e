@@ -69,6 +69,10 @@ import { ActivityExecutionService } from "./activities/activity-execution-servic
 import { ActivityCardService } from "./chat/activity-card-service.js";
 import { ChatCardAdapter } from "./chat/chat-card-adapter.js";
 import { MetamagicDeclarationService } from "./metamagic/declaration-service.js";
+import { DeclarationFamilyRegistry } from "./declarations/family-registry.js";
+import { DeclarationCollectionService } from "./declarations/collection-service.js";
+import { registerMetamagicFamily } from "./declarations/metamagic-family.js";
+import { ItemOptionsAuthoringService } from "./authoring/item-options-authoring-service.js";
 import { MetamagicCastingService } from "./metamagic/casting-service.js";
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
@@ -114,9 +118,14 @@ const catAutomationProvider = new CatAutomationProviderAdapter();
 const ac5eEligibility = new Ac5eEligibilityAdapter();
 const catMetadataAuthoring = new CatMetadataAuthoringService();
 const catConfigurationAuthoring = new CatConfigurationAuthoringService();
+const declarationFamilies = new DeclarationFamilyRegistry();
+registerMetamagicFamily(declarationFamilies);
+const itemDeclarations = new DeclarationCollectionService({ registry: declarationFamilies, ac5e: ac5eEligibility });
+const itemOptionsAuthoring = new ItemOptionsAuthoringService({ collections: itemDeclarations, configurationAuthoring: catConfigurationAuthoring });
 const catMetadataContextMenu = new CatMetadataContextMenuService({
   authoring: catMetadataAuthoring,
   configurationAuthoring: catConfigurationAuthoring,
+  itemOptionsAuthoring,
   registry: catAutomationRegistry
 });
 const animationOwnership = new AnimationOwnershipService();
@@ -446,6 +455,9 @@ async function bootstrapAcceptedCatMetadata() {
   return { skipped: false, changed };
 }
 const api = new ActionEffects5eApi({
+  declarationFamilies,
+  itemDeclarations,
+  itemOptionsAuthoring,
   metamagicDeclarations,
   metamagicCasting,
   activityCards,
