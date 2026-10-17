@@ -152,9 +152,12 @@ has not returned to its four-point baseline, report the actual balance rather
 than manually resetting it or casting again.
 
 On the next single Distant attempt, the inspector should show
-`runtimeRevision: "activity-source-bridge-3"`. Its `activityChecks` record
-`range.value: 60`, `range.units: "ft"` and `range.override: true` in the relevant
-live receivers. Parent-source `range.value` is the formula string `"60"`; that
+`runtimeRevision: "activity-source-bridge-4"`. Its `activityChecks` record
+`range.value: 60` and `range.units: "ft"` in the relevant live receivers, plus
+`itemRange.value: 60` and `itemRange.units: "ft"` on the casting-local parent.
+The Activity source retains `range.override: true`; post-use live range metadata
+may omit that field only while source intent, selected live range and the parent
+fallback all agree. Parent-source `range.value` is the formula string `"60"`; that
 is correct native storage, while prepared receivers should report numeric `60`.
 A selected/consumed snapshot alone does not prove
 commitment or a refund. Retain the actual point balance and any range warning

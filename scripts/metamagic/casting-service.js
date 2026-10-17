@@ -86,7 +86,7 @@ export class MetamagicCastingService {
       throw new Error("Casting-local Activity/Item copy is unavailable; source Items must remain unchanged.");
     }
     const record = {
-      version: 1, runtimeRevision: "activity-source-bridge-3", castingId: randomId(), parentCastingId: null, state: "preparing",
+      version: 1, runtimeRevision: "activity-source-bridge-4", castingId: randomId(), parentCastingId: null, state: "preparing",
       initiatorUserId, controllerUserId: initiatorUserId, executionUserId: game.user.id,
       casterActorUuid: actor.uuid, casterTokenUuid: workflow.token?.document?.uuid ?? workflow.token?.uuid ?? null,
       sourceItemUuid: actor.items.get(item.id)?.uuid ?? item.uuid, sourceActivityId: activity.id,
@@ -215,7 +215,7 @@ export class MetamagicCastingService {
       ?? property(item, `system.activities.${activity.id}`);
     record.activityChecks.push({ stage, expected: clone(record.activityUpdates),
       receiver: values(activity), prepared: values(current), parentSource: raw ? values(raw) : null,
-      workflow: values(record.workflow.activity) });
+      workflow: values(record.workflow.activity), itemRange: clone(item.system?.range ?? null) });
     record.activityChecks = record.activityChecks.slice(-8);
   }
 
@@ -226,6 +226,13 @@ export class MetamagicCastingService {
     const parentUpdates = Object.fromEntries(Object.entries(updates).map(([path, value]) => [
       `system.activities.${activity.id}.${path}`, clone(value)
     ]));
+    // Stage 0's verified path patches both ranges on this unsaved casting copy.
+    // Midi falls back to Item range when a live Activity loses override metadata.
+    if (record.activityUpdates["range.override"] === true) {
+      for (const [path, value] of Object.entries(record.activityUpdates)) {
+        if (path.startsWith("range.") && path !== "range.override") parentUpdates[`system.${path}`] = clone(value);
+      }
+    }
     parentUpdates[`flags.${MODULE_ID}.${CAST_FLAG}`] = {
       version: 1, castingId: record.castingId, initiatorUserId: record.initiatorUserId
     };
@@ -370,7 +377,19 @@ export class MetamagicCastingService {
     this.#captureActivity(record, activity, "post-use-before");
     const receivers = new Set([activity, record.workflow.activity].filter(receiver => this.#nativeRecord(receiver) === record));
     for (const receiver of receivers) {
-      const changed = Object.entries(record.activityUpdates).some(([path, expected]) => JSON.stringify(property(receiver, path)) !== JSON.stringify(expected));
+      const changed = Object.entries(record.activityUpdates).some(([path, expected]) => {
+        // Native preparation may omit this metadata from the held live range.
+        // Accept that only when source intent, live values AND the Item fallback
+        // all retain the selection. Pre-payment validation remains strict.
+        if (path === "range.override" && expected === true && receiver.range?.override === undefined
+          && receiver._source?.range?.override === true) {
+          const fields = Object.entries(record.activityUpdates).filter(([key]) => key.startsWith("range.") && key !== path);
+          if (fields.length && fields.every(([key, value]) =>
+            JSON.stringify(property(receiver, key)) === JSON.stringify(value)
+            && JSON.stringify(property(receiver.item.system, key)) === JSON.stringify(value))) return false;
+        }
+        return JSON.stringify(property(receiver, path)) !== JSON.stringify(expected);
+      });
       if (changed && !this.#applyActivity(record, receiver, "post-use-restored")) {
         record.postUseMutationFailed = true;
         this.#remember(record);

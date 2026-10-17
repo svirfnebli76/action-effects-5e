@@ -529,6 +529,8 @@ test("Touch range survives native Item cloning without modifying the canonical s
   assert.equal(native.range.units, "ft");
   assert.equal(native.range.value, 30);
   assert.equal(native.range.override, true);
+  assert.equal(native.item.system.range.units, "ft");
+  assert.equal(native.item.system.range.value, 30, "Touch also needs a numeric casting-local fallback");
   assert.equal(f.original.system.range.units, "touch");
 });
 
@@ -556,7 +558,7 @@ test("lost Activity range rejects the native payment plan and remains visible in
   native.range.value = 30;
   assert.equal(f.service.validateConsumption(native, { item: [{ _id: "pool", "system.uses.spent": 4 }], delete: [] }), false);
   const report = f.service.recent()[0];
-  assert.equal(report.runtimeRevision, "activity-source-bridge-3");
+  assert.equal(report.runtimeRevision, "activity-source-bridge-4");
   assert.equal(report.activityChecks.at(-1).receiver["range.value"], 30);
   assert.equal(report.activityChecks.at(-1).expected["range.value"], 60);
   assert.equal(f.pool.system.uses.value, 4);
@@ -573,7 +575,7 @@ test("native FormulaField source remains a string while original and rebuilt rec
   assert.equal(f.original.system.range.value, 30);
 });
 
-test("post-use loss of override must not send Midi's effective range back to the Item's 30 feet", async () => {
+test("post-use range metadata loss uses the selected casting-local parent range", async () => {
   // Midi 14.6.2 utils.ts activityRanges: without own.override, Item range wins.
   const midiNormalRange = activity => activity.range.override
     ? activity.range.value || activity.range.reach || 0
@@ -585,10 +587,23 @@ test("post-use loss of override must not send Midi's effective range back to the
   f.workflow.activity = native; // Midi's native hook points the workflow at this receiver.
   delete native.range.override; // Exact post-use shape in the supplied live diagnostic.
   assert.equal(native.range.value, 60);
-  assert.equal(midiNormalRange(native), 30, "60 in the live field alone does not satisfy Midi's range resolver");
+  assert.equal(midiNormalRange(native), 60, "the Stage 0 parent fallback must already hold the selected range");
+  // Revision 3's attempted re-preparation failed on the held receiver: its
+  // override stayed absent and its value fell back to the parent. Model that
+  // observed boundary, rather than assuming updateSource restores live metadata.
+  let detachedPreparations = 0;
+  const finalize = native.prepareFinalData.bind(native);
+  native.prepareFinalData = () => {
+    detachedPreparations++;
+    finalize();
+    delete native.range.override;
+    native.range.value = Number(native.item.system.range.value);
+  };
   assert.equal(f.service.observeNative(native), true);
   assert.equal(midiNormalRange(native), 60);
-  assert.equal(native.range.override, true);
+  assert.equal(native.range.override, undefined);
+  assert.equal(native._source.range.override, true);
+  assert.equal(detachedPreparations, 0, "do not reprepare a mechanically correct post-use receiver to restore metadata");
   assert.equal(native.consumption.targets.length, 1);
   assert.equal(f.pool.system.uses.value, 3, "restoring metadata must not debit again");
   assert.equal(f.service.get(f.workflow).nativeDebit.amount, 1);
@@ -603,6 +618,7 @@ test("post-use restoration failure remains unconfirmed without inventing a refun
   nativeConsumption(f, native);
   f.workflow.activity = native;
   delete native.range.override;
+  native.range.value = 30;
   native.item.updateSource = () => { throw new Error("post-use preparation unavailable"); };
   assert.equal(f.service.observeNative(native), false);
   assert.equal(await f.service.commit(f.workflow), false);
@@ -611,4 +627,23 @@ test("post-use restoration failure remains unconfirmed without inventing a refun
   assert.equal(f.pool.system.uses.value, 3);
   assert.equal(f.service.get(f.workflow).nativeDebit.amount, 1);
   assert.equal(f.original.system.range.value, 30);
+});
+
+test("missing post-use override is not accepted with an incorrect parent fallback or lost source intent", async () => {
+  for (const problem of ["parent-value", "parent-units", "source-override"]) {
+    const f = setup({ sourceBacked: true });
+    await f.service.begin(f.workflow, { chooser: chooseDistant });
+    const native = f.activityClone(f.workflow.activity);
+    nativeConsumption(f, native);
+    f.workflow.activity = native;
+    delete native.range.override;
+    if (problem === "parent-value") native.item.system.range.value = 30;
+    if (problem === "parent-units") native.item.system.range.units = "touch";
+    if (problem === "source-override") delete native._source.range.override;
+    native.item.updateSource = () => { throw new Error("restoration unavailable"); };
+    assert.equal(f.service.observeNative(native), false, problem);
+    assert.equal(await f.service.commit(f.workflow), false, problem);
+    assert.equal(f.pool.system.uses.value, 3, "no second debit or speculative refund");
+    assert.equal(f.original.system.range.value, 30);
+  }
 });

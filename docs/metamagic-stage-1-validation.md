@@ -119,3 +119,32 @@ and exactly one native debit. Source isolation and a later ordinary 30-foot cast
 also pass. The focused suite passes 38 checks; the repository gate passes all 56
 test files and the 147-file production syntax check. Live Foundry confirmation
 remains pending. Existing fixture Items and Macro definitions need no reinstall.
+
+
+## Revision 3 live failure and Stage 0 parent-range correction
+
+Evidence: sediment file_000000004c1c8230866837992d237b33, 16 October 2026.
+Installed revision 3 selected/prepared/consumed range60/ft/override=true. At
+post-use the held receiver lacked override; its attempted restoration produced
+range30/ft with override still absent, while the prepared child and parent
+Activity source retained 60. Midi rejected the 45-foot target. The snapshot
+recorded a one-point native delta; the actual pool reported available4/spent3.
+No successful cast, completed receipt or full acceptance is claimed.
+
+Review of Metamagic Development 1 recovered the actual successful RangeParent
+probe: it updated system.range on the unsaved parent Item as well as both held
+and rebuilt Activities. Revision 4 carries that verified fallback forward.
+A regression first failed with effective Midi range30 after live override loss.
+The corrected version retains range60 via the casting-local parent, including
+when held-receiver re-preparation would strip metadata and read the parent.
+Mechanically correct post-use receivers are not re-prepared just to restore a
+metadata field. A negative matrix rejects incorrect fallback value/units or lost
+source override intent when restoration is unavailable. Touch fallback, native
+cloning/scaling, one debit and later ordinary-cast isolation are also covered.
+
+Focused suite: 39 checks pass. Full repository gate: 56 test files pass, with
+147 production JavaScript files passing syntax checks; git diff --check passes.
+Compendiums, assets, manifest and test Item/Macro definitions are unchanged.
+These are modeled receiver/consumption contracts,
+not execution of Foundry's document runtime. Live GM acceptance of revision 4 is
+pending. Existing test Items and Macro definitions require no reinstall.

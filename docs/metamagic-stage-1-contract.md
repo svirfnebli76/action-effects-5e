@@ -195,7 +195,7 @@ possibly additional infrastructure before production use.
 Records use workflow WeakMap/WeakRef associations; diagnostic history is bounded
 to 100 latest casting snapshots, including selected/native-consumption stages
 that may never reach completion. These snapshots are not cancellation/refund
-claims. `runtimeRevision: "activity-source-bridge-3"` and `activityChecks` show
+claims. `runtimeRevision: "activity-source-bridge-4"` and `activityChecks` show
 expected, receiver, prepared-child, parent-source and workflow values at each
 observed boundary. Abandoned live records
 can be inspected by workflow while it exists; no timer refunds them. The message
@@ -268,3 +268,23 @@ receivers still held by Midi are updated and then finalized through their native
 Activity.prepareFinalData. The prepared child is not source-updated again after
 final preparation. Strict pre-payment validation remains in place on effective
 values; it is not replaced with loose string/number equality.
+
+
+## Casting-local parent range (revision 4)
+
+The successful Stage 0 RangeParent probe updated both the unsaved spell Item's
+range and its Activity. Revision 3 omitted that parent range update and instead
+tried to repair live override metadata at post-use. The next live report showed
+that repair failing: the held receiver lost override and became 30 feet while
+the newly prepared child stayed 60. One point was consumed; after native range
+rejection the reported pool was back at four. This is a failed acceptance result.
+
+For an explicit Activity range override, the generic mutation adapter now mirrors
+its selected range fields (excluding Activity-only override metadata) into the
+casting-local parent Item source. Native use/scaling clones inherit both. No
+embedded source Item or other casting is updated. Post-use missing override
+metadata alone does not cause another preparation when the receiver's source
+retains override=true and both live range and Item fallback exactly match all
+selected range fields. Incorrect values, units or source intent still require
+restoration and prevent confirmed commitment if restoration fails. Pre-write
+payment validation remains strict. No additional debit or refund is introduced.
