@@ -94,9 +94,27 @@ test("context option appears only for GM in approved AE5E public compendiums", (
 
   assert.equal(service.extendContextOptions({ collection: internal }, base).length, 1);
   assert.equal(service.extendContextOptions({ collection: foreign }, base).length, 1);
+  assert.equal(service.extendContextOptions({ collection: [] }, base).length, 1);
+  assert.equal(service.extendContextOptions({ document: { documentName: "Item", pack: null } }, base).length, 1);
 
   const player = makeService({ isGM: false }).service;
   assert.equal(player.extendContextOptions({ collection: allowed }, base).length, 1);
+});
+
+test("authoring initialization registers no global Item-sheet render hooks", () => {
+  const previousHooks = globalThis.Hooks;
+  const hooks = [];
+  globalThis.Hooks = { on: (...args) => hooks.push(args) };
+  try {
+    const { service, registrations } = makeService();
+    service.initialize();
+    assert.equal(registrations.length, 1);
+    assert.equal(registrations[0].target, CAT_METADATA_CONTEXT_WRAPPER_TARGET);
+    assert.deepEqual(hooks, []);
+  } finally {
+    if (previousHooks === undefined) delete globalThis.Hooks;
+    else globalThis.Hooks = previousHooks;
+  }
 });
 
 test("first-use editor draft auto-populates Foundry fields and proposes version 1.0.0", () => {

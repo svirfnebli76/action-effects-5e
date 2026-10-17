@@ -116,8 +116,8 @@ function proposedIdentifier(document, { existingIdentifier, alreadyPublished }) 
  * Foundry v14's Compendium application owns its entry context options through
  * `_getEntryContextOptions`. AE5E wraps that method with libWrapper and adds a
  * single GM-only option only when the open pack is one of AE5E's explicit
- * public CAT automation packs. Foreign compendiums and the AE5E Administrative pack are excluded. World
- * and Actor-owned Items expose Item Options through their sheet header.
+ * public CAT automation packs. World/owned Item sheets, foreign compendiums,
+ * and the AE5E Administrative pack do not receive authoring controls.
  */
 export class CatMetadataContextMenuService {
   #authoring;
@@ -180,11 +180,6 @@ export class CatMetadataContextMenuService {
     }
     this.#initialized = true;
 
-    // World and Actor-owned Items have a visible authoring entry point even
-    // before they carry any declarations. Foreign compendiums remain isolated.
-    globalThis.Hooks?.on?.("renderApplicationV2", app => this.addItemSheetOptionsButton(app));
-    globalThis.Hooks?.on?.("renderItemSheet", app => this.addItemSheetOptionsButton(app));
-
     const libWrapper = this.#libWrapperAccessor();
     if (typeof libWrapper?.register !== "function") {
       this.#recordWrapperError(new Error("libWrapper is unavailable; AE5E compendium Item version context menu could not be installed."));
@@ -215,27 +210,6 @@ export class CatMetadataContextMenuService {
   isEligiblePack(packOrId) {
     const id = typeof packOrId === "string" ? packOrId : packId(packOrId);
     return Boolean(id) && this.#publicPackIds.includes(id);
-  }
-
-  addItemSheetOptionsButton(app) {
-    const item = app?.document;
-    if (!item || item.pack || !this.#itemOptionsAuthoring?.canEdit(item)) return false;
-    const element = app.element?.[0] ?? app.element;
-    const header = element?.querySelector?.(".window-header");
-    if (!header || header.querySelector("[data-ae5e-item-options]")) return false;
-    const button = header.ownerDocument.createElement("button");
-    button.type = "button";
-    button.dataset.ae5eItemOptions = "";
-    button.className = "header-control ae5e-item-options-button";
-    button.title = CAT_OPTIONS_CONTEXT_LABEL;
-    button.setAttribute("aria-label", CAT_OPTIONS_CONTEXT_LABEL);
-    button.innerHTML = '<i class="fa-solid fa-sliders" aria-hidden="true"></i> Item Options';
-    button.addEventListener("click", event => {
-      event.preventDefault();
-      this.openOptionsEditor(item).catch(error => globalThis.ui?.notifications?.error?.(error.message));
-    });
-    header.append(button);
-    return true;
   }
 
   getDraft(document) {

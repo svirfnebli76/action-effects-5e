@@ -155,12 +155,11 @@ This is not simply CAT's installed-Item Configuration preference tab.
   opening it creates nothing. It is not automatically offered for third-party
   compendiums. Do not misinterpret this as permission to modify existing packs.
 
-Implementation integration detail to handle: current authoring service restricts
-saves/entry points to approved public compendium Items. The agreed manual build
-workflow also requires newly created world/owned Items to be authorable. Provide
-an appropriate accessible entry point/service scope for those new Items while
-preserving compendium access controls and third-party isolation. Do not require
-users to edit existing packs or run a setup script to bypass that restriction.
+UI scope clarified by the user during installed-editor verification: authoring
+context menus appear only in approved AE5E compendiums. Do not add global menus
+or world/owned Item-sheet buttons. This supersedes the earlier instruction to
+add a visible world/owned Item entry point. Explicit authoring-service support
+is separate from automatic menu visibility; preserve third-party isolation.
 
 Mockups were illustrative only. The latest image used Devious Strikes with three
 Sneak Attack entries plus an illustrative second family. It predates removal of

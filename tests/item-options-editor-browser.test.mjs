@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { resolve, extname, join } from "node:path";
 
 const chromium = ["/usr/bin/chromium", "/usr/bin/chromium-browser"].find(path => existsSync(path));
-test("Item Options browser interactions and sheet entry points", {
+test("Item Options browser interactions and compendium-only context menu", {
   skip: !chromium || (process.env.AE5E_BROWSER_TESTS !== "1" && "Set AE5E_BROWSER_TESTS=1 to run installed Chromium"), timeout: 20000
 }, async context => {
   const directory = resolve(fileURLToPath(new URL("..", import.meta.url)));

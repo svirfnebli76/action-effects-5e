@@ -1,4 +1,4 @@
-# Shared Item declarations — v0.4.5.33
+# Shared Item declarations — v0.4.5.34
 
 Implementation started 16 October 2026 (America/Los_Angeles), following the
 [approved plan](metamagic-approved-build-and-test-plan.md) and
@@ -18,9 +18,10 @@ normalized for the repository whitespace gate.
 This slice adds shared collection infrastructure and Item Options authoring.
 It does not install AE5E in Foundry, change the live world, convert existing
 Items, or claim acceptance of a finished Metamagic broker/option execution path.
-The publication version is **0.4.5.33**, synchronized across `module.json`,
+The publication version is **0.4.5.34**, synchronized across `module.json`,
 `package.json` and `scripts/core/constants.js`. This identifies the infrastructure
-build separately from the preserved 0.4.5.32 casting preview.
+build separately from the preserved 0.4.5.32 casting preview. The UI-scope
+correction is based on the published 0.4.5.33 commit `908d094`.
 
 All existing compendiums, assets, Sneak Attack/Devious Strikes transport, casting
 range/payment logic and Stage 1 test Items are preserved. No database was opened
@@ -67,12 +68,13 @@ standalone-Macro execution contract. Existing test Items must stay intact.
 
 ## Authoring
 
-Approved AE5E public compendiums retain **Edit Item Options**. GM users can also
-open **Item Options** from the header of a world or Actor-owned Item sheet,
-including an Item with no declarations. The programmatic entry point is
-`api.authoring.itemOptions.openEditor(itemOrUuid)`; ordinary authoring does not
-require a console script. Third-party and administrative compendiums remain
-excluded. Authoring is GM-only in this slice.
+GM users open **Edit Item Options** from the context menu in an approved AE5E
+public compendium, including on an Item with no declarations. The user clarified
+that this menu must remain scoped to those compendiums. No global menus or
+world/owned Item-sheet buttons are installed. Third-party and administrative
+compendiums remain excluded. Explicit authoring-service APIs remain available
+without automatically exposing any UI elsewhere. Ordinary compendium authoring
+does not require a console script.
 
 The window has **CAT Configuration** and **AE5E Declarations** tabs. The latter
 provides family/template/id controls for Add Declaration, a grouped list, one
@@ -140,11 +142,17 @@ Merely storing the new declaration does not make a finished option executable.
 
 ## Verification and next installation gate
 
+The v0.4.5.34 compendium-only UI correction passed
+`AE5E_BROWSER_TESTS=1 npm test`: 653 tests, no failures or skips, including all
+18 browser checks. The syntax gate covered 153 files. Publication preserves the
+newer compendium commit `4fcfe81`; pack/asset trees and Sneak Attack/Metamagic
+casting code match that publication parent without modification.
+
 This slice passed `AE5E_BROWSER_TESTS=1 npm test`: 652 tests, no failures or skips,
 including the 18 browser checks; production syntax validation covered 153 files.
 `git diff --check` passed. Git comparison against the verified baseline found no
 changes under `packs`, `assets`, `scripts/sneak-attack` or `scripts/metamagic`,
-and the manifest changes only its version to 0.4.5.33. The publication baseline
+and the initial manifest changed only its version to 0.4.5.33. Its publication baseline
 is `6e45fe2`. Release validation after the version change passed all 652 tests
 with no failures or skips, including the browser checks, and the 153-file syntax
 gate.
@@ -154,7 +162,9 @@ identity, unknown/malformed data, duplicate keys/ids, activation/AC5E forwarding
 grant provenance/ambiguity, explicit migration, draft preservation, save failures,
 concurrent edits, CAT deletion behavior and pack relocking. A Chromium harness
 exercises the actual editor mount and a simulated DialogV2 lifecycle, including
-18 browser interactions and sheet-entry-point checks.
+18 browser interactions, including compendium-only context-menu checks. A
+separate regression verifies that authoring initialization registers no global
+Item-sheet render hooks.
 
 Run `npm test` and `git diff --check`. Browser execution is opt-in with
 `AE5E_BROWSER_TESTS=1 npm test` and requires installed Chromium and permission to
@@ -167,7 +177,7 @@ optional browser case; record the separate browser result explicitly.
 This is a GitHub source publication rather than a GitHub Releases asset or a
 Foundry package-manager update. Keep the installed module folder and its
 `packs/` directory. Stop Foundry, then overlay the following files from the
-published 0.4.5.33 commit into the existing `Data/modules/action-effects-5e/`
+published 0.4.5.34 commit into the existing `Data/modules/action-effects-5e/`
 folder, preserving their relative paths. Create the new source directories as
 needed; do not replace the module folder with an extracted repository archive.
 
@@ -189,7 +199,7 @@ styles/action-effects-5e.css
 Do not copy `packs/`, assets or historical setup/cleanup scripts to apply this
 update. No setup Script Macro or Item JSON export is needed. Start Foundry again
 and reload each connected browser client. This read-only console check identifies
-both the loaded manifest and runtime; both version fields must say `0.4.5.33`:
+both the loaded manifest and runtime; both version fields must say `0.4.5.34`:
 
 ```js
 const ae5eModule = game.modules.get("action-effects-5e");
@@ -205,10 +215,11 @@ Expected: `declarationFamilies` includes `metamagic` and `itemOptionsEditor` is
 `"function"`. This check reads module state and does not alter world documents.
 
 Verify the installed editor as GM on a
-new disposable world/owned Item: header entry point, empty declaration tab,
+new disposable verification Item in an approved AE5E compendium: context-menu entry point, empty declaration tab,
 Add/Edit/Switch/Duplicate/Remove, validation, Save/reopen persistence and Cancel.
 Use its CAT editor for actual supported controls and confirm chosen preferences
-stay intact. Do not edit an existing pack to run this check. Confirm the actual
+stay intact. Keep changes confined to the new verification Item and preserve
+existing compendium Items. Confirm the actual
 installed module version/source before proceeding.
 
 Only after installation and editor verification may the agreed tagged Metamagic

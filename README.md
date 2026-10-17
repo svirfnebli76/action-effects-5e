@@ -4,9 +4,11 @@ Action Effects 5E (AE5E) provides reusable D&D5e automation infrastructure for F
 
 Metamagic Development 3 follows the [approved build/test plan](docs/metamagic-approved-build-and-test-plan.md)
 and [handoff](docs/metamagic-development-3-handoff.md). The first shared declaration/editor
-implementation is published as **v0.4.5.33**, with
+implementation is published as **v0.4.5.34**, with
 [source-overlay installation and the API guide](docs/item-declaration-infrastructure.md).
 Installed Foundry editor verification remains pending.
+The authoring context menu is GM-only and appears only in approved AE5E
+compendiums; world/owned Item sheets receive no added authoring controls.
 Keep the current Metamagic test Items until those checks pass. The older
 [Stage 1 contract](docs/metamagic-stage-1-contract.md) and
 [acceptance guide](docs/metamagic-stage-1-acceptance.md) describe the preserved preview;

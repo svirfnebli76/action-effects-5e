@@ -65,14 +65,17 @@ try {
   await tick();
   check(saved && writes.length === 1 && item.flags["action-effects-5e"].future.declarations[0].id === "finished", "Save All persists validated declarations once");
 
-  const sheet = document.createElement("div");
-  sheet.innerHTML = '<header class="window-header"></header>';
-  document.body.append(sheet);
-  const service = new CatMetadataContextMenuService({ authoring: {}, configurationAuthoring: { getStatus: () => ({}) }, itemOptionsAuthoring: authoring });
-  check(service.addItemSheetOptionsButton({ document: item, element: sheet }), "world/owned Item sheet gets a visible entry point");
-  check(!service.addItemSheetOptionsButton({ document: item, element: sheet }) && sheet.querySelectorAll("button").length === 1, "repeated sheet renders do not duplicate entry points");
-  const foreign = { ...item, pack: "thirdparty.features" };
-  check(!service.addItemSheetOptionsButton({ document: foreign, element: sheet }), "third-party compendium sheet has no authoring entry point");
+  const service = new CatMetadataContextMenuService({ authoring: {}, configurationAuthoring: { getStatus: () => ({}) },
+    itemOptionsAuthoring: authoring, gameAccessor: () => ({ user: { isGM: true } }) });
+  const packApp = id => ({ collection: { collection: id, metadata: { type: "Item" } } });
+  check(service.extendContextOptions(packApp("action-effects-5e.class-features"), []).some(option => option.ae5eCatOptions),
+    "approved AE5E compendium exposes Edit Item Options");
+  check(service.extendContextOptions({ document: item }, []).length === 0
+    && service.extendContextOptions({ collection: [item], actor: { documentName: "Actor" } }, []).length === 0,
+    "world and owned Items receive no authoring context menu");
+  check(service.extendContextOptions(packApp("thirdparty.features"), []).length === 0
+    && service.extendContextOptions(packApp("action-effects-5e.ae5e-administrative"), []).length === 0,
+    "third-party and administrative packs receive no authoring context menu");
 
   // Exercise DialogV2 host lifecycle independently of the rendered editor mount.
   const dialogs = [];

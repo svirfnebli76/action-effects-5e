@@ -368,7 +368,6 @@
 .ae5e-declaration-detail { min-width: 0; }
 .ae5e-declaration-detail p { overflow-wrap: anywhere; }
 .ae5e-cat-options-editor [data-options-status], .ae5e-cat-options-editor [data-declaration-preserved] { white-space: pre-wrap; overflow-wrap: anywhere; }
-.ae5e-item-options-button { flex: 0 0 auto; width: auto; padding-inline: 0.4rem; }
 
 .ae5e-settings-section-heading {
   grid-column: 1 / -1;

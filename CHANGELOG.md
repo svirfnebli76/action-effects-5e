@@ -1,3 +1,11 @@
+# v0.4.5.34 — Compendium-only authoring controls
+
+- Removes the additional world/owned Item-sheet authoring button and its global
+  render hooks, following the user's clarified UI scope. Edit Item Options and
+  Edit Item Version remain GM-only context actions in approved AE5E compendiums.
+- Retains the declaration editor, collection services and explicit authoring
+  APIs. Existing compendiums, Items, assets and casting behavior are unchanged.
+
 # v0.4.5.33 — Shared Item declaration infrastructure
 
 - Adds registered family schemas/templates, versioned multi-record Item
