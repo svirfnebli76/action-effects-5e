@@ -6,10 +6,11 @@ Metamagic Development 3 follows the [approved build/test plan](docs/metamagic-ap
 and [handoff](docs/metamagic-development-3-handoff.md). The first shared declaration/editor
 implementation is published as **v0.4.5.35**, with
 [source-overlay installation and the API guide](docs/item-declaration-infrastructure.md).
-Installed Foundry editor verification remains pending.
+The installed declaration editor passed the guided GM verification checks;
+the finished Item-owned Metamagic broker/Distant path remains to be implemented.
 The authoring context menu is GM-only and appears only in approved AE5E
 compendiums; world/owned Item sheets receive no added authoring controls.
-Keep the current Metamagic test Items until those checks pass. The older
+Keep the current Metamagic test Items while that replacement path is prepared. The older
 [Stage 1 contract](docs/metamagic-stage-1-contract.md) and
 [acceptance guide](docs/metamagic-stage-1-acceptance.md) describe the preserved preview;
 their singleton/world-Macro design is superseded by the approved plan.

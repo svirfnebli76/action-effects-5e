@@ -187,9 +187,21 @@ duplication with a fresh id and rejection of an existing id; independent values
 3/4 while switching records; draft removal; Cancel restoring an empty saved
 collection; and Save/reopen retaining both records and their distinct values.
 Invalid selected JSON correctly blocked saving in the supplied screenshot.
-The invalid-unselected-record check and recovery after that failed save remain
-pending live confirmation after the row-click correction. These observations
-do not establish acceptance of the finished Metamagic casting path.
+After the v0.4.5.35 update, the user confirmed line numbers and correct switching.
+The subsequent screenshot shows valid `verification-base` selected while the
+other record has invalid JSON, with Save All Changes correctly blocked by the
+row-2 error. The user then confirmed that Cancel/reopen restored the saved
+records (`verification-base`: 3, `verification-copy`: 4) and Validate All returned
+to green. The guided GM declaration-editor gate has passed. These observations
+do not establish player acceptance, other CAT configuration controls, or the
+finished Metamagic casting path.
+
+The live disposable `AE5E Verification — Declarations` Item retains those two
+saved verification records. No existing Metamagic test Items or standalone test
+Macro have been removed during editor verification. The next implementation
+step is a collection-aware Metamagic consumer and Item-owned broker/option
+execution bridge. Prepare that replacement before guiding the agreed tagged
+fixture cleanup and manual finished-Item construction.
 
 Run `npm test` and `git diff --check`. Browser execution is opt-in with
 `AE5E_BROWSER_TESTS=1 npm test` and requires installed Chromium and permission to

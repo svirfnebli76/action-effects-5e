@@ -4,6 +4,26 @@ Prepared 16 October 2026, America/Los_Angeles. This document is self-contained
 for a new Codex chat. The user should not need to upload earlier attachments.
 Read this file and the linked approved plan before implementing anything.
 
+## Development 3 continuation checkpoint
+
+The shared declaration infrastructure/editor is published through v0.4.5.35
+(`d3eced0`). The user completed the guided GM compendium-editor checks: Add,
+validation, duplication with unique ids, independent drafts and row switching,
+removal, Cancel, Save/reopen, line numbers, blocking invalid unselected JSON,
+and recovery of the saved records after that blocked save. The editor gate has
+passed. Menus remain exclusive to approved AE5E compendiums; no global Item-sheet
+entry point is desired.
+
+The source Metamagic casting path still uses the preserved legacy singleton and
+standalone Macro execution contract. Its replacement with collection discovery
+and an Item-owned broker/option bridge is the next implementation step; the
+finished Metamagic/Distant path is not accepted yet. Existing test Items and the
+standalone test Macro have been retained while that replacement is prepared.
+The separate disposable `AE5E Verification — Declarations` Item has saved records
+`verification-base` (optionChoices 3) and `verification-copy` (optionChoices 4).
+This checkpoint supersedes older implementation-status statements below; see
+[the current infrastructure guide](item-declaration-infrastructure.md).
+
 ## Immediate objective and precedence
 
 Build the reusable AE5E Item declaration infrastructure and editor, then manually
