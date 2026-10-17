@@ -63,7 +63,44 @@ test("Item Options browser interactions and compendium-only context menu", {
       if (/^(PASS|FAIL)/.test(result ?? "")) break;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    assert.match(result ?? "No browser result", /^PASS 18 browser checks/);
+    assert.match(result ?? "No browser result", /^PASS 21 browser checks/);
+    const evaluate = async expression => {
+      const response = await call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId);
+      if (response.exceptionDetails) throw new Error(response.exceptionDetails.text);
+      return response.result?.value;
+    };
+    const clickWithMouse = async selector => {
+      const { x, y } = await evaluate(`(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        element.scrollIntoView({ block: "center" });
+        const bounds = element.getBoundingClientRect();
+        return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      })()`);
+      await call("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 }, sessionId);
+      await call("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }, sessionId);
+    };
+    await evaluate("preparePointerCheck()");
+    await evaluate(`(() => {
+      const editor = document.querySelector("[data-declaration-json]");
+      editor.focus();
+      editor.select();
+    })()`);
+    await call("Input.insertText", { text: '{"id":"second","settings":{"draft":true}' }, sessionId);
+    await clickWithMouse('[data-declaration-list] [data-row]');
+    assert.equal(await evaluate('pointerCheck.controller.selected.key === pointerCheck.draft.group("future").rows[0].key'),
+      true, "first pointer click must switch rows after editing JSON");
+    await clickWithMouse('[data-options-save]');
+    assert.equal(await evaluate('pointerCheck.writes.length === 0 && document.querySelector("[data-options-status]").textContent.includes("Invalid JSON")'),
+      true, "invalid unselected JSON must block saving without any Item write");
+    await evaluate("preparePointerCheck()");
+    await evaluate('document.querySelector("[data-declaration-json]").select()');
+    await call("Input.insertText", { text: '{"id":"second","settings":{"draft":true}}' }, sessionId);
+    await clickWithMouse('[data-declaration-list] [data-row]');
+    assert.equal(await evaluate('pointerCheck.controller.selected.key === pointerCheck.draft.group("future").rows[0].key'),
+      true, "first pointer click must also switch rows after valid JSON edits");
+    await clickWithMouse('[data-declaration-list] [data-row]:last-child');
+    assert.equal(await evaluate('JSON.parse(document.querySelector("[data-declaration-json]").value).settings.draft'),
+      true, "edited record must retain its draft after switching back with the mouse");
   } finally {
     if (browser && browser.exitCode === null && browser.signalCode === null) {
       const exited = once(browser, "exit");
@@ -71,6 +108,6 @@ test("Item Options browser interactions and compendium-only context menu", {
       await exited;
     }
     if (server.listening) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-    await rm(profile, { recursive: true, force: true });
+    await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

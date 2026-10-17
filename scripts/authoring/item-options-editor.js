@@ -4,6 +4,38 @@ import { parseDeclarationJson } from "../declarations/json-data.js";
 const escape = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
   .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
+function addLineNumbers(textarea) {
+  const document = textarea.ownerDocument;
+  const wrapper = document.createElement("div");
+  wrapper.className = "ae5e-json-editor";
+  const gutter = document.createElement("pre");
+  gutter.className = "ae5e-json-line-numbers";
+  gutter.dataset.lineNumbers = "";
+  gutter.setAttribute("aria-hidden", "true");
+  textarea.before(wrapper);
+  wrapper.append(gutter, textarea);
+  textarea.wrap = "off";
+  // Match the installed theme's text metrics and vertical inset, so line
+  // numbers remain aligned even when Foundry overrides native textarea styles.
+  const style = globalThis.getComputedStyle(textarea);
+  for (const key of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing",
+    "paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"]) gutter.style[key] = style[key];
+  let previousCount = 0;
+  const update = () => {
+    const count = textarea.value.split("\n").length;
+    if (count !== previousCount) {
+      gutter.textContent = Array.from({ length: count }, (_, index) => index + 1).join("\n");
+      wrapper.style.setProperty("--ae5e-json-gutter-width", `${Math.max(3, String(count).length) + 2}ch`);
+      previousCount = count;
+    }
+    gutter.scrollTop = textarea.scrollTop;
+  };
+  textarea.addEventListener("input", update);
+  textarea.addEventListener("scroll", () => { gutter.scrollTop = textarea.scrollTop; });
+  update();
+  return { update };
+}
+
 /** Exported mount keeps draft behavior testable independently of Foundry's dialog host. */
 export function mountItemOptionsEditor(root, { draft, authoring, onSave, onCancel, onBusy = () => {} }) {
   root.innerHTML = `
@@ -69,6 +101,8 @@ export function mountItemOptionsEditor(root, { draft, authoring, onSave, onCance
     try { action(); } catch (error) { show(error.message, true); }
   };
   configuration.value = draft.configurationText;
+  addLineNumbers(configuration);
+  const recordLines = addLineNumbers(recordEditor);
   configuration.addEventListener("input", () => { draft.configurationText = configuration.value; });
   familySelect.innerHTML = draft.families.map(group => `<option value="${escape(group.family.id)}">${escape(group.family.label)}</option>`).join("");
   const templates = () => {
@@ -93,12 +127,18 @@ export function mountItemOptionsEditor(root, { draft, authoring, onSave, onCance
     if (!selected) return;
     const group = draft.group(selected.family);
     const row = group.rows.find(row => row.key === selected.key);
-    destination.textContent = `${group.family.label} / ${parseDeclarationJson(row.text).data?.id ?? "invalid record"} — ${group.family.flagPath}`;
+    const id = parseDeclarationJson(row.text).data?.id;
+    destination.textContent = `${group.family.label} / ${id ?? "invalid record"} — ${group.family.flagPath}`;
+    // Keep the row node in place while editing. Rebuilding the list on blur
+    // removes the pointer-down target before the browser can deliver its click.
+    const button = list.querySelector(`[data-row="${selected.key}"]`);
+    if (button) button.textContent = id ?? "Invalid JSON";
   };
   const select = (family, key) => {
     const row = draft.group(family).rows.find(row => row.key === key);
     selected = row ? { family, key } : null;
     recordEditor.value = row?.text ?? "";
+    recordLines.update();
     recordEditor.disabled = !row;
     find("[data-declaration-duplicate]").disabled = !row;
     find("[data-declaration-remove]").disabled = !row;
@@ -111,7 +151,6 @@ export function mountItemOptionsEditor(root, { draft, authoring, onSave, onCance
     draft.edit(selected.family, selected.key, recordEditor.value);
     updateDestination();
   }));
-  recordEditor.addEventListener("change", renderList);
   find("[data-declaration-add]").addEventListener("click", () => guard(() => {
     const row = draft.add(familySelect.value, idInput.value.trim(), templateSelect.value);
     select(familySelect.value, row.key);

@@ -1,3 +1,14 @@
+# v0.4.5.35 — JSON line numbers and reliable declaration selection
+
+- Updates the edited row label in place instead of rebuilding the list when
+  the JSON field loses focus. The first mouse click now switches records after
+  valid or invalid edits, while preserving each record's draft.
+- Adds line numbers to declaration JSON and CAT Configuration JSON, synchronized
+  with edits, record selection and vertical scrolling.
+- Adds Chromium regressions driven by trusted keyboard/mouse events, including
+  saving with invalid JSON in an unselected record. Compendium-only menu scope,
+  existing Items, compendiums, assets and casting behavior are unchanged.
+
 # v0.4.5.34 — Compendium-only authoring controls
 
 - Removes the additional world/owned Item-sheet authoring button and its global

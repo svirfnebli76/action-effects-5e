@@ -366,6 +366,34 @@
 .ae5e-declaration-layout aside button { display: block; width: 100%; text-align: left; margin-block: 0.3rem; }
 .ae5e-declaration-layout aside [aria-pressed="true"] { outline: 1px solid currentColor; }
 .ae5e-declaration-detail { min-width: 0; }
+.ae5e-json-editor {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--ae5e-json-gutter-width, 5ch) minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+  font-family: var(--font-monospace, "Roboto Mono", "Courier New", monospace);
+  font-size: 0.92rem;
+}
+.ae5e-json-editor > textarea { grid-column: 2; margin: 0; }
+.ae5e-json-line-numbers {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  box-sizing: border-box;
+  width: var(--ae5e-json-gutter-width, 5ch);
+  margin: 0;
+  padding-inline: 0.5rem;
+  border: 1px solid transparent;
+  border-inline-end-color: currentColor;
+  border-radius: 3px 0 0 3px;
+  overflow: hidden;
+  text-align: right;
+  white-space: pre;
+  opacity: 0.6;
+  user-select: none;
+  pointer-events: none;
+}
 .ae5e-declaration-detail p { overflow-wrap: anywhere; }
 .ae5e-cat-options-editor [data-options-status], .ae5e-cat-options-editor [data-declaration-preserved] { white-space: pre-wrap; overflow-wrap: anywhere; }
 

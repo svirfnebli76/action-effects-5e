@@ -1,4 +1,4 @@
-# Shared Item declarations — v0.4.5.34
+# Shared Item declarations — v0.4.5.35
 
 Implementation started 16 October 2026 (America/Los_Angeles), following the
 [approved plan](metamagic-approved-build-and-test-plan.md) and
@@ -18,10 +18,11 @@ normalized for the repository whitespace gate.
 This slice adds shared collection infrastructure and Item Options authoring.
 It does not install AE5E in Foundry, change the live world, convert existing
 Items, or claim acceptance of a finished Metamagic broker/option execution path.
-The publication version is **0.4.5.34**, synchronized across `module.json`,
+The publication version is **0.4.5.35**, synchronized across `module.json`,
 `package.json` and `scripts/core/constants.js`. This identifies the infrastructure
 build separately from the preserved 0.4.5.32 casting preview. The UI-scope
-correction is based on the published 0.4.5.33 commit `908d094`.
+correction was based on the published 0.4.5.33 commit `908d094`. The subsequent
+row-click correction is based on 0.4.5.34 commit `86d9874`.
 
 All existing compendiums, assets, Sneak Attack/Devious Strikes transport, casting
 range/payment logic and Stage 1 test Items are preserved. No database was opened
@@ -84,6 +85,10 @@ including invalid JSON that needs repair. No All Declarations editor or generic
 Enabled control exists. Add never registers a new family. Opening creates no
 flags or records.
 
+Both JSON editors include line numbers in v0.4.5.35. The gutter follows edits,
+record selection and vertical scrolling; long lines scroll horizontally so
+validation line/column locations continue to match the displayed JSON.
+
 **Validate All** reports family/id errors. **Save All Changes** validates all
 editable declarations and changed CAT definitions before one Item update.
 Unchanged legacy data, other family flags, unrelated Item data and CAT preference
@@ -142,6 +147,16 @@ Merely storing the new declaration does not make a finished option executable.
 
 ## Verification and next installation gate
 
+The v0.4.5.35 regression uses trusted Chromium keyboard and mouse input in
+addition to 21 browser fixture checks, including line-number counts and scroll
+synchronization. Its four trusted-input assertions cover
+first-click switching after valid/invalid JSON edits, retained draft values,
+and blocking a save when an unselected record has invalid JSON. The first-click
+assertion reproduced the old failure before the fix and passed afterward.
+The final v0.4.5.35 source passed `AE5E_BROWSER_TESTS=1 npm test`: 653 tests,
+no failures or skips, and the 153-file syntax gate. Whitespace checks passed;
+existing pack/asset trees and casting code are unchanged from `86d9874`.
+
 The v0.4.5.34 compendium-only UI correction passed
 `AE5E_BROWSER_TESTS=1 npm test`: 653 tests, no failures or skips, including all
 18 browser checks. The syntax gate covered 153 files. Publication preserves the
@@ -162,9 +177,19 @@ identity, unknown/malformed data, duplicate keys/ids, activation/AC5E forwarding
 grant provenance/ambiguity, explicit migration, draft preservation, save failures,
 concurrent edits, CAT deletion behavior and pack relocking. A Chromium harness
 exercises the actual editor mount and a simulated DialogV2 lifecycle, including
-18 browser interactions, including compendium-only context-menu checks. A
+21 browser fixture interactions, including compendium-only context-menu checks. A
 separate regression verifies that authoring initialization registers no global
 Item-sheet render hooks.
+
+Live GM observations in this chat confirm: initial manifest/runtime 0.4.5.33;
+the compendium menu and both tabs; empty-state display; Add and validation;
+duplication with a fresh id and rejection of an existing id; independent values
+3/4 while switching records; draft removal; Cancel restoring an empty saved
+collection; and Save/reopen retaining both records and their distinct values.
+Invalid selected JSON correctly blocked saving in the supplied screenshot.
+The invalid-unselected-record check and recovery after that failed save remain
+pending live confirmation after the row-click correction. These observations
+do not establish acceptance of the finished Metamagic casting path.
 
 Run `npm test` and `git diff --check`. Browser execution is opt-in with
 `AE5E_BROWSER_TESTS=1 npm test` and requires installed Chromium and permission to
@@ -177,7 +202,7 @@ optional browser case; record the separate browser result explicitly.
 This is a GitHub source publication rather than a GitHub Releases asset or a
 Foundry package-manager update. Keep the installed module folder and its
 `packs/` directory. Stop Foundry, then overlay the following files from the
-published 0.4.5.34 commit into the existing `Data/modules/action-effects-5e/`
+published 0.4.5.35 commit into the existing `Data/modules/action-effects-5e/`
 folder, preserving their relative paths. Create the new source directories as
 needed; do not replace the module folder with an extracted repository archive.
 
@@ -199,7 +224,7 @@ styles/action-effects-5e.css
 Do not copy `packs/`, assets or historical setup/cleanup scripts to apply this
 update. No setup Script Macro or Item JSON export is needed. Start Foundry again
 and reload each connected browser client. This read-only console check identifies
-both the loaded manifest and runtime; both version fields must say `0.4.5.34`:
+both the loaded manifest and runtime; both version fields must say `0.4.5.35`:
 
 ```js
 const ae5eModule = game.modules.get("action-effects-5e");

@@ -17,6 +17,17 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const checks = [];
 const check = (condition, message) => { assert(condition, message); checks.push(message); };
+// The runner drives this case with trusted keyboard/mouse input. HTMLElement.click()
+// alone does not reproduce blur/change events between pointer down and click.
+globalThis.preparePointerCheck = () => {
+  const f = fixture();
+  f.item.flags["action-effects-5e"].future = envelope([{ id: "first" }, { id: "second" }]);
+  const draft = f.authoring.createDraft(f.item);
+  const controller = mountItemOptionsEditor(root, { draft, authoring: f.authoring, onSave: () => {}, onCancel: () => {} });
+  click('[data-options-tab="declarations"]');
+  controller.select("future", draft.group("future").rows[1].key);
+  globalThis.pointerCheck = { ...f, draft, controller };
+};
 try {
   const { item, authoring, writes } = fixture();
   item.name = '<img src="bad" onerror="window.BAD=true">';
@@ -64,6 +75,18 @@ try {
   click("[data-options-save]");
   await tick();
   check(saved && writes.length === 1 && item.flags["action-effects-5e"].future.declarations[0].id === "finished", "Save All persists validated declarations once");
+  const lineNumbers = selector => find(selector).parentElement.querySelector("[data-line-numbers]");
+  change("[data-declaration-json]", JSON.stringify({ id: "finished", settings: { one: 1, two: 2 } }, null, 2), "input");
+  check(lineNumbers("[data-declaration-json]").textContent.split("\n").length === find("[data-declaration-json]").value.split("\n").length,
+    "declaration line numbers update with multiline edits");
+  change("[data-options-configuration]", '{\n  "choice": { "type": "checkbox", "default": true }\n}', "input");
+  check(lineNumbers("[data-options-configuration]").textContent === "1\n2\n3", "CAT Configuration JSON also has line numbers");
+  change("[data-declaration-json]", JSON.stringify({ id: "finished", settings: { lines: Array.from({ length: 100 }, (_, index) => index) } }, null, 2), "input");
+  const scrollEditor = find("[data-declaration-json]");
+  scrollEditor.scrollTop = scrollEditor.scrollHeight;
+  scrollEditor.dispatchEvent(new Event("scroll"));
+  check(scrollEditor.scrollTop > 0 && lineNumbers("[data-declaration-json]").scrollTop === scrollEditor.scrollTop,
+    "line numbers stay synchronized with vertical editor scrolling");
 
   const service = new CatMetadataContextMenuService({ authoring: {}, configurationAuthoring: { getStatus: () => ({}) },
     itemOptionsAuthoring: authoring, gameAccessor: () => ({ user: { isGM: true } }) });
