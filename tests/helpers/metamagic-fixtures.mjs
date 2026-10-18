@@ -8,7 +8,7 @@ import { CatDeclarationMacroAdapter, declarationActorPass } from "../../scripts/
 export const scope = "action-effects-5e";
 export const copy = value => structuredClone(value);
 export const definitions = JSON.parse(fs.readFileSync(new URL("../../examples/metamagic-development-3/declarations.json", import.meta.url)));
-const broker = fs.readFileSync(new URL("../../examples/metamagic-development-3/base-broker.js", import.meta.url), "utf8");
+export const broker = fs.readFileSync(new URL("../../examples/metamagic-development-3/base-broker.js", import.meta.url), "utf8");
 export const distant = fs.readFileSync(new URL("../../examples/metamagic-development-3/distant-spell.js", import.meta.url), "utf8");
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 let nextId = 0;
@@ -123,7 +123,8 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   const cards = [];
   const service = new MetamagicCastingService({ declarations, executors,
     cards: { async upsertContribution(subject, contribution) { cards.push(copy(contribution)); return { updated: true }; } } });
-  const api = { prompts: { async choose(request) { prompts.push(request); return chooser(request); } } };
+  const api = { prompts: { async choose(request) { prompts.push(request); return chooser(request); } },
+    metamagic: { getCasting: workflow => service.get(workflow) } };
   const consume = () => {
     assert.equal(service.prepareNative(activity), true);
     const usage = { consume: false };

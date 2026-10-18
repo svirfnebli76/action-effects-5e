@@ -53,6 +53,23 @@ current authoring guide; v0.4.5.37 adds them without changing Item macros.
 Install/verify that update, then resume Touch and the remaining acceptance.
 No exact post-test point balance has been reported; do not reset or assume one.
 
+## Console ownership correction — v0.4.5.38
+
+The user audited the v0.4.5.37 console-note implementation and explicitly required
+Items to own the message wording. v0.4.5.38 removes those strings from AE5E.
+The replacement base/Distant CAT macros own their console.info messages.
+AE5E only sends an optional consumed lifecycle notification through CAT's public
+Called dispatcher after native payment confirmation. There is no message
+formatter, feature-specific usage text, macro interpreter or automatic Item edit
+in AE5E. Native range/payment/refund behavior remains in place.
+
+Install v0.4.5.38, then guide the user through replacing the two CAT macro bodies
+in both compendium and actor copies (four locations). Names, Event, Pass,
+Priority and declarations remain unchanged. The latest explicitly confirmed
+installed version is still v0.4.5.36; neither .37 nor .38 installation has been
+confirmed by the user. The current authoring guide links both replacement files. Do not tell the user that installing source alone changes
+their stored Item macros. Verify notes, then resume the pending Touch test.
+
 ## Immediate objective and precedence
 
 Build the reusable AE5E Item declaration infrastructure and editor, then manually

@@ -147,6 +147,7 @@ export class MetamagicCastingService {
       provenance: { cachedFor: item.flags?.dnd5e?.cachedFor ?? null, cause: null },
       resourceId: compiled.resourceId, resourceUuid: compiled.resourceUuid,
       mode: "collection", mainIdentity: compiled.mainIdentity,
+      broker: { sourceUuid: compiled.mainUuid, identity: compiled.mainIdentity, declaration: clone(compiled.mainDeclaration) },
       selected: [], totalCost: 0, activityUpdates: {}, activityChecks: [], nativeDebit: null,
       refundOwner: "native-activity", refundStatus: "not-requested-by-ae5e",
       workflow, actor, nativeActivities: new WeakSet(), consumptionIndexes: new WeakMap()
@@ -178,7 +179,7 @@ export class MetamagicCastingService {
       try { result = await this.#optionResult(option, "offer", record); }
       catch (error) { result = { eligible: false, reason: error.message }; }
       const reason = result?.eligible !== true ? result?.reason ?? "Not eligible for this casting."
-        : option.cost > available ? "Not enough Sorcery Points." : null;
+        : option.cost > available ? "Insufficient resource uses." : null;
       offers.push({ ...option, available, disabled: Boolean(reason), reason });
     }
     return offers;
@@ -195,7 +196,6 @@ export class MetamagicCastingService {
     }
     if (!selectedIds.length) {
       record.state = "unmodified";
-      this.#consoleNote(`${record.actor.name ?? record.casterActorUuid} did not use Metamagic`);
       this.#archive(record);
       return true;
     }
@@ -401,7 +401,8 @@ export class MetamagicCastingService {
 
   recordConsumption(activity, message) {
     const record = this.#nativeRecord(activity);
-    if (!record || record.nativeDebit) return;
+    if (!record) return;
+    if (record.nativeDebit) return record.consumptionNotification;
     record.nativeDebit = { resourceUuid: record.resourceUuid, amount: record.totalCost,
       deltas: clone(message?.data?.system?.deltas ?? null), owner: "native-activity" };
     record.state = "consumed";
@@ -412,18 +413,30 @@ export class MetamagicCastingService {
       message.data.flags[MODULE_ID] ??= {};
       message.data.flags[MODULE_ID].castingReceipt = this.#snapshot(record);
     }
-    const actorName = record.actor.name ?? record.casterActorUuid;
-    this.#consoleNote(`${actorName} used Metamagic`);
-    for (const option of record.selected) {
-      const label = option.label.replace(/^metamagic\s*[-–—]\s*/i, "");
-      this.#consoleNote(`${label} used by ${actorName}`);
-      this.#consoleNote(`${label} consumed ${option.cost} Sorcery Point${option.cost === 1 ? "" : "s"} from ${actorName}`);
-    }
+    record.consumptionNotification = this.#notifyConsumption(record);
+    return record.consumptionNotification;
   }
 
-  #consoleNote(message) {
-    try { globalThis.console?.info?.(`[AE5E] Metamagic - ${message}`); }
-    catch { /* Diagnostics must never change casting or native payment behavior. */ }
+  async #notifyConsumption(record) {
+    const context = {
+      castingId: record.castingId, actor: record.actor, workflow: record.workflow,
+      activity: record.workflow.activity, item: record.workflow.activity.item,
+      initiatorUserId: record.initiatorUserId, casting: this.#snapshot(record)
+    };
+    const requests = [
+      { ...record.broker, kind: "broker", amount: record.nativeDebit.amount },
+      ...record.selected.map(option => ({ sourceUuid: option.sourceUuid, identity: option.identity,
+        declaration: option.declaration, kind: "option", amount: option.cost }))
+    ];
+    for (const { amount, ...request } of requests) {
+      try {
+        await this.#executors.notify({ ...request, actor: record.actor, family: "metamagic", phase: "consumed",
+          context: { ...context, consumption: { ...clone(record.nativeDebit), amount, totalAmount: record.nativeDebit.amount } } });
+      } catch (error) {
+        try { Logger.warn("Item lifecycle notification failed; native consumption was retained.", error); }
+        catch { /* Notification/console failures must never change native resolution. */ }
+      }
+    }
   }
 
   observeNative(activity) {
@@ -504,7 +517,7 @@ export class MetamagicCastingService {
   }
 
   #snapshot(record) {
-    const { workflow, actor, preparing, nativeActivities, consumptionIndexes, ...data } = record;
+    const { workflow, actor, preparing, nativeActivities, consumptionIndexes, broker, consumptionNotification, ...data } = record;
     return clone(data);
   }
 

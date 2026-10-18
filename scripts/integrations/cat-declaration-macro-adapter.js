@@ -9,7 +9,9 @@ export const declarationActorPass = kind => `actor${DECLARATION_MACRO_PASSES[kin
 export class CatDeclarationMacroAdapter {
   constructor({ catAccessor = () => globalThis.cat } = {}) { this.catAccessor = catAccessor; }
 
-  async execute({ actor, sourceUuid, identity, family, declaration, kind, phase, context }) {
+  notify(request) { return this.execute({ ...request, requireResponse: false }); }
+
+  async execute({ actor, sourceUuid, identity, family, declaration, kind, phase, context, requireResponse = true }) {
     const pass = DECLARATION_MACRO_PASSES[kind];
     const source = [...(actor?.items ?? [])].find(item => item.uuid === sourceUuid);
     const execution = declaration.execution;
@@ -41,8 +43,9 @@ export class CatDeclarationMacroAdapter {
     try {
       await automation.calledEvent(pass, actor, { canOverlap: true, multiResult: true, data: request });
     } finally { open = false; }
-    // CAT logs/catches script errors. Missing responses must never imply success.
-    if (invalidResponse || responses.length !== 1) throw new Error(`No unique response from '${execution.name}' on ${source.name}.`);
+    // CAT catches script errors. Transactions need a response; optional
+    // lifecycle notifications may be ignored by the receiving Item macro.
+    if (invalidResponse || (requireResponse && responses.length !== 1)) throw new Error(`No unique response from '${execution.name}' on ${source.name}.`);
     return responses[0];
   }
 }
