@@ -1,3 +1,14 @@
+# v0.4.5.37 — Metamagic console notes
+
+- Logs the actor's decision to continue without Metamagic once per casting.
+- After native consumption confirmation, logs Metamagic use and each selected
+  Item's use and effective Sorcery Point cost, using the requested `[AE5E]`
+  format. Selection and cancelled-before-payment casts do not claim a debit.
+- Ignores duplicate native consumption notifications, retaining the first receipt
+  and printing no duplicate notes. Console failures cannot interrupt a cast.
+- Existing Item macros, declarations, compendiums, assets and Sneak Attack remain
+  unchanged. Future option Items use the same diagnostics automatically.
+
 # v0.4.5.36 — CAT Item-owned Metamagic and retirement of the preview
 
 - Connects versioned declaration collections to CAT Embedded Item macros using

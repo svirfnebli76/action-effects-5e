@@ -195,6 +195,7 @@ export class MetamagicCastingService {
     }
     if (!selectedIds.length) {
       record.state = "unmodified";
+      this.#consoleNote(`${record.actor.name ?? record.casterActorUuid} did not use Metamagic`);
       this.#archive(record);
       return true;
     }
@@ -400,7 +401,7 @@ export class MetamagicCastingService {
 
   recordConsumption(activity, message) {
     const record = this.#nativeRecord(activity);
-    if (!record) return;
+    if (!record || record.nativeDebit) return;
     record.nativeDebit = { resourceUuid: record.resourceUuid, amount: record.totalCost,
       deltas: clone(message?.data?.system?.deltas ?? null), owner: "native-activity" };
     record.state = "consumed";
@@ -411,6 +412,18 @@ export class MetamagicCastingService {
       message.data.flags[MODULE_ID] ??= {};
       message.data.flags[MODULE_ID].castingReceipt = this.#snapshot(record);
     }
+    const actorName = record.actor.name ?? record.casterActorUuid;
+    this.#consoleNote(`${actorName} used Metamagic`);
+    for (const option of record.selected) {
+      const label = option.label.replace(/^metamagic\s*[-–—]\s*/i, "");
+      this.#consoleNote(`${label} used by ${actorName}`);
+      this.#consoleNote(`${label} consumed ${option.cost} Sorcery Point${option.cost === 1 ? "" : "s"} from ${actorName}`);
+    }
+  }
+
+  #consoleNote(message) {
+    try { globalThis.console?.info?.(`[AE5E] Metamagic - ${message}`); }
+    catch { /* Diagnostics must never change casting or native payment behavior. */ }
   }
 
   observeNative(activity) {

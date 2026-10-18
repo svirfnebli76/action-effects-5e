@@ -36,6 +36,23 @@ for exact CAT names/passes, pasteable Item macro files, source-only installation
 and remaining live acceptance. The new casting path is not yet live-accepted.
 The disposable editor verification Item is separate from the new feature.
 
+## Live continuation — 17 October 2026
+
+The user installed v0.4.5.36, saved both CAT Item macros and created all ten
+Metamagic option shells in the compendium. Only Distant has been configured;
+complete its acceptance before automating the other nine. Required Items was
+intentionally left blank on Distant; the runtime base requirement is separate.
+Discovery on Symaali was ready with automatically learned Distant, cost 1,
+correct Called passes and 7/7 points (spent 0) before testing.
+
+The live Poison Spray test passed: 30ft normal range became 60ft, accepted a
+50ft target, charged one point on a miss and returned to 30ft for a later ordinary
+cast. The card displayed the resolved option, cost and selected range. Touch has
+not yet been tested. The user requested the console notes documented in the
+current authoring guide; v0.4.5.37 adds them without changing Item macros.
+Install/verify that update, then resume Touch and the remaining acceptance.
+No exact post-test point balance has been reported; do not reset or assume one.
+
 ## Immediate objective and precedence
 
 Build the reusable AE5E Item declaration infrastructure and editor, then manually

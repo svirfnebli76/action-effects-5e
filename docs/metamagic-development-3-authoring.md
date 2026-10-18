@@ -1,9 +1,9 @@
-# Metamagic Development 3 — CAT Item macros, v0.4.5.36
+# Metamagic Development 3 — CAT Item macros, v0.4.5.37
 
 Prepared 16 October 2026, America/Los_Angeles. This is the current authoring and
-runtime contract. The shared editor passed the guided GM verification. The new
-CAT casting path requires installed Foundry acceptance; repository tests do not
-establish live acceptance.
+runtime contract. The shared editor passed the guided GM verification. The CAT
+casting path is undergoing guided Foundry acceptance; repository tests do not
+establish live acceptance. See the live checkpoint below.
 
 ## What changed
 
@@ -26,7 +26,7 @@ and native consumption/refund ownership.
 
 ## Install source without overwriting your compendium edits
 
-Install v0.4.5.36 from the published repository using the existing source-overlay
+Install v0.4.5.37 from the published repository using the existing source-overlay
 method. Replace the module's `scripts/` contents and `module.json`; synchronize
 `package.json` if you keep the development checkout. The new scripts are:
 
@@ -57,7 +57,7 @@ Optional read-only console verification:
 })();
 ```
 
-Expect both versions `0.4.5.36`, family `metamagic`, `catCalledEvent: "function"`
+Expect both versions `0.4.5.37`, family `metamagic`, `catCalledEvent: "function"`
 and `retiredManualLearn: "undefined"`. This is a capability check, not a cast test.
 
 ## Base Item — the next guided authoring section
@@ -235,3 +235,65 @@ source or tests. The publication preserves its pack tree
 `eac81aee577e0dbb48d3c0e426994cc4ce1c0b52` and the existing asset tree
 `58729887dac4b7d042e5b6f1726f4e3f71d3dd76` exactly. Source-only installation
 remains necessary to preserve any further live compendium edits.
+
+## v0.4.5.37 console notes
+
+The shared casting coordinator supplies brief `console.info` notes on the
+initiating client's console. Existing CAT Item macros do not need editing.
+Continuing without an option (or closing the chooser) prints:
+
+```text
+[AE5E] Metamagic - Symaali Skorswaldt did not use Metamagic
+```
+
+After native consumption confirms a selected paid option, it prints:
+
+```text
+[AE5E] Metamagic - Symaali Skorswaldt used Metamagic
+[AE5E] Metamagic - Distant Spell used by Symaali Skorswaldt
+[AE5E] Metamagic - Distant Spell consumed 1 Sorcery Point from Symaali Skorswaldt
+```
+
+Actor and option names come from the actual Items; future options need no
+hardcoded logging entries. Each selected option reports its effective adjusted
+cost, including zero for free use. Repeated native consumption notifications do
+not replace the original receipt or print another set of notes. Offer probes and
+selection alone print no use/payment messages. Cancelling before native payment
+therefore does not claim a debit. These are event notes; a later refund remains
+owned by the native Activity and is not represented as a net-balance summary.
+Console failures do not change casting, payment or result handling.
+
+## Guided live checkpoint — 17 October 2026, America/Los_Angeles
+
+The user verified installed manifest/runtime v0.4.5.36 and CAT's public
+`calledEvent` function. The base and Distant Items were manually authored in the
+AE5E compendium and copied onto Symaali Skorswaldt. Discovery returned ready,
+one automatically learned `distant-spell`, cost 1, no diagnostics and the correct
+CAT names/Called passes. The reported point balance at that check was 7/7,
+spent 0; do not substitute the older historical 2/7 balance or reset resources.
+
+The chooser opened and Continue casting was selected. A duplicate Continue
+button was identified and the supplied Item macro was corrected to
+`allowCancel: false` (published in `a5cbda7`). The user has not separately
+reported the resulting button count or balance after that declined cast.
+
+The new Item-owned Distant path passed the live numerical-range test:
+Poison Spray had normal range 30ft, Distant extended it to 60ft, and a target
+50ft away was accepted. One Sorcery Point was subtracted despite a miss.
+The attached card showed 60ft, Resolved and cost 1. A later cast without
+Distant had the ordinary 30ft range. This establishes numerical range, debit on
+miss, receipt presentation and later-cast range isolation for that GM client;
+it does not establish every spell or controller path.
+
+The user requested console notes before the next Touch-to-30ft test.
+The v0.4.5.37 source adds those notes. Installation/live logging verification,
+Touch, native cancellation/refund, affordability, providers, stale choices and
+remaining acceptance checks are still pending. Read the actual current balance
+before testing; no precise post-test balance has been reported.
+
+The final v0.4.5.37 source passed `AE5E_BROWSER_TESTS=1 npm test`: 678 tests,
+zero failures or skips, and the 155-file syntax gate. Six new focused checks
+cover decline/close notes, confirmed native payment, duplicate notifications,
+a resolved miss, pre-payment cancellation/depletion, adjusted zero cost and
+console failures. Existing CAT macros, compendiums, assets and Sneak Attack
+are unchanged from the publication parent.
