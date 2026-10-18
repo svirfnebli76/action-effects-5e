@@ -1,3 +1,30 @@
+# v0.4.5.38 — Item-owned console messages
+
+- Removes the feature-specific console strings added to AE5E in v0.4.5.37.
+  The base and Distant Spell CAT macros now own their messages and wording.
+- Routes a best-effort consumed lifecycle notification through CAT's existing
+  Called dispatcher, with confirmed aggregate/per-option amounts and source
+  identity. AE5E does not format usage/payment messages or supply fallback text.
+- Keeps optional notifications separate from strict offer/prepare responses.
+  Items can ignore the notification; recipient failures cannot undo native
+  payment or suppress other recipients. Repeated native confirmations notify
+  only once and preserve the original receipt.
+- Preserves Item declarations, native range/payment/refund behavior, compendiums,
+  assets and Sneak Attack. Install the source update and paste the replacement
+  CAT macro bodies into both compendium and actor copies; no declaration edits
+  or automatic document migrations are required.
+
+# v0.4.5.37 — Metamagic console notes
+
+- Logs the actor's decision to continue without Metamagic once per casting.
+- After native consumption confirmation, logs Metamagic use and each selected
+  Item's use and effective Sorcery Point cost, using the requested `[AE5E]`
+  format. Selection and cancelled-before-payment casts do not claim a debit.
+- Ignores duplicate native consumption notifications, retaining the first receipt
+  and printing no duplicate notes. Console failures cannot interrupt a cast.
+- Existing Item macros, declarations, compendiums, assets and Sneak Attack remain
+  unchanged. Future option Items use the same diagnostics automatically.
+
 # v0.4.5.36 — CAT Item-owned Metamagic and retirement of the preview
 
 - Connects versioned declaration collections to CAT Embedded Item macros using

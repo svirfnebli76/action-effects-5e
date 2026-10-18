@@ -1,8 +1,17 @@
 // Paste into the Distant Spell Item's CAT Embedded Macro editor.
 // Name: Distant Spell | Event: Called | Pass: actorAe5eDeclarationOption
 if (data?.namespace !== "ae5e.declarations" || data.family !== "metamagic"
-  || data.kind !== "option" || !["offer", "prepare"].includes(data.phase)
+  || data.kind !== "option" || !["offer", "prepare", "consumed"].includes(data.phase)
   || document?.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;
+
+if (data.phase === "consumed") {
+  const actorName = data.context.actor.name ?? data.context.actor.uuid;
+  const amount = data.context.consumption.amount;
+  const note = message => { try { console.info(message); } catch {} };
+  note(`[AE5E] Metamagic - ${macroName} used by ${actorName}`);
+  note(`[AE5E] Metamagic - ${macroName} consumed ${amount} Sorcery Point${amount === 1 ? "" : "s"} from ${actorName}`);
+  return data.respond(document, macroName, true);
+}
 
 const range = data.context.activity.range;
 const rules = data.declaration.rules;

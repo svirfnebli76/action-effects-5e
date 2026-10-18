@@ -1,9 +1,9 @@
-# Metamagic Development 3 — CAT Item macros, v0.4.5.36
+# Metamagic Development 3 — CAT Item macros, v0.4.5.38
 
 Prepared 16 October 2026, America/Los_Angeles. This is the current authoring and
-runtime contract. The shared editor passed the guided GM verification. The new
-CAT casting path requires installed Foundry acceptance; repository tests do not
-establish live acceptance.
+runtime contract. The shared editor passed the guided GM verification. The CAT
+casting path is undergoing guided Foundry acceptance; repository tests do not
+establish live acceptance. See the live checkpoint below.
 
 ## What changed
 
@@ -26,7 +26,7 @@ and native consumption/refund ownership.
 
 ## Install source without overwriting your compendium edits
 
-Install v0.4.5.36 from the published repository using the existing source-overlay
+Install v0.4.5.38 from the published repository using the existing source-overlay
 method. Replace the module's `scripts/` contents and `module.json`; synchronize
 `package.json` if you keep the development checkout. The new scripts are:
 
@@ -57,7 +57,7 @@ Optional read-only console verification:
 })();
 ```
 
-Expect both versions `0.4.5.36`, family `metamagic`, `catCalledEvent: "function"`
+Expect both versions `0.4.5.38`, family `metamagic`, `catCalledEvent: "function"`
 and `retiredManualLearn: "undefined"`. This is a capability check, not a cast test.
 
 ## Base Item — the next guided authoring section
@@ -96,6 +96,14 @@ Open CAT's native Embedded Macros editor on this Item and add:
 Use one macro body with that name. This is a CAT Item macro, not a standalone
 Foundry Macro. Its code presents choices through AE5E's existing public prompt
 API. It does not create/delete Items or debit resources.
+
+The explicit Continue casting choice is the default. Keep `allowCancel: false`
+in the broker macro to avoid a second identically labeled cancel button.
+Closing the window still returns no selection and continues the ordinary cast.
+For copies authored with the original example, make that one-line change in both
+the compendium base Item and the actor's existing base Item; editing the
+compendium does not update its already-imported actor copy. No AE5E runtime
+reinstallation is required for this Item-macro correction.
 
 The name above is the base role's default. A base record may explicitly supply
 `"execution": {"interface":"cat-embedded","name":"Your broker name"}` if needed;
@@ -227,3 +235,111 @@ source or tests. The publication preserves its pack tree
 `eac81aee577e0dbb48d3c0e426994cc4ce1c0b52` and the existing asset tree
 `58729887dac4b7d042e5b6f1726f4e3f71d3dd76` exactly. Source-only installation
 remains necessary to preserve any further live compendium edits.
+
+## v0.4.5.38 console ownership and lifecycle notifications
+
+This supersedes v0.4.5.37's module-owned usage/payment wording. The user requires
+console messages to be authored on the Items. AE5E now contains none of the
+feature-specific usage/payment strings. It only dispatches lifecycle data;
+the Item's CAT macro decides whether and what to print. The supplied macros use
+`console.info` on the initiating client with the requested wording.
+
+Install v0.4.5.38 before replacing the macros. Then replace the complete CAT
+macro body in each of these four locations using the linked files:
+
+1. Compendium Metamagic → `Metamagic Broker`:
+   [base-broker.js](../examples/metamagic-development-3/base-broker.js).
+2. Symaali's existing Metamagic Item → the same replacement broker body.
+3. Compendium Metamagic — Distant Spell → `Distant Spell`:
+   [distant-spell.js](../examples/metamagic-development-3/distant-spell.js).
+4. Symaali's existing Distant Spell Item → the same replacement option body.
+
+Keep each macro's Name, Called Event, Pass and Priority unchanged. Keep all
+existing declaration records. No exported Item JSON editing, setup Script Macro,
+Item recreation or point reset is required. Changing a compendium Item does not
+update a previously imported actor copy. Installing source does not edit any
+live Item macro. Once the replacement is installed, later message wording edits
+are made only in those Item macros; no AE5E update is needed for wording changes.
+
+The broker logs its declined choice after its begin request completes without
+selection. The coordinator sends the broker and selected option macros a
+`consumed` phase only after native consumption confirmation. This is request
+metadata on CAT's existing Called event, not a newly added CAT event type.
+The base notification carries the aggregate confirmed amount. Each option
+notification carries its allocated effective amount in
+`data.context.consumption.amount`, the aggregate in `totalAmount`, the native
+resource UUID, native deltas and owner. The casting snapshot is supplied as
+`data.context.casting`. The option's Item macro handles plural wording itself.
+
+Continuing without an option (or closing the chooser) prints from the base Item:
+
+```text
+[AE5E] Metamagic - Symaali Skorswaldt did not use Metamagic
+```
+
+After confirmed consumption, the base and option Item macros print:
+
+```text
+[AE5E] Metamagic - Symaali Skorswaldt used Metamagic
+[AE5E] Metamagic - Distant Spell used by Symaali Skorswaldt
+[AE5E] Metamagic - Distant Spell consumed 1 Sorcery Point from Symaali Skorswaldt
+```
+
+Offer/prepare requests still require a unique valid response. Lifecycle
+notifications are best-effort: an Item may ignore them without a response.
+The coordinator does not use notification results to change the native hook
+result, replace the original receipt, initiate another debit/refund or veto the
+native transaction. AE5E isolates recipient failures and still notifies the other
+recipients. The notification promise and routing descriptor are excluded from saved casting
+receipts. Repeated native confirmation delivers no second notification.
+
+Older macros that ignore `consumed` continue to function and print no new
+payment notes. AE5E supplies no fallback usage text. Selecting an option alone
+or cancelling before payment prints no use/payment message. A later native
+refund is a separate event; these notes are not a net-balance summary. Item
+notification code must remain observational for these diagnostics.
+
+## Guided live checkpoint — 17 October 2026, America/Los_Angeles
+
+The user verified installed manifest/runtime v0.4.5.36 and CAT's public
+`calledEvent` function. The base and Distant Items were manually authored in the
+AE5E compendium and copied onto Symaali Skorswaldt. Discovery returned ready,
+one automatically learned `distant-spell`, cost 1, no diagnostics and the correct
+CAT names/Called passes. The reported point balance at that check was 7/7,
+spent 0; do not substitute the older historical 2/7 balance or reset resources.
+
+The chooser opened and Continue casting was selected. A duplicate Continue
+button was identified and the supplied Item macro was corrected to
+`allowCancel: false` (published in `a5cbda7`). The user has not separately
+reported the resulting button count or balance after that declined cast.
+
+The new Item-owned Distant path passed the live numerical-range test:
+Poison Spray had normal range 30ft, Distant extended it to 60ft, and a target
+50ft away was accepted. One Sorcery Point was subtracted despite a miss.
+The attached card showed 60ft, Resolved and cost 1. A later cast without
+Distant had the ordinary 30ft range. This establishes numerical range, debit on
+miss, receipt presentation and later-cast range isolation for that GM client;
+it does not establish every spell or controller path.
+
+The user requested console notes before the next Touch-to-30ft test.
+The v0.4.5.38 correction places those notes in the Item macros. Installation
+and live logging verification,
+Touch, native cancellation/refund, affordability, providers, stale choices and
+remaining acceptance checks are still pending. Read the actual current balance
+before testing; no precise post-test balance has been reported.
+
+The final v0.4.5.37 source passed `AE5E_BROWSER_TESTS=1 npm test`: 678 tests,
+zero failures or skips, and the 155-file syntax gate. Six new focused checks
+cover decline/close notes, confirmed native payment, duplicate notifications,
+a resolved miss, pre-payment cancellation/depletion, adjusted zero cost and
+console failures. Existing CAT macros, compendiums, assets and Sneak Attack
+are unchanged from the publication parent.
+
+The final v0.4.5.38 source passed `AE5E_BROWSER_TESTS=1 npm test`: 682 tests,
+zero failures or skips, and the 155-file syntax gate. Ten focused notification/
+Item-message checks cover custom wording, silence/no-response, recipient errors,
+aggregate/per-option amounts, free costs, duplicate events, cancellation and
+console errors. Static inspection confirmed that the requested feature-specific
+console wording is absent from production scripts and present only in the
+supplied Item macro examples. Compendium/asset bytes and Sneak Attack are
+unchanged from the publication parent.
