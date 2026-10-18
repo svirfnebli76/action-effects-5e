@@ -97,6 +97,14 @@ Use one macro body with that name. This is a CAT Item macro, not a standalone
 Foundry Macro. Its code presents choices through AE5E's existing public prompt
 API. It does not create/delete Items or debit resources.
 
+The explicit Continue casting choice is the default. Keep `allowCancel: false`
+in the broker macro to avoid a second identically labeled cancel button.
+Closing the window still returns no selection and continues the ordinary cast.
+For copies authored with the original example, make that one-line change in both
+the compendium base Item and the actor's existing base Item; editing the
+compendium does not update its already-imported actor copy. No AE5E runtime
+reinstallation is required for this Item-macro correction.
+
 The name above is the base role's default. A base record may explicitly supply
 `"execution": {"interface":"cat-embedded","name":"Your broker name"}` if needed;
 the configured CAT name must match. Stay with the default for this first test.

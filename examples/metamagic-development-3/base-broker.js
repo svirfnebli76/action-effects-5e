@@ -21,7 +21,7 @@ const result = await data.context.begin(document, async ({ casting, offers, sele
       title: "Metamagic",
       prompt: "Choose an option, or continue casting without another option.",
       reason: "metamagic-choice",
-      allowCancel: true,
+      allowCancel: false,
       cancelLabel: "Continue casting",
       choices: remaining.map(offer => ({
         id: offer.id,
