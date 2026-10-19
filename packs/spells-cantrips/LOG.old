@@ -1,21 +1,3 @@
-2026/10/17-22:35:26.473 5570 Recovering log #293
-2026/10/17-22:35:26.476 5570 Delete type=0 #293
-2026/10/17-22:35:26.476 5570 Delete type=3 #292
-2026/10/17-22:47:11.749 6104 Level-0 table #297: started
-2026/10/17-22:47:11.749 6104 Level-0 table #297: 0 bytes OK
-2026/10/17-22:47:11.750 6104 Delete type=0 #295
-2026/10/17-22:47:11.750 6104 Manual compaction at level-0 from '!items!5laBehTjXYonOAko' @ 72057594037927935 : 1 .. '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 0 : 0; will stop at '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 101 : 1
-2026/10/17-22:47:11.750 6104 Compacting 1@0 + 0@1 files
-2026/10/17-22:47:11.751 6104 Generated table #298@0: 3 keys, 22710 bytes
-2026/10/17-22:47:11.751 6104 Compacted 1@0 + 0@1 files => 22710 bytes
-2026/10/17-22:47:11.752 6104 compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/10/17-22:47:11.752 6104 Delete type=2 #286
-2026/10/17-22:47:11.752 6104 Manual compaction at level-0 from '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 101 : 1 .. '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 0 : 0; will stop at (end)
-2026/10/17-22:47:11.752 6104 Manual compaction at level-1 from '!items!5laBehTjXYonOAko' @ 72057594037927935 : 1 .. '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 0 : 0; will stop at '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 113 : 1
-2026/10/17-22:47:11.752 6104 Compacting 1@1 + 1@2 files
-2026/10/17-22:47:11.755 6104 Generated table #299@1: 6 keys, 93750 bytes
-2026/10/17-22:47:11.755 6104 Compacted 1@1 + 1@2 files => 93750 bytes
-2026/10/17-22:47:11.755 6104 compacted to: files[ 0 0 1 0 0 0 0 ]
-2026/10/17-22:47:11.755 6104 Delete type=2 #209
-2026/10/17-22:47:11.755 6104 Delete type=2 #298
-2026/10/17-22:47:11.755 6104 Manual compaction at level-1 from '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 113 : 1 .. '!items.effects!YBVZtKIJHmapfmef.Zsx8UvC9DmdrA1E1' @ 0 : 0; will stop at (end)
+2026/10/17-22:48:46.641 5570 Recovering log #296
+2026/10/17-22:48:46.643 5570 Delete type=0 #296
+2026/10/17-22:48:46.643 5570 Delete type=3 #294
