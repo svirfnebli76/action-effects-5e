@@ -104,6 +104,7 @@ export class ActionEffects5eApi {
     metamagicCasting,
     activityCards,
     chatCardAdapter,
+    resultsCards,
     dependencies,
     compatibility,
     movement,
@@ -194,7 +195,9 @@ export class ActionEffects5eApi {
         return activityCards.complete(workflow, options);
       },
       upsertContribution: (subject, contribution) => chatCardAdapter.upsertContribution(subject, contribution),
-      removeContribution: (subject, id) => chatCardAdapter.removeContribution(subject, id)
+      removeContribution: (subject, id) => chatCardAdapter.removeContribution(subject, id),
+      createResultsCard: options => resultsCards.create(options),
+      getResultsCardDefaults: () => resultsCards.getDefaults()
     });
 
     this.constants = Object.freeze({

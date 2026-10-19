@@ -68,6 +68,7 @@ import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.j
 import { ActivityExecutionService } from "./activities/activity-execution-service.js";
 import { ActivityCardService } from "./chat/activity-card-service.js";
 import { ChatCardAdapter } from "./chat/chat-card-adapter.js";
+import { ResultsCardService } from "./chat/results-card-service.js";
 import { MetamagicDeclarationService } from "./metamagic/declaration-service.js";
 import { CatDeclarationMacroAdapter } from "./integrations/cat-declaration-macro-adapter.js";
 import { DeclarationFamilyRegistry } from "./declarations/family-registry.js";
@@ -203,6 +204,7 @@ const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAut
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const activityCards = new ActivityCardService();
 const chatCardAdapter = new ChatCardAdapter();
+const resultsCards = new ResultsCardService();
 const metamagicDeclarations = new MetamagicDeclarationService({ collections: itemDeclarations });
 const declarationMacros = new CatDeclarationMacroAdapter();
 const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations,
@@ -465,6 +467,7 @@ const api = new ActionEffects5eApi({
   metamagicCasting,
   activityCards,
   chatCardAdapter,
+  resultsCards,
   dependencies,
   compatibility,
   movement,
