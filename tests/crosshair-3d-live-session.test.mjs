@@ -218,9 +218,27 @@ test('sphere placement rejects a radius that is not a whole Scene grid unit', as
   assert.ok(h.clean());
 });
 
+test('sphere grid range admits diagonal placement and compatible elevation', async () => {
+  const h = harness(); let r;
+  const p = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 },
+    range: { max: 8 }, onRevision: value => r = value });
+  await h.flush();
+  h.dispatch('pointermove', { clientX: 200, clientY: 200 }); await h.flush();
+  assert.equal(r.point.x, 12.5);
+  assert.equal(r.point.y, 12.5);
+  const volume = h.tokens.resolve(h.source, { grid: h.metrics.resolve(), coordinateSpace: 'pixels' });
+  assert.ok(h.range.distanceFromVolumeCornerToPoint(volume, r.point, 'grid') <= 8);
+  assert.ok(h.range.distanceFromVolumeCornerToPoint(volume, r.point, 'euclidean') > 8);
+  h.dispatch('wheel', { ctrlKey: true, deltaY: -1 }); await h.flush();
+  h.dispatch('wheel', { ctrlKey: true, deltaY: -1 }); await h.flush();
+  assert.equal(r.point.z, 10);
+  h.dispatch('wheel', { ctrlKey: true, deltaY: -1 }); await h.flush();
+  assert.equal(r.point.z, 10, 'moving beyond the legal Z range is rejected');
+  h.service.cancel(); await p; assert.ok(h.clean());
+});
 test('sphere range uses the nearest caster corner and never leaves its snapped cell center', async () => {
   const h = harness(); let r;
-  const p = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 }, range: { max: 7.6 }, onRevision: value => r = value });
+  const p = h.service.show({ source: h.source, shape: { type: 'sphere', radius: 10 }, range: { max: 7.6, metric: "euclidean" }, onRevision: value => r = value });
   await h.flush();
   const initial = { ...r.point };
   h.dispatch('pointermove', { clientX: 200, clientY: 50 }); await h.flush();
@@ -232,7 +250,7 @@ test('sphere range uses the nearest caster corner and never leaves its snapped c
 
 test('range clamps remote MOVE in XYZ and rejects elevation outside range', async () => {
   const h = harness(); let r;
-  const p = h.service.show({ source: h.source, shape: shapes[0], range: { max: 10 }, onRevision: v => r = v });
+  const p = h.service.show({ source: h.source, shape: shapes[0], range: { max: 10, metric: "euclidean" }, onRevision: v => r = v });
   await h.flush(); h.dispatch('pointermove', { clientX: 1200, clientY: 50 }); await h.flush();
   assert.ok(h.range.distanceFromVolumeToPoint(h.tokens.resolve(h.source, { grid: h.metrics.resolve(), coordinateSpace: 'pixels' }), r.point) <= 10 + 1e-8);
   for(let i=0;i<20;i++) h.dispatch('wheel',{ctrlKey:true,deltaY:-1}); await h.flush();

@@ -504,7 +504,11 @@
 .message .message-content .ae5e-card-suppressed { display: none !important; }
 
 /* Explicit per-message switches. CSS also catches controls built asynchronously
-   after the render hook. Damage rolls, saves and their native data are retained. */
+   after the render hook. Damage rolls, saves and their native data are retained.
+   Flavor is presentation-only: Activity data (including [noaa]) remains intact. */
+.message .message-content.ae5e-hide-initial-flavor .chat-card .card-flavor {
+  display: none !important;
+}
 .message .message-content.ae5e-hide-initial-targeting :is(
   recorded-targets,
   .dcc-card-targets,

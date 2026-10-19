@@ -185,7 +185,7 @@ const MAX_LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height;
       const edgeColor = belowSource ? RED_BASE_COLOR : TEAL_BASE_COLOR;
       if (redrawShape) {
       drawing.clear();
-      const boundary = freeLineRangeBoundary(sourceVolume, RANGE, s.point.z).map(pixel);
+      const boundary = freeLineRangeBoundary(sourceVolume, RANGE, s.point.z, options.range?.metric).map(pixel);
       if (options.range?.showBoundary !== false && boundary.length) {
         drawing.lineStyle(1.5, 0x7fefef, 0.4);
         drawing.drawPolygon(boundary.flatMap(p => [p.x, p.y]));

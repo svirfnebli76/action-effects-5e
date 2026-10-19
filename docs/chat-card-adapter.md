@@ -2,6 +2,13 @@
 
 ## Independent native-card sections (v0.4.5.32)
 
+The optional `flavor: true` switch visually hides the native `.card-flavor`
+block on the opted-in usage message. The underlying Activity flavor content is
+unchanged; e.g. Automated Animations still reads `[noaa]` at roll time.
+The legacy schema 1 policy with only targeting, saves, and damageApplication
+remains valid; flavor defaults to visible when omitted. To re-show flavor on an
+existing card, call `chatCards.setSections` with `flavor: false` or omit it.
+
 An Item automation may independently suppress initial-card targeting, save data,
 and the manual damage-application tray. This is a per-message presentation
 snapshot; it requires no replacement layout and has no AE5E-wide default. The

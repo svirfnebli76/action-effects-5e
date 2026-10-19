@@ -706,7 +706,8 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
         const boundary = freeLineRangeBoundary(
           sourceVolume,
           RANGE,
-          current.point.z
+          current.point.z,
+          options.range?.metric
         ).map(toPixel);
 
         if (options.range?.showBoundary !== false && boundary.length) {

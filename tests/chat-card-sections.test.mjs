@@ -22,7 +22,7 @@ test('all eight combinations independently mark one content host and can be rese
       damageApplication: Boolean(bits & 4) };
     applyCardSections(content, value);
     for (const [key, name] of Object.entries(CARD_SECTION_CLASSES)) {
-      assert.equal(active.has(name), value[key]);
+      assert.equal(active.has(name), Boolean(value[key]));
     }
     assert.equal(active.has('other-module'), true);
   }

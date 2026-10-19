@@ -15,8 +15,8 @@ export function freeLineRangePoints(state, policy) {
   return policy === "origin" ? [ends[0]] : ends;
 }
 
-export function freeLineWithinRange(state, volume, max, policy, range) {
-  return freeLineRangePoints(state, policy).every(point => range.distanceFromVolumeToPoint(volume, point) <= max + 1e-8);
+export function freeLineWithinRange(state, volume, max, policy, range, metric = "euclidean") {
+  return freeLineRangePoints(state, policy).every(point => range.distanceFromVolumeToPoint(volume, point, metric) <= max + 1e-8);
 }
 
 /** Stop at the first invalid portion of a manipulation, preserving center for yaw/length. */
@@ -41,10 +41,17 @@ export function constrainFreeLineChange(from, to, valid, yawDelta = 0) {
   return at(1);
 }
 
-/** Horizontal slice of Euclidean range around the occupied source cuboid. */
-export function freeLineRangeBoundary(volume, max, z) {
+/** Horizontal range slice around the occupied source cuboid. */
+export function freeLineRangeBoundary(volume, max, z, metric = "euclidean") {
   const dz = Math.max(volume.bottom - z, 0, z - volume.top);
   if (dz > max) return [];
+  if (metric === "grid") return [
+    { x: volume.minX - max, y: volume.minY - max, z },
+    { x: volume.maxX + max, y: volume.minY - max, z },
+    { x: volume.maxX + max, y: volume.maxY + max, z },
+    { x: volume.minX - max, y: volume.maxY + max, z }
+  ];
+  if (metric !== "euclidean") throw new TypeError(`Unsupported 3D range metric: ${String(metric)}`);
   const radius = Math.sqrt(Math.max(0, max * max - dz * dz));
   const points = [];
   const corners = [[volume.maxX, volume.maxY, 0], [volume.minX, volume.maxY, 90],

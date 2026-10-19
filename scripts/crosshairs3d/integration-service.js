@@ -309,8 +309,13 @@ export class Crosshair3dIntegrationService {
     }
     if (configuration.range !== undefined) {
       if (!isPlainObject(configuration.range)) errors.push("range must be a plain object.");
-      else if (configuration.range.max !== undefined && !(Number.isFinite(Number(configuration.range.max)) && Number(configuration.range.max) > 0)) {
-        errors.push("range.max must be a positive finite number.");
+      else {
+        if (configuration.range.max !== undefined && !(Number.isFinite(Number(configuration.range.max)) && Number(configuration.range.max) > 0)) {
+          errors.push("range.max must be a positive finite number.");
+        }
+        if (configuration.range.metric !== undefined && !["grid", "euclidean"].includes(configuration.range.metric)) {
+          errors.push("range.metric must be grid or euclidean.");
+        }
       }
     }
     if (configuration.capabilities !== undefined) {
