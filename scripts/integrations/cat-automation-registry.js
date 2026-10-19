@@ -455,19 +455,21 @@ export class CatAutomationRegistry {
           continue;
         }
 
-        const configs2014 = {};
-        const configs2024 = {};
-        for (const entry of audited) {
-          if (!entry.configOptionCount) continue;
-          if (entry.rules === "2014") configs2014[entry.identifier] = entry.config;
-          else if (entry.rules === "2024") configs2024[entry.identifier] = entry.config;
-        }
+        // CAT's supported registerAutomationCompendium API accepts an
+        // infoFetcherCallback, not configs2014/configs2024 properties.
+        // Resolve by compendium UUID to preserve distinct Item versions and
+        // avoid collisions when identifiers exist under both rulesets.
+        const configByUuid = new Map(audited
+          .filter(entry => entry.configOptionCount > 0 && entry.uuid)
+          .map(entry => [entry.uuid, entry.config]));
 
         this.#stats.packRegistrationAttempts += 1;
         const results = await registerAutomationCompendium.call(cat.api, pack, {
           source: CAT_AUTOMATION_SOURCE_ID,
-          configs2014,
-          configs2024
+          infoFetcherCallback: (_document, defaults) => {
+            const config = configByUuid.get(defaults?.uuid);
+            return config ? { config } : {};
+          }
         });
         const normalizedResults = Array.isArray(results) ? results : [];
         const success = normalizedResults.length === audited.length && normalizedResults.every((result) => result === true);

@@ -90,22 +90,24 @@ function makeFixture({ registerResults } = {}) {
       registerSourceName(id, name) { sourceNames[id] = name; },
       registerAutomation() { return true; },
       registerAutomations() { return []; },
-      async registerAutomationCompendium(pack, { source, configs2014 = {}, configs2024 = {} } = {}) {
+      async registerAutomationCompendium(pack, { source, infoFetcherCallback } = {}) {
         const index = await pack.getIndex();
-        compendiumCalls.push({ id: pack.collection, source, count: index.length, configs2014, configs2024 });
+        compendiumCalls.push({
+          id: pack.collection, source, count: index.length,
+          hasInfoFetcherCallback: typeof infoFetcherCallback === "function"
+        });
         if (typeof registerResults === "function") return registerResults(pack, index);
         for (const document of index) {
           const identifier = document.system?.identifier;
           const rules = document.system?.source?.rules;
-          automations.set(document.uuid, {
-            source,
-            identifier,
-            rules,
-            type: document.type,
+          const defaults = {
+            source, identifier, rules, type: document.type,
             version: document.flags?.cat?.automation?.version,
-            config: rules === "2014" ? configs2014[identifier] : configs2024[identifier],
             uuid: document.uuid
-          });
+          };
+          // Simulate CAT's real API: merge callback output into the defaults.
+          const data = { ...defaults, ...(infoFetcherCallback?.(document, { ...defaults }) ?? {}) };
+          automations.set(document.uuid, data);
         }
         return index.map(() => true);
       },
@@ -403,12 +405,36 @@ test("CAT public registration forwards Item-authored configuration schemas to CA
   await fixture.callbacks.get(CAT_READY_HOOK)();
 
   assert.equal(fixture.compendiumCalls.length, 1);
-  assert.deepEqual(fixture.compendiumCalls[0].configs2014["misty-step"], configSchema);
-  assert.deepEqual(fixture.compendiumCalls[0].configs2024, {});
+  assert.equal(fixture.compendiumCalls[0].hasInfoFetcherCallback, true);
   assert.deepEqual(fixture.automations.get("Compendium.test.misty").config, configSchema);
   const registered = service.getStatus().publicRegistration.registeredPacks[0];
   assert.equal(registered.configurable, 1);
   assert.equal(registered.configurationOptions, 1);
+});
+
+test("CAT callback supplies different configurations for 2014 and 2024 and leaves unconfigured items native", async () => {
+  const fixture = makeFixture();
+  const packId = "action-effects-5e.spells-level-3";
+  const older = { classic: { type: "checkbox", default: false } };
+  const newer = { suppressChatTargeting: { type: "checkbox", default: false } };
+  const pack = makePack(packId, [
+    makeIndexEntry({ id: "old", identifier: "fireball", rules: "2014", configSchema: older }),
+    makeIndexEntry({ id: "new", identifier: "fireball", rules: "2024", configSchema: newer }),
+    makeIndexEntry({ id: "other", identifier: "fly", rules: "2024" })
+  ]);
+  const service = new CatAutomationRegistry({
+    catAccessor: () => fixture.cat,
+    hooksAccessor: () => fixture.hooks,
+    packsAccessor: () => new Map([[packId, pack]]),
+    publicPackIds: [packId]
+  });
+  service.initialize();
+  await fixture.callbacks.get(CAT_READY_HOOK)();
+  assert.equal(fixture.compendiumCalls[0].hasInfoFetcherCallback, true);
+  assert.deepEqual(fixture.automations.get("Compendium.test.old").config, older);
+  assert.deepEqual(fixture.automations.get("Compendium.test.new").config, newer);
+  assert.equal(fixture.automations.get("Compendium.test.other").config, undefined);
+  assert.equal(service.getStatus().publicRegistration.registeredPacks[0].configurationOptions, 2);
 });
 
 test("CAT public registration defers packs with malformed Item-authored configuration data", async () => {
