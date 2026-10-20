@@ -709,16 +709,19 @@
   padding: 0;
   overflow: hidden;
 }
+.ae5e-broker-choice-dialog .dialog-content {
+  min-height: 0;
+  overflow: hidden;
+}
 .ae5e-broker-choice-host {
   min-height: 0;
-  height: 100%;
 }
 .ae5e-broker-choice {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: calc(800px - 44px);
-  padding: 18px 20px 16px;
+  max-height: calc(800px - 44px - 70px);
+  padding: 18px 20px 0;
   box-sizing: border-box;
 }
 .ae5e-broker-banner {
@@ -830,7 +833,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  padding-top: 12px;
+  padding: 12px 20px 16px;
 }
 .ae5e-broker-actions button {
   min-height: 42px;

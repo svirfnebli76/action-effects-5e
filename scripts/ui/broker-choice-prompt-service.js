@@ -266,39 +266,46 @@ export class BrokerChoicePromptService {
 
     const selected = new Set();
     let settled = false;
-    let programmaticClose = false;
     let resolveResult = null;
     const resultPromise = new Promise(resolve => { resolveResult = resolve; });
 
-    const dialog = new DialogV2({
-      window: { title: payload.title },
-      position: { width: 550 },
-      classes: [MODULE_ID + "-owned-dialog", "ae5e-broker-choice-dialog"],
-      content: '<div class="ae5e-broker-choice-host"></div>',
-      buttons: [],
-      modal: false
-    });
-
-    const finish = async (outcome, selectedIds = []) => {
+    const finish = (outcome, selectedIds = []) => {
       if (settled) return;
       settled = true;
       resolveResult?.({ outcome, selectedIds, controllerUserId: game?.user?.id ?? null });
       resolveResult = null;
-      programmaticClose = true;
-      try { await dialog.close?.(); }
-      catch (error) { Logger.debug("AE5E broker prompt close failed after response.", error); }
-      finally { programmaticClose = false; }
     };
 
+    // Use real DialogV2 actions: Foundry requires a non-empty buttons array.
+    // Guard keyboard/programmatic submission as well as the visible button.
+    class BrokerDialog extends DialogV2 {
+      async _onSubmit(target, event) {
+        if (settled || (target?.dataset?.action === "confirm" && !selected.size)) return this;
+        return super._onSubmit(target, event);
+      }
+    }
+
+    const dialog = new BrokerDialog({
+      window: { title: payload.title },
+      position: { width: 550 },
+      classes: [MODULE_ID + "-owned-dialog", "ae5e-broker-choice-dialog"],
+      content: '<div class="ae5e-broker-choice-host"></div>',
+      buttons: [{
+        action: "confirm",
+        label: payload.confirmLabel,
+        disabled: true,
+        callback: () => ({ outcome: "confirm", selectedIds: [...selected] })
+      }, {
+        action: "decline",
+        label: payload.declineLabel,
+        callback: () => ({ outcome: "decline", selectedIds: [] })
+      }],
+      submit: response => finish(response.outcome, response.selectedIds),
+      modal: false
+    });
+
     dialog.addEventListener?.("close", () => {
-      if (programmaticClose || settled) return;
-      settled = true;
-      resolveResult?.({
-        outcome: payload.closeOutcome === "abort" ? "abort" : "decline",
-        selectedIds: [],
-        controllerUserId: game?.user?.id ?? null
-      });
-      resolveResult = null;
+      finish(payload.closeOutcome === "abort" ? "abort" : "decline");
     });
 
     const totals = () => {
@@ -381,19 +388,19 @@ export class BrokerChoicePromptService {
         + (payload.prompt ? '<div class="ae5e-broker-prompt">' + this.#escape(payload.prompt) + "</div>" : "")
         + (payload.resource ? '<div class="ae5e-broker-resource">' + this.#escape(summary()) + "</div>" : "")
         + '<div class="ae5e-broker-options">' + choices.map(optionHtml).join("") + "</div>"
-        + '<footer class="ae5e-broker-actions">'
-        + '<button type="button" data-action="confirm"' + (selected.size ? "" : " disabled") + ">"
-        + this.#escape(payload.confirmLabel) + "</button>"
-        + '<button type="button" data-action="decline">' + this.#escape(payload.declineLabel) + "</button>"
-        + "</footer></div>";
+        + "</div>";
+
+      const confirm = element?.querySelector?.('button[data-action="confirm"]')
+        ?? element?.[0]?.querySelector?.('button[data-action="confirm"]');
+      if (confirm) {
+        confirm.disabled = selected.size === 0;
+        confirm.closest("footer")?.classList.add("ae5e-broker-actions");
+      }
 
       for (const row of root.querySelectorAll(".ae5e-broker-option")) {
         const checkbox = row.querySelector('input[type="checkbox"]');
         if (!checkbox || checkbox.disabled) continue;
-        row.addEventListener("click", event => {
-          if (event.target?.closest?.('input[type="checkbox"]')) return;
-          checkbox.click();
-        });
+        // The surrounding label already toggles its checkbox, including row clicks.
         checkbox.addEventListener("change", () => {
           if (checkbox.checked) selected.add(checkbox.value);
           else selected.delete(checkbox.value);
@@ -401,13 +408,6 @@ export class BrokerChoicePromptService {
         });
       }
 
-      root.querySelector('[data-action="confirm"]')?.addEventListener("click", () => {
-        if (!selected.size) return;
-        void finish("confirm", [...selected]);
-      });
-      root.querySelector('[data-action="decline"]')?.addEventListener("click", () => {
-        void finish("decline", []);
-      });
       return true;
     };
 

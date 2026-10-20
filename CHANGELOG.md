@@ -1,3 +1,11 @@
+# v0.4.5.41 — Broker chooser DialogV2 compatibility fix
+
+- Fixes the first Metamagic chooser failing to open with Foundry's "You must define at least one entry in config.buttons" error. The generic broker now configures real Confirm and Continue actions instead of an empty DialogV2 button list and custom HTML buttons.
+- Keeps Item-owned button wording, selection/resource limits, explicit Normal Casting, and phase-aware X/Escape outcomes. Confirm stays disabled without a selection, including keyboard/programmatic submission; native submission owns closing the window.
+- Uses the label's native checkbox behavior so clicking an option row selects or deselects it once. Keeps the configured action footer visible when a long option list scrolls.
+- Adds regression coverage that executes the registered chooser handler and enforces Foundry's non-empty button contract, selection toggling, confirm/decline/dismissal outcomes, and selection-indicator cleanup.
+- Requires no CAT macro, Item declaration, or compendium changes.
+
 # v0.4.5.40 — Generic broker chooser and casting-phase infrastructure
 
 - Adds a reusable controller-routed broker chooser with checkbox rows, Item-supplied descriptions/cost labels, advisory and disabled status lines, projected resource balance, declared generic selection capacity, and explicit confirm/decline/abort outcomes.
