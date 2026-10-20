@@ -275,13 +275,7 @@ export class BrokerChoicePromptService {
       position: { width: 550 },
       classes: [MODULE_ID + "-owned-dialog", "ae5e-broker-choice-dialog"],
       content: '<div class="ae5e-broker-choice-host"></div>',
-      buttons: [{
-        action: "ae5e-broker-host",
-        label: "Broker Choice Host",
-        type: "button",
-        disabled: true,
-        style: { display: "none" }
-      }],
+      buttons: [],
       modal: false
     });
 
