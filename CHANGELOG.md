@@ -1,3 +1,12 @@
+# v0.4.5.40 — Generic broker chooser and casting-phase infrastructure
+
+- Adds a reusable controller-routed broker chooser with checkbox rows, Item-supplied descriptions/cost labels, advisory and disabled status lines, projected resource balance, declared generic selection capacity, and explicit confirm/decline/abort outcomes.
+- Adds reusable casting lifecycle phases for pre-cast, post-targeting, finalized attack outcome, and mutable-damage timing. Consumers register by semantic phase; AE5E contains no Metamagic option catalogue or option-specific rules.
+- Adds phase-aware cancellation safety: only cancellation-safe lifecycle points may stop a source workflow. Later phases fail open so closing/declining cannot attempt to unwind an already-progressed cast.
+- Extends the existing Metamagic casting bridge so Item-owned option offers can carry advisories/reasons, pre-cast options may declare phases, and the base Item chooser can distinguish normal casting from an explicit abort while remaining backward-compatible with the existing array-return broker.
+- Preserves controller routing, GM fallback, selection indicators, stale-selection revalidation, native D&D5e resource consumption/refunds, source-Item immutability, existing compendiums/assets, Sneak Attack/Devious Strikes, and current CAT Item macros.
+- This release provides infrastructure only. Distant Spell remains the first planned live acceptance option; CAT Item macro replacements are intentionally separate from this source publication.
+
 # v0.4.5.38 — Item-owned console messages
 
 - Removes the feature-specific console strings added to AE5E in v0.4.5.37.

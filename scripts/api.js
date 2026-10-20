@@ -163,6 +163,8 @@ export class ActionEffects5eApi {
     selectionIndicator,
     externalPromptBridge,
     choicePrompts,
+    brokerChoicePrompts,
+    castingPhases,
     crosshairs3dGeometry,
     crosshairs3dCells,
     crosshairs3dTokens,
@@ -670,9 +672,20 @@ export class ActionEffects5eApi {
 
     this.prompts = Object.freeze({
       choose: (options) => choicePrompts.choose(options),
+      chooseBroker: (options) => brokerChoicePrompts.choose(options),
       resolveController: (options) => choicePrompts.resolveController(options),
       validateChoiceRequest: (options) => choicePrompts.validateRequest(options),
-      getStats: () => choicePrompts.getStats()
+      validateBrokerRequest: (options) => brokerChoicePrompts.validateRequest(options),
+      getStats: () => choicePrompts.getStats(),
+      getBrokerStats: () => brokerChoicePrompts.getStats()
+    });
+
+    this.casting = Object.freeze({
+      phases: Object.freeze(castingPhases.getPhases()),
+      registerPhaseConsumer: (id, config) => castingPhases.register(id, config),
+      unregisterPhaseConsumer: (id) => castingPhases.unregister(id),
+      dispatchPhase: (phase, workflow, options) => castingPhases.dispatch(phase, workflow, options),
+      getPhaseStats: () => castingPhases.getStats()
     });
 
     this.crosshairs3d = Object.freeze({

@@ -1,8 +1,12 @@
 import { MODULE_ID } from "../core/constants.js";
 import { isObject, validId } from "./json-data.js";
+import { CASTING_PHASES } from "../casting/casting-phase-service.js";
 
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const ids = value => Array.isArray(value) && value.every(validId) && new Set(value).size === value.length;
+const phases = new Set(Object.values(CASTING_PHASES));
+const validPhases = value => Array.isArray(value) && value.length > 0
+  && value.every(phase => phases.has(phase)) && new Set(value).size === value.length;
 const validExecution = execution => isObject(execution)
   && ["cat-embedded", "midi-on-use", "actor-on-use", "effect-macro"].includes(execution.interface)
   && typeof execution.name === "string" && Boolean(execution.name.trim()) && execution.macroUuid === undefined;
@@ -17,6 +21,7 @@ export function registerMetamagicFamily(registry) {
       { id: "main", label: "Base / broker", record: { id: "base", type: "main", optionChoices: 2,
         selectionLimit: 1, resource: { identifier: "sorcery-points" } } },
       { id: "option", label: "Option", record: { id: "option", type: "option", cost: 1, tooltip: "",
+        phases: [CASTING_PHASES.PRE_CAST], selectionCost: 1,
         execution: { interface: "cat-embedded", name: "" } } },
       { id: "provider", label: "Provider / grant", record: { id: "provider", type: "provider", grants: [] } }
     ],
@@ -31,6 +36,10 @@ export function registerMetamagicFamily(registry) {
       if (record.type === "option") {
         if (!integer(record.cost)) issues.push("cost must be a non-negative integer.");
         if (typeof record.tooltip !== "string") issues.push("tooltip must be Item-owned text.");
+        if (record.phases !== undefined && !validPhases(record.phases)) issues.push("phases must contain unique supported casting phase ids.");
+        if (record.selectionCost !== undefined && (!Number.isSafeInteger(record.selectionCost) || record.selectionCost < 0)) {
+          issues.push("selectionCost must be a non-negative integer.");
+        }
         if (!validExecution(record.execution)) {
           issues.push("execution must reference a named macro in an established Item-owned interface; standalone Macro UUIDs are unsupported.");
         }

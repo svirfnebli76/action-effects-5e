@@ -162,34 +162,108 @@ export class MetamagicCastingService {
     finally { delete record.preparing; }
   }
 
-  async #optionResult(option, phase, record) {
+  async #optionResult(option, phase, record, extraContext = {}) {
     return this.#executors.execute({ actor: record.actor, sourceUuid: option.sourceUuid, identity: option.identity,
       family: "metamagic", declaration: option.declaration, kind: "option", phase,
       context: { castingId: record.castingId, actor: record.actor, workflow: record.workflow,
-        activity: record.workflow.activity, item: record.workflow.activity.item, initiatorUserId: record.initiatorUserId } });
+        activity: record.workflow.activity, item: record.workflow.activity.item, initiatorUserId: record.initiatorUserId,
+        ...extraContext } });
   }
 
-  async #offers(compiled, record) {
+  async #offers(compiled, record, phase = "pre-cast") {
     const pool = record.actor.items.get(compiled.resourceId);
     const available = Number(pool?.system?.uses?.value);
+    const maximum = Number(pool?.system?.uses?.max);
     if (!Number.isFinite(available) || pool.system.uses.autoDestroy) throw new Error("Native point pool has invalid uses or automatic destruction enabled.");
     const offers = [];
     for (const option of compiled.options) {
+      const declaredPhases = option.declaration.phases ?? ["pre-cast"];
+      if (!declaredPhases.includes(phase)) continue;
       let result;
-      try { result = await this.#optionResult(option, "offer", record); }
-      catch (error) { result = { eligible: false, reason: error.message }; }
-      const reason = result?.eligible !== true ? result?.reason ?? "Not eligible for this casting."
-        : option.cost > available ? "Insufficient resource uses." : null;
-      offers.push({ ...option, available, disabled: Boolean(reason), reason });
+      try {
+        result = await this.#optionResult(option, "offer", record, {
+          resource: {
+            identifier: compiled.mainDeclaration.resource?.identifier ?? null,
+            itemId: compiled.resourceId,
+            uuid: compiled.resourceUuid,
+            available,
+            maximum: Number.isFinite(maximum) ? maximum : available,
+            cost: option.cost
+          }
+        });
+      } catch (error) { result = { eligible: false, reason: error.message }; }
+      const eligible = result?.eligible === true;
+      const affordable = option.cost <= available;
+      const eligibilityReasons = [
+        ...(Array.isArray(result?.reasons) ? result.reasons : []),
+        ...(result?.reason ? [result.reason] : [])
+      ].map(String).filter(Boolean);
+      const affordabilityReason = !affordable
+        ? String(result?.unaffordableReason ?? "Insufficient resource uses.")
+        : null;
+      const reasons = [...eligibilityReasons, ...(affordabilityReason ? [affordabilityReason] : [])];
+      const advisories = [
+        ...(Array.isArray(result?.advisories) ? result.advisories : []),
+        ...(result?.advisory ? [result.advisory] : [])
+      ].map(String).filter(Boolean);
+      const reason = !eligible ? reasons[0] ?? "Not eligible for this casting."
+        : !affordable ? "Insufficient resource uses." : null;
+      offers.push({
+        ...option,
+        available,
+        maximum: Number.isFinite(maximum) ? maximum : available,
+        eligible,
+        affordable,
+        description: typeof result?.description === "string" ? result.description : option.declaration.tooltip,
+        disabled: !eligible || !affordable,
+        reason,
+        reasons,
+        advisories
+      });
     }
     return offers;
   }
 
   async #prepare(record, compiled, chooser) {
-    const offers = await this.#offers(compiled, record);
+    const offers = await this.#offers(compiled, record, "pre-cast");
     if (record.state !== "preparing") throw new Error("The broker request is no longer active.");
-    const selectedIds = await chooser({ casting: this.#snapshot(record), offers: clone(offers), selectionLimit: compiled.selectionLimit });
+    if (!offers.length) {
+      record.state = "unmodified";
+      this.#archive(record);
+      return true;
+    }
+    const pool = record.actor.items.get(compiled.resourceId);
+    const resource = {
+      id: compiled.resourceId,
+      uuid: compiled.resourceUuid,
+      current: Number(pool?.system?.uses?.value),
+      max: Number(pool?.system?.uses?.max)
+    };
+    if (!Number.isFinite(resource.max)) resource.max = resource.current;
+    const rawDecision = await chooser({
+      casting: this.#snapshot(record),
+      phase: "pre-cast",
+      closeOutcome: "abort",
+      offers: clone(offers),
+      resource: clone(resource),
+      selectionLimit: compiled.selectionLimit
+    });
     if (record.state !== "preparing") throw new Error("The broker request is no longer active.");
+
+    const decision = Array.isArray(rawDecision)
+      ? { outcome: rawDecision.length ? "confirm" : "decline", selectedIds: rawDecision }
+      : rawDecision && typeof rawDecision === "object"
+        ? { outcome: rawDecision.outcome, selectedIds: rawDecision.selectedIds ?? [] }
+        : { outcome: "decline", selectedIds: [] };
+
+    if (decision.outcome === "abort") {
+      record.state = "rejected";
+      record.error = "Casting aborted from the modifier chooser.";
+      this.#archive(record);
+      return false;
+    }
+    if (!["confirm", "decline"].includes(decision.outcome)) throw new Error("Invalid modifier chooser outcome.");
+    const selectedIds = decision.outcome === "confirm" ? decision.selectedIds : [];
     if (!Array.isArray(selectedIds) || new Set(selectedIds).size !== selectedIds.length
       || selectedIds.length > compiled.selectionLimit || selectedIds.some(id => !offers.some(offer => offer.id === id && !offer.disabled))) {
       throw new Error("Invalid modifier selection.");
@@ -218,8 +292,8 @@ export class MetamagicCastingService {
       record.selected.push(clone(option));
       record.totalCost += option.cost;
     }
-    const pool = record.actor.items.get(record.resourceId);
-    if (record.totalCost > Number(pool?.system?.uses?.value)) throw new Error("Combined option cost is unaffordable.");
+    const currentPool = record.actor.items.get(record.resourceId);
+    if (record.totalCost > Number(currentPool?.system?.uses?.value)) throw new Error("Combined option cost is unaffordable.");
     if (!this.#applyActivity(record, record.workflow.activity, "selected")) throw new Error(record.error);
     record.state = "selected";
     this.#remember(record);
