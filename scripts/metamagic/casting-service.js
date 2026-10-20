@@ -276,8 +276,8 @@ export class MetamagicCastingService {
       record.selected.push(clone(option));
       record.totalCost += option.cost;
     }
-    const pool = record.actor.items.get(record.resourceId);
-    if (record.totalCost > Number(pool?.system?.uses?.value)) throw new Error("Combined option cost is unaffordable.");
+    const currentPool = record.actor.items.get(record.resourceId);
+    if (record.totalCost > Number(currentPool?.system?.uses?.value)) throw new Error("Combined option cost is unaffordable.");
     if (!this.#applyActivity(record, record.workflow.activity, "selected")) throw new Error(record.error);
     record.state = "selected";
     this.#remember(record);
