@@ -102,6 +102,22 @@ function makeSelectionIndicator({ select = "str" } = {}) {
 const { ChoicePromptService } = await import("../scripts/ui/choice-prompt-service.js");
 const { SELECTION_INDICATOR_ROLES } = await import("../scripts/core/constants.js");
 
+test("unavailable choices show escaped explanations and cannot be chosen", async () => {
+  setupGame();
+  const selectionIndicator = makeSelectionIndicator({ select: "continue" });
+  const service = new ChoicePromptService({ socket: new FakeSocket(), selectionIndicator,
+    authority: { getPrimaryGm: () => game.users.get("gm") } });
+  const result = await service.choose({ actor: makeActor(), title: "Options", prompt: "Choose.", choices: [
+    { id: "blocked", label: "<Distant>", detail: "Insufficient points & <reason>", disabled: true },
+    { id: "continue", label: "Continue" }
+  ] });
+  assert.equal(result, "continue");
+  const config = selectionIndicator.calls[0].config;
+  assert.match(config.content, /&lt;Distant&gt;/);
+  assert.match(config.content, /Insufficient points &amp; &lt;reason&gt;/);
+  assert.equal(config.buttons.some(button => button.callback() === "blocked"), false);
+});
+
 test("choice prompt validates unique serializable choices", () => {
   setupGame();
   const socket = new FakeSocket();

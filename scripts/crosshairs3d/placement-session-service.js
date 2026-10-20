@@ -82,7 +82,9 @@ export class Crosshair3dPlacementSessionService {
     }
     const max = Number(options.range?.max ?? options.maxRange ?? ((self || sourceBoundPrism) ? baseShape.length : 60));
     if (!(Number.isFinite(max) && max > 0)) throw new Error("range.max must be a positive finite number.");
-    options = { ...options, range: { policy: freeLine ? "endpoints" : "origin", ...options.range, max } };
+    const metric = options.range?.metric ?? "grid";
+    if (!["grid", "euclidean"].includes(metric)) throw new Error("range.metric must be grid or euclidean.");
+    options = { ...options, range: { policy: freeLine ? "endpoints" : "origin", ...options.range, max, metric } };
     if (freeLine && !["center", "origin", "endpoints"].includes(options.range.policy)) throw new Error("Freely placed Line requires range.policy: center, origin, or endpoints.");
     const allowedRotation = ["prism", "free-line"].includes(baseShape.type) && !sourceBoundPrism;
     const capabilities = Object.freeze({
@@ -329,8 +331,8 @@ export class Crosshair3dPlacementSessionService {
     if (session.sourceBoundPrism) return this.#validateLos(session, state.sourceAnchor ?? state.point);
     if (session.freeLine) return this.#freeLineValid(session, state);
     const distance = session.baseShape.type === CROSSHAIR_3D_SHAPES.SPHERE
-      ? this.#range.distanceFromVolumeCornerToPoint(session.sourceVolume, state.point)
-      : this.#range.distanceFromVolumeToPoint(session.sourceVolume, state.point);
+      ? this.#range.distanceFromVolumeCornerToPoint(session.sourceVolume, state.point, session.options.range.metric)
+      : this.#range.distanceFromVolumeToPoint(session.sourceVolume, state.point, session.options.range.metric);
     return distance <= session.options.range.max + 1e-8
       && this.#validateLos(session, state.point);
   }
@@ -530,7 +532,7 @@ export class Crosshair3dPlacementSessionService {
   }
 
   #freeLineValid(session, state) {
-    return freeLineWithinRange(state, session.sourceVolume, session.options.range.max, session.options.range.policy, this.#range)
+    return freeLineWithinRange(state, session.sourceVolume, session.options.range.max, session.options.range.policy, this.#range, session.options.range.metric)
       && this.#validateLos(session, session.options.range.policy === "origin" ? freeLineEndpoints(state)[0] : state.point);
   }
 

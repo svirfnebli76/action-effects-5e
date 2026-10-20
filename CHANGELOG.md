@@ -1,3 +1,109 @@
+# v0.4.5.38 — Item-owned console messages
+
+- Removes the feature-specific console strings added to AE5E in v0.4.5.37.
+  The base and Distant Spell CAT macros now own their messages and wording.
+- Routes a best-effort consumed lifecycle notification through CAT's existing
+  Called dispatcher, with confirmed aggregate/per-option amounts and source
+  identity. AE5E does not format usage/payment messages or supply fallback text.
+- Keeps optional notifications separate from strict offer/prepare responses.
+  Items can ignore the notification; recipient failures cannot undo native
+  payment or suppress other recipients. Repeated native confirmations notify
+  only once and preserve the original receipt.
+- Preserves Item declarations, native range/payment/refund behavior, compendiums,
+  assets and Sneak Attack. Install the source update and paste the replacement
+  CAT macro bodies into both compendium and actor copies; no declaration edits
+  or automatic document migrations are required.
+
+# v0.4.5.37 — Metamagic console notes
+
+- Logs the actor's decision to continue without Metamagic once per casting.
+- After native consumption confirmation, logs Metamagic use and each selected
+  Item's use and effective Sorcery Point cost, using the requested `[AE5E]`
+  format. Selection and cancelled-before-payment casts do not claim a debit.
+- Ignores duplicate native consumption notifications, retaining the first receipt
+  and printing no duplicate notes. Console failures cannot interrupt a cast.
+- Existing Item macros, declarations, compendiums, assets and Sneak Attack remain
+  unchanged. Future option Items use the same diagnostics automatically.
+
+# v0.4.5.36 — CAT Item-owned Metamagic and retirement of the preview
+
+- Connects versioned declaration collections to CAT Embedded Item macros using
+  CAT's public Called dispatcher in the verified preTargetingV2 window. The base
+  Item owns the chooser and Distant Spell's Item owns its rules; no new code
+  interpreter or option catalogue is introduced.
+- Discovers learned options from owned actor Items automatically, with capacity,
+  grant-only access, conditions, full source/record provenance and stale checks.
+- Removes the singleton reader, standalone world-Macro launcher, manual learn
+  API, built-in chooser and Stage 1 test installer immediately at the user's
+  request. Existing documents are not automatically changed or deleted.
+- Retains and regression-tests the casting-local parent range bridge, native
+  payment/refund ownership and receipts through the new CAT path. Preserves
+  Sneak Attack/Devious Strikes, compendiums, assets and compendium-only menus.
+- Supplies manual authoring instructions and pasteable base/Distant CAT macros.
+  Installed Foundry acceptance remains required before moving to another option.
+
+# v0.4.5.35 — JSON line numbers and reliable declaration selection
+
+- Updates the edited row label in place instead of rebuilding the list when
+  the JSON field loses focus. The first mouse click now switches records after
+  valid or invalid edits, while preserving each record's draft.
+- Adds line numbers to declaration JSON and CAT Configuration JSON, synchronized
+  with edits, record selection and vertical scrolling.
+- Adds Chromium regressions driven by trusted keyboard/mouse events, including
+  saving with invalid JSON in an unselected record. Compendium-only menu scope,
+  existing Items, compendiums, assets and casting behavior are unchanged.
+
+# v0.4.5.34 — Compendium-only authoring controls
+
+- Removes the additional world/owned Item-sheet authoring button and its global
+  render hooks, following the user's clarified UI scope. Edit Item Options and
+  Edit Item Version remain GM-only context actions in approved AE5E compendiums.
+- Retains the declaration editor, collection services and explicit authoring
+  APIs. Existing compendiums, Items, assets and casting behavior are unchanged.
+
+# v0.4.5.33 — Shared Item declaration infrastructure
+
+- Adds registered family schemas/templates, versioned multi-record Item
+  collections, stable source/family/record identities, validation, discovery,
+  activation, AC5E eligibility forwarding and grant provenance/ambiguity handling.
+- Extends Edit Item Options with CAT Configuration and AE5E Declarations tabs,
+  grouped draft records, Add/Duplicate/Remove, validation and Save All Changes.
+  GM users can author new world/owned Items from their sheet header.
+- Preserves CAT preferences, unrelated/unknown data, legacy singleton declarations,
+  existing Sneak Attack/Devious Strikes and the Metamagic source preview. No
+  compendiums, assets, test Items or resources are converted or removed.
+- This is the infrastructure slice. Installed Foundry editor verification and the
+  finished Item-owned Metamagic broker/Distant path remain pending. See
+  `docs/item-declaration-infrastructure.md` for source-overlay installation.
+
+# Metamagic Stage 1 — Source preview (16 October 2026)
+
+- Adds versioned Item declarations for main, provider and option roles, learned
+  choice reconciliation, equipment grants, combination limits and fixed costs.
+- Adds casting-local option execution through Item-referenced Script Macros,
+  stable casting/event identity, native consumption targets and result receipts.
+- Provides a Distant Spell example, clean test-actor installer, diagnostics,
+  cleanup, contracts and GM acceptance instructions. Reuses the existing point
+  pool, prompt/indicator and native-card contribution services.
+- Repository checks are separate from pending live Foundry acceptance. Player
+  authority, continuations and automated Counterspell are not accepted by this
+  draft. Manifest/version, existing compendiums and assets remain unchanged.
+- Published as a source preview with user authorization. Live Foundry acceptance
+  remains pending; this does not certify a completed Metamagic suite.
+
+# v0.4.5.32 — Independent native-card section presentation
+
+- Adds explicit per-message switches for initial targeting, saving-throw data,
+  and the manual damage-application tray. Each switch is independent and defaults
+  off for unconfigured messages. Item automation supplies resolved CAT values.
+- Adds `chatCards.setSections(workflowOrMessage, policy)` for owned-message
+  snapshots, with serialized writes and unchanged-policy deduplication.
+- Keeps native nodes, rolls, application data and listeners intact. Scoped CSS
+  survives rerender/reload and custom-element updates on all clients. Damage
+  rolls and consumption remain visible; separate results cards are unaffected.
+- No compendium payloads or Item rules changed. Live Foundry GM/player acceptance
+  is still required.
+
 # v0.4.5.31 — Repeat-save card outcomes
 
 - Adds Activity-authored saveMode: "repeat", passedResult and failedResult policies. Observes the specific existing over-time effect rather than a new application; successful saves confirm its removal, failed saves confirm its continuation.

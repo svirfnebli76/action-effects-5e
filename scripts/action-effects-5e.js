@@ -68,6 +68,14 @@ import { OngoingEffectService } from "./ongoing-effects/ongoing-effect-service.j
 import { ActivityExecutionService } from "./activities/activity-execution-service.js";
 import { ActivityCardService } from "./chat/activity-card-service.js";
 import { ChatCardAdapter } from "./chat/chat-card-adapter.js";
+import { ResultsCardService } from "./chat/results-card-service.js";
+import { MetamagicDeclarationService } from "./metamagic/declaration-service.js";
+import { CatDeclarationMacroAdapter } from "./integrations/cat-declaration-macro-adapter.js";
+import { DeclarationFamilyRegistry } from "./declarations/family-registry.js";
+import { DeclarationCollectionService } from "./declarations/collection-service.js";
+import { registerMetamagicFamily } from "./declarations/metamagic-family.js";
+import { ItemOptionsAuthoringService } from "./authoring/item-options-authoring-service.js";
+import { MetamagicCastingService } from "./metamagic/casting-service.js";
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
@@ -112,9 +120,14 @@ const catAutomationProvider = new CatAutomationProviderAdapter();
 const ac5eEligibility = new Ac5eEligibilityAdapter();
 const catMetadataAuthoring = new CatMetadataAuthoringService();
 const catConfigurationAuthoring = new CatConfigurationAuthoringService();
+const declarationFamilies = new DeclarationFamilyRegistry();
+registerMetamagicFamily(declarationFamilies);
+const itemDeclarations = new DeclarationCollectionService({ registry: declarationFamilies, ac5e: ac5eEligibility });
+const itemOptionsAuthoring = new ItemOptionsAuthoringService({ collections: itemDeclarations, configurationAuthoring: catConfigurationAuthoring });
 const catMetadataContextMenu = new CatMetadataContextMenuService({
   authoring: catMetadataAuthoring,
   configurationAuthoring: catConfigurationAuthoring,
+  itemOptionsAuthoring,
   registry: catAutomationRegistry
 });
 const animationOwnership = new AnimationOwnershipService();
@@ -191,6 +204,11 @@ const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAut
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const activityCards = new ActivityCardService();
 const chatCardAdapter = new ChatCardAdapter();
+const resultsCards = new ResultsCardService();
+const metamagicDeclarations = new MetamagicDeclarationService({ collections: itemDeclarations });
+const declarationMacros = new CatDeclarationMacroAdapter();
+const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations,
+  cards: chatCardAdapter, executors: declarationMacros });
 const sneakAttackDeclarationParser = new SneakAttackDeclarationParser();
 const sneakAttackDae = new SneakAttackDaeDeclarationService();
 const sneakAttackDeclarations = new SneakAttackDeclarationService({
@@ -442,8 +460,14 @@ async function bootstrapAcceptedCatMetadata() {
   return { skipped: false, changed };
 }
 const api = new ActionEffects5eApi({
+  declarationFamilies,
+  itemDeclarations,
+  itemOptionsAuthoring,
+  metamagicDeclarations,
+  metamagicCasting,
   activityCards,
   chatCardAdapter,
+  resultsCards,
   dependencies,
   compatibility,
   movement,
@@ -591,6 +615,7 @@ Hooks.once("ready", async () => {
   automatedAnimations.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();
+  metamagicCasting.initialize();
   ongoingEffects.initialize();
   compatibility.refresh();
 

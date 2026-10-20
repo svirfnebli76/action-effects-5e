@@ -1,6 +1,31 @@
 import { MODULE_ID } from "../core/constants.js";
 
 const FLAG = "chatCard";
+export const CARD_SECTIONS_FLAG = "initialCardSections";
+export const CARD_SECTION_CLASSES = Object.freeze({
+  flavor: "ae5e-hide-initial-flavor",
+  targeting: "ae5e-hide-initial-targeting",
+  saves: "ae5e-hide-initial-saves",
+  damageApplication: "ae5e-hide-initial-damage-application"
+});
+
+/** An explicit per-message presentation snapshot; unconfigured cards stay native. */
+export function cardSectionPolicy(value) {
+  const required = ["targeting", "saves", "damageApplication"];
+  if (value?.schema !== 1 || required.some(key => typeof value[key] !== "boolean")
+    || (value.flavor !== undefined && typeof value.flavor !== "boolean")) return null;
+  return { schema: 1,
+    ...(value.flavor === undefined ? {} : { flavor: value.flavor }),
+    targeting: value.targeting, saves: value.saves,
+    damageApplication: value.damageApplication };
+}
+
+export function applyCardSections(content, value) {
+  const policy = cardSectionPolicy(value);
+  for (const [key, cssClass] of Object.entries(CARD_SECTION_CLASSES)) {
+    content.classList.toggle(cssClass, policy?.[key] === true);
+  }
+}
 const INTERIM_TIMEOUT = 8000;
 // Match Midi's chat-save policy. Unknown settings fail open.
 function automaticSaves() {
@@ -188,11 +213,29 @@ export class ChatCardAdapter {
     });
   }
 
+  async setSections(subject, options) {
+    const policy = cardSectionPolicy(options);
+    if (!policy) throw new Error("Card sections require schema: 1, three boolean section switches, and optional flavor boolean.");
+    return this.#write(subject, async message => {
+      const previous = cardSectionPolicy(message.flags?.[MODULE_ID]?.[CARD_SECTIONS_FLAG]);
+      if (previous && ["targeting", "saves", "damageApplication"].every(key => previous[key] === policy[key])
+        && Boolean(previous.flavor) === Boolean(policy.flavor)) {
+        return { updated: false, reason: "unchanged", messageId: message.id };
+      }
+      await message.update({ [`flags.${MODULE_ID}.${CARD_SECTIONS_FLAG}`]: policy });
+      return { updated: true, messageId: message.id };
+    });
+  }
+
   render(message, html) {
     const policy = message.flags?.[MODULE_ID]?.[FLAG];
     this.#clearInterim(message.id);
-    if (!policy || !message.isContentVisible || message.blind || hidden(html)) return;
     const content = html.querySelector(".message-content");
+    if (!content) return;
+    // Apply before the custom-layout guard. Ordinary native usage cards can
+    // suppress individual sections without opting into a replacement layout.
+    applyCardSections(content, message.flags?.[MODULE_ID]?.[CARD_SECTIONS_FLAG]);
+    if (!policy || !message.isContentVisible || message.blind || hidden(html)) return;
     const card = content?.querySelector(".chat-card");
     const header = card?.querySelector(".card-header");
     if (!header || header.hasAttribute("data-concealed")) return;

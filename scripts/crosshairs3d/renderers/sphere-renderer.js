@@ -70,7 +70,9 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
     for (const z of [sourceVolume.bottom, sourceVolume.top]) {
       for (const y of [sourceVolume.minY, sourceVolume.maxY]) {
         for (const x of [sourceVolume.minX, sourceVolume.maxX]) {
-          const distance = Math.hypot(point.x - x, point.y - y, point.z - z);
+          const distance = options.range?.metric === "grid"
+            ? Math.max(Math.abs(point.x - x), Math.abs(point.y - y), Math.abs(point.z - z))
+            : Math.hypot(point.x - x, point.y - y, point.z - z);
           if (!best || distance < best.distance) best = { x, y, z, distance };
         }
       }
@@ -470,12 +472,23 @@ const LENGTH = shape.length, WIDTH = shape.width, HEIGHT = shape.height, RADIUS 
         drawing.clear();
 
         const sourceCorner = nearestSourceCorner(current.point);
-        const verticalDistance = Math.abs(current.point.z - sourceCorner.z);
-        const planarRange = Math.sqrt(Math.max(0, (RANGE * RANGE) - (verticalDistance * verticalDistance)));
-        if (options.range?.showBoundary !== false && planarRange > 1e-7) {
-          const boundaryCenter = toPixel(sourceCorner);
-          drawing.lineStyle(1.5, RANGE_RING_COLOR, RANGE_RING_ALPHA);
-          drawing.drawCircle(boundaryCenter.x, boundaryCenter.y, planarRange * scale);
+        const verticalDistance = Math.max(
+          sourceVolume.bottom - current.point.z, 0, current.point.z - sourceVolume.top
+        );
+        if (options.range?.metric === "grid") {
+          if (options.range?.showBoundary !== false && verticalDistance <= RANGE + 1e-8) {
+            const a = toPixel({ x: sourceVolume.minX - RANGE, y: sourceVolume.minY - RANGE, z: current.point.z });
+            const b = toPixel({ x: sourceVolume.maxX + RANGE, y: sourceVolume.maxY + RANGE, z: current.point.z });
+            drawing.lineStyle(1.5, RANGE_RING_COLOR, RANGE_RING_ALPHA);
+            drawing.drawRect(a.x, a.y, b.x - a.x, b.y - a.y);
+          }
+        } else {
+          const planarRange = Math.sqrt(Math.max(0, RANGE * RANGE - verticalDistance * verticalDistance));
+          if (options.range?.showBoundary !== false && planarRange > 1e-7) {
+            const boundaryCenter = toPixel(sourceCorner);
+            drawing.lineStyle(1.5, RANGE_RING_COLOR, RANGE_RING_ALPHA);
+            drawing.drawCircle(boundaryCenter.x, boundaryCenter.y, planarRange * scale);
+          }
         }
 
         drawSphere(center, current.point);

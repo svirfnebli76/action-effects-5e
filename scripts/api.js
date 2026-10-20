@@ -97,8 +97,14 @@ import {
 
 export class ActionEffects5eApi {
   constructor({
+    declarationFamilies,
+    itemDeclarations,
+    itemOptionsAuthoring,
+    metamagicDeclarations,
+    metamagicCasting,
     activityCards,
     chatCardAdapter,
+    resultsCards,
     dependencies,
     compatibility,
     movement,
@@ -183,12 +189,15 @@ export class ActionEffects5eApi {
     this.version = MODULE_VERSION;
 
     this.chatCards = Object.freeze({
+      setSections: (subject, options) => chatCardAdapter.setSections(subject, options),
       completeActivity: async (workflow, options) => {
         await chatCardAdapter.snapshotLayout(workflow);
         return activityCards.complete(workflow, options);
       },
       upsertContribution: (subject, contribution) => chatCardAdapter.upsertContribution(subject, contribution),
-      removeContribution: (subject, id) => chatCardAdapter.removeContribution(subject, id)
+      removeContribution: (subject, id) => chatCardAdapter.removeContribution(subject, id),
+      createResultsCard: options => resultsCards.create(options),
+      getResultsCardDefaults: () => resultsCards.getDefaults()
     });
 
     this.constants = Object.freeze({
@@ -304,7 +313,27 @@ export class ActionEffects5eApi {
       getPreferredController: (options) => compatibility.getPreferredController(options)
     });
 
+    this.declarations = Object.freeze({
+      registerFamily: definition => declarationFamilies.register(definition),
+      getFamily: id => declarationFamilies.get(id),
+      listFamilies: () => declarationFamilies.list(),
+      validateRecord: (family, record) => declarationFamilies.validateRecord(family, record),
+      registerConsumer: (family, id, consumer) => declarationFamilies.registerConsumer(family, id, consumer),
+      consume: (family, id, entries, context) => declarationFamilies.consume(family, id, entries, context),
+      read: (item, family) => itemDeclarations.read(item, family),
+      discover: items => itemDeclarations.discover(items),
+      evaluate: (entry, context) => itemDeclarations.evaluate(entry, context),
+      resolveGrants: request => itemDeclarations.resolveGrants(request),
+      previewMigration: (item, family) => itemDeclarations.migrate(item, family)
+    });
+
     this.authoring = Object.freeze({
+      itemOptions: Object.freeze({
+        canEdit: item => itemOptionsAuthoring.canEdit(item),
+        createDraft: item => itemOptionsAuthoring.createDraft(item),
+        save: draft => itemOptionsAuthoring.save(draft),
+        openEditor: item => catMetadataContextMenu.openOptionsEditor(item)
+      }),
       cat: Object.freeze({
         isValidVersion: (value) => catMetadataAuthoring.isValidVersion(value),
         validateItem: (document) => catMetadataAuthoring.validateItem(document),
@@ -403,6 +432,15 @@ export class ActionEffects5eApi {
     });
     this.sme = smeApi;
     this.spellModifiers = smeApi;
+
+    this.metamagic = Object.freeze({
+      readDeclaration: item => metamagicDeclarations.read(item),
+      reconcile: (actor, context) => metamagicDeclarations.compile(actor, context),
+      begin: (workflow, options) => metamagicCasting.begin(workflow, options),
+      getCasting: subject => metamagicCasting.get(subject),
+      getRecentCastings: () => metamagicCasting.recent(),
+      eventIdentity: (castingId, event) => metamagicCasting.eventIdentity(castingId, event)
+    });
 
     this.activities = Object.freeze({
       execute: (request) => activities.execute(request),

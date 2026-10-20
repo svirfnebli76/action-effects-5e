@@ -281,7 +281,8 @@ export class ChoicePromptService {
     const dialogConfig = {
       window: { title: payload.title },
       classes: [`${MODULE_ID}-choice-prompt`],
-      content: `<div class="ae5e-choice-prompt"><p>${this.#escape(payload.prompt)}</p></div>`,
+      content: `<div class="ae5e-choice-prompt"><p>${this.#escape(payload.prompt)}</p>${choices.some(choice => choice.disabled)
+        ? `<ul>${choices.filter(choice => choice.disabled).map(choice => `<li>${this.#escape(choice.label)}: ${this.#escape(choice.detail ?? "Unavailable")}</li>`).join("")}</ul>` : ""}</div>`,
       buttons,
       modal: false,
       rejectClose: false

@@ -2,6 +2,20 @@
 
 Action Effects 5E (AE5E) provides reusable D&D5e automation infrastructure for Foundry VTT. Individual Items remain responsible for their own game rules; AE5E provides generic capabilities that multiple unrelated automations can reuse.
 
+Metamagic Development 3 follows the [approved build/test plan](docs/metamagic-approved-build-and-test-plan.md)
+and [handoff](docs/metamagic-development-3-handoff.md). **v0.4.5.38** keeps
+console wording in Item-owned CAT macros and connects the verified declaration editor to CAT Embedded Item macros. The base Item owns the
+chooser; option Items own their rules. Learned options are discovered from the
+actor's Items automatically. The retired singleton/world-Macro preview and its
+test installer are removed at the user's request.
+
+See [source-overlay installation and manual Item authoring](docs/metamagic-development-3-authoring.md).
+Preserve the installed `packs/` folder when updating source so your newly authored
+compendium Items survive. No compendiums, assets or Sneak Attack implementation
+are changed. The authoring menu remains GM-only in approved AE5E compendiums.
+The new CAT casting path requires guided live Foundry acceptance; the earlier
+[Stage 1 documents](docs/metamagic-stage-1-contract.md) are historical evidence.
+
 ## Architecture boundary
 
 AE5E runtime may own reusable infrastructure such as:
