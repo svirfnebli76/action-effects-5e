@@ -1,0 +1,95 @@
+# Generic broker-choice and casting-phase infrastructure
+
+AE5E v0.4.5.40 adds reusable lifecycle and chooser services. These services do
+not contain Metamagic option names, feature rules, or feature-specific wording.
+Items and family consumers remain responsible for those decisions.
+
+## Casting phases
+
+`api.casting.phases` exposes semantic lifecycle ids:
+
+- `PRE_CAST` / `pre-cast`
+- `POST_TARGETING` / `post-targeting`
+- `ATTACK_RESOLVED` / `attack-resolved`
+- `DAMAGE_MUTABLE` / `damage-mutable`
+
+Register a consumer with:
+
+```js
+const release = api.casting.registerPhaseConsumer("my-feature", {
+  phases: [api.casting.phases.PRE_CAST],
+  priority: 0,
+  async handler(event) {
+    // Item/family code decides whether this event matters.
+    return true;
+  }
+});
+```
+
+The event contains the live workflow/Activity/Actor plus generic casting facts.
+Only phases marked cancellation-safe may propagate `false` to the source hook.
+Later phases fail open so a consumer cannot unwind an already-progressed cast.
+
+## Broker chooser
+
+`api.prompts.chooseBroker(options)` routes to the active controlling player with
+GM fallback and returns one of three explicit outcomes:
+
+```js
+{ outcome: "confirm", selectedIds: ["option-id"], controllerUserId }
+{ outcome: "decline", selectedIds: [], controllerUserId }
+{ outcome: "abort", selectedIds: [], controllerUserId }
+```
+
+The caller supplies every visible feature string. Supported generic fields
+include:
+
+```js
+{
+  title,
+  prompt,
+  banner,
+  choices: [{
+    id,
+    label,
+    description,
+    cost,
+    costLabel,
+    selectionCost,
+    disabled,
+    advisories: [],
+    reasons: []
+  }],
+  resource: {
+    current,
+    max,
+    summary: "{remaining}/{max}"
+  },
+  selectionCapacity,
+  selectionCapacityReason,
+  resourceInsufficientReason,
+  confirmLabel,
+  declineLabel,
+  closeOutcome: "abort" // or "decline"
+}
+```
+
+The chooser projects resource usage locally while checkboxes change. It does not
+write resources. Confirmation is revalidated against the declared generic
+resource/capacity envelope; the feature transaction remains responsible for its
+authoritative state/resource checks and native Foundry/D&D5e consumption.
+
+## Metamagic collection extension
+
+Metamagic option declarations may now optionally declare generic `phases` and
+`selectionCost`. Existing option declarations without `phases` continue to
+participate in `pre-cast` for compatibility.
+
+The Metamagic casting bridge preserves Item-owned `description`,
+`advisory`/`advisories`, `reason`/`reasons`, and
+`unaffordableReason` offer data. It also exposes the current native resource
+snapshot to the option's offer call so the Item can own its displayed
+affordability wording.
+
+v0.4.5.40 does not add option-specific late-phase execution rules. The generic
+phase dispatcher is the reusable trigger foundation for later Item integrations.
