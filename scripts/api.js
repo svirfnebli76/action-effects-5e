@@ -681,7 +681,7 @@ export class ActionEffects5eApi {
     });
 
     this.casting = Object.freeze({
-      phases: castingPhases.getPhases(),
+      phases: Object.freeze(castingPhases.getPhases()),
       registerPhaseConsumer: (id, config) => castingPhases.register(id, config),
       unregisterPhaseConsumer: (id) => castingPhases.unregister(id),
       dispatchPhase: (phase, workflow, options) => castingPhases.dispatch(phase, workflow, options),
