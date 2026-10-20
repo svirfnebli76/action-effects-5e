@@ -109,6 +109,7 @@ export class BrokerChoicePromptService {
     resource = null,
     selectionCapacity = null,
     selectionCapacityReason = null,
+    resourceInsufficientReason = null,
     role = SELECTION_INDICATOR_ROLES.RESPONDER,
     reason = "broker-choice-prompt",
     playSound = true,
@@ -150,6 +151,7 @@ export class BrokerChoicePromptService {
       },
       selectionCapacity: selectionCapacity == null ? null : Number(selectionCapacity),
       selectionCapacityReason: selectionCapacityReason == null ? null : String(selectionCapacityReason),
+      resourceInsufficientReason: resourceInsufficientReason == null ? null : String(resourceInsufficientReason),
       tokenUuid: controller.tokenUuid ?? token?.document?.uuid ?? token?.uuid ?? tokenUuid ?? null,
       actorUuid: controller.actorUuid ?? actor?.uuid ?? actorUuid ?? null,
       role,
@@ -175,6 +177,15 @@ export class BrokerChoicePromptService {
       const selectedIds = [...new Set(asArray(response?.selectedIds).map(String))].filter(id => validIds.has(id));
       if (outcome === "confirm") {
         if (!selectedIds.length) throw new Error("AE5E broker prompt confirmed without a valid selection.");
+        const selectedChoices = normalized.filter(choice => selectedIds.includes(choice.id));
+        const selectionUsed = selectedChoices.reduce((sum, choice) => sum + choice.selectionCost, 0);
+        const selectedCost = selectedChoices.reduce((sum, choice) => sum + choice.cost, 0);
+        if (selectionCapacity != null && selectionUsed > selectionCapacity) {
+          throw new Error("AE5E broker prompt returned a selection above the declared capacity.");
+        }
+        if (resource != null && selectedCost > Number(resource.current)) {
+          throw new Error("AE5E broker prompt returned a selection above the declared resource balance.");
+        }
         this.#stats.confirmations += 1;
       } else if (outcome === "abort") this.#stats.aborts += 1;
       else this.#stats.declines += 1;
@@ -340,7 +351,15 @@ export class BrokerChoicePromptService {
       const temporarilyBlocked = !choice.disabled && !checked && !canAdd(choice);
       const disabled = choice.disabled || temporarilyBlocked;
       const lines = [...choice.advisories, ...choice.reasons];
-      if (temporarilyBlocked && payload.selectionCapacityReason) lines.push(String(payload.selectionCapacityReason));
+      if (temporarilyBlocked) {
+        const current = totals();
+        if (payload.selectionCapacity != null
+          && current.selectionUsed + choice.selectionCost > Number(payload.selectionCapacity)
+          && payload.selectionCapacityReason) lines.push(String(payload.selectionCapacityReason));
+        if (payload.resource && choice.cost > current.remaining && payload.resourceInsufficientReason) {
+          lines.push(String(payload.resourceInsufficientReason));
+        }
+      }
       return '<label class="ae5e-broker-option'
         + (choice.disabled ? " is-disabled" : "")
         + (temporarilyBlocked ? " is-blocked" : "")
