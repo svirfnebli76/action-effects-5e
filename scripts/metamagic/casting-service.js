@@ -162,11 +162,12 @@ export class MetamagicCastingService {
     finally { delete record.preparing; }
   }
 
-  async #optionResult(option, phase, record) {
+  async #optionResult(option, phase, record, extraContext = {}) {
     return this.#executors.execute({ actor: record.actor, sourceUuid: option.sourceUuid, identity: option.identity,
       family: "metamagic", declaration: option.declaration, kind: "option", phase,
       context: { castingId: record.castingId, actor: record.actor, workflow: record.workflow,
-        activity: record.workflow.activity, item: record.workflow.activity.item, initiatorUserId: record.initiatorUserId } });
+        activity: record.workflow.activity, item: record.workflow.activity.item, initiatorUserId: record.initiatorUserId,
+        ...extraContext } });
   }
 
   async #offers(compiled, record, phase = "pre-cast") {
@@ -179,14 +180,28 @@ export class MetamagicCastingService {
       const declaredPhases = option.declaration.phases ?? ["pre-cast"];
       if (!declaredPhases.includes(phase)) continue;
       let result;
-      try { result = await this.#optionResult(option, "offer", record); }
-      catch (error) { result = { eligible: false, reason: error.message }; }
+      try {
+        result = await this.#optionResult(option, "offer", record, {
+          resource: {
+            identifier: compiled.mainDeclaration.resource?.identifier ?? null,
+            itemId: compiled.resourceId,
+            uuid: compiled.resourceUuid,
+            available,
+            maximum: Number.isFinite(maximum) ? maximum : available,
+            cost: option.cost
+          }
+        });
+      } catch (error) { result = { eligible: false, reason: error.message }; }
       const eligible = result?.eligible === true;
       const affordable = option.cost <= available;
-      const reasons = [
+      const eligibilityReasons = [
         ...(Array.isArray(result?.reasons) ? result.reasons : []),
         ...(result?.reason ? [result.reason] : [])
       ].map(String).filter(Boolean);
+      const affordabilityReason = !affordable
+        ? String(result?.unaffordableReason ?? "Insufficient resource uses.")
+        : null;
+      const reasons = [...eligibilityReasons, ...(affordabilityReason ? [affordabilityReason] : [])];
       const advisories = [
         ...(Array.isArray(result?.advisories) ? result.advisories : []),
         ...(result?.advisory ? [result.advisory] : [])
@@ -199,6 +214,7 @@ export class MetamagicCastingService {
         maximum: Number.isFinite(maximum) ? maximum : available,
         eligible,
         affordable,
+        description: typeof result?.description === "string" ? result.description : option.declaration.tooltip,
         disabled: !eligible || !affordable,
         reason,
         reasons,
