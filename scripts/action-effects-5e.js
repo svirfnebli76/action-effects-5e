@@ -35,6 +35,8 @@ import { BatchDisplacementService } from "./displacement/batch-displacement-serv
 import { SelectionIndicatorService } from "./ui/selection-indicator-service.js";
 import { ExternalPromptBridgeService } from "./ui/external-prompt-bridge-service.js";
 import { ChoicePromptService } from "./ui/choice-prompt-service.js";
+import { BrokerChoicePromptService } from "./ui/broker-choice-prompt-service.js";
+import { CastingPhaseService } from "./casting/casting-phase-service.js";
 import { Crosshair3dGeometryService } from "./crosshairs3d/geometry-service.js";
 import { Crosshair3dCellRasterizerService } from "./crosshairs3d/cell-rasterizer-service.js";
 import { Crosshair3dTokenVolumeService } from "./crosshairs3d/token-volume-service.js";
@@ -177,6 +179,13 @@ const crosshairs3dPropagationEnvironment = new Crosshair3dFoundryPropagationEnvi
 const reactionRegistry = new ReactionRegistry();
 const reactionAuthority = new ReactionAuthorityService({ socket });
 const choicePrompts = new ChoicePromptService({ socket, selectionIndicator, authority: reactionAuthority });
+const brokerChoicePrompts = new BrokerChoicePromptService({
+  socket,
+  selectionIndicator,
+  controllerResolver: choicePrompts,
+  authority: reactionAuthority
+});
+const castingPhases = new CastingPhaseService();
 const reactionDiscovery = new ReactionDiscoveryService({ registry: reactionRegistry, authority: reactionAuthority });
 const reactionOrdering = new ReactionOrderingService();
 const reactionDialogs = new ReactionDialogService({ socket, selectionIndicator });
@@ -388,6 +397,8 @@ const tests = new TestHarness({
   selectionIndicator,
   externalPromptBridge,
   choicePrompts,
+  brokerChoicePrompts,
+  castingPhases,
   crosshairs3dGeometry,
   crosshairs3dCells,
   crosshairs3dTokens,
@@ -526,6 +537,8 @@ const api = new ActionEffects5eApi({
   selectionIndicator,
   externalPromptBridge,
   choicePrompts,
+  brokerChoicePrompts,
+  castingPhases,
   crosshairs3dGeometry,
   crosshairs3dCells,
   crosshairs3dTokens,
@@ -615,6 +628,7 @@ Hooks.once("ready", async () => {
   automatedAnimations.initialize();
   reactionEvents.initialize();
   spellModifierEvents.initialize();
+  castingPhases.initialize();
   metamagicCasting.initialize();
   ongoingEffects.initialize();
   compatibility.refresh();
