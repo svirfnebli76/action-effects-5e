@@ -57,6 +57,7 @@ include:
     costLabel,
     selectionCost,
     disabled,
+    acceptances: [],
     advisories: [],
     reasons: []
   }],
@@ -78,6 +79,10 @@ include:
     optionName: { fontSize, fontWeight },
     optionDescription: { fontSize, fontWeight },
     optionCost: { fontSize, fontWeight },
+    acceptance: {
+      fontSize, fontWeight, textColor, borderColor, backgroundColor,
+      backgroundOpacity, borderOpacity
+    },
     advisory: {
       fontSize, fontWeight, textColor, borderColor, backgroundColor,
       backgroundOpacity, borderOpacity
@@ -92,9 +97,11 @@ include:
 }
 ```
 
-Advisories and reasons are rendered separately: advisories default to AE5E's
-responder-selection orange (`#ff9f1c`) while reasons and temporary
-resource/capacity blocks retain the existing red warning treatment. Presentation
+Acceptances, advisories and reasons are rendered separately. Acceptances default
+to AE5E's originator-selection green (`#18cc46`), advisories default to AE5E's
+responder-selection orange (`#ff9f1c`), and reasons plus temporary
+resource/capacity blocks retain the existing red warning treatment. When more
+than one status type is present, the order is acceptance, advisory, then reason. Presentation
 overrides are optional; omitted fields retain AE5E defaults. Font sizes are
 numeric pixel values from 8 through 48, font weights are 100-900 in 100-step
 increments, colors are 3- or 6-digit hex values, and opacity values are 0-1.
@@ -112,8 +119,11 @@ Metamagic option declarations may now optionally declare generic `phases` and
 participate in `pre-cast` for compatibility.
 
 The Metamagic casting bridge preserves Item-owned `description`,
-`advisory`/`advisories`, `reason`/`reasons`, and
-`unaffordableReason` offer data. It also exposes the current native resource
+`acceptance`/`acceptances`, `advisory`/`advisories`,
+`reason`/`reasons`, and `unaffordableReason` offer data. When an option
+is unaffordable, an Item-owned `unaffordableReason` is also used as the
+singular compatibility reason instead of adding a second generic affordability
+message. It also exposes the current native resource
 snapshot to the option's offer call so the Item can own its displayed
 affordability wording.
 
