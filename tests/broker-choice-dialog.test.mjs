@@ -33,8 +33,14 @@ function setupDialog({ failRender = false } = {}) {
         },
         querySelectorAll() { return this.rows; }
       };
-      this.element = { querySelector: selector => selector.includes("host")
-        ? host : this.buttons.get(selector.includes("confirm") ? "confirm" : "decline") };
+      this.styles = new Map();
+      this.element = {
+        style: {
+          setProperty: (name, value) => this.styles.set(name, value)
+        },
+        querySelector: selector => selector.includes("host")
+          ? host : this.buttons.get(selector.includes("confirm") ? "confirm" : "decline")
+      };
       instances.push(this);
     }
     async render() { if (failRender) throw new Error("render failed"); }
@@ -172,4 +178,98 @@ test("render failure releases the indicator and propagates the error", async () 
   await assert.rejects(service.choose({ title: "Feature", choices: [{ id: "one", label: "One" }] }), /render failed/);
   assert.equal(leases.length, 1);
   assert.deepEqual(releases, leases);
+});
+
+
+test("advisories and reasons render in separate semantic boxes with advisories first", async () => {
+  const { open } = setupDialog();
+  const { pending, dialog } = await open({
+    choices: [{
+      id: "one",
+      label: "One",
+      advisories: ["Advisory text"],
+      reasons: ["Reason text"]
+    }]
+  });
+
+  const html = dialog.host.html;
+  const advisory = html.indexOf("ae5e-broker-status is-advisory");
+  const reason = html.indexOf("ae5e-broker-status is-reason");
+  assert.ok(advisory >= 0);
+  assert.ok(reason > advisory);
+  assert.ok(html.includes("Advisory text"));
+  assert.ok(html.includes("Reason text"));
+
+  await dialog.close();
+  await pending;
+});
+
+test("temporary resource/capacity blocks render as reasons, not advisories", async () => {
+  const { open } = setupDialog();
+  const { pending, dialog } = await open({
+    choices: [
+      { id: "one", label: "One", cost: 1 },
+      { id: "two", label: "Two", cost: 2, advisories: ["Still informational"] }
+    ],
+    selectionCapacity: 1,
+    selectionCapacityReason: "Capacity warning",
+    resource: { current: 2, max: 4, summary: "{remaining}/{max}" },
+    resourceInsufficientReason: "Resource warning"
+  });
+
+  dialog.toggle("one");
+  const html = dialog.host.html;
+  assert.ok(html.includes("ae5e-broker-status is-advisory"));
+  assert.ok(html.includes("ae5e-broker-status is-reason"));
+  assert.ok(html.includes("Capacity warning"));
+  assert.ok(html.includes("Resource warning"));
+
+  await dialog.close();
+  await pending;
+});
+
+test("presentation overrides become dialog-scoped CSS variables", async () => {
+  const { open } = setupDialog();
+  const { pending, dialog } = await open({
+    presentation: {
+      title: { fontSize: 18, fontWeight: 700 },
+      prompt: { fontSize: 15, fontWeight: 500 },
+      resource: { fontSize: 16, fontWeight: 800 },
+      optionName: { fontSize: 15, fontWeight: 600 },
+      optionDescription: { fontSize: 13, fontWeight: 400 },
+      optionCost: { fontSize: 13, fontWeight: 500 },
+      advisory: {
+        fontSize: 14,
+        fontWeight: 700,
+        textColor: "#abc",
+        borderColor: "#ff9f1c",
+        borderOpacity: 0.5,
+        backgroundColor: "#123456",
+        backgroundOpacity: 0.25
+      },
+      reason: {
+        fontSize: 15,
+        fontWeight: 800,
+        textColor: "#f05b5b",
+        borderOpacity: 0.75,
+        backgroundOpacity: 0.1
+      },
+      confirmButton: { fontSize: 14, fontWeight: 700 },
+      declineButton: { fontSize: 13, fontWeight: 500 }
+    }
+  });
+
+  assert.equal(dialog.styles.get("--ae5e-broker-title-font-size"), "18px");
+  assert.equal(dialog.styles.get("--ae5e-broker-title-font-weight"), "700");
+  assert.equal(dialog.styles.get("--ae5e-broker-option-description-font-size"), "13px");
+  assert.equal(dialog.styles.get("--ae5e-broker-advisory-text-color"), "#abc");
+  assert.equal(dialog.styles.get("--ae5e-broker-advisory-border-color"), "rgba(255, 159, 28, 0.5)");
+  assert.equal(dialog.styles.get("--ae5e-broker-advisory-background-color"), "rgba(18, 52, 86, 0.25)");
+  assert.equal(dialog.styles.get("--ae5e-broker-reason-border-color"), "rgba(220, 70, 70, 0.75)");
+  assert.equal(dialog.styles.get("--ae5e-broker-reason-background-color"), "rgba(115, 24, 24, 0.1)");
+  assert.equal(dialog.styles.get("--ae5e-broker-confirm-button-font-size"), "14px");
+  assert.equal(dialog.styles.get("--ae5e-broker-decline-button-font-weight"), "500");
+
+  await dialog.close();
+  await pending;
 });

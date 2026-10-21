@@ -70,9 +70,35 @@ include:
   resourceInsufficientReason,
   confirmLabel,
   declineLabel,
-  closeOutcome: "abort" // or "decline"
+  closeOutcome: "abort", // or "decline"
+  presentation: {
+    title: { fontSize, fontWeight },
+    prompt: { fontSize, fontWeight },
+    resource: { fontSize, fontWeight },
+    optionName: { fontSize, fontWeight },
+    optionDescription: { fontSize, fontWeight },
+    optionCost: { fontSize, fontWeight },
+    advisory: {
+      fontSize, fontWeight, textColor, borderColor, backgroundColor,
+      backgroundOpacity, borderOpacity
+    },
+    reason: {
+      fontSize, fontWeight, textColor, borderColor, backgroundColor,
+      backgroundOpacity, borderOpacity
+    },
+    confirmButton: { fontSize, fontWeight },
+    declineButton: { fontSize, fontWeight }
+  }
 }
 ```
+
+Advisories and reasons are rendered separately: advisories default to AE5E's
+responder-selection orange (`#ff9f1c`) while reasons and temporary
+resource/capacity blocks retain the existing red warning treatment. Presentation
+overrides are optional; omitted fields retain AE5E defaults. Font sizes are
+numeric pixel values from 8 through 48, font weights are 100-900 in 100-step
+increments, colors are 3- or 6-digit hex values, and opacity values are 0-1.
+Status text remains escaped plain text; this API does not allow arbitrary HTML.
 
 The chooser projects resource usage locally while checkboxes change. It does not
 write resources. Confirmation is revalidated against the declared generic

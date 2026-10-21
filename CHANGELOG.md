@@ -1,3 +1,10 @@
+# v0.4.5.42 — Broker status semantics and presentation overrides
+
+- Separates advisory and reason/warning status boxes in the generic broker chooser. Advisories use AE5E's responder-selection orange (`#ff9f1c`) by default; reasons and temporary selection-capacity/resource blocks retain the existing red warning treatment. When both are present, the advisory renders first and the warning renders separately.
+- Adds optional, validated macro/API typography overrides for every visible broker text surface: window title, prompt, resource summary, option name, option description, option cost, advisory, reason/warning, confirm button, and decline/continue button. AE5E defaults remain unchanged when overrides are omitted.
+- Adds optional advisory/reason status-box overrides for text, border and background colors plus independent background/border opacity. Colors are restricted to safe hex values; font sizes, weights and opacity are bounded. Status text remains escaped plain text and arbitrary HTML/emphasis is not introduced.
+- Existing broker callers remain compatible. No Metamagic Broker, Distant Spell, CAT configuration, declaration, compendium, or feature-specific rule changes are required.
+
 # v0.4.5.41 — Broker chooser DialogV2 compatibility fix
 
 - Fixes the first Metamagic chooser failing to open with Foundry's "You must define at least one entry in config.buttons" error. The generic broker now configures real Confirm and Continue actions instead of an empty DialogV2 button list and custom HTML buttons.
