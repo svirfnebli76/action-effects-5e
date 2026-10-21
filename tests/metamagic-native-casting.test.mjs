@@ -395,3 +395,49 @@ test("missing post-use override is not accepted with an incorrect parent fallbac
     assert.equal(f.original.system.range.value, 30);
   }
 });
+
+
+test("Metamagic offers preserve acceptances and prefer Item-owned affordability wording", async () => {
+  const f = setup({ available: 0 });
+  const captureKey = "__ae5eMetamagicOfferCapture";
+  const previous = globalThis[captureKey];
+
+  f.option.flags.cat.embeddedMacros[0].macros[0].macro = `
+if (data?.phase !== "offer") return;
+return data.respond(document, macroName, {
+  eligible: true,
+  acceptance: "Single acceptance.",
+  acceptances: ["Array acceptance."],
+  unaffordableReason: "You do not have enough custom points."
+});
+`;
+
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = `
+if (data?.phase !== "begin") return;
+const result = await data.context.begin(document, async request => {
+  globalThis.__ae5eMetamagicOfferCapture = {
+    reason: request.offers[0].reason,
+    reasons: request.offers[0].reasons,
+    acceptances: request.offers[0].acceptances
+  };
+  return { outcome: "decline", selectedIds: [] };
+});
+return data.respond(document, macroName, result);
+`;
+
+  try {
+    await f.service.begin(f.workflow);
+    assert.deepEqual(globalThis[captureKey], {
+      reason: "You do not have enough custom points.",
+      reasons: ["You do not have enough custom points."],
+      acceptances: ["Array acceptance.", "Single acceptance."]
+    });
+    assert.equal(
+      JSON.stringify(globalThis[captureKey]).includes("Insufficient resource uses."),
+      false
+    );
+  } finally {
+    if (previous === undefined) delete globalThis[captureKey];
+    else globalThis[captureKey] = previous;
+  }
+});

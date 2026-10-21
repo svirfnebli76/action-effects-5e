@@ -16,6 +16,15 @@ const BROKER_PRESENTATION_FIELDS = Object.freeze({
   optionName: Object.freeze(["fontSize", "fontWeight"]),
   optionDescription: Object.freeze(["fontSize", "fontWeight"]),
   optionCost: Object.freeze(["fontSize", "fontWeight"]),
+  acceptance: Object.freeze([
+    "fontSize",
+    "fontWeight",
+    "textColor",
+    "borderColor",
+    "backgroundColor",
+    "backgroundOpacity",
+    "borderOpacity"
+  ]),
   advisory: Object.freeze([
     "fontSize",
     "fontWeight",
@@ -39,6 +48,13 @@ const BROKER_PRESENTATION_FIELDS = Object.freeze({
 });
 
 const BROKER_STATUS_DEFAULTS = Object.freeze({
+  acceptance: Object.freeze({
+    textColor: "#18cc46",
+    borderColor: "#18cc46",
+    backgroundColor: "#18cc46",
+    backgroundOpacity: 0.14,
+    borderOpacity: 0.6
+  }),
   advisory: Object.freeze({
     textColor: "#ff9f1c",
     borderColor: "#ff9f1c",
@@ -79,6 +95,13 @@ const BROKER_PRESENTATION_VARIABLES = Object.freeze({
   optionCost: Object.freeze({
     fontSize: "--ae5e-broker-option-cost-font-size",
     fontWeight: "--ae5e-broker-option-cost-font-weight"
+  }),
+  acceptance: Object.freeze({
+    fontSize: "--ae5e-broker-acceptance-font-size",
+    fontWeight: "--ae5e-broker-acceptance-font-weight",
+    textColor: "--ae5e-broker-acceptance-text-color",
+    borderColor: "--ae5e-broker-acceptance-border-color",
+    backgroundColor: "--ae5e-broker-acceptance-background-color"
   }),
   advisory: Object.freeze({
     fontSize: "--ae5e-broker-advisory-font-size",
@@ -190,7 +213,7 @@ function presentationVariables(presentation) {
     if (style.fontSize !== undefined) variables[names.fontSize] = style.fontSize + "px";
     if (style.fontWeight !== undefined) variables[names.fontWeight] = String(style.fontWeight);
 
-    if (slot !== "advisory" && slot !== "reason") continue;
+    if (!["acceptance", "advisory", "reason"].includes(slot)) continue;
 
     const defaults = BROKER_STATUS_DEFAULTS[slot];
     if (style.textColor !== undefined) variables[names.textColor] = style.textColor;
@@ -301,7 +324,7 @@ export class BrokerChoicePromptService {
       if (!Number.isSafeInteger(selectionCost) || selectionCost < 0) return { valid: false, reason: "invalid-selection-cost" };
       if (choice.description != null && typeof choice.description !== "string") return { valid: false, reason: "invalid-description" };
       if (choice.costLabel != null && typeof choice.costLabel !== "string") return { valid: false, reason: "invalid-cost-label" };
-      for (const field of ["advisories", "reasons"]) {
+      for (const field of ["acceptances", "advisories", "reasons"]) {
         if (choice[field] !== undefined && (!Array.isArray(choice[field])
           || choice[field].some(value => typeof value !== "string" || !value.trim()))) {
           return { valid: false, reason: "invalid-" + field };
@@ -347,6 +370,7 @@ export class BrokerChoicePromptService {
       costLabel: choice.costLabel == null ? String(choice.cost ?? 0) : String(choice.costLabel),
       selectionCost: Number(choice.selectionCost ?? 1),
       disabled: choice.disabled === true,
+      acceptances: (choice.acceptances ?? []).map(String),
       advisories: (choice.advisories ?? []).map(String),
       reasons: (choice.reasons ?? []).map(String)
     }));
@@ -477,6 +501,7 @@ export class BrokerChoicePromptService {
       costLabel: choice.costLabel == null ? String(choice.cost ?? 0) : String(choice.costLabel),
       selectionCost: Number(choice.selectionCost ?? 1),
       disabled: choice.disabled === true,
+      acceptances: (choice.acceptances ?? []).map(String),
       advisories: (choice.advisories ?? []).map(String),
       reasons: (choice.reasons ?? []).map(String)
     }));
@@ -571,6 +596,7 @@ export class BrokerChoicePromptService {
       const checked = selected.has(choice.id);
       const temporarilyBlocked = !choice.disabled && !checked && !canAdd(choice);
       const disabled = choice.disabled || temporarilyBlocked;
+      const acceptances = [...choice.acceptances];
       const advisories = [...choice.advisories];
       const reasons = [...choice.reasons];
       if (temporarilyBlocked) {
@@ -593,6 +619,7 @@ export class BrokerChoicePromptService {
         + '<span class="ae5e-broker-option-cost">' + this.#escape(choice.costLabel) + "</span>"
         + "</span>"
         + (choice.description ? '<span class="ae5e-broker-option-description">' + this.#escape(choice.description) + "</span>" : "")
+        + statusHtml(acceptances, "acceptance")
         + statusHtml(advisories, "advisory")
         + statusHtml(reasons, "reason")
         + "</label>";

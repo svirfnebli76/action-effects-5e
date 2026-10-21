@@ -273,3 +273,62 @@ test("presentation overrides become dialog-scoped CSS variables", async () => {
   await dialog.close();
   await pending;
 });
+
+
+test("acceptance, advisory, and reason boxes render in semantic order", async () => {
+  const { open } = setupDialog();
+  const { pending, dialog } = await open({
+    choices: [{
+      id: "one",
+      label: "One",
+      acceptances: ["Acceptance text"],
+      advisories: ["Advisory text"],
+      reasons: ["Reason text"]
+    }]
+  });
+
+  const html = dialog.host.html;
+  const acceptance = html.indexOf("ae5e-broker-status is-acceptance");
+  const advisory = html.indexOf("ae5e-broker-status is-advisory");
+  const reason = html.indexOf("ae5e-broker-status is-reason");
+  assert.ok(acceptance >= 0);
+  assert.ok(advisory > acceptance);
+  assert.ok(reason > advisory);
+  assert.ok(html.includes("Acceptance text"));
+  assert.ok(html.includes("Advisory text"));
+  assert.ok(html.includes("Reason text"));
+
+  await dialog.close();
+  await pending;
+});
+
+test("acceptance presentation overrides become dialog-scoped CSS variables", async () => {
+  const { open } = setupDialog();
+  const { pending, dialog } = await open({
+    choices: [{
+      id: "one",
+      label: "One",
+      acceptances: ["Acceptance text"]
+    }],
+    presentation: {
+      acceptance: {
+        fontSize: 14,
+        fontWeight: 700,
+        textColor: "#0f0",
+        borderColor: "#18cc46",
+        borderOpacity: 0.5,
+        backgroundColor: "#123456",
+        backgroundOpacity: 0.25
+      }
+    }
+  });
+
+  assert.equal(dialog.styles.get("--ae5e-broker-acceptance-font-size"), "14px");
+  assert.equal(dialog.styles.get("--ae5e-broker-acceptance-font-weight"), "700");
+  assert.equal(dialog.styles.get("--ae5e-broker-acceptance-text-color"), "#0f0");
+  assert.equal(dialog.styles.get("--ae5e-broker-acceptance-border-color"), "rgba(24, 204, 70, 0.5)");
+  assert.equal(dialog.styles.get("--ae5e-broker-acceptance-background-color"), "rgba(18, 52, 86, 0.25)");
+
+  await dialog.close();
+  await pending;
+});

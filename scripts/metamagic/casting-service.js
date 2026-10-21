@@ -202,12 +202,16 @@ export class MetamagicCastingService {
         ? String(result?.unaffordableReason ?? "Insufficient resource uses.")
         : null;
       const reasons = [...eligibilityReasons, ...(affordabilityReason ? [affordabilityReason] : [])];
+      const acceptances = [
+        ...(Array.isArray(result?.acceptances) ? result.acceptances : []),
+        ...(result?.acceptance ? [result.acceptance] : [])
+      ].map(String).filter(Boolean);
       const advisories = [
         ...(Array.isArray(result?.advisories) ? result.advisories : []),
         ...(result?.advisory ? [result.advisory] : [])
       ].map(String).filter(Boolean);
       const reason = !eligible ? reasons[0] ?? "Not eligible for this casting."
-        : !affordable ? "Insufficient resource uses." : null;
+        : !affordable ? affordabilityReason : null;
       offers.push({
         ...option,
         available,
@@ -218,6 +222,7 @@ export class MetamagicCastingService {
         disabled: !eligible || !affordable,
         reason,
         reasons,
+        acceptances,
         advisories
       });
     }

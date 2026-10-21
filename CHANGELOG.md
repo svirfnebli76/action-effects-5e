@@ -1,3 +1,10 @@
+# v0.4.5.43 — Broker acceptance statuses and affordability wording
+
+- Adds a third generic broker status type for positive/accepted conditions. Item-supplied `acceptance`/`acceptances` render in a separate green box using AE5E's originator-selection green (`#18cc46`) by default, before orange advisories and red reasons/warnings.
+- Extends broker presentation overrides so acceptance boxes support the same validated font, text color, border color, background color and opacity controls as advisory/reason boxes. Existing callers remain unchanged when no acceptance data is supplied.
+- Preserves Metamagic Item-owned acceptance text through the casting offer bridge. Item-owned `unaffordableReason` now supplies both the compatibility singular reason and the reasons list, eliminating the redundant generic "Insufficient resource uses." line when custom affordability wording exists.
+- Adds regression coverage for acceptance validation/render order/presentation overrides and Metamagic acceptance plus affordability-message transport. No production Item, CAT macro, declaration or compendium data is changed automatically.
+
 # v0.4.5.42 — Broker status semantics and presentation overrides
 
 - Separates advisory and reason/warning status boxes in the generic broker chooser. Advisories use AE5E's responder-selection orange (`#ff9f1c`) by default; reasons and temporary selection-capacity/resource blocks retain the existing red warning treatment. When both are present, the advisory renders first and the warning renders separately.
