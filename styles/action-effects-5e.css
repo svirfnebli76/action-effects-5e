@@ -705,6 +705,10 @@
   max-width: min(550px, calc(100vw - 24px));
   max-height: 800px;
 }
+.ae5e-broker-choice-dialog .window-title {
+  font-size: var(--ae5e-broker-title-font-size, inherit);
+  font-weight: var(--ae5e-broker-title-font-weight, inherit);
+}
 .ae5e-broker-choice-dialog .window-content {
   padding: 0;
   overflow: hidden;
@@ -744,7 +748,8 @@
   margin: 0 auto 12px;
   max-width: 490px;
   text-align: center;
-  font-size: 14px;
+  font-size: var(--ae5e-broker-prompt-font-size, 14px);
+  font-weight: var(--ae5e-broker-prompt-font-weight, inherit);
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -753,8 +758,8 @@
   flex: 0 0 auto;
   margin: 0 0 14px;
   text-align: center;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--ae5e-broker-resource-font-size, 14px);
+  font-weight: var(--ae5e-broker-resource-font-weight, 700);
   line-height: 1.3;
 }
 .ae5e-broker-options {
@@ -787,13 +792,15 @@
 }
 .ae5e-broker-option-name {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--ae5e-broker-option-name-font-size, 14px);
+  font-weight: var(--ae5e-broker-option-name-font-weight, 700);
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
 .ae5e-broker-option-cost {
   padding-left: 10px;
-  font-size: 12px;
+  font-size: var(--ae5e-broker-option-cost-font-size, 12px);
+  font-weight: var(--ae5e-broker-option-cost-font-weight, inherit);
   line-height: 1.3;
   white-space: nowrap;
   text-align: right;
@@ -801,7 +808,8 @@
 .ae5e-broker-option-description {
   display: block;
   margin: 5px 0 0 32px;
-  font-size: 12px;
+  font-size: var(--ae5e-broker-option-description-font-size, 12px);
+  font-weight: var(--ae5e-broker-option-description-font-weight, inherit);
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -815,15 +823,25 @@
 .ae5e-broker-status {
   margin: 7px 0 0 32px;
   padding: 7px 9px;
-  border: 1px solid rgba(220, 70, 70, 0.6);
+  border: 1px solid;
   border-radius: 5px;
-  background: rgba(115, 24, 24, 0.22);
-  color: #f05b5b;
-  font-size: 12px;
-  font-weight: 600;
   line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.ae5e-broker-status.is-advisory {
+  border-color: var(--ae5e-broker-advisory-border-color, rgba(255, 159, 28, 0.6));
+  background: var(--ae5e-broker-advisory-background-color, rgba(255, 159, 28, 0.14));
+  color: var(--ae5e-broker-advisory-text-color, #ff9f1c);
+  font-size: var(--ae5e-broker-advisory-font-size, 12px);
+  font-weight: var(--ae5e-broker-advisory-font-weight, 600);
+}
+.ae5e-broker-status.is-reason {
+  border-color: var(--ae5e-broker-reason-border-color, rgba(220, 70, 70, 0.6));
+  background: var(--ae5e-broker-reason-background-color, rgba(115, 24, 24, 0.22));
+  color: var(--ae5e-broker-reason-text-color, #f05b5b);
+  font-size: var(--ae5e-broker-reason-font-size, 12px);
+  font-weight: var(--ae5e-broker-reason-font-weight, 600);
 }
 .ae5e-broker-status > div + div {
   margin-top: 4px;
@@ -837,6 +855,14 @@
 }
 .ae5e-broker-actions button {
   min-height: 42px;
+}
+.ae5e-broker-actions button[data-action="confirm"] {
+  font-size: var(--ae5e-broker-confirm-button-font-size, inherit);
+  font-weight: var(--ae5e-broker-confirm-button-font-weight, inherit);
+}
+.ae5e-broker-actions button[data-action="decline"] {
+  font-size: var(--ae5e-broker-decline-button-font-size, inherit);
+  font-weight: var(--ae5e-broker-decline-button-font-weight, inherit);
 }
 .ae5e-broker-actions button:disabled {
   opacity: 0.45;
