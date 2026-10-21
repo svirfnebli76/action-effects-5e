@@ -194,3 +194,59 @@ test("broker forwards presentation overrides without changing omitted defaults",
   });
   assert.equal(second.socket.calls[0].payload.presentation, null);
 });
+
+
+test("broker accepts green acceptance status data and validates its presentation overrides", async () => {
+  const { service, socket } = setup({ outcome: "decline", selectedIds: [] });
+  const request = {
+    title: "Feature Broker",
+    choices: [{
+      id: "one",
+      label: "Option One",
+      acceptances: ["Current target will be within range."],
+      advisories: ["Advisory"],
+      reasons: []
+    }],
+    presentation: {
+      acceptance: {
+        fontSize: 13,
+        fontWeight: 600,
+        textColor: "#18cc46",
+        borderColor: "#18cc46",
+        backgroundColor: "#18cc46",
+        backgroundOpacity: 0.14,
+        borderOpacity: 0.6
+      }
+    }
+  };
+
+  assert.equal(service.validateRequest(request).valid, true);
+  assert.equal(
+    service.validateRequest({
+      ...request,
+      choices: [{ id: "one", label: "Option One", acceptances: [""] }]
+    }).reason,
+    "invalid-acceptances"
+  );
+  assert.equal(
+    service.validateRequest({
+      ...request,
+      presentation: { acceptance: { textColor: "green" } }
+    }).reason,
+    "invalid-presentation-acceptance-textColor"
+  );
+
+  await service.choose(request);
+  assert.deepEqual(socket.calls[0].payload.choices[0].acceptances, [
+    "Current target will be within range."
+  ]);
+  assert.deepEqual(socket.calls[0].payload.presentation.acceptance, {
+    fontSize: 13,
+    fontWeight: 600,
+    textColor: "#18cc46",
+    borderColor: "#18cc46",
+    backgroundColor: "#18cc46",
+    backgroundOpacity: 0.14,
+    borderOpacity: 0.6
+  });
+});
