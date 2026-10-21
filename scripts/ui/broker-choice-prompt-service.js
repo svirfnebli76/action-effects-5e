@@ -9,6 +9,219 @@ function asArray(value) {
   return [];
 }
 
+const BROKER_PRESENTATION_FIELDS = Object.freeze({
+  title: Object.freeze(["fontSize", "fontWeight"]),
+  prompt: Object.freeze(["fontSize", "fontWeight"]),
+  resource: Object.freeze(["fontSize", "fontWeight"]),
+  optionName: Object.freeze(["fontSize", "fontWeight"]),
+  optionDescription: Object.freeze(["fontSize", "fontWeight"]),
+  optionCost: Object.freeze(["fontSize", "fontWeight"]),
+  advisory: Object.freeze([
+    "fontSize",
+    "fontWeight",
+    "textColor",
+    "borderColor",
+    "backgroundColor",
+    "backgroundOpacity",
+    "borderOpacity"
+  ]),
+  reason: Object.freeze([
+    "fontSize",
+    "fontWeight",
+    "textColor",
+    "borderColor",
+    "backgroundColor",
+    "backgroundOpacity",
+    "borderOpacity"
+  ]),
+  confirmButton: Object.freeze(["fontSize", "fontWeight"]),
+  declineButton: Object.freeze(["fontSize", "fontWeight"])
+});
+
+const BROKER_STATUS_DEFAULTS = Object.freeze({
+  advisory: Object.freeze({
+    textColor: "#ff9f1c",
+    borderColor: "#ff9f1c",
+    backgroundColor: "#ff9f1c",
+    backgroundOpacity: 0.14,
+    borderOpacity: 0.6
+  }),
+  reason: Object.freeze({
+    textColor: "#f05b5b",
+    borderColor: "#dc4646",
+    backgroundColor: "#731818",
+    backgroundOpacity: 0.22,
+    borderOpacity: 0.6
+  })
+});
+
+const BROKER_PRESENTATION_VARIABLES = Object.freeze({
+  title: Object.freeze({
+    fontSize: "--ae5e-broker-title-font-size",
+    fontWeight: "--ae5e-broker-title-font-weight"
+  }),
+  prompt: Object.freeze({
+    fontSize: "--ae5e-broker-prompt-font-size",
+    fontWeight: "--ae5e-broker-prompt-font-weight"
+  }),
+  resource: Object.freeze({
+    fontSize: "--ae5e-broker-resource-font-size",
+    fontWeight: "--ae5e-broker-resource-font-weight"
+  }),
+  optionName: Object.freeze({
+    fontSize: "--ae5e-broker-option-name-font-size",
+    fontWeight: "--ae5e-broker-option-name-font-weight"
+  }),
+  optionDescription: Object.freeze({
+    fontSize: "--ae5e-broker-option-description-font-size",
+    fontWeight: "--ae5e-broker-option-description-font-weight"
+  }),
+  optionCost: Object.freeze({
+    fontSize: "--ae5e-broker-option-cost-font-size",
+    fontWeight: "--ae5e-broker-option-cost-font-weight"
+  }),
+  advisory: Object.freeze({
+    fontSize: "--ae5e-broker-advisory-font-size",
+    fontWeight: "--ae5e-broker-advisory-font-weight",
+    textColor: "--ae5e-broker-advisory-text-color",
+    borderColor: "--ae5e-broker-advisory-border-color",
+    backgroundColor: "--ae5e-broker-advisory-background-color"
+  }),
+  reason: Object.freeze({
+    fontSize: "--ae5e-broker-reason-font-size",
+    fontWeight: "--ae5e-broker-reason-font-weight",
+    textColor: "--ae5e-broker-reason-text-color",
+    borderColor: "--ae5e-broker-reason-border-color",
+    backgroundColor: "--ae5e-broker-reason-background-color"
+  }),
+  confirmButton: Object.freeze({
+    fontSize: "--ae5e-broker-confirm-button-font-size",
+    fontWeight: "--ae5e-broker-confirm-button-font-weight"
+  }),
+  declineButton: Object.freeze({
+    fontSize: "--ae5e-broker-decline-button-font-size",
+    fontWeight: "--ae5e-broker-decline-button-font-weight"
+  })
+});
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function validFontSize(value) {
+  return Number.isFinite(value) && value >= 8 && value <= 48;
+}
+
+function validFontWeight(value) {
+  return Number.isSafeInteger(value) && value >= 100 && value <= 900 && value % 100 === 0;
+}
+
+function validHexColor(value) {
+  return typeof value === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value);
+}
+
+function validOpacity(value) {
+  return Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function validatePresentation(presentation) {
+  if (presentation == null) return { valid: true };
+  if (!isPlainObject(presentation)) return { valid: false, reason: "invalid-presentation" };
+
+  for (const [slot, style] of Object.entries(presentation)) {
+    const allowed = BROKER_PRESENTATION_FIELDS[slot];
+    if (!allowed || !isPlainObject(style)) {
+      return { valid: false, reason: "invalid-presentation-" + slot };
+    }
+
+    for (const [field, value] of Object.entries(style)) {
+      if (!allowed.includes(field)) {
+        return { valid: false, reason: "invalid-presentation-" + slot + "-" + field };
+      }
+      if (field === "fontSize" && !validFontSize(value)) {
+        return { valid: false, reason: "invalid-presentation-" + slot + "-fontSize" };
+      }
+      if (field === "fontWeight" && !validFontWeight(value)) {
+        return { valid: false, reason: "invalid-presentation-" + slot + "-fontWeight" };
+      }
+      if (["textColor", "borderColor", "backgroundColor"].includes(field) && !validHexColor(value)) {
+        return { valid: false, reason: "invalid-presentation-" + slot + "-" + field };
+      }
+      if (["backgroundOpacity", "borderOpacity"].includes(field) && !validOpacity(value)) {
+        return { valid: false, reason: "invalid-presentation-" + slot + "-" + field };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
+function normalizePresentation(presentation) {
+  if (presentation == null) return null;
+  return Object.fromEntries(
+    Object.entries(presentation).map(([slot, style]) => [
+      slot,
+      Object.fromEntries(Object.entries(style))
+    ])
+  );
+}
+
+function hexToRgba(hex, opacity) {
+  const normalized = hex.slice(1);
+  const expanded = normalized.length === 3
+    ? normalized.split("").map(value => value + value).join("")
+    : normalized;
+  const channels = [
+    Number.parseInt(expanded.slice(0, 2), 16),
+    Number.parseInt(expanded.slice(2, 4), 16),
+    Number.parseInt(expanded.slice(4, 6), 16)
+  ];
+  return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${opacity})`;
+}
+
+function presentationVariables(presentation) {
+  if (!presentation) return {};
+  const variables = {};
+
+  for (const [slot, style] of Object.entries(presentation)) {
+    const names = BROKER_PRESENTATION_VARIABLES[slot];
+    if (!names) continue;
+
+    if (style.fontSize !== undefined) variables[names.fontSize] = style.fontSize + "px";
+    if (style.fontWeight !== undefined) variables[names.fontWeight] = String(style.fontWeight);
+
+    if (slot !== "advisory" && slot !== "reason") continue;
+
+    const defaults = BROKER_STATUS_DEFAULTS[slot];
+    if (style.textColor !== undefined) variables[names.textColor] = style.textColor;
+
+    if (style.borderColor !== undefined || style.borderOpacity !== undefined) {
+      variables[names.borderColor] = hexToRgba(
+        style.borderColor ?? defaults.borderColor,
+        style.borderOpacity ?? defaults.borderOpacity
+      );
+    }
+
+    if (style.backgroundColor !== undefined || style.backgroundOpacity !== undefined) {
+      variables[names.backgroundColor] = hexToRgba(
+        style.backgroundColor ?? defaults.backgroundColor,
+        style.backgroundOpacity ?? defaults.backgroundOpacity
+      );
+    }
+  }
+
+  return variables;
+}
+
+function applyPresentationVariables(element, presentation) {
+  const target = element?.style ? element : element?.[0] ?? null;
+  if (!target?.style?.setProperty) return;
+
+  for (const [name, value] of Object.entries(presentationVariables(presentation))) {
+    target.style.setProperty(name, value);
+  }
+}
+
 /**
  * Generic controller-routed broker prompt.
  *
@@ -50,7 +263,8 @@ export class BrokerChoicePromptService {
     role = SELECTION_INDICATOR_ROLES.RESPONDER,
     resource = null,
     selectionCapacity = null,
-    closeOutcome = "decline"
+    closeOutcome = "decline",
+    presentation = null
   } = {}) {
     if (typeof title !== "string" || !title.trim()) return { valid: false, reason: "invalid-title" };
     if (typeof prompt !== "string") return { valid: false, reason: "invalid-prompt" };
@@ -61,6 +275,8 @@ export class BrokerChoicePromptService {
       return { valid: false, reason: "invalid-selection-capacity" };
     }
     if (!["abort", "decline"].includes(closeOutcome)) return { valid: false, reason: "invalid-close-outcome" };
+    const presentationValidation = validatePresentation(presentation);
+    if (!presentationValidation.valid) return presentationValidation;
 
     if (resource !== null) {
       const current = Number(resource?.current);
@@ -115,10 +331,11 @@ export class BrokerChoicePromptService {
     playSound = true,
     confirmLabel = "Confirm",
     declineLabel = "Continue",
-    closeOutcome = "decline"
+    closeOutcome = "decline",
+    presentation = null
   } = {}) {
     const validation = this.validateRequest({
-      title, prompt, banner, choices, role, resource, selectionCapacity, closeOutcome
+      title, prompt, banner, choices, role, resource, selectionCapacity, closeOutcome, presentation
     });
     if (!validation.valid) throw new Error("AE5E broker prompt request is invalid: " + validation.reason + ".");
 
@@ -159,7 +376,8 @@ export class BrokerChoicePromptService {
       playSound: playSound !== false,
       confirmLabel: String(confirmLabel || "Confirm"),
       declineLabel: String(declineLabel || "Continue"),
-      closeOutcome
+      closeOutcome,
+      presentation: normalizePresentation(presentation)
     };
 
     this.#stats.requests += 1;
@@ -248,6 +466,8 @@ export class BrokerChoicePromptService {
   async #promptSocket(payload) {
     const validation = this.validateRequest(payload);
     if (!validation.valid) throw new Error("AE5E remote broker payload is invalid: " + validation.reason + ".");
+
+    const presentation = normalizePresentation(payload.presentation);
 
     const choices = payload.choices.map(choice => ({
       id: String(choice.id),
@@ -340,9 +560,9 @@ export class BrokerChoicePromptService {
         .replaceAll("{selectedCost}", String(values.spent));
     };
 
-    const statusHtml = lines => {
+    const statusHtml = (lines, kind) => {
       if (!lines.length) return "";
-      return '<div class="ae5e-broker-status" role="status">'
+      return '<div class="ae5e-broker-status is-' + kind + '" role="status">'
         + lines.map(line => "<div>" + this.#escape(line) + "</div>").join("")
         + "</div>";
     };
@@ -351,14 +571,15 @@ export class BrokerChoicePromptService {
       const checked = selected.has(choice.id);
       const temporarilyBlocked = !choice.disabled && !checked && !canAdd(choice);
       const disabled = choice.disabled || temporarilyBlocked;
-      const lines = [...choice.advisories, ...choice.reasons];
+      const advisories = [...choice.advisories];
+      const reasons = [...choice.reasons];
       if (temporarilyBlocked) {
         const current = totals();
         if (payload.selectionCapacity != null
           && current.selectionUsed + choice.selectionCost > Number(payload.selectionCapacity)
-          && payload.selectionCapacityReason) lines.push(String(payload.selectionCapacityReason));
+          && payload.selectionCapacityReason) reasons.push(String(payload.selectionCapacityReason));
         if (payload.resource && choice.cost > current.remaining && payload.resourceInsufficientReason) {
-          lines.push(String(payload.resourceInsufficientReason));
+          reasons.push(String(payload.resourceInsufficientReason));
         }
       }
       return '<label class="ae5e-broker-option'
@@ -372,7 +593,8 @@ export class BrokerChoicePromptService {
         + '<span class="ae5e-broker-option-cost">' + this.#escape(choice.costLabel) + "</span>"
         + "</span>"
         + (choice.description ? '<span class="ae5e-broker-option-description">' + this.#escape(choice.description) + "</span>" : "")
-        + statusHtml(lines)
+        + statusHtml(advisories, "advisory")
+        + statusHtml(reasons, "reason")
         + "</label>";
     };
 
@@ -382,6 +604,8 @@ export class BrokerChoicePromptService {
         ?? element?.[0]?.querySelector?.(".ae5e-broker-choice-host")
         ?? null;
       if (!root) return false;
+
+      applyPresentationVariables(element, presentation);
 
       root.innerHTML = '<div class="ae5e-broker-choice">'
         + (payload.banner ? '<div class="ae5e-broker-banner"><img src="' + this.#escapeAttr(payload.banner) + '" alt=""></div>' : "")
