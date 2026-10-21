@@ -829,6 +829,13 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.ae5e-broker-status.is-acceptance {
+  border-color: var(--ae5e-broker-acceptance-border-color, rgba(24, 204, 70, 0.6));
+  background: var(--ae5e-broker-acceptance-background-color, rgba(24, 204, 70, 0.14));
+  color: var(--ae5e-broker-acceptance-text-color, #18cc46);
+  font-size: var(--ae5e-broker-acceptance-font-size, 12px);
+  font-weight: var(--ae5e-broker-acceptance-font-weight, 600);
+}
 .ae5e-broker-status.is-advisory {
   border-color: var(--ae5e-broker-advisory-border-color, rgba(255, 159, 28, 0.6));
   background: var(--ae5e-broker-advisory-background-color, rgba(255, 159, 28, 0.14));
