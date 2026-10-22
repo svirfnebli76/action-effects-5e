@@ -1,3 +1,11 @@
+# v0.4.5.44 — Generic native Target Confirmation Adapter (Phase 3B-04)
+
+- Adds the opt-in, casting-scoped AE5E Target Confirmation Adapter, preserving Midi-QOL 14.6.3's native target list, Roll/Cancel callbacks, consumption and cancellation refunds.
+- Reuses Midi's native token artwork, including animated-token thumbnails, with disposition rings (AE5E red/amber/green; GM-only purple for Secret), per-target range status, disabled invalid continuation, dynamic target-count line, and optional Item-owned reminder.
+- Adds bounded per-Item overrides for typography, ring/portrait dimensions, window size, colors, row spacing, and button wording; ordinary native Midi dialogs remain unchanged.
+- Adds unit tests and public `api.targetConfirmation.arm/cancel/getStatus` interface. Twinned Spell Item rules, upcasting adapter, CAT macros, compendiums and assets remain unchanged.
+- Live Foundry acceptance remains required.
+
 # v0.4.5.43 — Broker acceptance statuses and affordability wording
 
 - Adds a third generic broker status type for positive/accepted conditions. Item-supplied `acceptance`/`acceptances` render in a separate green box using AE5E's originator-selection green (`#18cc46`) by default, before orange advisories and red reasons/warnings.
