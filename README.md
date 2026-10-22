@@ -1,5 +1,9 @@
 # Action Effects 5E
 
+## v0.4.5.44 Target Confirmation Adapter
+
+AE5E includes an opt-in, casting-scoped Midi Target Confirmation customization service. See [Target Confirmation Adapter](docs/target-confirmation-adapter.md) for the public API, validated presentation overrides, permissions and live acceptance requirements. This release does not install a Twinned Spell macro, alter source Items, or modify compendiums. Twinned effective-level scaling remains a separate development phase.
+
 Action Effects 5E (AE5E) provides reusable D&D5e automation infrastructure for Foundry VTT. Individual Items remain responsible for their own game rules; AE5E provides generic capabilities that multiple unrelated automations can reuse.
 
 Metamagic Development 3 follows the [approved build/test plan](docs/metamagic-approved-build-and-test-plan.md)
