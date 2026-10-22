@@ -98,6 +98,7 @@ import {
 export class ActionEffects5eApi {
   constructor({
     targetConfirmationAdapter,
+    targetScaling,
     declarationFamilies,
     itemDeclarations,
     itemOptionsAuthoring,
@@ -440,6 +441,12 @@ export class ActionEffects5eApi {
       arm: request => targetConfirmationAdapter.arm(request),
       cancel: id => targetConfirmationAdapter.cancel(id),
       getStatus: () => targetConfirmationAdapter.getStatus()
+    });
+
+    this.targetScaling = Object.freeze({
+      arm: request => targetScaling.arm(request),
+      cancel: id => targetScaling.cancel(id),
+      getStatus: () => targetScaling.getStatus()
     });
 
     this.metamagic = Object.freeze({
