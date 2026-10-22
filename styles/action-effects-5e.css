@@ -881,7 +881,7 @@
    This styling never applies to unregistered Midi Target Confirmation windows. */
 .ae5e-target-confirmation {
   box-sizing: border-box;
-  width: var(--ae5e-target-window-width, 480px);
+  width: var(--ae5e-target-window-width, 500px);
   max-width: calc(100vw - 24px);
   max-height: min(var(--ae5e-target-max-height, 800px), calc(100vh - 24px));
 }
@@ -896,10 +896,10 @@
   padding: 12px 14px;
 }
 .ae5e-target-confirmation .ae5e-target-instructions {
-  font-size: var(--ae5e-target-instructions-size, 13px);
+  font-size: var(--ae5e-target-instructions-size, 15px);
   font-weight: var(--ae5e-target-instructions-weight, 400);
   color: var(--ae5e-target-instructions-color, inherit);
-  text-align: var(--ae5e-target-instructions-align, left);
+  text-align: var(--ae5e-target-instructions-align, center);
   line-height: 1.4;
   margin-bottom: var(--ae5e-target-section-gap, 10px);
   overflow-wrap: anywhere;
@@ -1004,3 +1004,57 @@
 .ae5e-target-confirmation [data-action="roll"]:disabled { opacity: .42; cursor: not-allowed; }
 
 .ae5e-target-confirmation .ae5e-target-native-blurb[hidden] { display: none !important; }
+
+/* Optional Item-supplied banner; native image aspect ratio is preserved. */
+.ae5e-target-confirmation .ae5e-target-banner {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 120px;
+  object-fit: contain;
+  border: 0;
+  border-radius: var(--ae5e-target-banner-radius, 6px);
+  margin: 0 0 var(--ae5e-target-banner-gap, 10px) 0;
+}
+.ae5e-target-confirmation .ae5e-target-banner[hidden] { display: none !important; }
+.ae5e-target-confirmation .ae5e-target-instruction-lead {
+  margin: 0 0 var(--ae5e-target-instruction-lead-gap, 12px);
+}
+.ae5e-target-confirmation .ae5e-target-instruction-commands {
+  display: grid;
+  justify-items: center;
+  row-gap: var(--ae5e-target-instruction-line-gap, 4px);
+}
+.ae5e-target-confirmation .ae5e-target-instruction-command {
+  font-size: inherit;
+  text-align: center;
+  line-height: inherit;
+}
+.ae5e-target-confirmation .ae5e-target-instruction-command strong {
+  font-weight: 700;
+}
+.ae5e-target-confirmation .ae5e-target-instruction-positive {
+  color: var(--ae5e-target-color-friendly, var(--ae5e-broker-acceptance-text-color, #18cc46));
+}
+.ae5e-target-confirmation .ae5e-target-instruction-negative {
+  color: var(--ae5e-target-color-hostile, var(--ae5e-broker-reason-text-color, #f05b5b));
+}
+/* All native Midi footer actions share one row, without replacing callbacks.
+   JS also reorders the native nodes for a matching keyboard tab order. */
+.ae5e-target-confirmation :is(footer.form-footer, .form-footer) {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 5px !important;
+  align-items: stretch;
+}
+.ae5e-target-confirmation :is(footer.form-footer, .form-footer) > [data-action] {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: auto;
+  min-height: 48px;
+  margin: 0 !important;
+  padding: 5px 3px;
+  white-space: normal;
+  overflow-wrap: normal;
+  line-height: 1.2;
+}

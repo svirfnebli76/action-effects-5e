@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import {
   TargetConfirmationAdapter,
   normalizeTargetConfirmationAppearance,
-  visibleDisposition
+  visibleDisposition,
+  allowedBannerPath,
+  normalizeTargetInstructions
 } from '../scripts/ui/target-confirmation-adapter.js';
 
 test('presentation defaults follow the approved AE5E broker colors and sizing', () => {
   const appearance = normalizeTargetConfirmationAppearance();
-  assert.equal(appearance.windowWidth, 480);
+  assert.equal(appearance.windowWidth, 500);
   assert.equal(appearance.maxHeight, 800);
   assert.equal(appearance.portraitSize, 48);
   assert.equal(appearance.ringWidth, 3);
@@ -44,10 +46,10 @@ test('malformed/unsafe overrides cannot inject arbitrary CSS or sizes', () => {
     colors: { hostile: 'red; background: url(https://bad)', secret: '#12345678' },
     unknownProperty: 'not supported'
   });
-  assert.equal(result.windowWidth, 480);
+  assert.equal(result.windowWidth, 500);
   assert.equal(result.portraitSize, 48);
   assert.equal(result.ringWidth, 3);
-  assert.equal(result.instructions.fontSize, 13);
+  assert.equal(result.instructions.fontSize, 15);
   assert.equal(result.instructions.fontWeight, 400);
   assert.equal(result.colors.hostile, '#f05b5b');
   assert.equal(result.colors.secret, '#a668d8');
@@ -101,4 +103,27 @@ test('a new workflow clears a pending request for the same actor and Item', () =
   assert.equal(adapter.getStatus().pending, 1);
   callbacks.get('midi-qol.preTargetingV2')(second);
   assert.equal(adapter.getStatus().pending, 0);
+});
+
+
+test('banner path accepts the approved asset but rejects remote or traversal URLs', () => {
+  assert.equal(allowedBannerPath('modules/action-effects-5e/assets/banners/feats/twinnedSpell.webp'),
+    'modules/action-effects-5e/assets/banners/feats/twinnedSpell.webp');
+  assert.equal(allowedBannerPath('javascript:alert(1)'), null);
+  assert.equal(allowedBannerPath('https://example.com/evil.png'), null);
+  assert.equal(allowedBannerPath('modules/action-effects-5e/../secrets.png'), null);
+});
+
+test('structured instructions retain exact Twinned text and safe tone markers', () => {
+  const layout = normalizeTargetInstructions({
+    description: 'Twinned Spell increases the number of creatures this spell can target',
+    commands: [
+      { label: 'SHIFT-CLICK', text: ' a token to add a Target', tone: 'positive' },
+      { label: 'RIGHT-CLICK', text: ' a token to remove a Target', tone: 'negative' }
+    ]
+  });
+  assert.equal(layout.commands.length, 2);
+  assert.equal(layout.commands[0].label, 'SHIFT-CLICK');
+  assert.equal(layout.commands[1].tone, 'negative');
+  assert.equal(normalizeTargetInstructions({ description: 'bad', commands: [{label:'A',text:'B',tone:'<script>'}] }), null);
 });

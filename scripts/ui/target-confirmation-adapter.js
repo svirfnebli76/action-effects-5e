@@ -9,7 +9,7 @@
 const CLASS = "ae5e-target-confirmation";
 const MAX_PENDING_AGE_MS = 180_000;
 const DEFAULTS = Object.freeze({
-  windowWidth: 480,
+  windowWidth: 500,
   maxHeight: 800,
   portraitSize: 48,
   ringWidth: 3,
@@ -18,8 +18,9 @@ const DEFAULTS = Object.freeze({
   rowGap: 6,
   sectionGap: 10,
   reminderGap: 4,
+  bannerGap: 10, instructionLeadGap: 12, instructionLineGap: 4, bannerRadius: 6,
   title: Object.freeze({ fontSize: 15, fontWeight: 700 }),
-  instructions: Object.freeze({ fontSize: 13, fontWeight: 400 }),
+  instructions: Object.freeze({ fontSize: 15, fontWeight: 400 }),
   targetName: Object.freeze({ fontSize: 14, fontWeight: 700 }),
   range: Object.freeze({ fontSize: 12, fontWeight: 500 }),
   counter: Object.freeze({ fontSize: 13, fontWeight: 600 }),
@@ -47,7 +48,9 @@ export function normalizeTargetConfirmationAppearance(input = {}) {
     ["windowWidth", 340, 1000], ["maxHeight", 350, 1200],
     ["portraitSize", 28, 80], ["ringWidth", 1, 7],
     ["rowMinHeight", 42, 150], ["rowPadding", 0, 32],
-    ["rowGap", 0, 32], ["sectionGap", 0, 32], ["reminderGap", 0, 20]
+    ["rowGap", 0, 32], ["sectionGap", 0, 32], ["reminderGap", 0, 20],
+    ["bannerGap", 0, 32], ["instructionLeadGap", 0, 40],
+    ["instructionLineGap", 0, 24], ["bannerRadius", 0, 24]
   ]) {
     output[name] = clampNumber(raw[name], DEFAULTS[name], min, max);
   }
@@ -58,7 +61,7 @@ export function normalizeTargetConfirmationAppearance(input = {}) {
       fontWeight: validWeight(style.fontWeight) ? style.fontWeight : DEFAULTS[name].fontWeight,
       textColor: validHex(style.textColor) ? style.textColor : null,
       align: ["left", "center", "right"].includes(style.align) ? style.align :
-        (["counter", "reminder"].includes(name) ? "center" : "left")
+        (["counter", "reminder", "instructions"].includes(name) ? "center" : "left")
     };
   }
   output.rowBackgroundColor = validHex(raw.rowBackgroundColor) ? raw.rowBackgroundColor : null;
@@ -86,6 +89,29 @@ function boundedString(value, fallback, length = 1000) {
   return typeof value === "string" && value.length <= length ? value : fallback;
 }
 
+/** Only same-origin module/system images; never interpret Item text as HTML. */
+export function allowedBannerPath(value) {
+  if (typeof value !== "string" || value.length > 400) return null;
+  if (!/^(modules|systems)\/[a-z0-9_-]+\/[a-z0-9_./-]+\.(?:webp|png|jpe?g)$/i.test(value)) return null;
+  if (value.split("/").some(part => part === "." || part === "..")) return null;
+  return value;
+}
+
+export function normalizeTargetInstructions(raw) {
+  if (!safeObject(raw)) return null;
+  if (typeof raw.description !== "string" || !raw.description.trim() || raw.description.length > 500) return null;
+  if (!Array.isArray(raw.commands) || raw.commands.length < 1 || raw.commands.length > 3) return null;
+  const commands = [];
+  for (const command of raw.commands) {
+    if (!safeObject(command) || typeof command.label !== "string" ||
+        !command.label.trim() || command.label.length > 50 ||
+        typeof command.text !== "string" || command.text.length > 250 ||
+        !["positive", "negative", "neutral"].includes(command.tone)) return null;
+    commands.push({ label: command.label, text: command.text, tone: command.tone });
+  }
+  return { description: raw.description, commands };
+}
+
 function identity(document) { return document?.uuid ?? document?.id ?? null; }
 
 function resolvedToken(actor) {
@@ -107,6 +133,31 @@ function textWithEmphasis(container, input) {
       container.appendChild(document.createTextNode(fragment));
     }
   }
+}
+
+/** Build a safely escaped, structured two-section instruction block. */
+function renderInstructions(container, request) {
+  const layout = request.instructionLayout;
+  if (!layout) {
+    textWithEmphasis(container, request.instructions);
+    return;
+  }
+  const lead = document.createElement("div");
+  lead.className = "ae5e-target-instruction-lead";
+  lead.textContent = layout.description;
+  container.appendChild(lead);
+  const commands = document.createElement("div");
+  commands.className = "ae5e-target-instruction-commands";
+  for (const command of layout.commands) {
+    const line = document.createElement("div");
+    line.className = "ae5e-target-instruction-command";
+    const label = document.createElement("strong");
+    label.className = `ae5e-target-instruction-${command.tone}`;
+    label.textContent = command.label;
+    line.append(label, document.createTextNode(command.text));
+    commands.appendChild(line);
+  }
+  container.appendChild(commands);
 }
 
 function swapButtonLabel(button, label, owned) {
@@ -155,6 +206,7 @@ export class TargetConfirmationAdapter {
   arm({ workflow, actor = workflow?.actor, item = workflow?.activity?.item,
     title = "Target Confirmation", instructions = "Select your targets.",
     counter = "{selected} of {maximum} targets selected.", reminder = "",
+    banner = null, instructionLayout = null,
     labels = {}, appearance = {}, validation = {} } = {}) {
     if (!globalThis.game?.user?.id) throw new Error("An active Foundry user is required.");
     if (!workflow?.activity || !actor?.id || !item?.id || !actor.isOwner)
@@ -172,6 +224,8 @@ export class TargetConfirmationAdapter {
       created: Date.now(),
       title: boundedString(title, "Target Confirmation", 120),
       instructions: boundedString(instructions, "Select your targets."),
+      instructionLayout: normalizeTargetInstructions(instructionLayout),
+      banner: allowedBannerPath(banner),
       counter: boundedString(counter, "{selected} of {maximum} targets selected.", 200),
       reminder: boundedString(reminder, "", 400),
       labels: {
@@ -263,6 +317,10 @@ export class TargetConfirmationAdapter {
     px("row-gap", appearance.rowGap);
     px("section-gap", appearance.sectionGap);
     px("reminder-gap", appearance.reminderGap);
+    px("banner-gap", appearance.bannerGap);
+    px("instruction-lead-gap", appearance.instructionLeadGap);
+    px("instruction-line-gap", appearance.instructionLineGap);
+    px("banner-radius", appearance.bannerRadius);
     for (const slot of ["title", "instructions", "targetName", "range", "counter", "reminder", "buttons"]) {
       const cssName = slot.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`);
       px(`${cssName}-size`, appearance[slot].fontSize);
@@ -323,7 +381,8 @@ export class TargetConfirmationAdapter {
     const titleNode = root.querySelector(".window-title");
     const originals = {
       form, list, root, titleNode, originalTitle: titleNode?.textContent ?? "",
-      hidden: document.createElement("div"), banner: null, counterSection: null,
+      hidden: document.createElement("div"), headerImage: null,
+      instructionNode: null, counterSection: null, buttonOrder: null,
       labels: [], button: root.querySelector('[data-action="roll"]')
     };
     session.originals = originals;
@@ -333,11 +392,21 @@ export class TargetConfirmationAdapter {
     while (form.firstChild && form.firstChild !== list) originals.hidden.appendChild(form.firstChild);
     form.insertBefore(originals.hidden, list);
 
-    const banner = document.createElement("div");
-    banner.className = "ae5e-target-instructions";
-    textWithEmphasis(banner, request.instructions);
-    form.insertBefore(banner, list);
-    originals.banner = banner;
+    if (request.banner) {
+      const img = document.createElement("img");
+      img.className = "ae5e-target-banner";
+      img.src = request.banner;
+      img.alt = ""; // decorative banner; the dialog title supplies its accessible name
+      img.addEventListener("error", () => { img.hidden = true; }, { once: true });
+      form.insertBefore(img, list);
+      originals.headerImage = img;
+    }
+
+    const instructionNode = document.createElement("div");
+    instructionNode.className = "ae5e-target-instructions";
+    renderInstructions(instructionNode, request);
+    form.insertBefore(instructionNode, list);
+    originals.instructionNode = instructionNode;
 
     const section = document.createElement("div");
     section.className = "ae5e-target-count-section";
@@ -354,9 +423,19 @@ export class TargetConfirmationAdapter {
     list.insertAdjacentElement("afterend", section);
     originals.counterSection = section;
 
-    swapButtonLabel(root.querySelector('[data-action="roll"]'), request.labels.continue, originals.labels);
-    swapButtonLabel(root.querySelector('[data-action="cancel"]'), request.labels.cancel, originals.labels);
-    swapButtonLabel(root.querySelector('[data-action="clearTargets"]'), request.labels.clear, originals.labels);
+    const roll = root.querySelector('[data-action="roll"]');
+    const cancel = root.querySelector('[data-action="cancel"]');
+    const clear = root.querySelector('[data-action="clearTargets"]');
+    swapButtonLabel(roll, request.labels.continue, originals.labels);
+    swapButtonLabel(cancel, request.labels.cancel, originals.labels);
+    swapButtonLabel(clear, request.labels.clear, originals.labels);
+    // Physically reorder native buttons so keyboard tab order matches visual order.
+    if (roll?.parentElement && roll.parentElement === cancel?.parentElement &&
+        roll.parentElement === clear?.parentElement) {
+      const parent = roll.parentElement;
+      originals.buttonOrder = { parent, elements: [...parent.children] };
+      parent.append(clear, cancel, roll);
+    }
     this.#updateStatus(app, session);
   }
 
@@ -429,13 +508,20 @@ export class TargetConfirmationAdapter {
   #restore(app, session) {
     const previous = session.originals;
     if (previous?.form?.isConnected) {
-      const { form, list, hidden, banner, counterSection, labels, titleNode, originalTitle } = previous;
+      const { form, list, hidden, headerImage, instructionNode, counterSection,
+        buttonOrder, labels, titleNode, originalTitle } = previous;
       if (hidden.isConnected) {
         while (hidden.firstChild) form.insertBefore(hidden.firstChild, list);
         hidden.remove();
       }
-      banner?.remove();
+      headerImage?.remove();
+      instructionNode?.remove();
       counterSection?.remove();
+      if (buttonOrder?.parent?.isConnected) {
+        for (const child of buttonOrder.elements) {
+          if (child.parentElement === buttonOrder.parent) buttonOrder.parent.appendChild(child);
+        }
+      }
       for (const { node, previous: oldText } of labels) if (node.isConnected) node.textContent = oldText;
       if (titleNode?.isConnected) titleNode.textContent = originalTitle;
       const button = form.closest(".application")?.querySelector('[data-action="roll"]');

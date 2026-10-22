@@ -1,3 +1,12 @@
+# v0.4.5.45 — Twinned Targeting presentation and casting-local scaling
+
+- Makes the generic native Midi target confirmation adapter support bounded, Item-supplied banner assets, safe two-part instruction text with controlled semantic highlight colors, and a 500px default width.
+- Arranges all three **original native Midi buttons** on one row, left-to-right Clear Targets / Cancel Casting / Continue Casting, preserving their existing callbacks and matched tab order.
+- Adds bounded appearance controls for banner corner radius, banner spacing, section spacing and command-line spacing; retains all previous target validation, privacy, range and cancellation behavior.
+- Adds an opt-in, single-use, casting-local target-capacity service triggered after native upcast scaling at `dnd5e.preActivityConsumption`; source Items, spell slot levels, Sorcery Points, and native saves are left to D&D5e/Midi/Item rules.
+- Adds focused unit tests. Live Foundry acceptance is still required for the combined UI and scaling on Midi 14.6.4.
+- No modifications to compendiums, artwork assets, CAT metadata, embedded Item macros, or spell rules.
+
 # v0.4.5.44 — Generic native Target Confirmation Adapter (Phase 3B-04)
 
 - Adds the opt-in, casting-scoped AE5E Target Confirmation Adapter, preserving Midi-QOL 14.6.3's native target list, Roll/Cancel callbacks, consumption and cancellation refunds.

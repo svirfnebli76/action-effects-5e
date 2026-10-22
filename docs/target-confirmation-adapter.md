@@ -117,3 +117,36 @@ After publication, Foundry acceptance (not yet conducted) must cover:
 7. No duplicate hooks, stale requests, or side effects on other Item casts.
 
 **No packs, Items, macros, or assets are modified by this candidate.**
+
+## v0.4.5.45 presentation additions (Item-owned)
+
+`arm()` additionally accepts `banner` (safe same-origin `modules/...` or `systems/...` image path; webp, PNG or JPEG) and optional `instructionLayout` with a centered `description` and 1–3 rows of `{label, text, tone}`. Tone is `positive`, `negative` or `neutral`. This is rendered with DOM text nodes, not HTML. The old `instructions` plain-text / `**bold**` form remains supported.
+
+Twinned Spell Item example (not installed by this release):
+
+```js
+api.targetConfirmation.arm({
+  workflow,
+  title: 'Twinned Spell Targeting',
+  banner: 'modules/action-effects-5e/assets/banners/feats/twinnedSpell.webp',
+  instructionLayout: {
+    description: 'Twinned Spell increases the number of creatures this spell can target',
+    commands: [
+      { label: 'SHIFT-CLICK', text: ' a token to add a Target', tone: 'positive' },
+      { label: 'RIGHT-CLICK', text: ' a token to remove a Target', tone: 'negative' }
+    ]
+  },
+  counter: '{selected} of {maximum} targets selected.',
+  reminder: '(You do not need to use ALL available Target slots)',
+  labels: { clear: 'Clear Targets', cancel: 'Cancel Casting', continue: 'Continue Casting' },
+  validation: { minTargets: 1, enforceRange: true, allowLongRange: true },
+  appearance: {
+    windowWidth: 500, maxHeight: 800, bannerRadius: 6, bannerGap: 10,
+    instructionLeadGap: 12, instructionLineGap: 4,
+    instructions: { fontSize: 15, fontWeight: 400, align: 'center' },
+    portraitSize: 48, ringWidth: 3
+  }
+});
+```
+
+The `positive` and `negative` command labels inherit AE5E's acceptance green (`#18cc46`) and warning red (`#f05b5b`) respectively, and respect the already bounded `appearance.colors.friendly` / `appearance.colors.hostile` override. Button order is clear → cancel → continue for both keyboard and visual order; original Midi callbacks and cancellation/refund ownership remain unchanged. Banner failure hides the decorative image without interrupting casting. Ordinary non-opted-in Midi confirmations are unaffected.

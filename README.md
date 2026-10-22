@@ -1,5 +1,9 @@
 # Action Effects 5E
 
+## v0.4.5.45 — Targeting window redesign and casting-local scaling
+
+Opt-in Midi-QOL target confirmation now supports Item-owned image banners, safely structured colored instructions, 500px default width, and a one-row reordered native button footer. Twinned Spell can supply the exact approved 15px centered copy and its existing banner asset. Generic `api.targetScaling.arm({workflow, bonusTargets:1})` applies an Item-requested additional target to an isolated casting Activity after native upcasting. This version does not install a Twinned Spell Item macro, spend Sorcery Points, or change compendiums/assets. See [target confirmation](docs/target-confirmation-adapter.md) and [casting-local scaling](docs/casting-local-target-scaling.md).
+
 ## v0.4.5.44 Target Confirmation Adapter
 
 AE5E includes an opt-in, casting-scoped Midi Target Confirmation customization service. See [Target Confirmation Adapter](docs/target-confirmation-adapter.md) for the public API, validated presentation overrides, permissions and live acceptance requirements. This release does not install a Twinned Spell macro, alter source Items, or modify compendiums. Twinned effective-level scaling remains a separate development phase.

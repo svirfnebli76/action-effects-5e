@@ -37,6 +37,7 @@ import { ExternalPromptBridgeService } from "./ui/external-prompt-bridge-service
 import { ChoicePromptService } from "./ui/choice-prompt-service.js";
 import { BrokerChoicePromptService } from "./ui/broker-choice-prompt-service.js";
 import { TargetConfirmationAdapter } from "./ui/target-confirmation-adapter.js";
+import { CastingLocalTargetScalingService } from "./casting/casting-local-target-scaling-service.js";
 import { CastingPhaseService } from "./casting/casting-phase-service.js";
 import { Crosshair3dGeometryService } from "./crosshairs3d/geometry-service.js";
 import { Crosshair3dCellRasterizerService } from "./crosshairs3d/cell-rasterizer-service.js";
@@ -187,6 +188,7 @@ const brokerChoicePrompts = new BrokerChoicePromptService({
   authority: reactionAuthority
 });
 const targetConfirmationAdapter = new TargetConfirmationAdapter();
+const targetScaling = new CastingLocalTargetScalingService();
 const castingPhases = new CastingPhaseService();
 const reactionDiscovery = new ReactionDiscoveryService({ registry: reactionRegistry, authority: reactionAuthority });
 const reactionOrdering = new ReactionOrderingService();
@@ -474,6 +476,7 @@ async function bootstrapAcceptedCatMetadata() {
 }
 const api = new ActionEffects5eApi({
   targetConfirmationAdapter,
+  targetScaling,
   declarationFamilies,
   itemDeclarations,
   itemOptionsAuthoring,
@@ -632,6 +635,7 @@ Hooks.once("ready", async () => {
   reactionEvents.initialize();
   spellModifierEvents.initialize();
   targetConfirmationAdapter.initialize();
+  targetScaling.initialize();
   castingPhases.initialize();
   metamagicCasting.initialize();
   ongoingEffects.initialize();
