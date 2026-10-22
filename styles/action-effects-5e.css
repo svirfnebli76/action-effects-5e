@@ -875,3 +875,132 @@
   opacity: 0.45;
   cursor: default;
 }
+
+/* Generic, opt-in Midi Target Confirmation Adapter (AE5E).
+   Defaults can be overridden per casting by CSS variables on the dialog root.
+   This styling never applies to unregistered Midi Target Confirmation windows. */
+.ae5e-target-confirmation {
+  box-sizing: border-box;
+  width: var(--ae5e-target-window-width, 480px);
+  max-width: calc(100vw - 24px);
+  max-height: min(var(--ae5e-target-max-height, 800px), calc(100vh - 24px));
+}
+.ae5e-target-confirmation .window-title {
+  font-size: var(--ae5e-target-title-size, 15px);
+  font-weight: var(--ae5e-target-title-weight, 700);
+  color: var(--ae5e-target-title-color, inherit);
+}
+.ae5e-target-confirmation .window-content {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+.ae5e-target-confirmation .ae5e-target-instructions {
+  font-size: var(--ae5e-target-instructions-size, 13px);
+  font-weight: var(--ae5e-target-instructions-weight, 400);
+  color: var(--ae5e-target-instructions-color, inherit);
+  text-align: var(--ae5e-target-instructions-align, left);
+  line-height: 1.4;
+  margin-bottom: var(--ae5e-target-section-gap, 10px);
+  overflow-wrap: anywhere;
+}
+.ae5e-target-confirmation .ae5e-target-instructions strong { font-weight: 700; }
+.ae5e-target-confirmation .midi-qol-target-confirmation-list {
+  min-height: 78px;
+  max-height: min(520px, 55vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-light-2, rgba(150,160,180,.4));
+  border-radius: 7px;
+  padding: 4px;
+}
+.ae5e-target-confirmation .midi-qol-target-confirmation-list dl { margin: 0; }
+.ae5e-target-confirmation .ae5e-target-row {
+  padding: var(--ae5e-target-row-padding, 8px);
+  min-height: var(--ae5e-target-row-min-height, 66px);
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--ae5e-target-row-background, transparent);
+  margin-bottom: var(--ae5e-target-row-gap, 6px);
+}
+.ae5e-target-confirmation .ae5e-target-row:last-child { margin-bottom: 0; }
+.ae5e-target-confirmation .ae5e-target-row > .flexrow {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+.ae5e-target-confirmation .ae5e-target-row > .flexrow > div:first-child {
+  flex: 1 1 auto !important;
+  min-width: 0;
+}
+.ae5e-target-confirmation .ae5e-target-row > .flexrow > div:last-child {
+  flex: 0 0 var(--ae5e-target-portrait-size, 48px) !important;
+  width: var(--ae5e-target-portrait-size, 48px);
+}
+.ae5e-target-confirmation .ae5e-target-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ae5e-target-range-size, 12px);
+  font-weight: var(--ae5e-target-range-weight, 500);
+}
+.ae5e-target-confirmation .ae5e-target-row dd strong {
+  font-size: var(--ae5e-target-target-name-size, 14px);
+  font-weight: var(--ae5e-target-target-name-weight, 700);
+  color: var(--ae5e-target-target-name-color, var(--color-text-primary, inherit));
+}
+.ae5e-target-confirmation .ae5e-target-row img.ae5e-target-portrait {
+  display: block;
+  width: var(--ae5e-target-portrait-size, 48px);
+  height: var(--ae5e-target-portrait-size, 48px);
+  object-fit: cover;
+  border: 0 !important;
+  border-radius: 50%;
+  box-shadow: 0 0 0 var(--ae5e-target-ring-width, 3px) var(--ae5e-ring-color, #888888);
+}
+.ae5e-target-confirmation .ae5e-target-disposition-hostile { --ae5e-ring-color: var(--ae5e-target-color-hostile, var(--ae5e-broker-reason-text-color, #f05b5b)); }
+.ae5e-target-confirmation .ae5e-target-disposition-friendly { --ae5e-ring-color: var(--ae5e-target-color-friendly, var(--ae5e-broker-acceptance-text-color, #18cc46)); }
+.ae5e-target-confirmation .ae5e-target-disposition-neutral { --ae5e-ring-color: var(--ae5e-target-color-neutral, var(--ae5e-broker-advisory-text-color, #ff9f1c)); }
+.ae5e-target-confirmation .ae5e-target-disposition-secret { --ae5e-ring-color: var(--ae5e-target-color-secret, #a668d8); }
+.ae5e-target-confirmation .ae5e-target-disposition-unrevealed { --ae5e-ring-color: var(--ae5e-target-color-unrevealed, #888888); }
+.ae5e-target-confirmation .ae5e-target-range-normal dd { color: var(--ae5e-target-color-inRange, var(--ae5e-broker-acceptance-text-color, #18cc46)); }
+.ae5e-target-confirmation .ae5e-target-range-dis dd { color: var(--ae5e-target-color-longRange, var(--ae5e-broker-advisory-text-color, #ff9f1c)); }
+.ae5e-target-confirmation .ae5e-target-range-fail dd,
+.ae5e-target-confirmation .ae5e-target-range-unknown dd { color: var(--ae5e-target-color-outOfRange, var(--ae5e-broker-reason-text-color, #f05b5b)); }
+.ae5e-target-confirmation .ae5e-target-invalid-row {
+  border: 1px solid var(--ae5e-target-color-outOfRange, var(--ae5e-broker-reason-text-color, #f05b5b)) !important;
+  background: color-mix(in srgb, var(--ae5e-target-color-outOfRange, var(--ae5e-broker-reason-text-color, #f05b5b)) 12%, transparent) !important;
+}
+.ae5e-target-confirmation .ae5e-target-count-section {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: var(--ae5e-target-reminder-gap, 4px);
+  padding-top: var(--ae5e-target-section-gap, 10px);
+  padding-bottom: 4px;
+}
+.ae5e-target-confirmation .ae5e-target-counter {
+  font-size: var(--ae5e-target-counter-size, 13px);
+  font-weight: var(--ae5e-target-counter-weight, 600);
+  line-height: 1.3;
+  color: var(--ae5e-target-counter-color, inherit);
+  text-align: var(--ae5e-target-counter-align, center);
+}
+.ae5e-target-confirmation .ae5e-target-reminder {
+  font-size: var(--ae5e-target-reminder-size, 12px);
+  font-weight: var(--ae5e-target-reminder-weight, 400);
+  line-height: 1.3;
+  text-align: var(--ae5e-target-reminder-align, center);
+  color: var(--ae5e-target-reminder-color, inherit);
+  overflow-wrap: anywhere;
+}
+.ae5e-target-confirmation [data-action="roll"],
+.ae5e-target-confirmation [data-action="cancel"],
+.ae5e-target-confirmation [data-action="clearTargets"] {
+  font-size: var(--ae5e-target-buttons-size, 13px);
+  font-weight: var(--ae5e-target-buttons-weight, 700);
+}
+.ae5e-target-confirmation [data-action="roll"]:disabled { opacity: .42; cursor: not-allowed; }
+
+.ae5e-target-confirmation .ae5e-target-native-blurb[hidden] { display: none !important; }
