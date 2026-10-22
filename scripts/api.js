@@ -97,6 +97,7 @@ import {
 
 export class ActionEffects5eApi {
   constructor({
+    targetConfirmationAdapter,
     declarationFamilies,
     itemDeclarations,
     itemOptionsAuthoring,
@@ -434,6 +435,12 @@ export class ActionEffects5eApi {
     });
     this.sme = smeApi;
     this.spellModifiers = smeApi;
+
+    this.targetConfirmation = Object.freeze({
+      arm: request => targetConfirmationAdapter.arm(request),
+      cancel: id => targetConfirmationAdapter.cancel(id),
+      getStatus: () => targetConfirmationAdapter.getStatus()
+    });
 
     this.metamagic = Object.freeze({
       readDeclaration: item => metamagicDeclarations.read(item),
