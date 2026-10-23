@@ -150,3 +150,13 @@ api.targetConfirmation.arm({
 ```
 
 The `positive` and `negative` command labels inherit AE5E's acceptance green (`#18cc46`) and warning red (`#f05b5b`) respectively, and respect the already bounded `appearance.colors.friendly` / `appearance.colors.hostile` override. Button order is clear → cancel → continue for both keyboard and visual order; original Midi callbacks and cancellation/refund ownership remain unchanged. Banner failure hides the decorative image without interrupting casting. Ordinary non-opted-in Midi confirmations are unaffected.
+
+## v0.4.5.46: persistent width and native selection indicator
+
+An opted-in Target Confirmation window now retains its `appearance.windowWidth` through Midi target-selection rerenders. AE5E applies the bounded width both to the ApplicationV2 native window position and to the instance-scoped element styles. It repeats this enforcement after each native render, including cases where the form markup itself does not change. Width is clamped to the active browser viewport minus 24px. Unregistered Midi windows are unaffected.
+
+The adapter also acquires AE5E's existing **originator** selection indicator lease on the caster token when a customized late targeting window opens. The green indicator uses AE5E's standard Sequencer presentation, with no additional notification sound. One lease is held per open dialog; rerenders do not reacquire. Closing, canceling, or a failed adapter render releases the lease. If acquisition completes after the dialog has closed, the newly acquired lease is immediately released. The existing selection indicator service handles simultaneous workflows, priority, and token-specific cleanup.
+
+The new optional `arm()` parameter `indicator` defaults to `true`; callers may supply `indicator: false` to suppress the visual. Failure to resolve a caster token or play the Sequencer indicator does not block spellcasting. All Item-owned presentation options, validation, native buttons, cancellation refunds, and target-scaling APIs retain their v0.4.5.45 behavior.
+
+Production smoke test: use a casting that invokes `api.targetConfirmation.arm(...)` with `appearance.windowWidth: 500`, confirm the dialog remains 500px after repeatedly adding/removing targets, check that the caster receives the green AE5E selection marker only while the window is open, and verify cancel/continue both clean up. Desktop-size viewport required to observe full 500px width.
