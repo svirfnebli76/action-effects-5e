@@ -1,3 +1,9 @@
+# v0.4.5.46 — Target Confirmation sizing and selection indicator
+
+- Fixes the opted-in Midi Target Confirmation window resetting from the requested 500px to Midi's 300px default during subsequent target-selection renders. The adapter now enforces bounded native ApplicationV2 position width and instance-scoped CSS width on every render; narrower viewports are safely clamped.
+- Adds AE5E's existing green Originator selection indicator to customized late Target Confirmation dialogs, suppressing an extra sound, retaining a single lease across rerenders, and reliably releasing it on continue, cancel, X/Escape, failure, or an asynchronously delayed indicator start. Opt out with `indicator: false`.
+- Preserves native Midi controls and resource lifecycle, casting-local scaling, per-Item presentation, other AE5E indication leases, compendiums, CAT macros, and existing assets. Includes new lifecycle regression tests. Live Foundry smoke testing remains required.
+
 # v0.4.5.45 — Twinned Targeting presentation and casting-local scaling
 
 - Makes the generic native Midi target confirmation adapter support bounded, Item-supplied banner assets, safe two-part instruction text with controlled semantic highlight colors, and a 500px default width.

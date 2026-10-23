@@ -187,7 +187,7 @@ const brokerChoicePrompts = new BrokerChoicePromptService({
   controllerResolver: choicePrompts,
   authority: reactionAuthority
 });
-const targetConfirmationAdapter = new TargetConfirmationAdapter();
+const targetConfirmationAdapter = new TargetConfirmationAdapter({ selectionIndicator });
 const targetScaling = new CastingLocalTargetScalingService();
 const castingPhases = new CastingPhaseService();
 const reactionDiscovery = new ReactionDiscoveryService({ registry: reactionRegistry, authority: reactionAuthority });

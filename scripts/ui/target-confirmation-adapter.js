@@ -112,6 +112,34 @@ export function normalizeTargetInstructions(raw) {
   return { description: raw.description, commands };
 }
 
+/**
+ * Keep the configured width authoritative even when Midi resets the native
+ * ApplicationV2 position on target-selection rerenders.
+ *
+ * The actual application position and the scoped root styles must agree:
+ * Foundry's native sizing can otherwise overwrite CSS on the next render.
+ */
+export function enforceTargetWindowWidth(app, root, requestedWidth, viewportWidth = globalThis.window?.innerWidth) {
+  if (!root?.style?.setProperty || !Number.isFinite(requestedWidth)) return null;
+  const available = Number.isFinite(viewportWidth)
+    ? Math.max(1, viewportWidth - 24)
+    : requestedWidth;
+  const width = Math.min(requestedWidth, available);
+  const value = `${width}px`;
+  root.style.setProperty("width", value, "important");
+  root.style.setProperty("min-width", value, "important");
+
+  if (typeof app?.setPosition === "function") {
+    const positionWidth = Number(app.position?.width);
+    const renderedWidth = Number(root.getBoundingClientRect?.().width);
+    if (!Number.isFinite(positionWidth) || Math.abs(positionWidth - width) > 1 ||
+        (Number.isFinite(renderedWidth) && Math.abs(renderedWidth - width) > 1)) {
+      app.setPosition({ width });
+    }
+  }
+  return width;
+}
+
 function identity(document) { return document?.uuid ?? document?.id ?? null; }
 
 function resolvedToken(actor) {
@@ -179,8 +207,13 @@ export class TargetConfirmationAdapter {
   #pending = new Map();
   #active = new Map();
   #hooks = [];
+  #selectionIndicator;
   #nextId = 0;
   #stats = { armed: 0, claimed: 0, blocked: 0, closed: 0, expired: 0 };
+
+  constructor({ selectionIndicator = null } = {}) {
+    this.#selectionIndicator = selectionIndicator;
+  }
 
   initialize() {
     if (this.#hooks.length) return;
@@ -206,7 +239,7 @@ export class TargetConfirmationAdapter {
   arm({ workflow, actor = workflow?.actor, item = workflow?.activity?.item,
     title = "Target Confirmation", instructions = "Select your targets.",
     counter = "{selected} of {maximum} targets selected.", reminder = "",
-    banner = null, instructionLayout = null,
+    banner = null, instructionLayout = null, indicator = true,
     labels = {}, appearance = {}, validation = {} } = {}) {
     if (!globalThis.game?.user?.id) throw new Error("An active Foundry user is required.");
     if (!workflow?.activity || !actor?.id || !item?.id || !actor.isOwner)
@@ -226,6 +259,7 @@ export class TargetConfirmationAdapter {
       instructions: boundedString(instructions, "Select your targets."),
       instructionLayout: normalizeTargetInstructions(instructionLayout),
       banner: allowedBannerPath(banner),
+      indicator: indicator !== false,
       counter: boundedString(counter, "{selected} of {maximum} targets selected.", 200),
       reminder: boundedString(reminder, "", 400),
       labels: {
@@ -290,12 +324,24 @@ export class TargetConfirmationAdapter {
       if (!found) return;
       const [id, request] = found;
       this.#pending.delete(id);
-      session = { request, originals: null, guardedRoot: null, clickGuard: null, submitGuard: null };
+      session = {
+        request, originals: null, guardedRoot: null, clickGuard: null, submitGuard: null,
+        indicatorTask: null, indicatorLease: null, indicatorClosed: false
+      };
       this.#active.set(app, session);
       this.#stats.claimed++;
     }
     try {
       this.#decorate(app, session);
+      this.#beginIndicator(app, session);
+      // Reassert on EVERY render, including the same-form early return.
+      // Midi can reset native ApplicationV2 width during targeting changes.
+      try {
+        enforceTargetWindowWidth(app, app.element, session.request.appearance.windowWidth);
+      } catch (error) {
+        // A display-size problem must never interrupt Midi's native casting.
+        console.warn("AE5E | Target Confirmation width adjustment failed.", error);
+      }
     } catch (error) {
       console.warn("AE5E | Target Confirmation adapter failed; canceling through Midi.", error);
       this.#restore(app, session);
@@ -304,6 +350,49 @@ export class TargetConfirmationAdapter {
       // Midi owns this callback and restores any already-consumed spell slot.
       void app.close?.();
     }
+  }
+
+  #beginIndicator(app, session) {
+    if (!session.request.indicator || !this.#selectionIndicator?.acquire ||
+        session.indicatorTask || session.indicatorClosed) return;
+    const token = resolvedToken(app?.data?.actor);
+    if (!token) return; // advisory visual: no token must not block native casting
+    // Acquisition may await Sequencer; close/cancel can occur before it resolves.
+    session.indicatorTask = Promise.resolve()
+      .then(() => this.#selectionIndicator.acquire({
+        token,
+        reason: "target-confirmation",
+        role: "originator",
+        playSound: false,
+        notifyUserId: game.user.id
+      }))
+      .then(async lease => {
+        if (!lease) return;
+        if (session.indicatorClosed || this.#active.get(app) !== session) {
+          await this.#selectionIndicator.release(lease);
+        } else {
+          session.indicatorLease = lease;
+        }
+      })
+      .catch(error => {
+        console.warn("AE5E | Target Confirmation selection indicator unavailable.", error);
+      });
+  }
+
+  #endIndicator(session) {
+    if (!session || session.indicatorClosed) return;
+    session.indicatorClosed = true;
+    const lease = session.indicatorLease;
+    session.indicatorLease = null;
+    if (lease && this.#selectionIndicator?.release) {
+      void Promise.resolve()
+        .then(() => this.#selectionIndicator.release(lease))
+        .catch(error => {
+          console.warn("AE5E | Could not release Target Confirmation indicator.", error);
+        });
+    }
+    // If acquire() is still pending, its completion handler releases the
+    // resulting lease; it can never revive an already-closed window.
   }
 
   #setVariables(root, appearance) {
@@ -381,6 +470,10 @@ export class TargetConfirmationAdapter {
     const titleNode = root.querySelector(".window-title");
     const originals = {
       form, list, root, titleNode, originalTitle: titleNode?.textContent ?? "",
+      priorWidth: root.style.getPropertyValue("width"),
+      priorWidthPriority: root.style.getPropertyPriority("width"),
+      priorMinWidth: root.style.getPropertyValue("min-width"),
+      priorMinWidthPriority: root.style.getPropertyPriority("min-width"),
       hidden: document.createElement("div"), headerImage: null,
       instructionNode: null, counterSection: null, buttonOrder: null,
       labels: [], button: root.querySelector('[data-action="roll"]')
@@ -506,6 +599,7 @@ export class TargetConfirmationAdapter {
   }
 
   #restore(app, session) {
+    this.#endIndicator(session);
     const previous = session.originals;
     if (previous?.form?.isConnected) {
       const { form, list, hidden, headerImage, instructionNode, counterSection,
@@ -533,6 +627,15 @@ export class TargetConfirmationAdapter {
       session.guardedRoot.removeEventListener("submit", session.submitGuard, true);
       session.guardedRoot.classList.remove(CLASS);
       for (const name of [...session.guardedRoot.style]) if (name.startsWith("--ae5e-target-")) session.guardedRoot.style.removeProperty(name);
+      if (previous) {
+        for (const [property, value, priority] of [
+          ["width", previous.priorWidth, previous.priorWidthPriority],
+          ["min-width", previous.priorMinWidth, previous.priorMinWidthPriority]
+        ]) {
+          if (value) session.guardedRoot.style.setProperty(property, value, priority);
+          else session.guardedRoot.style.removeProperty(property);
+        }
+      }
     }
     session.originals = null;
     session.guardedRoot = null;
