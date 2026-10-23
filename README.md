@@ -1,5 +1,9 @@
 # Action Effects 5E
 
+## v0.4.5.46 Target Confirmation width and Selection Indicator
+
+The opt-in late Midi Target Confirmation adapter now retains its configured window width across target-selection rerenders and reuses AE5E's green Originator selection indicator on the caster while the targeting window is open (silently and with automatic lease cleanup). See [Target Confirmation Adapter](docs/target-confirmation-adapter.md). No Item, compendium, or CAT macro changes are required; existing callers automatically receive the indicator unless they set `indicator: false`.
+
 ## v0.4.5.45 — Targeting window redesign and casting-local scaling
 
 Opt-in Midi-QOL target confirmation now supports Item-owned image banners, safely structured colored instructions, 500px default width, and a one-row reordered native button footer. Twinned Spell can supply the exact approved 15px centered copy and its existing banner asset. Generic `api.targetScaling.arm({workflow, bonusTargets:1})` applies an Item-requested additional target to an isolated casting Activity after native upcasting. This version does not install a Twinned Spell Item macro, spend Sorcery Points, or change compendiums/assets. See [target confirmation](docs/target-confirmation-adapter.md) and [casting-local scaling](docs/casting-local-target-scaling.md).
