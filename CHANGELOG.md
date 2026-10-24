@@ -1,3 +1,11 @@
+# v0.4.5.47 — Argon Target Picker startup compatibility check
+
+- Adds a GM-only startup interoperability check for the active Argon - Combat HUD (CORE) world setting `Target Picker`.
+- When Argon's Target Picker is enabled, AE5E explains the duplicate/conflicting targeting risk and asks for explicit permission before changing the setting. AE5E never disables Argon itself and never changes the setting silently.
+- Accepting **Disable Target Picker** sets only `enhancedcombathud.rangepicker` to `false` and confirms the change with an AE5E notification; **Cancel** leaves the world unchanged.
+- The check is skipped when Argon is inactive, the setting is unavailable or already disabled, or the current user is not a GM. The prompt is session-deduplicated and the setting is rechecked before mutation.
+- Preserves Magic Missile, Metamagic/Twinned targeting data, Midi Target Confirmation, compendiums, CAT metadata, macros, and all other Argon settings.
+
 # v0.4.5.46 — Target Confirmation sizing and selection indicator
 
 - Fixes the opted-in Midi Target Confirmation window resetting from the requested 500px to Midi's 300px default during subsequent target-selection renders. The adapter now enforces bounded native ApplicationV2 position width and instance-scoped CSS width on every render; narrower viewports are safely clamped.
