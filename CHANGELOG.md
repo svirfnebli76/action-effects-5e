@@ -1,3 +1,11 @@
+# v0.4.5.50 — Metamagic committed lifecycle and pre-cast guards
+
+- Adds an optional Item-owned Metamagic guard contract through `guardPhases`; this release deliberately permits only the existing cancel-safe `pre-cast` phase.
+- Runs declared guards before the Metamagic broker, casting-local mutation, or native resource consumption. Guard-enabled Items must explicitly allow or deny the cast, while options without guards are never queried.
+- Adds a generic, nonblocking `committed` lifecycle notification to selected Metamagic option Items after the casting record has entered its committed state. Notification failures never unwind a native committed cast.
+- Provides the generic lifecycle boundaries required for Item-owned same-turn casting restrictions without hardcoding Quickened Spell or any other Metamagic option into AE5E core.
+- Adds regression coverage for guard schema validation, pre-broker veto/fail-closed behavior, and exactly-once committed notification. No compendium content, CAT configuration, Item macros, or Metamagic base macro are changed.
+
 # v0.4.5.49 — Casting-local activation post-use preservation
 
 - Preserves a validated casting-local activation change when D&D5e drops only the live `activation.override` metadata after native use while the effective activation value and the Activity's own source still retain the selected override.
