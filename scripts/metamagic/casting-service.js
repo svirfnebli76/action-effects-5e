@@ -94,7 +94,49 @@ export class MetamagicCastingService {
     const compiled = this.#declarations.compile(actor, this.#context(workflow));
     if (compiled.participating === false) return true;
     if (!compiled.ready) throw new Error(compiled.diagnostics.map(entry => entry.message).join(" "));
+    if (!await this.#guard(workflow, actor, compiled, initiatorUserId, "pre-cast")) return false;
     return this.#broker(workflow, actor, compiled, initiatorUserId);
+  }
+
+  async #guard(workflow, actor, compiled, initiatorUserId, castingPhase) {
+    if (!this.#executors) throw new Error("The Item-owned macro adapter is unavailable.");
+    const guards = compiled.options.filter(option =>
+      (option.declaration.guardPhases ?? []).includes(castingPhase));
+    for (const option of guards) {
+      let result;
+      try {
+        result = await this.#executors.execute({
+          actor,
+          sourceUuid: option.sourceUuid,
+          identity: option.identity,
+          family: "metamagic",
+          declaration: option.declaration,
+          kind: "option",
+          phase: "guard",
+          requireResponse: true,
+          context: {
+            actor,
+            workflow,
+            activity: workflow.activity,
+            item: workflow.activity?.item ?? workflow.item ?? null,
+            initiatorUserId,
+            castingPhase
+          }
+        });
+      } catch (error) {
+        throw new Error(`${option.label} casting guard failed: ${error.message}`);
+      }
+      if (!result || typeof result.allowed !== "boolean") {
+        throw new Error(`${option.label} casting guard must return an explicit allowed result.`);
+      }
+      if (result.allowed) continue;
+      const reason = typeof result.reason === "string" && result.reason.trim()
+        ? result.reason.trim()
+        : `${option.label} prevents this casting.`;
+      globalThis.ui?.notifications?.warn?.(reason);
+      return false;
+    }
+    return true;
   }
 
   async #broker(workflow, actor, compiled, initiatorUserId) {
@@ -518,6 +560,35 @@ export class MetamagicCastingService {
     }
   }
 
+  async #notifyCommitted(record) {
+    const context = {
+      castingId: record.castingId,
+      actor: record.actor,
+      workflow: record.workflow,
+      activity: record.workflow.activity,
+      item: record.workflow.activity.item,
+      initiatorUserId: record.initiatorUserId,
+      casting: this.#snapshot(record)
+    };
+    for (const option of record.selected) {
+      try {
+        await this.#executors.notify({
+          actor: record.actor,
+          sourceUuid: option.sourceUuid,
+          identity: option.identity,
+          family: "metamagic",
+          declaration: option.declaration,
+          kind: "option",
+          phase: "committed",
+          context
+        });
+      } catch (error) {
+        try { Logger.warn("Item committed lifecycle notification failed; the native cast remains committed.", error); }
+        catch { /* Notification/console failures must never change native resolution. */ }
+      }
+    }
+  }
+
   observeNative(activity) {
     const record = this.#nativeRecord(activity);
     if (!record) return true;
@@ -576,6 +647,8 @@ export class MetamagicCastingService {
     record.targets = [...(workflow.targets ?? [])].map(target => ({
       tokenUuid: target.document?.uuid ?? target.uuid ?? null, actorUuid: target.actor?.uuid ?? null
     }));
+    this.#remember(record);
+    await this.#notifyCommitted(record);
     await this.#present(record, "Cast");
     return true;
   }
