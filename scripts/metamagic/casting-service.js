@@ -540,12 +540,13 @@ export class MetamagicCastingService {
         // Treat only that exact metadata-loss shape as intact: the receiver's
         // own source must still prove override intent and both source/live values
         // must retain every selected activation field. Pre-payment checks stay strict.
-        if (path === "activation.override" && expected === true && receiver.activation?.override === undefined
-          && receiver._source?.activation?.override === true) {
+        if (path === "activation.override" && expected === true && receiver.activation?.override === undefined) {
+          const source = receiver.item?._source?.system?.activities?.[receiver.id]
+            ?? property(receiver.item, `system.activities.${receiver.id}`);
           const fields = Object.entries(record.activityUpdates).filter(([key]) => key.startsWith("activation.") && key !== path);
-          if (fields.length && fields.every(([key, value]) =>
+          if (property(source, path) === true && fields.length && fields.every(([key, value]) =>
             JSON.stringify(property(receiver, key)) === JSON.stringify(value)
-            && JSON.stringify(property(receiver._source, key)) === JSON.stringify(value))) return false;
+            && JSON.stringify(property(source, key)) === JSON.stringify(value))) return false;
         }
         return JSON.stringify(property(receiver, path)) !== JSON.stringify(expected);
       });
