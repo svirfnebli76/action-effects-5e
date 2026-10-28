@@ -81,6 +81,7 @@ import { DeclarationCollectionService } from "./declarations/collection-service.
 import { registerMetamagicFamily } from "./declarations/metamagic-family.js";
 import { ItemOptionsAuthoringService } from "./authoring/item-options-authoring-service.js";
 import { MetamagicCastingService } from "./metamagic/casting-service.js";
+import { MetamagicTurnCastingService } from "./metamagic/turn-casting-service.js";
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
@@ -224,6 +225,10 @@ const metamagicDeclarations = new MetamagicDeclarationService({ collections: ite
 const declarationMacros = new CatDeclarationMacroAdapter();
 const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations,
   cards: chatCardAdapter, executors: declarationMacros });
+const metamagicTurnCasting = new MetamagicTurnCastingService({
+  phases: castingPhases,
+  declarations: metamagicDeclarations
+});
 const sneakAttackDeclarationParser = new SneakAttackDeclarationParser();
 const sneakAttackDae = new SneakAttackDaeDeclarationService();
 const sneakAttackDeclarations = new SneakAttackDeclarationService({
@@ -484,6 +489,7 @@ const api = new ActionEffects5eApi({
   itemOptionsAuthoring,
   metamagicDeclarations,
   metamagicCasting,
+  metamagicTurnCasting,
   activityCards,
   chatCardAdapter,
   resultsCards,
@@ -639,6 +645,7 @@ Hooks.once("ready", async () => {
   targetConfirmationAdapter.initialize();
   targetScaling.initialize();
   castingPhases.initialize();
+  metamagicTurnCasting.initialize();
   metamagicCasting.initialize();
   ongoingEffects.initialize();
   compatibility.refresh();
