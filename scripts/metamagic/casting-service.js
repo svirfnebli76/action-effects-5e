@@ -535,6 +535,19 @@ export class MetamagicCastingService {
             JSON.stringify(property(receiver, key)) === JSON.stringify(value)
             && JSON.stringify(property(receiver.item.system, key)) === JSON.stringify(value))) return false;
         }
+        // D&D5e can likewise omit activation.override from the held post-use
+        // receiver while the selected activation remains mechanically effective.
+        // Treat only that exact metadata-loss shape as intact: the receiver's
+        // own source must still prove override intent and both source/live values
+        // must retain every selected activation field. Pre-payment checks stay strict.
+        if (path === "activation.override" && expected === true && receiver.activation?.override === undefined) {
+          const source = receiver.item?._source?.system?.activities?.[receiver.id]
+            ?? property(receiver.item, `system.activities.${receiver.id}`);
+          const fields = Object.entries(record.activityUpdates).filter(([key]) => key.startsWith("activation.") && key !== path);
+          if (property(source, path) === true && fields.length && fields.every(([key, value]) =>
+            JSON.stringify(property(receiver, key)) === JSON.stringify(value)
+            && JSON.stringify(property(source, key)) === JSON.stringify(value))) return false;
+        }
         return JSON.stringify(property(receiver, path)) !== JSON.stringify(expected);
       });
       if (changed && !this.#applyActivity(record, receiver, "post-use-restored")) {

@@ -1,3 +1,10 @@
+# v0.4.5.49 — Casting-local activation post-use preservation
+
+- Preserves a validated casting-local activation change when D&D5e drops only the live `activation.override` metadata after native use while the effective activation value and the Activity's own source still retain the selected override.
+- Avoids re-preparing an already-correct detached post-use Activity, which can make it re-inherit the canonical spell activation and incorrectly abort the workflow after native consumption.
+- Keeps all pre-consumption integrity checks strict and continues to reject/veto post-use activation state when the live activation, source activation value, or source override intent no longer matches the selected modifier.
+- Adds focused positive/negative regression coverage. No Metamagic option names, Quickened-specific rules, compendium content, CAT macros, or Item declarations are added to AE5E core.
+
 # v0.4.5.48 — Metamagic turn casting state
 
 - Adds passive, Metamagic-scoped turn casting observation for actors that own the Metamagic base declaration; individual spells require no AE5E, CAT, CPR, GPS, or SRD-specific tracking configuration.
