@@ -104,6 +104,7 @@ export class ActionEffects5eApi {
     itemOptionsAuthoring,
     metamagicDeclarations,
     metamagicCasting,
+    metamagicTurnCasting,
     activityCards,
     chatCardAdapter,
     resultsCards,
@@ -455,7 +456,10 @@ export class ActionEffects5eApi {
       begin: (workflow, options) => metamagicCasting.begin(workflow, options),
       getCasting: subject => metamagicCasting.get(subject),
       getRecentCastings: () => metamagicCasting.recent(),
-      eventIdentity: (castingId, event) => metamagicCasting.eventIdentity(castingId, event)
+      eventIdentity: (castingId, event) => metamagicCasting.eventIdentity(castingId, event),
+      getTurnCasting: (actor, options) => metamagicTurnCasting.get(actor, options),
+      inspectTurnCasting: (actor, options) => metamagicTurnCasting.inspect(actor, options),
+      getTurnCastingStatus: () => metamagicTurnCasting.getStatus()
     });
 
     this.activities = Object.freeze({
