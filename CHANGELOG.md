@@ -1,3 +1,12 @@
+# v0.4.5.48 — Metamagic turn casting state
+
+- Adds passive, Metamagic-scoped turn casting observation for actors that own the Metamagic base declaration; individual spells require no AE5E, CAT, CPR, GPS, or SRD-specific tracking configuration.
+- Stores only the current relevant combat-turn snapshot at `flags.action-effects-5e.metamagic.turnCasting`, with a latched level-1+ fact and exactly three bounded latest-cast slots: Action, Bonus Action, and Reaction. Stale turns read as empty and the next committed spell replaces the old snapshot.
+- Observes the existing post-targeting/committed casting boundary, so pre-cast and cancelled-before-commit attempts do not create state. Midi `automationOnly` Activities and AE5E child workflows are ignored.
+- Resolves combat identity from the actual workflow token first, including off-turn Reactions. A known token never falls back to another token of the same linked Actor; ambiguous actor-only multi-combat cases fail open without writing state.
+- Exposes read-only `api.metamagic.getTurnCasting`, `inspectTurnCasting`, and `getTurnCastingStatus` access for future Item-owned rules such as Quickened Spell. This release does not enforce Quickened Spell, the 2024 spell-slot-per-turn rule, or any other casting restriction.
+- Aligns the exported `MODULE_VERSION` with the manifest/package version and adds bounded-state/multi-combat regression coverage.
+
 # v0.4.5.47 — Argon Target Picker startup compatibility check
 
 - Adds a GM-only startup interoperability check for the active Argon - Combat HUD (CORE) world setting `Target Picker`.
