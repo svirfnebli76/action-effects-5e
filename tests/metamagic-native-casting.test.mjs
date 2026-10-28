@@ -374,11 +374,10 @@ if (data?.phase === "prepare") return data.respond(document, macroName, {
 
   assert.equal(native.activation.override, true);
   assert.equal(native.activation.type, "bonus");
-  native._source = { activation: { override: true, type: "bonus" } };
   delete native.activation.override;
 
-  // The live receiver still has the selected mechanical value and its own source
-  // still proves the override. Re-preparing this detached receiver can make D&D5e
+  // The live receiver still has the selected mechanical value and the casting-local
+  // parent Activity source still proves the override. Re-preparing this detached receiver can make D&D5e
   // re-inherit the canonical Action activation, so a metadata-only repair is wrong.
   native.item.updateSource = () => assert.fail("mechanically correct activation must not be re-prepared");
   assert.equal(f.service.observeNative(native), true);
@@ -402,11 +401,11 @@ if (data?.phase === "prepare") return data.respond(document, macroName, {
     const native = f.activityClone(f.workflow.activity);
     nativeConsumption(f, native);
     f.workflow.activity = native;
-    native._source = { activation: { override: true, type: "bonus" } };
     delete native.activation.override;
+    const sourceActivation = native.item.system.activities.activity.activation;
     if (problem === "live-type") native.activation.type = "action";
-    if (problem === "source-type") native._source.activation.type = "action";
-    if (problem === "source-override") delete native._source.activation.override;
+    if (problem === "source-type") sourceActivation.type = "action";
+    if (problem === "source-override") delete sourceActivation.override;
     native.item.updateSource = () => { throw new Error("restoration unavailable"); };
 
     assert.equal(f.service.observeNative(native), false, problem);
