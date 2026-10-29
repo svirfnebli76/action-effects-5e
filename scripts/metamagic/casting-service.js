@@ -190,7 +190,7 @@ export class MetamagicCastingService {
       resourceId: compiled.resourceId, resourceUuid: compiled.resourceUuid,
       mode: "collection", mainIdentity: compiled.mainIdentity,
       broker: { sourceUuid: compiled.mainUuid, identity: compiled.mainIdentity, declaration: clone(compiled.mainDeclaration) },
-      selected: [], totalCost: 0, activityUpdates: {}, itemUpdates: {}, activityChecks: [], nativeDebit: null,
+      selected: [], totalCost: 0, activityUpdates: {}, itemUpdates: {}, effectUpdates: {}, activityChecks: [], nativeDebit: null,
       refundOwner: "native-activity", refundStatus: "not-requested-by-ae5e",
       workflow, actor, nativeActivities: new WeakSet(), consumptionIndexes: new WeakMap()
     };
@@ -333,7 +333,8 @@ export class MetamagicCastingService {
       if (!prepared || typeof prepared !== "object") throw new Error("Option did not return casting-local updates.");
       if (prepared.activityUpdates !== undefined && (!prepared.activityUpdates || typeof prepared.activityUpdates !== "object" || Array.isArray(prepared.activityUpdates))) throw new Error("Invalid Activity updates.");
       if (prepared.itemUpdates !== undefined && (!prepared.itemUpdates || typeof prepared.itemUpdates !== "object" || Array.isArray(prepared.itemUpdates))) throw new Error("Invalid Item updates.");
-      if (!Object.keys(prepared.activityUpdates ?? {}).length && !Object.keys(prepared.itemUpdates ?? {}).length) throw new Error("Option did not return casting-local updates.");
+      if (prepared.effectUpdates !== undefined && (!prepared.effectUpdates || typeof prepared.effectUpdates !== "object" || Array.isArray(prepared.effectUpdates))) throw new Error("Invalid Effect updates.");
+      if (!Object.keys(prepared.activityUpdates ?? {}).length && !Object.keys(prepared.itemUpdates ?? {}).length && !Object.keys(prepared.effectUpdates ?? {}).length) throw new Error("Option did not return casting-local updates.");
       for (const [path, value] of Object.entries(prepared.activityUpdates ?? {})) {
         if (!path || /(^|\.)(__proto__|prototype|constructor|_id|consumption|flags)(\.|$)/.test(path)
           || path in record.activityUpdates) throw new Error("Conflicting or reserved Activity update.");
@@ -347,6 +348,27 @@ export class MetamagicCastingService {
         if (path === "system.duration.value" && (!Number.isSafeInteger(value) || value <= 0)) throw new Error("Invalid spell duration value.");
         if (path === "system.duration.units" && !["round", "minute", "hour", "day"].includes(value)) throw new Error("Invalid spell duration units.");
         record.itemUpdates[path] = clone(value);
+      }
+      // Validate all Effect IDs against the selected casting Activity and detached Item.
+      const item = record.workflow.activity.item;
+      const source = record.actor.items.get(item.id);
+      const references = Array.from(record.workflow.activity.effects ?? []);
+      for (const [effectId, changes] of Object.entries(prepared.effectUpdates ?? {})) {
+        if (!/^[a-zA-Z0-9]{16}$/.test(effectId) || effectId in record.effectUpdates
+          || !changes || typeof changes !== "object" || Array.isArray(changes)
+          || !Object.keys(changes).length) throw new Error("Invalid or conflicting Effect update.");
+        if (!references.some(ref => ref?._id === effectId && !ref.uuid)) throw new Error("Effect is not referenced by this Activity.");
+        const effect = item.effects?.get(effectId);
+        const original = source?.effects?.get(effectId);
+        if (!effect || !original || effect === original || effect.parent !== item || source === item)
+          throw new Error("Casting-local embedded Effect isolation failed.");
+        for (const [path, value] of Object.entries(changes)) {
+          if (!["duration.value", "duration.units"].includes(path)) throw new Error("Unsupported Effect update path.");
+          if (path === "duration.value" && (!Number.isSafeInteger(value) || value <= 0)) throw new Error("Invalid Effect duration value.");
+          if (path === "duration.units" && !["seconds", "minutes", "hours", "days", "rounds", "turns"].includes(value))
+            throw new Error("Invalid Effect duration unit.");
+        }
+        record.effectUpdates[effectId] = clone(changes);
       }
       record.selected.push(clone(option));
       record.totalCost += option.cost;
@@ -396,6 +418,19 @@ export class MetamagicCastingService {
     record.activityChecks = record.activityChecks.slice(-8);
   }
 
+  #verifyEffects(record, item) {
+    const source = record.actor.items.get(item.id);
+    if (!source || source === item) return false;
+    for (const [id, changes] of Object.entries(record.effectUpdates)) {
+      const effect = item.effects?.get(id);
+      const original = source.effects?.get(id);
+      if (!effect || !original || effect === original || effect.parent !== item) return false;
+      if (Object.entries(changes).some(([path, expected]) =>
+        JSON.stringify(property(effect, path)) !== JSON.stringify(expected))) return false;
+    }
+    return true;
+  }
+
   #applyActivity(record, activity, stage, extraUpdates = {}) {
     const item = activity.item;
     if (record.actor.items.get(item.id) === item) return this.#veto(record, "A source Item cannot receive casting-local changes.");
@@ -439,6 +474,20 @@ export class MetamagicCastingService {
       for (const receiver of receivers) if (receiver !== prepared) receiver.updateSource(updates);
       item.prepareFinalAttributes?.();
       for (const receiver of receivers) if (receiver !== prepared) receiver.prepareFinalData?.();
+      // Active Effects are embedded Documents, not Activity properties. Update
+      // only detached effects on this casting Item and verify their live values.
+      const originalItem = record.actor.items.get(item.id);
+      const referencedIds = new Set(Array.from(activity.effects ?? [])
+        .filter(ref => ref?._id && !ref.uuid).map(ref => ref._id));
+      for (const [id, changes] of Object.entries(record.effectUpdates)) {
+        const effect = item.effects?.get(id);
+        const original = originalItem?.effects?.get(id);
+        if (!referencedIds.has(id) || !effect || !original || effect === original || effect.parent !== item)
+          return this.#veto(record, "Casting-local Effect reference or isolation was lost.");
+        effect.updateSource(clone(changes));
+      }
+      if (!this.#verifyEffects(record, item))
+        return this.#veto(record, "Casting-local Effect duration updates were not retained.");
       for (const [path, expected] of Object.entries(record.itemUpdates)) {
         if (JSON.stringify(property(item, path)) !== JSON.stringify(expected)) {
           return this.#veto(record, `The casting-local Item did not retain '${path}'; casting was stopped.`);
@@ -524,6 +573,8 @@ export class MetamagicCastingService {
     if (!record) return !marker(activity);
     if (!record.nativeActivities.has(activity) || record.nativeDebit) return false;
     const prepared = activity.item.system?.activities?.get?.(activity.id) ?? activity;
+    if (!this.#verifyEffects(record, activity.item))
+      return this.#veto(record, "Selected Effect changes were lost before native consumption; no modifier payment was accepted.");
     if (Object.entries(record.itemUpdates).some(([path, expected]) =>
       JSON.stringify(property(activity.item, path)) !== JSON.stringify(expected))) {
       return this.#veto(record, "Selected Item changes were lost before native consumption; no modifier payment was accepted.");
