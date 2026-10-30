@@ -23,7 +23,7 @@ function setPath(subject, path, value) {
   for (const key of keys) subject = subject[key] ??= {};
   subject[leaf] = copy(value);
 }
-export function setup({ range = { value: 30, units: "ft", override: false }, available = 4, uuid = "Actor.caster", ac5e = null, sourceBacked = false } = {}) {
+export function setup({ range = { value: 30, units: "ft", override: false }, available = 4, uuid = "Actor.caster", ac5e = null, sourceBacked = false, spellProperties = null } = {}) {
   const { collections, registry } = declarationsFixture({ ac5e });
   const actor = { uuid, isOwner: true, items: new Items() };
   const writes = [];
@@ -43,12 +43,14 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   const option = add("option", [definitions.distant]);
   install(option, "Distant Spell", "option", distant);
   const pool = add("pool", null, { identifier: "sorcery-points", uses: { value: available, spent: 7 - available, max: 7 } });
-  const original = add("spell", null, { range: copy(range) });
+  const original = add("spell", null, { range: copy(range), ...(spellProperties === null ? {} : { properties: copy(spellProperties) }) });
   original.type = "spell";
+  original.toObject = () => ({ system: copy(original.system) });
   function activityClone(from = null) {
     if (sourceBacked) {
       // Native use/scaling works from the parent Item source, not detached live Activity fields.
       const data = copy(from?.item._source ?? { flags: original.flags, system: { range: copy(range),
+        ...(spellProperties === null ? {} : { properties: copy(spellProperties) }),
         activities: { activity: { range: copy(range), consumption: { targets: [] } } } } });
       const spell = { id: original.id, uuid: original.uuid, actor, type: "spell", _source: data,
         updateSource(updates) {
@@ -59,7 +61,8 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
         } };
       const hydrateItem = () => {
         spell.flags = copy(data.flags);
-        spell.system = { range: copy(data.system.range), activities: new Items() };
+        spell.system = { range: copy(data.system.range), activities: new Items(),
+          ...(data.system.properties === undefined ? {} : { properties: new Set([...data.system.properties, "mgc"]) }) };
         for (const [id, raw] of Object.entries(data.system.activities)) {
           // D&D5e RangeField.value is a FormulaField (a StringField), then
           // prepareFinalData evaluates it to the live numeric distance.

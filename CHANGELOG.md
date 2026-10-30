@@ -1,3 +1,11 @@
+# v0.4.5.51 — Generic casting-local spell component property updates
+
+- Extends Metamagic's existing casting-local Item update contract to support `system.properties` for detached spell copies, without adding Subtle Spell rules or a special execution path.
+- Permits only removal of existing Verbal (`vocal`), Somatic (`somatic`), and Material (`material`) property identifiers; other properties and order must be preserved, and unchanged arrays are accepted.
+- Validates changes against the actor-owned original, then verifies both source-backed properties and the prepared D&D5e Set before native Sorcery Point consumption. The native derived `mgc` property is accounted for without masking other unexpected properties.
+- Preserves all existing spell, Activity, Active Effect, and native consumption behavior; original spell Items, Item declarations, CAT macros, spell descriptions, and compendiums are not changed.
+- Adds focused component-property validation and casting lifecycle regression tests. Live Foundry/Midi acceptance is still required.
+
 # v0.4.5.50 — Metamagic committed lifecycle and pre-cast guards
 
 - Adds an optional Item-owned Metamagic guard contract through `guardPhases`; this release deliberately permits only the existing cancel-safe `pre-cast` phase.

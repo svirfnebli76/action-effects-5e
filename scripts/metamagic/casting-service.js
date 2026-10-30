@@ -1,11 +1,15 @@
 import { MODULE_ID } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
+import { validateSpellPropertyUpdate, spellPropertyUpdateMatches } from "./casting-item-properties.js";
 
 const CAST_FLAG = "casting";
 const clone = value => duplicateSafely(value);
 const marker = activity => activity?.item?.flags?.[MODULE_ID]?.[CAST_FLAG];
 const property = (object, path) => path.split(".").reduce((value, key) => value?.[key], object);
+const itemUpdateMatches = (item, path, expected) => path === "system.properties"
+  ? spellPropertyUpdateMatches(item, expected)
+  : JSON.stringify(property(item, path)) === JSON.stringify(expected);
 const workflowFrom = args => args.flatMap(value => [value, value?.workflow, value?.config?.workflow, value?.usage?.workflow])
   .find(value => value?.actor && value?.activity);
 
@@ -341,12 +345,15 @@ export class MetamagicCastingService {
         record.activityUpdates[path] = clone(value);
       }
       for (const [path, value] of Object.entries(prepared.itemUpdates ?? {})) {
-        // Item updates are intentionally narrow. Duration is the first consumer;
-        // broaden the allowlist only after separately verified casting-local use.
-        if (!["system.duration.value", "system.duration.units"].includes(path)
+        // Explicitly allow only verified casting-local Item fields.
+        if (!["system.duration.value", "system.duration.units", "system.properties"].includes(path)
           || path in record.itemUpdates) throw new Error("Conflicting or unsupported casting-local Item update.");
         if (path === "system.duration.value" && (!Number.isSafeInteger(value) || value <= 0)) throw new Error("Invalid spell duration value.");
         if (path === "system.duration.units" && !["round", "minute", "hour", "day"].includes(value)) throw new Error("Invalid spell duration units.");
+        if (path === "system.properties") {
+          const original = record.actor.items.get(record.workflow.activity.item.id);
+          validateSpellPropertyUpdate(original, value);
+        }
         record.itemUpdates[path] = clone(value);
       }
       // Validate all Effect IDs against the selected casting Activity and detached Item.
@@ -489,7 +496,7 @@ export class MetamagicCastingService {
       if (!this.#verifyEffects(record, item))
         return this.#veto(record, "Casting-local Effect duration updates were not retained.");
       for (const [path, expected] of Object.entries(record.itemUpdates)) {
-        if (JSON.stringify(property(item, path)) !== JSON.stringify(expected)) {
+        if (!itemUpdateMatches(item, path, expected)) {
           return this.#veto(record, `The casting-local Item did not retain '${path}'; casting was stopped.`);
         }
       }
@@ -576,7 +583,7 @@ export class MetamagicCastingService {
     if (!this.#verifyEffects(record, activity.item))
       return this.#veto(record, "Selected Effect changes were lost before native consumption; no modifier payment was accepted.");
     if (Object.entries(record.itemUpdates).some(([path, expected]) =>
-      JSON.stringify(property(activity.item, path)) !== JSON.stringify(expected))) {
+      !itemUpdateMatches(activity.item, path, expected))) {
       return this.#veto(record, "Selected Item changes were lost before native consumption; no modifier payment was accepted.");
     }
     for (const receiver of [activity, prepared, record.workflow.activity]) {
