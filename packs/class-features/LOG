@@ -1,5 +1,3 @@
-2026/10/29-12:09:50.632 8fbc Recovering log #351
-2026/10/29-12:09:50.632 8fbc Level-0 table #353: started
-2026/10/29-12:09:50.633 8fbc Level-0 table #353: 1797 bytes OK
-2026/10/29-12:09:50.636 8fbc Delete type=0 #351
-2026/10/29-12:09:50.636 8fbc Delete type=3 #349
+2026/10/30-14:28:09.650 91ac Recovering log #359
+2026/10/30-14:28:09.653 91ac Delete type=0 #359
+2026/10/30-14:28:09.653 91ac Delete type=3 #355
