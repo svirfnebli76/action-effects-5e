@@ -34,7 +34,6 @@ export function registerMetamagicFamily(registry) {
         if (!integer(record.optionChoices) || !integer(record.selectionLimit) || !record.selectionLimit) issues.push("Invalid choice capacity or selection limit.");
         if (!validId(record.resource?.identifier) || (record.resource?.itemId !== undefined && typeof record.resource.itemId !== "string")) issues.push("A native resource identifier and optional Item id are required.");
         if (record.execution !== undefined && !validExecution(record.execution)) issues.push("The broker execution must reference a named Item-owned macro.");
-        if (record.lateExecution !== undefined && !validExecution(record.lateExecution)) issues.push("lateExecution must reference a named Item-owned CAT macro.");
       }
       if (record.type === "option") {
         if (!integer(record.cost)) issues.push("cost must be a non-negative integer.");

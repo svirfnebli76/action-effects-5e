@@ -126,9 +126,7 @@ export class MetamagicCastingService {
     const first = await this.inspectPhaseOffers(workflow);
     if (!first?.offers?.length) return true;
     const compiled = this.#declarations.compile(record.actor, this.#context(workflow));
-    const lateExecution = compiled.mainDeclaration?.lateExecution;
-    if (!lateExecution) return true; // Older Item-owned brokers stay completely unchanged.
-    const brokerDeclaration = { ...compiled.mainDeclaration, execution: lateExecution };
+    if (!this.#sameBase(compiled, record)) return true;
     let invoked = 0;
     let answer;
     let callbackResult;
@@ -136,8 +134,9 @@ export class MetamagicCastingService {
     try {
       answer = await this.#executors.execute({
         actor: record.actor, sourceUuid: compiled.mainUuid, identity: compiled.mainIdentity,
-        family: "metamagic", declaration: brokerDeclaration, kind: "broker", phase: "late-begin",
+        family: "metamagic", declaration: compiled.mainDeclaration, kind: "broker", phase: "begin",
         context: { actor: record.actor, workflow, initiatorUserId: record.initiatorUserId,
+          castingPhase: CASTING_PHASES.SAVES_READY,
           begin: async (source, chooser) => {
             invoked++;
             if (!running || invoked !== 1 || source?.uuid !== compiled.mainUuid
@@ -189,27 +188,22 @@ export class MetamagicCastingService {
     }
     if (cost > Number(pool?.system?.uses?.value))
       throw new Error("Sorcery Points changed; late Metamagic preview was cancelled.");
-    const candidates = new Set([...(workflow.hitTargets ?? workflow.targets ?? [])]
-      .map(t => t?.document?.uuid ?? t?.uuid).filter(Boolean));
     const prepared = [];
     for (const option of selected) {
       const selection = await this.#optionResult(option, "select", record, {
         castingPhase: CASTING_PHASES.SAVES_READY, previewOnly: true
       });
       if (selection?.outcome !== "confirm") continue;
-      const chosen = selection.selectedTokenUuids;
-      if (!Array.isArray(chosen) || !chosen.length || new Set(chosen).size !== chosen.length
-        || chosen.some(uuid => !candidates.has(uuid)))
-        throw new Error("Careful Spell selection contained unknown affected tokens.");
+      if (selection.payload === undefined) throw new Error("Late Metamagic selection did not return an Item-owned payload.");
       prepared.push({ id: option.id, label: option.label, sourceUuid: option.sourceUuid,
-        cost: option.cost, selectedTokenUuids: [...chosen] });
+        cost: option.cost, payload: clone(selection.payload) });
     }
     if (!prepared.length) return { outcome: "decline", selectedIds: [] };
     // These are NOT applied modifiers. Keep them separate from paid record.selected.
     record.latePreview = { phase: CASTING_PHASES.SAVES_READY, status: "unpaid-not-applied",
       options: clone(prepared), totalCost: prepared.reduce((n,o) => n+o.cost,0) };
     this.#remember(record);
-    globalThis.ui?.notifications?.info?.("AE5E: Careful Spell selection preview recorded. Protection and payment are not yet active.");
+    globalThis.ui?.notifications?.info?.("AE5E: Late Metamagic selection preview recorded. Payment and effects are not yet active.");
     return { outcome: "preview", selectedIds: prepared.map(o => o.id) };
   }
   eventIdentity(castingId, { phase, targetActorUuid = null, targetTokenUuid = null, rollId = null } = {}) {

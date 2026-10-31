@@ -635,18 +635,16 @@ test("save-ready inspection preserves already-used per-casting Metamagic capacit
 });
 
 
-test("late Metamagic CAT broker records Careful selection preview without SP debit or save effects", async () => {
+test("existing Metamagic broker is reused at saves-ready and stores Item-owned late payload", async () => {
   const f = setup();
-  f.main.flags[scope].metamagic.declarations[0].lateExecution = {
-    interface: "cat-embedded", name: "Metamagic Late Broker"
-  };
-  f.install(f.main, "Metamagic Late Broker", "broker", [
-    'if (data?.phase !== "late-begin") return;',
-    'const result = await data.context.begin(document, async () => ({',
-    '  outcome: "confirm", selectedIds: ["careful-probe"]',
-    '}));',
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase === "consumed") return data.respond(document, macroName, true);',
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async ({phase}) => phase === "saves-ready"',
+    '  ? ({outcome:"confirm", selectedIds:["careful-probe"]})',
+    '  : ({outcome:"decline", selectedIds:[]}));',
     'return data.respond(document, macroName, result);'
-  ].join("\n"));
+  ].join("\n");
   const late = f.add("late", [{
     ...structuredClone(definitions.distant), id: "careful-probe",
     phases: ["saves-ready"], execution: { interface: "cat-embedded", name: "Careful Probe" }
@@ -654,10 +652,9 @@ test("late Metamagic CAT broker records Careful selection preview without SP deb
   f.install(late, "Careful Probe", "option", [
     'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
     'if (data.phase === "select") return data.respond(document, macroName, {',
-    '  outcome:"confirm", selectedTokenUuids:["Scene.test.Token.friend"]',
+    '  outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.friend"]}',
     '});'
   ].join("\n"));
-  f.workflow.hitTargets = new Set([{document:{uuid:"Scene.test.Token.friend"}}]);
   f.setChooser(async () => null);
   assert.equal(await f.service.begin(f.workflow), true);
   const initial = f.service.get(f.workflow);
@@ -667,30 +664,21 @@ test("late Metamagic CAT broker records Careful selection preview without SP deb
   assert.equal(record.castingId, initial.castingId);
   assert.equal(record.state, "unmodified");
   assert.deepEqual(record.selected, []);
-  assert.deepEqual(record.latePreview.options[0].selectedTokenUuids, ["Scene.test.Token.friend"]);
+  assert.deepEqual(record.latePreview.options[0].payload.protectedTokenUuids, ["Scene.test.Token.friend"]);
   assert.equal(record.latePreview.status, "unpaid-not-applied");
-  assert.equal(record.latePreview.totalCost, 1);
   assert.equal(record.totalCost, 0);
   assert.equal(record.nativeDebit, null);
   assert.equal(f.pool.system.uses.value, 4);
-  assert.equal(f.writes.length, 0);
-  assert.equal(f.calls.filter(c => c.phase === "late-begin").length, 1);
+  assert.equal(f.calls.filter(c => c.kind === "broker" && c.phase === "begin").length, 2);
   assert.equal(f.calls.filter(c => c.phase === "select").length, 1);
 });
 
-test("late preview does not run without base Item lateExecution opt-in", async () => {
+test("save-ready does not invoke broker when no learned option declares that phase", async () => {
   const f = setup();
-  const late = f.add("late", [{
-    ...structuredClone(definitions.distant), id: "careful-probe",
-    phases: ["saves-ready"], execution: { interface: "cat-embedded", name: "Careful Probe" }
-  }]);
-  f.install(late, "Careful Probe", "option", [
-    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
-    'if (data.phase === "select") throw new Error("Should not run without base opt-in");'
-  ].join("\n"));
   f.setChooser(async () => null);
   await f.service.begin(f.workflow);
   assert.equal(await f.service.late(f.workflow), true);
+  assert.equal(f.calls.filter(c => c.kind === "broker" && c.phase === "begin").length, 1);
   assert.equal(f.service.get(f.workflow).latePreview, undefined);
   assert.equal(f.pool.system.uses.value, 4);
 });

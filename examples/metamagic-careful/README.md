@@ -1,33 +1,40 @@
-# Careful Spell — Late-phase preview (AE5E 0.4.5.53)
+# Careful Spell — save-ready integration (AE5E 0.4.5.54)
 
-These are **Item-owned CAT Embedded Macros**, not world macros or Midi On-Use macros. The
-feature remains **preview-only** until the separately tested late Sorcery Point
-transaction can succeed. Previewing a choice does not spend SP, apply B4
-protection, change workflow targets, or register the option as a paid selection.
+There is one Metamagic Broker.
 
-- Existing Metamagic base Item: retain its accepted **Metamagic Broker** CAT
-  macro unchanged. Add **Metamagic Late Broker** CAT Called macro with pass
-  \`actorAe5eDeclarationBroker\`, priority 50, source
-  \`examples/metamagic-careful/late-broker.js\`. Extend the existing base
-  declaration by adding:
-  \`"lateExecution":{"interface":"cat-embedded","name":"Metamagic Late Broker"}\`.
-- Careful Spell Item: set declaration
-  \`{"id":"careful-spell","type":"option","cost":1,"selectionCost":1,
-  "tooltip":"Choose protected creatures on the initial saving throw.",
-  "phases":["saves-ready"],"acquisition":"learned",
-  "execution":{"interface":"cat-embedded","name":"Careful Spell"}}\`.
-  Add the **Careful Spell** Called CAT macro with pass
-  \`actorAe5eDeclarationOption\`, priority 50, source
-  \`examples/metamagic-careful/careful-spell.js\`.
+AE5E invokes the existing base Item's **Metamagic Broker** CAT Called macro at
+pre-cast when pre-cast options are relevant, and invokes that same macro again
+at \`saves-ready\` only when a learned option declares that phase. There is no
+second broker macro and no separate late broker declaration.
 
-The Item can be created directly on Symaali by a one-time console installer.
-No compendium writes. If the actor's declaration optionChoices limit is full,
-increase the test actor's choice capacity via an approved provider rather than
-silently changing official sorcerer limits.
+The existing Careful Spell compendium Item is authored manually in Foundry.
+AE5E does not create or overwrite it.
 
-Acceptance: casting Fireball with five targets presents the existing pre-cast
-chooser, then the new save-ready Metamagic chooser, then a Careful Spell
-creature-selection dialog. Secret-disposition tokens do not appear.
-Selected token UUIDs are recorded in the casting snapshot under \`latePreview\`
-with status \`unpaid-not-applied\`. No pool changes, save overrides, or
-automatic half-damage suppression occur in this preview build.
+Careful Spell declaration:
+
+\`\`\`json
+{
+  "id": "careful-spell",
+  "type": "option",
+  "cost": 1,
+  "selectionCost": 1,
+  "tooltip": "Choose creatures to protect from the spell's initial saving throw.",
+  "phases": ["saves-ready"],
+  "acquisition": "learned",
+  "execution": {
+    "interface": "cat-embedded",
+    "name": "Careful Spell"
+  }
+}
+\`\`\`
+
+Careful Spell CAT:
+- Name: \`Careful Spell\`
+- Event: \`Called\`
+- Pass: \`actorAe5eDeclarationOption\`
+- Priority: \`50\`
+- Source: \`examples/metamagic-careful/careful-spell.js\`
+
+B5.3 remains preview-only after creature selection. The Item-owned payload is
+recorded on the existing casting record under \`latePreview\`. Payment/refund
+and B4 protection are connected after this real broker/item path is accepted.

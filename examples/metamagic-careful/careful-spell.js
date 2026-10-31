@@ -107,4 +107,8 @@ const answer = await DialogV2.wait({
   ],
   close: () => ({ outcome: "decline" })
 });
-return data.respond(document, macroName, answer ?? { outcome: "decline" });
+if (answer?.outcome !== "confirm") return data.respond(document, macroName, { outcome: "decline" });
+return data.respond(document, macroName, {
+  outcome: "confirm",
+  payload: { protectedTokenUuids: [...answer.selectedTokenUuids] }
+});
