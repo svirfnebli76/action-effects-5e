@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../core/constants.js";
+import { CASTING_PHASES } from "../casting/casting-phase-service.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { validateSpellPropertyUpdate, spellPropertyUpdateMatches } from "./casting-item-properties.js";
@@ -62,6 +63,38 @@ export class MetamagicCastingService {
   }
 
   recent() { return this.#recent.map(clone); }
+
+  /** Read-only discovery for an existing casting; no choice, resource debit or effect application. */
+  async inspectPhaseOffers(workflow, phase = CASTING_PHASES.SAVES_READY) {
+    if (phase !== CASTING_PHASES.SAVES_READY) throw new Error("Unsupported late Metamagic phase.");
+    if (!workflow) return null;
+    const record = this.#byWorkflow.get(workflow);
+    if (!record || ["rejected", "completed", "unconfirmed"].includes(record.state)) return null;
+    if (record.initiatorUserId !== game.user.id || (workflow.userId && workflow.userId !== game.user.id)) return null;
+    const current = this.#declarations.compile(record.actor, this.#context(workflow));
+    if (!this.#sameBase(current, record)) return null;
+    const available = await this.#offers(current, record, phase);
+    const selected = new Set(record.selected.map(entry => entry.id));
+    const selectionRemaining = Math.max(0, current.selectionLimit - record.selected.length);
+    const offers = available.map(entry => {
+      const block = selected.has(entry.id)
+        ? "This Metamagic was already used on this casting."
+        : selectionRemaining === 0
+          ? "The Metamagic selection limit for this casting has been reached."
+          : null;
+      return block ? { ...entry, disabled: true, reason: block, reasons: [...entry.reasons, block] } : entry;
+    });
+    const pool = record.actor.items.get(current.resourceId);
+    return {
+      phase,
+      casting: this.#snapshot(record),
+      resource: { itemId: current.resourceId, current: Number(pool?.system?.uses?.value),
+        max: Number(pool?.system?.uses?.max) },
+      selectionLimit: current.selectionLimit,
+      selectionRemaining,
+      offers: clone(offers)
+    };
+  }
 
   eventIdentity(castingId, { phase, targetActorUuid = null, targetTokenUuid = null, rollId = null } = {}) {
     if (!castingId || !phase) throw new Error("Casting and phase identity are required.");
@@ -235,7 +268,9 @@ export class MetamagicCastingService {
             available,
             maximum: Number.isFinite(maximum) ? maximum : available,
             cost: option.cost
-          }
+          },
+          castingPhase: phase,
+          casting: this.#snapshot(record)
         });
       } catch (error) { result = { eligible: false, reason: error.message }; }
       const eligible = result?.eligible === true;

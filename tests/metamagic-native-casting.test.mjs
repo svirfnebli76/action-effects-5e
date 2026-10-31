@@ -589,3 +589,47 @@ return data.respond(document, macroName, result);
     else globalThis[captureKey] = previous;
   }
 });
+
+
+test("read-only save-ready offer inspection retains the casting after pre-cast decline", async () => {
+  const f = setup();
+  const declaration = { ...structuredClone(definitions.distant), id: "careful-probe", phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" } };
+  const late = f.add("late", [declaration]);
+  f.install(late, "Careful Probe", "option",
+    'if (data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
+  f.setChooser(async () => null);
+  assert.equal(await f.service.begin(f.workflow), true);
+  const before = f.service.get(f.workflow);
+  assert.equal(before.state, "unmodified");
+  const result = await f.service.inspectPhaseOffers(f.workflow);
+  assert.equal(result.phase, "saves-ready");
+  assert.equal(result.casting.castingId, before.castingId);
+  assert.equal(result.selectionRemaining, 1);
+  assert.deepEqual(result.offers.map(entry => entry.id), ["careful-probe"]);
+  assert.equal(result.offers[0].disabled, false);
+  assert.equal(result.resource.current, 4);
+  assert.equal(f.pool.system.uses.value, 4);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.service.get(f.workflow).state, "unmodified");
+  assert.equal(await f.service.inspectPhaseOffers(null), null);
+  await assert.rejects(f.service.inspectPhaseOffers(f.workflow, "invalid"), /Unsupported late/);
+});
+
+test("save-ready inspection preserves already-used per-casting Metamagic capacity", async () => {
+  const f = setup();
+  const declaration = { ...structuredClone(definitions.distant), id: "careful-probe", phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" } };
+  const late = f.add("late", [declaration]);
+  f.install(late, "Careful Probe", "option",
+    'if (data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
+  await f.service.begin(f.workflow);
+  const castingId = f.service.get(f.workflow).castingId;
+  const result = await f.service.inspectPhaseOffers(f.workflow);
+  assert.equal(result.casting.castingId, castingId);
+  assert.equal(result.selectionRemaining, 0);
+  assert.equal(result.offers.length, 1);
+  assert.equal(result.offers[0].disabled, true);
+  assert.match(result.offers[0].reason, /selection limit/);
+  assert.equal(f.pool.system.uses.value, 4);
+});

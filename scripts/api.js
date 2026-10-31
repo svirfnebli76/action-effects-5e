@@ -456,6 +456,7 @@ export class ActionEffects5eApi {
       begin: (workflow, options) => metamagicCasting.begin(workflow, options),
       getCasting: subject => metamagicCasting.get(subject),
       getRecentCastings: () => metamagicCasting.recent(),
+      inspectPhaseOffers: (workflow, phase) => metamagicCasting.inspectPhaseOffers(workflow, phase),
       eventIdentity: (castingId, event) => metamagicCasting.eventIdentity(castingId, event),
       getTurnCasting: (actor, options) => metamagicTurnCasting.get(actor, options),
       inspectTurnCasting: (actor, options) => metamagicTurnCasting.inspect(actor, options),
