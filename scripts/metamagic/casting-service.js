@@ -24,6 +24,8 @@ export class MetamagicCastingService {
   #records = new Map();
   #recent = [];
   #hooks = [];
+  #latePending = new WeakMap();
+  #lateDone = new WeakSet();
 
   constructor({ declarations, cards, executors }) {
     this.#declarations = declarations;
@@ -46,6 +48,13 @@ export class MetamagicCastingService {
     on("dnd5e.postActivityConsumption", (activity, usage, message) => this.recordConsumption(activity, message));
     on("dnd5e.postUseActivity", activity => this.observeNative(activity));
     on("midi-qol.premades.postPreambleComplete", (...args) => this.commit(workflowFrom(args)));
+    // Paid late-phase execution is intentionally not enabled yet. The saved
+    // creature selection is a preview until a verified debit adapter exists.
+    on("midi-qol.preCheckSaves", (...args) => this.late(workflowFrom(args)).catch(error => {
+      Logger.warn("Late Metamagic preview failed; spell saves continue normally.", error);
+      globalThis.ui?.notifications?.warn?.("AE5E: Late Metamagic preview could not complete; no protection or Sorcery Points applied.");
+      return true;
+    }));
     on("midi-qol.RollComplete", (...args) => this.complete(workflowFrom(args)));
     on("midi-qol.premades.postRollFinished", (...args) => this.complete(workflowFrom(args)));
   }
@@ -96,6 +105,113 @@ export class MetamagicCastingService {
     };
   }
 
+  /**
+   * Offer Item-owned late Metamagic choices at Midi preCheckSaves.
+   * This stage is explicitly preview-only; no debit and no save protection.
+   * Keep the accepted pre-cast CAT broker and native consumption unchanged.
+   */
+  async late(workflow) {
+    if (!workflow || this.#lateDone.has(workflow)) return true;
+    if (this.#latePending.has(workflow)) return this.#latePending.get(workflow);
+    const pending = this.#latePreview(workflow);
+    this.#latePending.set(workflow, pending);
+    try { return await pending; }
+    finally { this.#latePending.delete(workflow); this.#lateDone.add(workflow); }
+  }
+
+  async #latePreview(workflow) {
+    const record = this.#byWorkflow.get(workflow);
+    if (!record || !["unmodified", "selected", "native-prepared", "consumed", "committed"].includes(record.state)) return true;
+    if (record.initiatorUserId !== game.user.id || (workflow.userId && workflow.userId !== game.user.id)) return true;
+    const first = await this.inspectPhaseOffers(workflow);
+    if (!first?.offers?.length) return true;
+    const compiled = this.#declarations.compile(record.actor, this.#context(workflow));
+    const lateExecution = compiled.mainDeclaration?.lateExecution;
+    if (!lateExecution) return true; // Older Item-owned brokers stay completely unchanged.
+    const brokerDeclaration = { ...compiled.mainDeclaration, execution: lateExecution };
+    let invoked = 0;
+    let answer;
+    let callbackResult;
+    let running = true;
+    try {
+      answer = await this.#executors.execute({
+        actor: record.actor, sourceUuid: compiled.mainUuid, identity: compiled.mainIdentity,
+        family: "metamagic", declaration: brokerDeclaration, kind: "broker", phase: "late-begin",
+        context: { actor: record.actor, workflow, initiatorUserId: record.initiatorUserId,
+          begin: async (source, chooser) => {
+            invoked++;
+            if (!running || invoked !== 1 || source?.uuid !== compiled.mainUuid
+              || record.actor.items.get(source.id) !== source || typeof chooser !== "function")
+              throw new Error("Late Metamagic broker must be started once from its base Item.");
+            callbackResult = await this.#chooseLate(record, chooser);
+            return callbackResult;
+          }
+        }
+      });
+      if (invoked !== 1 || answer !== callbackResult)
+        throw new Error("Late Metamagic broker did not return its chooser result.");
+    } finally { running = false; }
+    return true;
+  }
+
+  async #chooseLate(record, chooser) {
+    const workflow = record.workflow;
+    const original = await this.inspectPhaseOffers(workflow);
+    if (!original?.offers.length) return { outcome: "decline", selectedIds: [] };
+    const response = await chooser({
+      phase: CASTING_PHASES.SAVES_READY, closeOutcome: "decline",
+      casting: original.casting, offers: original.offers,
+      resource: original.resource, selectionLimit: original.selectionRemaining
+    });
+    const decision = Array.isArray(response)
+      ? { outcome: response.length ? "confirm" : "decline", selectedIds: response }
+      : { outcome: response?.outcome ?? "decline", selectedIds: response?.selectedIds ?? [] };
+    if (decision.outcome !== "confirm") return { outcome: "decline", selectedIds: [] };
+    const ids = decision.selectedIds;
+    if (!Array.isArray(ids) || !ids.length || ids.length > original.selectionRemaining
+      || new Set(ids).size !== ids.length || ids.some(id => !original.offers.some(o => o.id === id && !o.disabled)))
+      throw new Error("Late Metamagic selection is no longer valid.");
+    const current = this.#declarations.compile(record.actor, this.#context(workflow));
+    if (!this.#sameBase(current, record)) throw new Error("Base Metamagic declaration changed while choosing.");
+    const fresh = await this.inspectPhaseOffers(workflow);
+    if (!fresh || fresh.selectionRemaining < ids.length)
+      throw new Error("Metamagic selection allowance changed while choosing.");
+    const pool = record.actor.items.get(record.resourceId);
+    const selected = [];
+    let cost = 0;
+    for (const id of ids) {
+      const option = fresh.offers.find(o => o.id === id && !o.disabled);
+      const originallyOffered = original.offers.find(o => o.id === id);
+      if (!option || !this.#sameOption(option, originallyOffered))
+        throw new Error("Late Metamagic option changed; no protection was applied.");
+      cost += option.cost;
+      selected.push(option);
+    }
+    if (cost > Number(pool?.system?.uses?.value))
+      throw new Error("Sorcery Points changed; late Metamagic preview was cancelled.");
+    const candidates = new Set([...(workflow.hitTargets ?? workflow.targets ?? [])]
+      .map(t => t?.document?.uuid ?? t?.uuid).filter(Boolean));
+    const prepared = [];
+    for (const option of selected) {
+      const selection = await this.#optionResult(option, "select", record, {
+        castingPhase: CASTING_PHASES.SAVES_READY, previewOnly: true
+      });
+      if (selection?.outcome !== "confirm") continue;
+      const chosen = selection.selectedTokenUuids;
+      if (!Array.isArray(chosen) || !chosen.length || new Set(chosen).size !== chosen.length
+        || chosen.some(uuid => !candidates.has(uuid)))
+        throw new Error("Careful Spell selection contained unknown affected tokens.");
+      prepared.push({ id: option.id, label: option.label, sourceUuid: option.sourceUuid,
+        cost: option.cost, selectedTokenUuids: [...chosen] });
+    }
+    if (!prepared.length) return { outcome: "decline", selectedIds: [] };
+    // These are NOT applied modifiers. Keep them separate from paid record.selected.
+    record.latePreview = { phase: CASTING_PHASES.SAVES_READY, status: "unpaid-not-applied",
+      options: clone(prepared), totalCost: prepared.reduce((n,o) => n+o.cost,0) };
+    this.#remember(record);
+    globalThis.ui?.notifications?.info?.("AE5E: Careful Spell selection preview recorded. Protection and payment are not yet active.");
+    return { outcome: "preview", selectedIds: prepared.map(o => o.id) };
+  }
   eventIdentity(castingId, { phase, targetActorUuid = null, targetTokenUuid = null, rollId = null } = {}) {
     if (!castingId || !phase) throw new Error("Casting and phase identity are required.");
     return JSON.stringify([castingId, phase, targetActorUuid, targetTokenUuid, rollId]);
