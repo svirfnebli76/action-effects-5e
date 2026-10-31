@@ -21,6 +21,23 @@ test("owned option records populate the learned set without changing source Item
   assert.deepEqual(f.writes, []);
 });
 
+test("Metamagic option guard phases are explicit and limited to the cancel-safe pre-cast phase", () => {
+  const f = setup();
+  const valid = copy(definitions.distant);
+  valid.guardPhases = ["pre-cast"];
+  assert.equal(f.registry.validateRecord("metamagic", valid).valid, true);
+
+  const late = copy(valid);
+  late.guardPhases = ["post-targeting"];
+  const lateResult = f.registry.validateRecord("metamagic", late);
+  assert.equal(lateResult.valid, false);
+  assert.match(lateResult.issues.join(" "), /guardPhases.*pre-cast/);
+
+  const duplicate = copy(valid);
+  duplicate.guardPhases = ["pre-cast", "pre-cast"];
+  assert.equal(f.registry.validateRecord("metamagic", duplicate).valid, false);
+});
+
 test("full synthetic source identity and multiple records and families survive compilation", () => {
   const f = setup({ uuid: "Scene.scene.Token.synthetic.Actor.caster" });
   f.main.flags[scope].metamagic.declarations.push(copy(definitions.extraChoice), copy(definitions.combination));

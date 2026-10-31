@@ -1,3 +1,43 @@
+# v0.4.5.51 — Generic casting-local spell component property updates
+
+- Extends Metamagic's existing casting-local Item update contract to support `system.properties` for detached spell copies, without adding Subtle Spell rules or a special execution path.
+- Permits only removal of existing Verbal (`vocal`), Somatic (`somatic`), and Material (`material`) property identifiers; other properties and order must be preserved, and unchanged arrays are accepted.
+- Validates changes against the actor-owned original, then verifies both source-backed properties and the prepared D&D5e Set before native Sorcery Point consumption. The native derived `mgc` property is accounted for without masking other unexpected properties.
+- Preserves all existing spell, Activity, Active Effect, and native consumption behavior; original spell Items, Item declarations, CAT macros, spell descriptions, and compendiums are not changed.
+- Adds focused component-property validation and casting lifecycle regression tests. Live Foundry/Midi acceptance is still required.
+
+# v0.4.5.50 — Metamagic committed lifecycle and pre-cast guards
+
+- Adds an optional Item-owned Metamagic guard contract through `guardPhases`; this release deliberately permits only the existing cancel-safe `pre-cast` phase.
+- Runs declared guards before the Metamagic broker, casting-local mutation, or native resource consumption. Guard-enabled Items must explicitly allow or deny the cast, while options without guards are never queried.
+- Adds a generic, nonblocking `committed` lifecycle notification to selected Metamagic option Items after the casting record has entered its committed state. Notification failures never unwind a native committed cast.
+- Provides the generic lifecycle boundaries required for Item-owned same-turn casting restrictions without hardcoding Quickened Spell or any other Metamagic option into AE5E core.
+- Adds regression coverage for guard schema validation, pre-broker veto/fail-closed behavior, and exactly-once committed notification. No compendium content, CAT configuration, Item macros, or Metamagic base macro are changed.
+
+# v0.4.5.49 — Casting-local activation post-use preservation
+
+- Preserves a validated casting-local activation change when D&D5e drops only the live `activation.override` metadata after native use while the effective activation value and the Activity's own source still retain the selected override.
+- Avoids re-preparing an already-correct detached post-use Activity, which can make it re-inherit the canonical spell activation and incorrectly abort the workflow after native consumption.
+- Keeps all pre-consumption integrity checks strict and continues to reject/veto post-use activation state when the live activation, source activation value, or source override intent no longer matches the selected modifier.
+- Adds focused positive/negative regression coverage. No Metamagic option names, Quickened-specific rules, compendium content, CAT macros, or Item declarations are added to AE5E core.
+
+# v0.4.5.48 — Metamagic turn casting state
+
+- Adds passive, Metamagic-scoped turn casting observation for actors that own the Metamagic base declaration; individual spells require no AE5E, CAT, CPR, GPS, or SRD-specific tracking configuration.
+- Stores only the current relevant combat-turn snapshot at `flags.action-effects-5e.metamagic.turnCasting`, with a latched level-1+ fact and exactly three bounded latest-cast slots: Action, Bonus Action, and Reaction. Stale turns read as empty and the next committed spell replaces the old snapshot.
+- Observes the existing post-targeting/committed casting boundary, so pre-cast and cancelled-before-commit attempts do not create state. Midi `automationOnly` Activities and AE5E child workflows are ignored.
+- Resolves combat identity from the actual workflow token first, including off-turn Reactions. A known token never falls back to another token of the same linked Actor; ambiguous actor-only multi-combat cases fail open without writing state.
+- Exposes read-only `api.metamagic.getTurnCasting`, `inspectTurnCasting`, and `getTurnCastingStatus` access for future Item-owned rules such as Quickened Spell. This release does not enforce Quickened Spell, the 2024 spell-slot-per-turn rule, or any other casting restriction.
+- Aligns the exported `MODULE_VERSION` with the manifest/package version and adds bounded-state/multi-combat regression coverage.
+
+# v0.4.5.47 — Argon Target Picker startup compatibility check
+
+- Adds a GM-only startup interoperability check for the active Argon - Combat HUD (CORE) world setting `Target Picker`.
+- When Argon's Target Picker is enabled, AE5E explains the duplicate/conflicting targeting risk and asks for explicit permission before changing the setting. AE5E never disables Argon itself and never changes the setting silently.
+- Accepting **Disable Target Picker** sets only `enhancedcombathud.rangepicker` to `false` and confirms the change with an AE5E notification; **Cancel** leaves the world unchanged.
+- The check is skipped when Argon is inactive, the setting is unavailable or already disabled, or the current user is not a GM. The prompt is session-deduplicated and the setting is rechecked before mutation.
+- Preserves Magic Missile, Metamagic/Twinned targeting data, Midi Target Confirmation, compendiums, CAT metadata, macros, and all other Argon settings.
+
 # v0.4.5.46 — Target Confirmation sizing and selection indicator
 
 - Fixes the opted-in Midi Target Confirmation window resetting from the requested 500px to Midi's 300px default during subsequent target-selection renders. The adapter now enforces bounded native ApplicationV2 position width and instance-scoped CSS width on every render; narrower viewports are safely clamped.

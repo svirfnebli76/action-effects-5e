@@ -7,6 +7,8 @@ const ids = value => Array.isArray(value) && value.every(validId) && new Set(val
 const phases = new Set(Object.values(CASTING_PHASES));
 const validPhases = value => Array.isArray(value) && value.length > 0
   && value.every(phase => phases.has(phase)) && new Set(value).size === value.length;
+const validGuardPhases = value => Array.isArray(value) && value.length > 0
+  && value.every(phase => phase === CASTING_PHASES.PRE_CAST) && new Set(value).size === value.length;
 const validExecution = execution => isObject(execution)
   && ["cat-embedded", "midi-on-use", "actor-on-use", "effect-macro"].includes(execution.interface)
   && typeof execution.name === "string" && Boolean(execution.name.trim()) && execution.macroUuid === undefined;
@@ -37,6 +39,9 @@ export function registerMetamagicFamily(registry) {
         if (!integer(record.cost)) issues.push("cost must be a non-negative integer.");
         if (typeof record.tooltip !== "string") issues.push("tooltip must be Item-owned text.");
         if (record.phases !== undefined && !validPhases(record.phases)) issues.push("phases must contain unique supported casting phase ids.");
+        if (record.guardPhases !== undefined && !validGuardPhases(record.guardPhases)) {
+          issues.push("guardPhases currently supports only the cancel-safe pre-cast phase.");
+        }
         if (record.selectionCost !== undefined && (!Number.isSafeInteger(record.selectionCost) || record.selectionCost < 0)) {
           issues.push("selectionCost must be a non-negative integer.");
         }

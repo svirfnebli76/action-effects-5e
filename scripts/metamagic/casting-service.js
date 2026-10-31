@@ -1,11 +1,15 @@
 import { MODULE_ID } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
+import { validateSpellPropertyUpdate, spellPropertyUpdateMatches } from "./casting-item-properties.js";
 
 const CAST_FLAG = "casting";
 const clone = value => duplicateSafely(value);
 const marker = activity => activity?.item?.flags?.[MODULE_ID]?.[CAST_FLAG];
 const property = (object, path) => path.split(".").reduce((value, key) => value?.[key], object);
+const itemUpdateMatches = (item, path, expected) => path === "system.properties"
+  ? spellPropertyUpdateMatches(item, expected)
+  : JSON.stringify(property(item, path)) === JSON.stringify(expected);
 const workflowFrom = args => args.flatMap(value => [value, value?.workflow, value?.config?.workflow, value?.usage?.workflow])
   .find(value => value?.actor && value?.activity);
 
@@ -94,7 +98,49 @@ export class MetamagicCastingService {
     const compiled = this.#declarations.compile(actor, this.#context(workflow));
     if (compiled.participating === false) return true;
     if (!compiled.ready) throw new Error(compiled.diagnostics.map(entry => entry.message).join(" "));
+    if (!await this.#guard(workflow, actor, compiled, initiatorUserId, "pre-cast")) return false;
     return this.#broker(workflow, actor, compiled, initiatorUserId);
+  }
+
+  async #guard(workflow, actor, compiled, initiatorUserId, castingPhase) {
+    if (!this.#executors) throw new Error("The Item-owned macro adapter is unavailable.");
+    const guards = compiled.options.filter(option =>
+      (option.declaration.guardPhases ?? []).includes(castingPhase));
+    for (const option of guards) {
+      let result;
+      try {
+        result = await this.#executors.execute({
+          actor,
+          sourceUuid: option.sourceUuid,
+          identity: option.identity,
+          family: "metamagic",
+          declaration: option.declaration,
+          kind: "option",
+          phase: "guard",
+          requireResponse: true,
+          context: {
+            actor,
+            workflow,
+            activity: workflow.activity,
+            item: workflow.activity?.item ?? workflow.item ?? null,
+            initiatorUserId,
+            castingPhase
+          }
+        });
+      } catch (error) {
+        throw new Error(`${option.label} casting guard failed: ${error.message}`);
+      }
+      if (!result || typeof result.allowed !== "boolean") {
+        throw new Error(`${option.label} casting guard must return an explicit allowed result.`);
+      }
+      if (result.allowed) continue;
+      const reason = typeof result.reason === "string" && result.reason.trim()
+        ? result.reason.trim()
+        : `${option.label} prevents this casting.`;
+      globalThis.ui?.notifications?.warn?.(reason);
+      return false;
+    }
+    return true;
   }
 
   async #broker(workflow, actor, compiled, initiatorUserId) {
@@ -148,7 +194,7 @@ export class MetamagicCastingService {
       resourceId: compiled.resourceId, resourceUuid: compiled.resourceUuid,
       mode: "collection", mainIdentity: compiled.mainIdentity,
       broker: { sourceUuid: compiled.mainUuid, identity: compiled.mainIdentity, declaration: clone(compiled.mainDeclaration) },
-      selected: [], totalCost: 0, activityUpdates: {}, activityChecks: [], nativeDebit: null,
+      selected: [], totalCost: 0, activityUpdates: {}, itemUpdates: {}, effectUpdates: {}, activityChecks: [], nativeDebit: null,
       refundOwner: "native-activity", refundStatus: "not-requested-by-ae5e",
       workflow, actor, nativeActivities: new WeakSet(), consumptionIndexes: new WeakMap()
     };
@@ -288,11 +334,48 @@ export class MetamagicCastingService {
       if (!option || option.disabled || !this.#sameOption(option, offered)) throw new Error("An option changed while choosing; cast again to review it.");
       const prepared = await this.#optionResult(option, "prepare", record);
       if (record.state !== "preparing") throw new Error("The broker request is no longer active.");
-      if (!prepared?.activityUpdates || typeof prepared.activityUpdates !== "object" || Array.isArray(prepared.activityUpdates)) throw new Error("Option did not return Activity updates.");
-      for (const [path, value] of Object.entries(prepared.activityUpdates)) {
+      if (!prepared || typeof prepared !== "object") throw new Error("Option did not return casting-local updates.");
+      if (prepared.activityUpdates !== undefined && (!prepared.activityUpdates || typeof prepared.activityUpdates !== "object" || Array.isArray(prepared.activityUpdates))) throw new Error("Invalid Activity updates.");
+      if (prepared.itemUpdates !== undefined && (!prepared.itemUpdates || typeof prepared.itemUpdates !== "object" || Array.isArray(prepared.itemUpdates))) throw new Error("Invalid Item updates.");
+      if (prepared.effectUpdates !== undefined && (!prepared.effectUpdates || typeof prepared.effectUpdates !== "object" || Array.isArray(prepared.effectUpdates))) throw new Error("Invalid Effect updates.");
+      if (!Object.keys(prepared.activityUpdates ?? {}).length && !Object.keys(prepared.itemUpdates ?? {}).length && !Object.keys(prepared.effectUpdates ?? {}).length) throw new Error("Option did not return casting-local updates.");
+      for (const [path, value] of Object.entries(prepared.activityUpdates ?? {})) {
         if (!path || /(^|\.)(__proto__|prototype|constructor|_id|consumption|flags)(\.|$)/.test(path)
           || path in record.activityUpdates) throw new Error("Conflicting or reserved Activity update.");
         record.activityUpdates[path] = clone(value);
+      }
+      for (const [path, value] of Object.entries(prepared.itemUpdates ?? {})) {
+        // Explicitly allow only verified casting-local Item fields.
+        if (!["system.duration.value", "system.duration.units", "system.properties"].includes(path)
+          || path in record.itemUpdates) throw new Error("Conflicting or unsupported casting-local Item update.");
+        if (path === "system.duration.value" && (!Number.isSafeInteger(value) || value <= 0)) throw new Error("Invalid spell duration value.");
+        if (path === "system.duration.units" && !["round", "minute", "hour", "day"].includes(value)) throw new Error("Invalid spell duration units.");
+        if (path === "system.properties") {
+          const original = record.actor.items.get(record.workflow.activity.item.id);
+          validateSpellPropertyUpdate(original, value);
+        }
+        record.itemUpdates[path] = clone(value);
+      }
+      // Validate all Effect IDs against the selected casting Activity and detached Item.
+      const item = record.workflow.activity.item;
+      const source = record.actor.items.get(item.id);
+      const references = Array.from(record.workflow.activity.effects ?? []);
+      for (const [effectId, changes] of Object.entries(prepared.effectUpdates ?? {})) {
+        if (!/^[a-zA-Z0-9]{16}$/.test(effectId) || effectId in record.effectUpdates
+          || !changes || typeof changes !== "object" || Array.isArray(changes)
+          || !Object.keys(changes).length) throw new Error("Invalid or conflicting Effect update.");
+        if (!references.some(ref => ref?._id === effectId && !ref.uuid)) throw new Error("Effect is not referenced by this Activity.");
+        const effect = item.effects?.get(effectId);
+        const original = source?.effects?.get(effectId);
+        if (!effect || !original || effect === original || effect.parent !== item || source === item)
+          throw new Error("Casting-local embedded Effect isolation failed.");
+        for (const [path, value] of Object.entries(changes)) {
+          if (!["duration.value", "duration.units"].includes(path)) throw new Error("Unsupported Effect update path.");
+          if (path === "duration.value" && (!Number.isSafeInteger(value) || value <= 0)) throw new Error("Invalid Effect duration value.");
+          if (path === "duration.units" && !["seconds", "minutes", "hours", "days", "rounds", "turns"].includes(value))
+            throw new Error("Invalid Effect duration unit.");
+        }
+        record.effectUpdates[effectId] = clone(changes);
       }
       record.selected.push(clone(option));
       record.totalCost += option.cost;
@@ -342,6 +425,19 @@ export class MetamagicCastingService {
     record.activityChecks = record.activityChecks.slice(-8);
   }
 
+  #verifyEffects(record, item) {
+    const source = record.actor.items.get(item.id);
+    if (!source || source === item) return false;
+    for (const [id, changes] of Object.entries(record.effectUpdates)) {
+      const effect = item.effects?.get(id);
+      const original = source.effects?.get(id);
+      if (!effect || !original || effect === original || effect.parent !== item) return false;
+      if (Object.entries(changes).some(([path, expected]) =>
+        JSON.stringify(property(effect, path)) !== JSON.stringify(expected))) return false;
+    }
+    return true;
+  }
+
   #applyActivity(record, activity, stage, extraUpdates = {}) {
     const item = activity.item;
     if (record.actor.items.get(item.id) === item) return this.#veto(record, "A source Item cannot receive casting-local changes.");
@@ -349,6 +445,8 @@ export class MetamagicCastingService {
     const parentUpdates = Object.fromEntries(Object.entries(updates).map(([path, value]) => [
       `system.activities.${activity.id}.${path}`, clone(value)
     ]));
+    // Apply only to the verified detached casting Item; never its actor-owned source.
+    for (const [path, value] of Object.entries(record.itemUpdates)) parentUpdates[path] = clone(value);
     // Stage 0's verified path patches both ranges on this unsaved casting copy.
     // Midi falls back to Item range when a live Activity loses override metadata.
     if (record.activityUpdates["range.override"] === true) {
@@ -383,6 +481,25 @@ export class MetamagicCastingService {
       for (const receiver of receivers) if (receiver !== prepared) receiver.updateSource(updates);
       item.prepareFinalAttributes?.();
       for (const receiver of receivers) if (receiver !== prepared) receiver.prepareFinalData?.();
+      // Active Effects are embedded Documents, not Activity properties. Update
+      // only detached effects on this casting Item and verify their live values.
+      const originalItem = record.actor.items.get(item.id);
+      const referencedIds = new Set(Array.from(activity.effects ?? [])
+        .filter(ref => ref?._id && !ref.uuid).map(ref => ref._id));
+      for (const [id, changes] of Object.entries(record.effectUpdates)) {
+        const effect = item.effects?.get(id);
+        const original = originalItem?.effects?.get(id);
+        if (!referencedIds.has(id) || !effect || !original || effect === original || effect.parent !== item)
+          return this.#veto(record, "Casting-local Effect reference or isolation was lost.");
+        effect.updateSource(clone(changes));
+      }
+      if (!this.#verifyEffects(record, item))
+        return this.#veto(record, "Casting-local Effect duration updates were not retained.");
+      for (const [path, expected] of Object.entries(record.itemUpdates)) {
+        if (!itemUpdateMatches(item, path, expected)) {
+          return this.#veto(record, `The casting-local Item did not retain '${path}'; casting was stopped.`);
+        }
+      }
       this.#captureActivity(record, activity, stage);
       for (const receiver of receivers) {
         for (const [path, expected] of Object.entries(record.activityUpdates)) {
@@ -463,6 +580,12 @@ export class MetamagicCastingService {
     if (!record) return !marker(activity);
     if (!record.nativeActivities.has(activity) || record.nativeDebit) return false;
     const prepared = activity.item.system?.activities?.get?.(activity.id) ?? activity;
+    if (!this.#verifyEffects(record, activity.item))
+      return this.#veto(record, "Selected Effect changes were lost before native consumption; no modifier payment was accepted.");
+    if (Object.entries(record.itemUpdates).some(([path, expected]) =>
+      !itemUpdateMatches(activity.item, path, expected))) {
+      return this.#veto(record, "Selected Item changes were lost before native consumption; no modifier payment was accepted.");
+    }
     for (const receiver of [activity, prepared, record.workflow.activity]) {
       if (Object.entries(record.activityUpdates).some(([path, expected]) => JSON.stringify(property(receiver, path)) !== JSON.stringify(expected))) {
         this.#captureActivity(record, activity, "pre-write-mismatch");
@@ -518,6 +641,35 @@ export class MetamagicCastingService {
     }
   }
 
+  async #notifyCommitted(record) {
+    const context = {
+      castingId: record.castingId,
+      actor: record.actor,
+      workflow: record.workflow,
+      activity: record.workflow.activity,
+      item: record.workflow.activity.item,
+      initiatorUserId: record.initiatorUserId,
+      casting: this.#snapshot(record)
+    };
+    for (const option of record.selected) {
+      try {
+        await this.#executors.notify({
+          actor: record.actor,
+          sourceUuid: option.sourceUuid,
+          identity: option.identity,
+          family: "metamagic",
+          declaration: option.declaration,
+          kind: "option",
+          phase: "committed",
+          context
+        });
+      } catch (error) {
+        try { Logger.warn("Item committed lifecycle notification failed; the native cast remains committed.", error); }
+        catch { /* Notification/console failures must never change native resolution. */ }
+      }
+    }
+  }
+
   observeNative(activity) {
     const record = this.#nativeRecord(activity);
     if (!record) return true;
@@ -534,6 +686,19 @@ export class MetamagicCastingService {
           if (fields.length && fields.every(([key, value]) =>
             JSON.stringify(property(receiver, key)) === JSON.stringify(value)
             && JSON.stringify(property(receiver.item.system, key)) === JSON.stringify(value))) return false;
+        }
+        // D&D5e can likewise omit activation.override from the held post-use
+        // receiver while the selected activation remains mechanically effective.
+        // Treat only that exact metadata-loss shape as intact: the receiver's
+        // own source must still prove override intent and both source/live values
+        // must retain every selected activation field. Pre-payment checks stay strict.
+        if (path === "activation.override" && expected === true && receiver.activation?.override === undefined) {
+          const source = receiver.item?._source?.system?.activities?.[receiver.id]
+            ?? property(receiver.item, `system.activities.${receiver.id}`);
+          const fields = Object.entries(record.activityUpdates).filter(([key]) => key.startsWith("activation.") && key !== path);
+          if (property(source, path) === true && fields.length && fields.every(([key, value]) =>
+            JSON.stringify(property(receiver, key)) === JSON.stringify(value)
+            && JSON.stringify(property(source, key)) === JSON.stringify(value))) return false;
         }
         return JSON.stringify(property(receiver, path)) !== JSON.stringify(expected);
       });
@@ -563,6 +728,8 @@ export class MetamagicCastingService {
     record.targets = [...(workflow.targets ?? [])].map(target => ({
       tokenUuid: target.document?.uuid ?? target.uuid ?? null, actorUuid: target.actor?.uuid ?? null
     }));
+    this.#remember(record);
+    await this.#notifyCommitted(record);
     await this.#present(record, "Cast");
     return true;
   }

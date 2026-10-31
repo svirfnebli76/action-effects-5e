@@ -3,6 +3,7 @@ import { Logger } from "./core/logger.js";
 import { registerSettings } from "./core/settings.js";
 import { DependencyService } from "./core/dependencies.js";
 import { CompatibilityService } from "./core/compatibility.js";
+import { StartupCompatibilityService } from "./core/startup-compatibility-service.js";
 import { SocketService } from "./core/socket-service.js";
 import { MovementRegistry } from "./movement/movement-registry.js";
 import { MovementAccountingService } from "./movement/movement-accounting-service.js";
@@ -80,6 +81,7 @@ import { DeclarationCollectionService } from "./declarations/collection-service.
 import { registerMetamagicFamily } from "./declarations/metamagic-family.js";
 import { ItemOptionsAuthoringService } from "./authoring/item-options-authoring-service.js";
 import { MetamagicCastingService } from "./metamagic/casting-service.js";
+import { MetamagicTurnCastingService } from "./metamagic/turn-casting-service.js";
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
@@ -112,6 +114,7 @@ import { ActionEffects5eApi } from "./api.js";
 
 const dependencies = new DependencyService();
 const compatibility = new CompatibilityService();
+const startupCompatibility = new StartupCompatibilityService();
 const socket = new SocketService();
 const movementRegistry = new MovementRegistry();
 const movementAccounting = new MovementAccountingService();
@@ -222,6 +225,10 @@ const metamagicDeclarations = new MetamagicDeclarationService({ collections: ite
 const declarationMacros = new CatDeclarationMacroAdapter();
 const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations,
   cards: chatCardAdapter, executors: declarationMacros });
+const metamagicTurnCasting = new MetamagicTurnCastingService({
+  phases: castingPhases,
+  declarations: metamagicDeclarations
+});
 const sneakAttackDeclarationParser = new SneakAttackDeclarationParser();
 const sneakAttackDae = new SneakAttackDaeDeclarationService();
 const sneakAttackDeclarations = new SneakAttackDeclarationService({
@@ -482,6 +489,7 @@ const api = new ActionEffects5eApi({
   itemOptionsAuthoring,
   metamagicDeclarations,
   metamagicCasting,
+  metamagicTurnCasting,
   activityCards,
   chatCardAdapter,
   resultsCards,
@@ -637,9 +645,18 @@ Hooks.once("ready", async () => {
   targetConfirmationAdapter.initialize();
   targetScaling.initialize();
   castingPhases.initialize();
+  metamagicTurnCasting.initialize();
   metamagicCasting.initialize();
   ongoingEffects.initialize();
   compatibility.refresh();
+
+  // Defer startup interoperability checks until every module's ready hook has
+  // had an opportunity to register its settings.
+  globalThis.setTimeout(() => {
+    startupCompatibility.run().catch(error => {
+      Logger.warn("Startup compatibility checks failed.", error);
+    });
+  }, 0);
 
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);
   Hooks.callAll(HOOKS.READY, api);

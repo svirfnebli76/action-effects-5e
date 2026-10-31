@@ -27,6 +27,98 @@ test("numeric Distant selection, one native debit, stable casting identity and r
   assert.equal(JSON.stringify({ flags: f.original.flags, system: f.original.system }), source);
 });
 
+test("declared pre-cast guard can veto before broker, mutation or payment", async () => {
+  const f = setup();
+  f.option.flags[scope].metamagic.declarations[0].guardPhases = ["pre-cast"];
+  f.option.flags.cat.embeddedMacros[0].macros[0].macro = `
+if (data?.phase !== "guard") return;
+return data.respond(document, macroName, {
+  allowed: false,
+  reason: "Blocked by guard test."
+});
+`;
+
+  assert.equal(await f.service.begin(f.workflow), false);
+  assert.equal(f.service.get(f.workflow), null);
+  assert.equal(f.prompts.length, 0);
+  assert.equal(f.activity.range.value, 30);
+  assert.equal(f.pool.system.uses.value, 4);
+  assert.deepEqual(
+    f.calls.map(call => [call.kind, call.phase]),
+    [["option", "guard"]]
+  );
+});
+
+test("declared pre-cast guard fails closed when its Item macro does not answer", async () => {
+  const f = setup();
+  f.option.flags[scope].metamagic.declarations[0].guardPhases = ["pre-cast"];
+  f.option.flags.cat.embeddedMacros[0].macros[0].macro = `
+if (data?.phase !== "guard") return;
+`;
+
+  await assert.rejects(
+    f.service.begin(f.workflow),
+    /casting guard failed|No unique response/
+  );
+  assert.equal(f.service.get(f.workflow), null);
+  assert.equal(f.prompts.length, 0);
+  assert.equal(f.pool.system.uses.value, 4);
+});
+
+test("selected option receives one nonblocking committed notification after the cast is committed", async () => {
+  const f = setup();
+  const capture = "__ae5eCommittedLifecycleTest";
+  const previous = globalThis[capture];
+  globalThis[capture] = [];
+
+  f.option.flags.cat.embeddedMacros[0].macros[0].macro = `
+if (data?.phase === "offer") {
+  return data.respond(document, macroName, { eligible: true });
+}
+if (data?.phase === "prepare") {
+  return data.respond(document, macroName, {
+    activityUpdates: {
+      "range.override": true,
+      "range.value": 60,
+      "range.units": "ft"
+    }
+  });
+}
+if (data?.phase === "consumed") {
+  return data.respond(document, macroName, true);
+}
+if (data?.phase === "committed") {
+  globalThis.__ae5eCommittedLifecycleTest.push({
+    phase: data.phase,
+    state: data.context.casting?.state,
+    committedAt: data.context.casting?.committedAt ?? null,
+    castingId: data.context.castingId
+  });
+  return data.respond(document, macroName, true);
+}
+`;
+
+  try {
+    assert.equal(await f.service.begin(f.workflow), true);
+    assert.equal(f.consume(), 1);
+    assert.equal(await f.service.commit(f.workflow), true);
+    assert.equal(await f.service.commit(f.workflow), true);
+
+    assert.equal(globalThis[capture].length, 1);
+    assert.equal(globalThis[capture][0].phase, "committed");
+    assert.equal(globalThis[capture][0].state, "committed");
+    assert.equal(Boolean(globalThis[capture][0].committedAt), true);
+    assert.equal(
+      globalThis[capture][0].castingId,
+      f.service.get(f.workflow).castingId
+    );
+    assert.equal(f.pool.system.uses.value, 3);
+  } finally {
+    if (previous === undefined) delete globalThis[capture];
+    else globalThis[capture] = previous;
+  }
+});
+
 test("Touch becomes 30 feet on a casting copy; later ordinary casting stays Touch", async () => {
   const f = setup({ range: { units: "touch", value: null, override: false } });
   await f.service.begin(f.workflow);
@@ -357,6 +449,62 @@ test("post-use range metadata loss uses the selected casting-local parent range"
   assert.equal(f.service.get(f.workflow).nativeDebit.amount, 1);
   assert.equal(f.original.system.range.value, 30);
   assert.equal(midiNormalRange(f.activityClone()), 30, "an unrelated later cast keeps ordinary range");
+});
+
+test("post-use activation metadata loss preserves an effective casting-local activation", async () => {
+  const f = setup();
+  f.option.flags.cat.embeddedMacros[0].macros[0].macro = `
+if (data?.phase === "offer") return data.respond(document, macroName, { eligible: true });
+if (data?.phase === "prepare") return data.respond(document, macroName, {
+  activityUpdates: { "activation.override": true, "activation.type": "bonus" }
+});
+`;
+  await f.service.begin(f.workflow);
+  const native = f.activityClone(f.workflow.activity);
+  nativeConsumption(f, native);
+  f.workflow.activity = native;
+
+  assert.equal(native.activation.override, true);
+  assert.equal(native.activation.type, "bonus");
+  delete native.activation.override;
+
+  // The live receiver still has the selected mechanical value and the casting-local
+  // parent Activity source still proves the override. Re-preparing this detached receiver can make D&D5e
+  // re-inherit the canonical Action activation, so a metadata-only repair is wrong.
+  native.item.updateSource = () => assert.fail("mechanically correct activation must not be re-prepared");
+  assert.equal(f.service.observeNative(native), true);
+  assert.equal(native.activation.override, undefined);
+  assert.equal(native.activation.type, "bonus");
+  assert.equal(await f.service.commit(f.workflow), true);
+  assert.equal(f.service.get(f.workflow).committedAt != null, true);
+  assert.equal(f.pool.system.uses.value, 3, "post-use metadata loss must not debit again");
+});
+
+test("missing post-use activation override is not accepted when live or source activation lost the selection", async () => {
+  for (const problem of ["live-type", "source-type", "source-override"]) {
+    const f = setup();
+    f.option.flags.cat.embeddedMacros[0].macros[0].macro = `
+if (data?.phase === "offer") return data.respond(document, macroName, { eligible: true });
+if (data?.phase === "prepare") return data.respond(document, macroName, {
+  activityUpdates: { "activation.override": true, "activation.type": "bonus" }
+});
+`;
+    await f.service.begin(f.workflow);
+    const native = f.activityClone(f.workflow.activity);
+    nativeConsumption(f, native);
+    f.workflow.activity = native;
+    delete native.activation.override;
+    const sourceActivation = native.item.system.activities.activity.activation;
+    if (problem === "live-type") native.activation.type = "action";
+    if (problem === "source-type") sourceActivation.type = "action";
+    if (problem === "source-override") delete sourceActivation.override;
+    native.item.updateSource = () => { throw new Error("restoration unavailable"); };
+
+    assert.equal(f.service.observeNative(native), false, problem);
+    assert.equal(await f.service.commit(f.workflow), false, problem);
+    assert.equal(f.service.get(f.workflow).postUseMutationFailed, true, problem);
+    assert.equal(f.pool.system.uses.value, 3, "no second debit or speculative refund");
+  }
 });
 
 test("post-use restoration failure remains unconfirmed without inventing a refund or charging again", async () => {
