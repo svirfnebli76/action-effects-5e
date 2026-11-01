@@ -142,7 +142,13 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   const cards = [];
   const service = new MetamagicCastingService({ declarations, executors,
     cards: { async upsertContribution(subject, contribution) { cards.push(copy(contribution)); return { updated: true }; } } });
-  const api = { prompts: { async choose(request) { prompts.push(request); return chooser(request); } },
+  const api = { prompts: { async chooseBroker(request) {
+    prompts.push(request);
+    const selected = await chooser(request);
+    if (selected && typeof selected === "object") return selected;
+    if (selected == null || selected === "__finish") return { outcome: "decline", selectedIds: [] };
+    return { outcome: "confirm", selectedIds: [selected] };
+  } },
     metamagic: { getCasting: workflow => service.get(workflow) } };
   const consume = () => {
     assert.equal(service.prepareNative(activity), true);

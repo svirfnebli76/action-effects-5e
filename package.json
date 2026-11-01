@@ -6,6 +6,7 @@
   "description": "Development utilities for the Action Effects 5E Foundry VTT module.",
   "scripts": {
     "check": "node scripts/dev/check-syntax.mjs",
-    "test": "npm run check && node --test tests/*.test.mjs"
+    "test": "npm run check && node --test tests/*.test.mjs",
+    "test:browser": "npm run check && node --test tests/item-options-editor-browser.browser.mjs"
   }
 }

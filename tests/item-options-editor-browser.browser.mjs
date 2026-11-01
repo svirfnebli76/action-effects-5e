@@ -1,33 +1,40 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
-import { resolve, extname, join } from "node:path";
+import { resolve, join } from "node:path";
 
-const chromium = ["/usr/bin/chromium", "/usr/bin/chromium-browser"].find(path => existsSync(path));
-test("Item Options browser interactions and compendium-only context menu", {
-  skip: !chromium || (process.env.AE5E_BROWSER_TESTS !== "1" && "Set AE5E_BROWSER_TESTS=1 to run installed Chromium"), timeout: 20000
-}, async context => {
+const installed = (root, ...parts) => root ? join(root, ...parts) : null;
+const chromium = [
+  process.env.AE5E_CHROMIUM_PATH,
+  process.env.CHROME_PATH,
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/google-chrome",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  installed(process.env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"),
+  installed(process.env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"),
+  installed(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
+  installed(process.env.PROGRAMFILES, "Microsoft", "Edge", "Application", "msedge.exe"),
+  installed(process.env["PROGRAMFILES(X86)"], "Microsoft", "Edge", "Application", "msedge.exe")
+].filter(Boolean).find(path => existsSync(path));
+
+if (!chromium) {
+  throw new Error("Chromium was not found. Install Chrome/Chromium/Edge or set AE5E_CHROMIUM_PATH to its executable.");
+}
+
+test("Item Options browser interactions and compendium-only context menu", { timeout: 20000 }, async context => {
   const directory = resolve(fileURLToPath(new URL("..", import.meta.url)));
   const profile = await mkdtemp(join(tmpdir(), "ae5e-editor-browser-"));
-  const server = createServer(async (request, response) => {
-    const path = resolve(directory, `.${new URL(request.url, "http://localhost").pathname}`);
-    if (!path.startsWith(`${directory}/`)) { response.writeHead(403).end(); return; }
-    try {
-      const data = await readFile(path);
-      response.setHeader("Content-Type", { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css" }[extname(path)] ?? "text/plain");
-      response.end(data);
-    } catch { response.writeHead(404).end(); }
-  });
+  const pageUrl = pathToFileURL(resolve(directory, "tests/item-options-editor-browser.html")).href;
   let browser;
   try {
-    await new Promise((resolve, reject) => { server.on("error", reject); server.listen(0, "127.0.0.1", resolve); });
-    browser = spawn(chromium, ["--headless", "--no-sandbox", "--disable-dev-shm-usage", `--user-data-dir=${profile}`,
+    browser = spawn(chromium, ["--headless", "--no-sandbox", "--disable-dev-shm-usage", "--allow-file-access-from-files", `--user-data-dir=${profile}`,
       "--remote-debugging-pipe"], { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], signal: context.signal });
     const pending = new Map();
     let sequence = 0;
@@ -54,7 +61,7 @@ test("Item Options browser interactions and compendium-only context menu", {
       pending.set(id, { resolve, reject });
       browser.stdio[3].write(`${JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })}\0`);
     });
-    const { targetId } = await call("Target.createTarget", { url: `http://127.0.0.1:${server.address().port}/tests/item-options-editor-browser.html` });
+    const { targetId } = await call("Target.createTarget", { url: pageUrl });
     const { sessionId } = await call("Target.attachToTarget", { targetId, flatten: true });
     let result;
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -63,7 +70,14 @@ test("Item Options browser interactions and compendium-only context menu", {
       if (/^(PASS|FAIL)/.test(result ?? "")) break;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    assert.match(result ?? "No browser result", /^PASS 21 browser checks/);
+    if (result == null) {
+      const diagnostic = await call("Runtime.evaluate", {
+        expression: 'JSON.stringify({href: location.href, readyState: document.readyState, title: document.title, body: document.body?.innerText})',
+        returnByValue: true
+      }, sessionId);
+      result = `No browser result: ${diagnostic.result?.value ?? "no page diagnostic"}`;
+    }
+    assert.match(result, /^PASS 21 browser checks/);
     const evaluate = async expression => {
       const response = await call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId);
       if (response.exceptionDetails) throw new Error(response.exceptionDetails.text);
@@ -107,7 +121,6 @@ test("Item Options browser interactions and compendium-only context menu", {
       browser.kill("SIGKILL");
       await exited;
     }
-    if (server.listening) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });

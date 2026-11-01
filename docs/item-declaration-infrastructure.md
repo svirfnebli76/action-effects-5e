@@ -217,11 +217,12 @@ step is a collection-aware Metamagic consumer and Item-owned broker/option
 execution bridge. Prepare that replacement before guiding the agreed tagged
 fixture cleanup and manual finished-Item construction.
 
-Run `npm test` and `git diff --check`. Browser execution is opt-in with
-`AE5E_BROWSER_TESTS=1 npm test` and requires installed Chromium and permission to
-open a loopback test server/browser processes. The browser uses disposable
-fixtures, not live Foundry or compendium documents. An ordinary run may skip that
-optional browser case; record the separate browser result explicitly.
+Run `npm test` and `git diff --check`. Browser execution is a separate explicit
+suite: `npm run test:browser`. It discovers Chrome, Chromium, or Edge on supported
+desktop platforms; set `AE5E_CHROMIUM_PATH` when the executable is installed in a
+custom location. The browser loads disposable fixtures directly from disk, not
+live Foundry or compendium documents. A missing browser fails the explicit browser
+suite instead of adding a skip to the normal unit suite.
 
 ## Install the source update, then verify in Foundry
 

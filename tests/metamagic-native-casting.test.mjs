@@ -291,7 +291,7 @@ test("runtime hook wiring is idempotent and synchronous vetoes remain synchronou
     const f = setup();
     f.service.initialize();
     f.service.initialize();
-    assert.equal(handlers.size, 9);
+    assert.equal(handlers.size, 12);
     await f.service.begin(f.workflow);
     const native = f.activityClone(f.workflow.activity);
     assert.equal(handlers.get("dnd5e.preUseActivity")(native), true);
@@ -597,7 +597,7 @@ test("read-only save-ready offer inspection retains the casting after pre-cast d
     execution: { interface: "cat-embedded", name: "Careful Probe" } };
   const late = f.add("late", [declaration]);
   f.install(late, "Careful Probe", "option",
-    'if (data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
+    'if (document.uuid === data.sourceItemUuid && macroName === data.execution.name && data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
   f.setChooser(async () => null);
   assert.equal(await f.service.begin(f.workflow), true);
   const before = f.service.get(f.workflow);
@@ -622,7 +622,7 @@ test("save-ready inspection preserves already-used per-casting Metamagic capacit
     execution: { interface: "cat-embedded", name: "Careful Probe" } };
   const late = f.add("late", [declaration]);
   f.install(late, "Careful Probe", "option",
-    'if (data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
+    'if (document.uuid === data.sourceItemUuid && macroName === data.execution.name && data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
   await f.service.begin(f.workflow);
   const castingId = f.service.get(f.workflow).castingId;
   const result = await f.service.inspectPhaseOffers(f.workflow);
@@ -650,25 +650,29 @@ test("existing Metamagic broker is reused at saves-ready and stores Item-owned l
     phases: ["saves-ready"], execution: { interface: "cat-embedded", name: "Careful Probe" }
   }]);
   f.install(late, "Careful Probe", "option", [
+    'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
     'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
     'if (data.phase === "select") return data.respond(document, macroName, {',
     '  outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.friend"]}',
-    '});'
+    '});',
+    'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids,automaticSuccess:true,superSaver:true}});'
   ].join("\n"));
   f.setChooser(async () => null);
+  const friend = { document: { uuid: "Scene.test.Token.friend" } };
+  f.workflow.targets = f.workflow.hitTargets = new Set([friend]);
   assert.equal(await f.service.begin(f.workflow), true);
   const initial = f.service.get(f.workflow);
   assert.equal(await f.service.late(f.workflow), true);
   assert.equal(await f.service.late(f.workflow), true);
   const record = f.service.get(f.workflow);
   assert.equal(record.castingId, initial.castingId);
-  assert.equal(record.state, "unmodified");
-  assert.deepEqual(record.selected, []);
-  assert.deepEqual(record.latePreview.options[0].payload.protectedTokenUuids, ["Scene.test.Token.friend"]);
-  assert.equal(record.latePreview.status, "unpaid-not-applied");
-  assert.equal(record.totalCost, 0);
+  assert.equal(record.state, "committed");
+  assert.deepEqual(record.selected.map(entry => entry.id), ["careful-probe"]);
+  assert.deepEqual(record.lateSelection.options[0].payload.protectedTokenUuids, ["Scene.test.Token.friend"]);
+  assert.equal(record.lateSelection.status, "paid-applied");
+  assert.equal(record.totalCost, 1);
   assert.equal(record.nativeDebit, null);
-  assert.equal(f.pool.system.uses.value, 4);
+  assert.equal(f.pool.system.uses.value, 3);
   assert.equal(f.calls.filter(c => c.kind === "broker" && c.phase === "begin").length, 2);
   assert.equal(f.calls.filter(c => c.phase === "select").length, 1);
 });
@@ -695,10 +699,10 @@ test("save-ready broker keeps a valid positive UI capacity when earlier Metamagi
     '  if (request.phase === "saves-ready") globalThis.__ae5eLateCapacityProbe = request;',
     '  return request.phase === "saves-ready"',
     '    ? {outcome:"decline", selectedIds:[]}',
-    '    : {outcome:"confirm", selectedIds:["distance"]};',
+    '    : {outcome:"confirm", selectedIds:["distant-spell"]};',
     '});',
     'return data.respond(document, macroName, result);'
-  ].join("\\n");
+  ].join("\n");
 
   const late = f.add("late", [{
     ...structuredClone(definitions.distant),
@@ -708,7 +712,7 @@ test("save-ready broker keeps a valid positive UI capacity when earlier Metamagi
   }]);
 
   f.install(late, "Careful Probe", "option",
-    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});');
+    'if (document.uuid === data.sourceItemUuid && macroName === data.execution.name && data.phase === "offer") return data.respond(document, macroName, {eligible:true});');
 
   try {
     await f.service.begin(f.workflow);
@@ -745,6 +749,7 @@ test("paid save-ready Careful selection debits one point and arms save protectio
   }]);
 
   f.install(late, "Careful Probe", "option", [
+    'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
     'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
     'if (data.phase === "select") return data.respond(document, macroName, {outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.friend"]}});',
     'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids, automaticSuccess:true, superSaver:true}});'
@@ -799,6 +804,7 @@ test("invalid Careful protected target is rejected before any late payment", asy
   }]);
 
   f.install(late, "Careful Probe", "option", [
+    'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
     'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
     'if (data.phase === "select") return data.respond(document, macroName, {outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.unknown"]}});',
     'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids, automaticSuccess:true, superSaver:true}});'
@@ -813,7 +819,7 @@ test("invalid Careful protected target is rejected before any late payment", asy
 
   await assert.rejects(
     f.service.late(f.workflow),
-    /outside the finalized affected targets/
+    /No unique response from 'Metamagic Broker'/
   );
 
   assert.equal(f.pool.system.uses.value, 4);

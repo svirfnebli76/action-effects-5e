@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CastingPhaseService, CASTING_PHASES } from "../scripts/casting/casting-phase-service.js";
 
+globalThis.foundry = { utils: { randomID: () => "casting-phase-test" } };
+
 function hooksFixture() {
   const handlers = new Map();
   globalThis.Hooks = {
