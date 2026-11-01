@@ -9,21 +9,21 @@ function capture(context, fixture) {
 }
 const lines = mock => mock.mock.calls.map(call => call.arguments[0]);
 
-test("continuing without an option logs one non-use note for the actor", async context => {
+test("continuing without an option logs no use note", async context => {
   const f = setup();
   const info = capture(context, f);
   f.setChooser(async () => "__finish");
   await Promise.all([f.service.begin(f.workflow), f.service.begin(f.workflow)]);
-  assert.deepEqual(lines(info), ["[AE5E] Metamagic - Symaali Skorswaldt did not use Metamagic"]);
+  assert.deepEqual(lines(info), []);
   assert.equal(f.pool.system.uses.value, 4);
 });
 
-test("closing the chooser logs non-use without a usage or consumption note", async context => {
+test("closing the chooser logs no use or consumption note", async context => {
   const f = setup();
   const info = capture(context, f);
   f.setChooser(async () => null);
   await f.service.begin(f.workflow);
-  assert.deepEqual(lines(info), ["[AE5E] Metamagic - Symaali Skorswaldt did not use Metamagic"]);
+  assert.deepEqual(lines(info), []);
 });
 
 test("usage and actual option cost log once after native consumption, including a resolved miss", async context => {
@@ -85,7 +85,7 @@ test("console errors cannot interrupt casting or native consumption", async cont
 test("Item macros can replace their console wording without a runtime change", async context => {
   const f = setup();
   const info = capture(context, f);
-  f.install(f.main, "Metamagic Broker", "broker", broker.replace("used Metamagic`", "printed a custom broker note`"));
+  f.install(f.main, "Metamagic Broker", "broker", broker.replace(" used Metamagic\");", " printed a custom broker note\");"));
   f.install(f.option, "Distant Spell", "option", distant
     .replace("${macroName} used by", "${macroName} custom use for")
     .replace("${macroName} consumed", "${macroName} custom payment of"));

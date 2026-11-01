@@ -468,6 +468,8 @@ test("public AE5E API contract can expose Phase-A declaration diagnostics withou
     selectionIndicator: stub,
     externalPromptBridge: stub,
     choicePrompts: stub,
+    brokerChoicePrompts: stub,
+    castingPhases: stub,
     crosshairs3dGeometry: stub,
     crosshairs3dCells: stub,
     crosshairs3dTokens: stub,
