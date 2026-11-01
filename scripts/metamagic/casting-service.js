@@ -26,6 +26,7 @@ export class MetamagicCastingService {
   #hooks = [];
   #latePending = new WeakMap();
   #lateDone = new WeakSet();
+  #lateSaveProtection = new WeakMap();
 
   constructor({ declarations, cards, executors }) {
     this.#declarations = declarations;
@@ -48,13 +49,12 @@ export class MetamagicCastingService {
     on("dnd5e.postActivityConsumption", (activity, usage, message) => this.recordConsumption(activity, message));
     on("dnd5e.postUseActivity", activity => this.observeNative(activity));
     on("midi-qol.premades.postPreambleComplete", (...args) => this.commit(workflowFrom(args)));
-    // Paid late-phase execution is intentionally not enabled yet. The saved
-    // creature selection is a preview until a verified debit adapter exists.
     on("midi-qol.preCheckSaves", (...args) => this.late(workflowFrom(args)).catch(error => {
-      Logger.warn("Late Metamagic preview failed; spell saves continue normally.", error);
-      globalThis.ui?.notifications?.warn?.("AE5E: Late Metamagic preview could not complete; no protection or Sorcery Points applied.");
+      Logger.warn("Late Metamagic transaction failed; spell saves continue normally.", error);
+      globalThis.ui?.notifications?.error?.("AE5E: " + (error?.message ?? "Late Metamagic transaction failed."));
       return true;
     }));
+    on("midi-qol.postCheckSaves", (...args) => this.restoreLateSaveProtection(workflowFrom(args)));
     on("midi-qol.RollComplete", (...args) => this.complete(workflowFrom(args)));
     on("midi-qol.premades.postRollFinished", (...args) => this.complete(workflowFrom(args)));
   }
@@ -159,11 +159,7 @@ export class MetamagicCastingService {
     if (!original?.offers.length) return { outcome: "decline", selectedIds: [] };
     const response = await chooser({
       phase: CASTING_PHASES.SAVES_READY, closeOutcome: "decline",
-      casting: original.casting, offers: original.offers,
-      resource: original.resource,
-      // Broker prompts require a positive selection capacity even when the
-      // casting's Metamagic allowance is already exhausted. The late offers
-      // remain disabled with the authoritative selection-limit reason.
+      casting: original.casting, offers: original.offers, resource: original.resource,
       selectionLimit: Math.max(1, original.selectionRemaining)
     });
     const decision = Array.isArray(response)
@@ -172,44 +168,223 @@ export class MetamagicCastingService {
     if (decision.outcome !== "confirm") return { outcome: "decline", selectedIds: [] };
     const ids = decision.selectedIds;
     if (!Array.isArray(ids) || !ids.length || ids.length > original.selectionRemaining
-      || new Set(ids).size !== ids.length || ids.some(id => !original.offers.some(o => o.id === id && !o.disabled)))
+      || new Set(ids).size !== ids.length
+      || ids.some(id => !original.offers.some(o => o.id === id && !o.disabled))) {
       throw new Error("Late Metamagic selection is no longer valid.");
+    }
     const current = this.#declarations.compile(record.actor, this.#context(workflow));
     if (!this.#sameBase(current, record)) throw new Error("Base Metamagic declaration changed while choosing.");
     const fresh = await this.inspectPhaseOffers(workflow);
-    if (!fresh || fresh.selectionRemaining < ids.length)
-      throw new Error("Metamagic selection allowance changed while choosing.");
+    if (!fresh || fresh.selectionRemaining < ids.length) throw new Error("Metamagic selection allowance changed while choosing.");
     const pool = record.actor.items.get(record.resourceId);
     const selected = [];
     let cost = 0;
     for (const id of ids) {
       const option = fresh.offers.find(o => o.id === id && !o.disabled);
       const originallyOffered = original.offers.find(o => o.id === id);
-      if (!option || !this.#sameOption(option, originallyOffered))
-        throw new Error("Late Metamagic option changed; no protection was applied.");
+      if (!option || !this.#sameOption(option, originallyOffered)) throw new Error("Late Metamagic option changed while choosing.");
       cost += option.cost;
       selected.push(option);
     }
-    if (cost > Number(pool?.system?.uses?.value))
-      throw new Error("Sorcery Points changed; late Metamagic preview was cancelled.");
-    const prepared = [];
+    if (cost > Number(pool?.system?.uses?.value)) throw new Error("Sorcery Points changed; choose Metamagic again.");
+
+    const selections = [];
     for (const option of selected) {
       const selection = await this.#optionResult(option, "select", record, {
-        castingPhase: CASTING_PHASES.SAVES_READY, previewOnly: true
+        castingPhase: CASTING_PHASES.SAVES_READY, transactionStage: "selection"
       });
       if (selection?.outcome !== "confirm") continue;
-      if (selection.payload === undefined) throw new Error("Late Metamagic selection did not return an Item-owned payload.");
-      prepared.push({ id: option.id, label: option.label, sourceUuid: option.sourceUuid,
-        cost: option.cost, payload: clone(selection.payload) });
+      if (selection.payload === undefined) throw new Error(option.label + " did not return a late-selection payload.");
+      selections.push({ option, payload: clone(selection.payload) });
     }
-    if (!prepared.length) return { outcome: "decline", selectedIds: [] };
-    // These are NOT applied modifiers. Keep them separate from paid record.selected.
-    record.latePreview = { phase: CASTING_PHASES.SAVES_READY, status: "unpaid-not-applied",
-      options: clone(prepared), totalCost: prepared.reduce((n,o) => n+o.cost,0) };
+    if (!selections.length) return { outcome: "decline", selectedIds: [] };
+
+    const applications = [];
+    for (const entry of selections) {
+      const application = await this.#optionResult(entry.option, "apply", record, {
+        castingPhase: CASTING_PHASES.SAVES_READY, transactionStage: "prepare-application",
+        payload: clone(entry.payload)
+      });
+      applications.push({ option: entry.option, payload: entry.payload,
+        application: this.#validateLateApplication(record, entry.option, application) });
+    }
+
+    const debit = await this.#debitLate(record, cost);
+    try {
+      this.#applyLateApplications(record, applications);
+    } catch (error) {
+      this.#clearLateSaveProtection(record.workflow, { removeSuperSavers: true });
+      const refunded = await this.#refundLate(record, debit);
+      if (!refunded) {
+        record.lateRefundStatus = "failed";
+        this.#remember(record);
+        throw new Error("Late Metamagic application failed after payment and refund also failed: " + error.message);
+      }
+      record.lateRefundStatus = "refunded-after-application-failure";
+      this.#remember(record);
+      throw new Error("Late Metamagic application failed; Sorcery Points were restored. " + error.message);
+    }
+
+    record.selected.push(...applications.map(entry => clone(entry.option)));
+    record.totalCost += cost;
+    record.lateDebits ??= [];
+    record.lateDebits.push(clone(debit));
+    record.lateSelection = {
+      phase: CASTING_PHASES.SAVES_READY, status: "paid-applied",
+      options: applications.map(entry => ({
+        id: entry.option.id, label: entry.option.label, sourceUuid: entry.option.sourceUuid,
+        cost: entry.option.cost, payload: clone(entry.payload)
+      })),
+      totalCost: cost
+    };
+    delete record.latePreview;
+    record.state = "committed";
+    record.committedAt ??= new Date().toISOString();
+    record.lateRefundStatus = "not-needed";
     this.#remember(record);
-    globalThis.ui?.notifications?.info?.("AE5E: Late Metamagic selection preview recorded. Payment and effects are not yet active.");
-    return { outcome: "preview", selectedIds: prepared.map(o => o.id) };
+    const lateOptions = applications.map(entry => entry.option);
+    await this.#notifyLateConsumption(record, lateOptions, debit);
+    await this.#notifyCommitted(record, lateOptions);
+    await this.#present(record, "Cast");
+    return { outcome: "confirm", selectedIds: applications.map(entry => entry.option.id) };
   }
+
+  #validateLateApplication(record, option, application) {
+    if (!application || typeof application !== "object" || Array.isArray(application)) {
+      throw new Error(option.label + " did not return a declarative late application.");
+    }
+    const saveProtection = application.saveProtection;
+    if (!saveProtection || typeof saveProtection !== "object" || Array.isArray(saveProtection)) {
+      throw new Error(option.label + " returned no supported late application.");
+    }
+    const tokenUuids = saveProtection.tokenUuids;
+    if (!Array.isArray(tokenUuids) || !tokenUuids.length || new Set(tokenUuids).size !== tokenUuids.length
+      || tokenUuids.some(uuid => typeof uuid !== "string" || !uuid)) {
+      throw new Error(option.label + " returned invalid save-protection targets.");
+    }
+    if (saveProtection.automaticSuccess !== true || saveProtection.superSaver !== true) {
+      throw new Error(option.label + " requested unsupported save-protection semantics.");
+    }
+    const candidates = new Map([...(record.workflow.hitTargets ?? record.workflow.targets ?? [])]
+      .map(token => [token?.document?.uuid ?? token?.uuid, token]).filter(([uuid]) => Boolean(uuid)));
+    if (tokenUuids.some(uuid => !candidates.has(uuid))) {
+      throw new Error(option.label + " attempted to protect a creature outside the finalized affected targets.");
+    }
+    if (typeof record.workflow.checkSculptOrCarefulSpells !== "function") {
+      throw new Error("Midi-QOL save-protection API is unavailable on this workflow.");
+    }
+    const superSavers = record.workflow.superSavers;
+    if (superSavers != null && (typeof superSavers.add !== "function" || typeof superSavers.has !== "function"
+      || typeof superSavers.delete !== "function")) throw new Error("Midi-QOL super-saver collection is incompatible.");
+    return { saveProtection: { tokenUuids: [...tokenUuids], automaticSuccess: true, superSaver: true } };
+  }
+
+  async #debitLate(record, amount) {
+    const pool = record.actor.items.get(record.resourceId);
+    const beforeSpent = Number(pool?.system?.uses?.spent);
+    const beforeAvailable = Number(pool?.system?.uses?.value);
+    if (!pool || !Number.isSafeInteger(amount) || amount <= 0 || !Number.isFinite(beforeSpent)
+      || !Number.isFinite(beforeAvailable) || amount > beforeAvailable) {
+      throw new Error("Late Metamagic Sorcery Point payment is no longer affordable.");
+    }
+    if (typeof record.actor.performBulkUpdate !== "function") throw new Error("D&D5e bulk resource update API is unavailable.");
+    const afterSpent = beforeSpent + amount;
+    const debit = { owner: "ae5e-late", resourceUuid: record.resourceUuid, amount,
+      beforeSpent, afterSpent, beforeAvailable, afterAvailable: beforeAvailable - amount };
+    await record.actor.performBulkUpdate({ item: [{ _id: pool.id, "system.uses.spent": afterSpent }] });
+    const current = record.actor.items.get(record.resourceId);
+    if (Number(current?.system?.uses?.spent) !== afterSpent
+      || Number(current?.system?.uses?.value) !== debit.afterAvailable) {
+      const refunded = await this.#refundLate(record, debit);
+      if (refunded) throw new Error("Sorcery Point payment could not be verified; the attempted debit was restored.");
+      throw new Error("Sorcery Point payment could not be verified and automatic restoration failed.");
+    }
+    return debit;
+  }
+
+  async #refundLate(record, debit) {
+    const pool = record.actor.items.get(record.resourceId);
+    if (!pool || debit?.owner !== "ae5e-late"
+      || Number(pool.system?.uses?.spent) !== debit.afterSpent
+      || Number(pool.system?.uses?.value) !== debit.afterAvailable
+      || typeof record.actor.performBulkUpdate !== "function") return false;
+    await record.actor.performBulkUpdate({ item: [{ _id: pool.id, "system.uses.spent": debit.beforeSpent }] });
+    const current = record.actor.items.get(record.resourceId);
+    return Number(current?.system?.uses?.spent) === debit.beforeSpent
+      && Number(current?.system?.uses?.value) === debit.beforeAvailable;
+  }
+
+  #applyLateApplications(record, applications) {
+    for (const entry of applications) {
+      const request = entry.application.saveProtection;
+      if (request) this.#installLateSaveProtection(record.workflow, request.tokenUuids);
+    }
+  }
+
+  #installLateSaveProtection(workflow, tokenUuids) {
+    let state = this.#lateSaveProtection.get(workflow);
+    if (!state) {
+      const original = workflow.checkSculptOrCarefulSpells;
+      const protectedUuids = new Set();
+      state = { original, protectedUuids, addedSuperSavers: new Set() };
+      workflow.checkSculptOrCarefulSpells = function(target, ...args) {
+        const uuid = target?.document?.uuid ?? target?.uuid;
+        if (uuid && protectedUuids.has(uuid)) return true;
+        return original.call(this, target, ...args);
+      };
+      this.#lateSaveProtection.set(workflow, state);
+    }
+    const candidates = new Map([...(workflow.hitTargets ?? workflow.targets ?? [])]
+      .map(token => [token?.document?.uuid ?? token?.uuid, token]).filter(([uuid]) => Boolean(uuid)));
+    workflow.superSavers ??= new Set();
+    for (const uuid of tokenUuids) {
+      const token = candidates.get(uuid);
+      state.protectedUuids.add(uuid);
+      if (!workflow.superSavers.has(token)) {
+        workflow.superSavers.add(token);
+        state.addedSuperSavers.add(token);
+      }
+    }
+  }
+
+  restoreLateSaveProtection(workflow) {
+    this.#clearLateSaveProtection(workflow, { removeSuperSavers: false });
+    return true;
+  }
+
+  #clearLateSaveProtection(workflow, { removeSuperSavers = false } = {}) {
+    const state = this.#lateSaveProtection.get(workflow);
+    if (!state) return;
+    if (workflow?.checkSculptOrCarefulSpells && state.original) workflow.checkSculptOrCarefulSpells = state.original;
+    if (removeSuperSavers && workflow?.superSavers) {
+      for (const token of state.addedSuperSavers) workflow.superSavers.delete(token);
+    }
+    this.#lateSaveProtection.delete(workflow);
+  }
+
+  async #notifyLateConsumption(record, options, debit) {
+    const context = {
+      castingId: record.castingId, actor: record.actor, workflow: record.workflow,
+      activity: record.workflow.activity, item: record.workflow.activity.item,
+      initiatorUserId: record.initiatorUserId, casting: this.#snapshot(record)
+    };
+    const requests = [
+      { ...record.broker, kind: "broker", amount: debit.amount },
+      ...options.map(option => ({ sourceUuid: option.sourceUuid, identity: option.identity,
+        declaration: option.declaration, kind: "option", amount: option.cost }))
+    ];
+    for (const entry of requests) {
+      const { amount, ...request } = entry;
+      try {
+        await this.#executors.notify({ ...request, actor: record.actor, family: "metamagic", phase: "consumed",
+          context: { ...context, consumption: { ...clone(debit), amount, totalAmount: debit.amount } } });
+      } catch (error) {
+        try { Logger.warn("Late Metamagic lifecycle notification failed; payment and save protection were retained.", error); }
+        catch {}
+      }
+    }
+  }
+
   eventIdentity(castingId, { phase, targetActorUuid = null, targetTokenUuid = null, rollId = null } = {}) {
     if (!castingId || !phase) throw new Error("Casting and phase identity are required.");
     return JSON.stringify([castingId, phase, targetActorUuid, targetTokenUuid, rollId]);
@@ -790,7 +965,7 @@ export class MetamagicCastingService {
     }
   }
 
-  async #notifyCommitted(record) {
+  async #notifyCommitted(record, options = record.selected) {
     const context = {
       castingId: record.castingId,
       actor: record.actor,
@@ -800,7 +975,7 @@ export class MetamagicCastingService {
       initiatorUserId: record.initiatorUserId,
       casting: this.#snapshot(record)
     };
-    for (const option of record.selected) {
+    for (const option of options) {
       try {
         await this.#executors.notify({
           actor: record.actor,
@@ -884,6 +1059,7 @@ export class MetamagicCastingService {
   }
 
   async complete(workflow) {
+    this.restoreLateSaveProtection(workflow);
     const record = this.#byWorkflow.get(workflow);
     if (!record || ["completed", "unmodified", "rejected"].includes(record.state)) return true;
     // A terminal flag without a committed transition is not proof of refundable cancellation.

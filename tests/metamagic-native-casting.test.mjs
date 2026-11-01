@@ -723,3 +723,99 @@ test("save-ready broker keeps a valid positive UI capacity when earlier Metamagi
     else globalThis[capture] = previous;
   }
 });
+
+
+test("paid save-ready Careful selection debits one point and arms save protection", async () => {
+  const f = setup({ available: 4 });
+
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase === "consumed") return data.respond(document, macroName, true);',
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async ({phase}) => phase === "saves-ready"',
+    '  ? ({outcome:"confirm", selectedIds:["careful-probe"]})',
+    '  : ({outcome:"decline", selectedIds:[]}));',
+    'return data.respond(document, macroName, result);'
+  ].join("\n");
+
+  const late = f.add("late", [{
+    ...structuredClone(definitions.distant),
+    id: "careful-probe",
+    phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" }
+  }]);
+
+  f.install(late, "Careful Probe", "option", [
+    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
+    'if (data.phase === "select") return data.respond(document, macroName, {outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.friend"]}});',
+    'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids, automaticSuccess:true, superSaver:true}});'
+  ].join("\n"));
+
+  const friend = { document: { uuid: "Scene.test.Token.friend" } };
+  const enemy = { document: { uuid: "Scene.test.Token.enemy" } };
+
+  f.workflow.targets = new Set([friend, enemy]);
+  f.workflow.hitTargets = new Set([friend, enemy]);
+  f.setChooser(async () => null);
+
+  await f.service.begin(f.workflow);
+  assert.equal(await f.service.late(f.workflow), true);
+
+  const record = f.service.get(f.workflow);
+
+  assert.equal(f.pool.system.uses.value, 3);
+  assert.equal(record.state, "committed");
+  assert.equal(record.totalCost, 1);
+  assert.equal(record.lateDebits[0].owner, "ae5e-late");
+  assert.equal(record.lateSelection.status, "paid-applied");
+  assert.deepEqual(record.selected.map(entry => entry.id), ["careful-probe"]);
+
+  assert.equal(f.workflow.checkSculptOrCarefulSpells(friend), true);
+  assert.equal(f.workflow.checkSculptOrCarefulSpells(enemy), false);
+  assert.equal(f.workflow.superSavers.has(friend), true);
+  assert.equal(f.workflow.superSavers.has(enemy), false);
+
+  f.service.restoreLateSaveProtection(f.workflow);
+
+  assert.equal(f.workflow.checkSculptOrCarefulSpells(friend), false);
+  assert.equal(f.workflow.superSavers.has(friend), true);
+});
+
+test("invalid Careful protected target is rejected before any late payment", async () => {
+  const f = setup({ available: 4 });
+
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async ({phase}) => phase === "saves-ready"',
+    '  ? ({outcome:"confirm", selectedIds:["careful-probe"]})',
+    '  : ({outcome:"decline", selectedIds:[]}));',
+    'return data.respond(document, macroName, result);'
+  ].join("\n");
+
+  const late = f.add("late", [{
+    ...structuredClone(definitions.distant),
+    id: "careful-probe",
+    phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" }
+  }]);
+
+  f.install(late, "Careful Probe", "option", [
+    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
+    'if (data.phase === "select") return data.respond(document, macroName, {outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.unknown"]}});',
+    'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids, automaticSuccess:true, superSaver:true}});'
+  ].join("\n"));
+
+  f.workflow.hitTargets = new Set([
+    { document: { uuid: "Scene.test.Token.friend" } }
+  ]);
+
+  f.setChooser(async () => null);
+  await f.service.begin(f.workflow);
+
+  await assert.rejects(
+    f.service.late(f.workflow),
+    /outside the finalized affected targets/
+  );
+
+  assert.equal(f.pool.system.uses.value, 4);
+  assert.equal(f.workflow.superSavers.size, 0);
+});

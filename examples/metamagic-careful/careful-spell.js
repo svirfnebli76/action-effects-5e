@@ -1,6 +1,6 @@
 // CAT Embedded Macro: Careful Spell
 // Event: Called | Pass: actorAe5eDeclarationOption | Priority: 50
-// This Stage B5.3 preview records selected creatures only. Does not pay or protect.
+// Item-owned Careful Spell behavior: eligibility, creature selection, and declarative save protection.
 if (data?.namespace !== "ae5e.declarations" || data.family !== "metamagic"
     || data.kind !== "option" || document?.uuid !== data.sourceItemUuid
     || macroName !== data.execution.name) return;
@@ -35,13 +35,25 @@ if (data.phase === "offer") {
     eligible: reasons.length === 0,
     reasons,
     description: "Choose up to " + maxProtect +
-      " affected creature(s). They automatically succeed on the initial save and avoid half damage.",
-    advisory: "Preview only: Sorcery Points are not spent and saving throws are not modified."
+      " affected creature(s). They automatically succeed on the initial save and avoid half damage."
+  });
+}
+
+if (data.phase === "apply") {
+  const tokenUuids = data.context?.payload?.protectedTokenUuids;
+  if (!Array.isArray(tokenUuids) || !tokenUuids.length) {
+    throw new Error("Careful Spell received no protected creatures.");
+  }
+  return data.respond(document, macroName, {
+    saveProtection: {
+      tokenUuids: [...tokenUuids],
+      automaticSuccess: true,
+      superSaver: true
+    }
   });
 }
 
 if (data.phase !== "select") return;
-if (!data.context.previewOnly) throw new Error("Careful Spell preview requires explicit preview mode.");
 if (!unique.length) return data.respond(document, macroName, { outcome: "decline" });
 
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, ch =>
@@ -64,14 +76,12 @@ const controls = unique.map(token => {
     '<span style="flex:1;font-size:13px;">' + escapeHtml(name) + '</span></label>';
 }).join("");
 
-const content = '<section class="ae5e-careful-preview" style="width:100%;padding:0 6px;">' +
+const content = '<section class="ae5e-careful" style="width:100%;padding:0 6px;">' +
   '<img src="modules/action-effects-5e/assets/banners/feats/carefulSpell.webp" ' +
   'style="width:100%;border-radius:6px;display:block;margin:0 auto 12px;">' +
   '<p style="text-align:center;">Choose which creatures to protect from the spell&#39;s initial saving throw.</p>' +
   '<p style="text-align:center;font-size:12px;">You may select between 1 and ' + maxProtect +
   ' eligible affected creatures. Secret creatures are excluded.</p>' +
-  '<p style="color:#e67e22;text-align:center;font-size:12px;">' +
-  'TEST PREVIEW ONLY: This does not spend Sorcery Points or change saving throws.</p>' +
   '<div style="max-height:420px;overflow-y:auto;">' + controls + '</div>' +
   '<p style="text-align:center;font-size:12px;">You do not need to use all available protection slots.</p>' +
   '</section>';
@@ -84,7 +94,7 @@ const answer = await DialogV2.wait({
   buttons: [
     {
       action: "confirm",
-      label: "Preview Protection",
+      label: "Protect Creatures",
       icon: "fa-solid fa-check",
       default: true,
       callback: (event, button, dialog) => {
