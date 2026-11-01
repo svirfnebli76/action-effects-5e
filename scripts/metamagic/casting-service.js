@@ -160,7 +160,11 @@ export class MetamagicCastingService {
     const response = await chooser({
       phase: CASTING_PHASES.SAVES_READY, closeOutcome: "decline",
       casting: original.casting, offers: original.offers,
-      resource: original.resource, selectionLimit: original.selectionRemaining
+      resource: original.resource,
+      // Broker prompts require a positive selection capacity even when the
+      // casting's Metamagic allowance is already exhausted. The late offers
+      // remain disabled with the authoritative selection-limit reason.
+      selectionLimit: Math.max(1, original.selectionRemaining)
     });
     const decision = Array.isArray(response)
       ? { outcome: response.length ? "confirm" : "decline", selectedIds: response }

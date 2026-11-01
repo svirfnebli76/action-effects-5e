@@ -682,3 +682,44 @@ test("save-ready does not invoke broker when no learned option declares that pha
   assert.equal(f.service.get(f.workflow).latePreview, undefined);
   assert.equal(f.pool.system.uses.value, 4);
 });
+
+
+test("save-ready broker keeps a valid positive UI capacity when earlier Metamagic exhausted the allowance", async () => {
+  const f = setup();
+  const capture = "__ae5eLateCapacityProbe";
+  const previous = globalThis[capture];
+
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async request => {',
+    '  if (request.phase === "saves-ready") globalThis.__ae5eLateCapacityProbe = request;',
+    '  return request.phase === "saves-ready"',
+    '    ? {outcome:"decline", selectedIds:[]}',
+    '    : {outcome:"confirm", selectedIds:["distance"]};',
+    '});',
+    'return data.respond(document, macroName, result);'
+  ].join("\\n");
+
+  const late = f.add("late", [{
+    ...structuredClone(definitions.distant),
+    id: "careful-probe",
+    phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" }
+  }]);
+
+  f.install(late, "Careful Probe", "option",
+    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});');
+
+  try {
+    await f.service.begin(f.workflow);
+    await f.service.late(f.workflow);
+    const request = globalThis[capture];
+    assert.equal(request.selectionLimit, 1);
+    assert.equal(request.offers.length, 1);
+    assert.equal(request.offers[0].disabled, true);
+    assert.match(request.offers[0].reason, /selection limit/);
+  } finally {
+    if (previous === undefined) delete globalThis[capture];
+    else globalThis[capture] = previous;
+  }
+});
