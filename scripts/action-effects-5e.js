@@ -224,7 +224,7 @@ const resultsCards = new ResultsCardService();
 const metamagicDeclarations = new MetamagicDeclarationService({ collections: itemDeclarations });
 const declarationMacros = new CatDeclarationMacroAdapter();
 const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations,
-  cards: chatCardAdapter, executors: declarationMacros });
+  cards: chatCardAdapter, executors: declarationMacros, socket });
 const metamagicTurnCasting = new MetamagicTurnCastingService({
   phases: castingPhases,
   declarations: metamagicDeclarations

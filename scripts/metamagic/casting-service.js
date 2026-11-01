@@ -3,6 +3,7 @@ import { CASTING_PHASES } from "../casting/casting-phase-service.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
 import { validateSpellPropertyUpdate, spellPropertyUpdateMatches } from "./casting-item-properties.js";
+import { SaveDisadvantageService } from "./save-disadvantage-service.js";
 
 const CAST_FLAG = "casting";
 const clone = value => duplicateSafely(value);
@@ -27,11 +28,13 @@ export class MetamagicCastingService {
   #latePending = new WeakMap();
   #lateDone = new WeakSet();
   #lateSaveProtection = new WeakMap();
+  #saveDisadvantage;
 
-  constructor({ declarations, cards, executors }) {
+  constructor({ declarations, cards, executors, socket = null }) {
     this.#declarations = declarations;
     this.#cards = cards;
     this.#executors = executors;
+    this.#saveDisadvantage = new SaveDisadvantageService({ socket });
   }
 
   initialize() {
@@ -49,11 +52,18 @@ export class MetamagicCastingService {
     on("dnd5e.postActivityConsumption", (activity, usage, message) => this.recordConsumption(activity, message));
     on("dnd5e.postUseActivity", activity => this.observeNative(activity));
     on("midi-qol.premades.postPreambleComplete", (...args) => this.commit(workflowFrom(args)));
-    on("midi-qol.preCheckSaves", (...args) => this.late(workflowFrom(args)).catch(error => {
-      Logger.warn("Late Metamagic transaction failed; spell saves continue normally.", error);
-      globalThis.ui?.notifications?.error?.("AE5E: " + (error?.message ?? "Late Metamagic transaction failed."));
-      return true;
-    }));
+    on("midi-qol.preCheckSaves", async (...args) => {
+      const workflow = workflowFrom(args);
+      try {
+        await this.#saveDisadvantage.prepareOverTime(workflow);
+        return await this.late(workflow);
+      } catch (error) {
+        Logger.warn("Late Metamagic transaction failed; spell saves continue normally.", error);
+        globalThis.ui?.notifications?.error?.("AE5E: " + (error?.message ?? "Late Metamagic transaction failed."));
+        return true;
+      }
+    });
+    on("midi-qol.premades.postApplyDynamicEffects", (...args) => this.#persistSaveDisadvantage(workflowFrom(args)));
     on("midi-qol.postCheckSaves", (...args) => this.restoreLateSaveProtection(workflowFrom(args)));
     on("midi-qol.RollComplete", (...args) => this.complete(workflowFrom(args)));
     on("midi-qol.premades.postRollFinished", (...args) => this.complete(workflowFrom(args)));
@@ -214,6 +224,10 @@ export class MetamagicCastingService {
       this.#applyLateApplications(record, applications);
     } catch (error) {
       this.#clearLateSaveProtection(record.workflow, { removeSuperSavers: true });
+      // A compatibility utility failure must not prevent the existing SP refund.
+      let cleanupError;
+      try { this.#saveDisadvantage.rollback(record.workflow); }
+      catch (failure) { cleanupError = failure; }
       const refunded = await this.#refundLate(record, debit);
       if (!refunded) {
         record.lateRefundStatus = "failed";
@@ -222,7 +236,8 @@ export class MetamagicCastingService {
       }
       record.lateRefundStatus = "refunded-after-application-failure";
       this.#remember(record);
-      throw new Error("Late Metamagic application failed; Sorcery Points were restored. " + error.message);
+      throw new Error("Late Metamagic application failed; Sorcery Points were restored. " + error.message
+        + (cleanupError ? " Save modifier cleanup also failed: " + cleanupError.message : ""));
     }
 
     record.selected.push(...applications.map(entry => clone(entry.option)));
@@ -252,6 +267,15 @@ export class MetamagicCastingService {
   #validateLateApplication(record, option, application) {
     if (!application || typeof application !== "object" || Array.isArray(application)) {
       throw new Error(option.label + " did not return a declarative late application.");
+    }
+    if (application.saveDisadvantage && !application.saveProtection) {
+      return {
+        saveDisadvantage: this.#saveDisadvantage.validate(
+          record.workflow,
+          application.saveDisadvantage,
+          { id: option.id }
+        )
+      };
     }
     const saveProtection = application.saveProtection;
     if (!saveProtection || typeof saveProtection !== "object" || Array.isArray(saveProtection)) {
@@ -318,6 +342,7 @@ export class MetamagicCastingService {
     for (const entry of applications) {
       const request = entry.application.saveProtection;
       if (request) this.#installLateSaveProtection(record.workflow, request.tokenUuids);
+      if (entry.application.saveDisadvantage) this.#saveDisadvantage.install(record, entry.application.saveDisadvantage);
     }
   }
 
@@ -1060,6 +1085,8 @@ export class MetamagicCastingService {
 
   async complete(workflow) {
     this.restoreLateSaveProtection(workflow);
+    await this.#persistSaveDisadvantage(workflow);
+    this.#saveDisadvantage.finish(workflow);
     const record = this.#byWorkflow.get(workflow);
     if (!record || ["completed", "unmodified", "rejected"].includes(record.state)) return true;
     // A terminal flag without a committed transition is not proof of refundable cancellation.
@@ -1067,6 +1094,14 @@ export class MetamagicCastingService {
     await this.#present(record, record.committedAt ? "Resolved" : "Unconfirmed");
     this.#archive(record);
     return true;
+  }
+
+  async #persistSaveDisadvantage(workflow) {
+    try { await this.#saveDisadvantage.persist(workflow); }
+    catch (error) {
+      Logger.warn("Persistent save-disadvantage application failed.", error);
+      globalThis.ui?.notifications?.error?.(`AE5E: ${error.message}`);
+    }
   }
 
   async #present(record, outcome) {
