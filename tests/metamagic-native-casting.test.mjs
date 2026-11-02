@@ -291,7 +291,7 @@ test("runtime hook wiring is idempotent and synchronous vetoes remain synchronou
     const f = setup();
     f.service.initialize();
     f.service.initialize();
-    assert.equal(handlers.size, 12);
+    assert.equal(handlers.size, 13);
     await f.service.begin(f.workflow);
     const native = f.activityClone(f.workflow.activity);
     assert.equal(handlers.get("dnd5e.preUseActivity")(native), true);
@@ -819,7 +819,7 @@ test("invalid Careful protected target is rejected before any late payment", asy
 
   await assert.rejects(
     f.service.late(f.workflow),
-    /No unique response from 'Metamagic Broker'/
+    /outside the finalized affected targets/
   );
 
   assert.equal(f.pool.system.uses.value, 4);

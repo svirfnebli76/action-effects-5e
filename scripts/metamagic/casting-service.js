@@ -15,6 +15,7 @@ const itemUpdateMatches = (item, path, expected) => path === "system.properties"
 const workflowFrom = args => args.flatMap(value => [value, value?.workflow, value?.config?.workflow, value?.usage?.workflow])
   .find(value => value?.actor && value?.activity);
 const isActivityOverTime = workflow => Boolean(workflow?.workflowOptions?.overTimeEffectUuid);
+const LATE_PHASES = new Set([CASTING_PHASES.SAVES_READY, CASTING_PHASES.DAMAGE_MUTABLE]);
 
 /** Coordinates Item-provided options. It contains no option rules or names. */
 export class MetamagicCastingService {
@@ -27,15 +28,17 @@ export class MetamagicCastingService {
   #recent = [];
   #hooks = [];
   #latePending = new WeakMap();
-  #lateDone = new WeakSet();
+  #lateDone = new WeakMap();
   #lateSaveProtection = new WeakMap();
   #saveDisadvantage;
+  #catSpell;
 
-  constructor({ declarations, cards, executors, socket = null }) {
+  constructor({ declarations, cards, executors, socket = null, catSpell = null }) {
     this.#declarations = declarations;
     this.#cards = cards;
     this.#executors = executors;
     this.#saveDisadvantage = new SaveDisadvantageService({ socket });
+    this.#catSpell = catSpell;
   }
 
   initialize() {
@@ -65,6 +68,17 @@ export class MetamagicCastingService {
         return true;
       }
     });
+    on("midi-qol.preDamageRollComplete", async (...args) => {
+      const workflow = workflowFrom(args);
+      if (isActivityOverTime(workflow)) return true;
+      try {
+        return await this.late(workflow, CASTING_PHASES.DAMAGE_MUTABLE);
+      } catch (error) {
+        Logger.warn("Damage-stage Metamagic transaction failed; spell damage continues normally.", error);
+        globalThis.ui?.notifications?.error?.("AE5E: " + (error?.message ?? "Damage-stage Metamagic transaction failed."));
+        return true;
+      }
+    });
     on("midi-qol.premades.postApplyDynamicEffects", (...args) => this.#persistSaveDisadvantage(workflowFrom(args)));
     on("midi-qol.postCheckSaves", (...args) => this.restoreLateSaveProtection(workflowFrom(args)));
     on("midi-qol.RollComplete", (...args) => this.complete(workflowFrom(args)));
@@ -87,7 +101,7 @@ export class MetamagicCastingService {
 
   /** Read-only discovery for an existing casting; no choice, resource debit or effect application. */
   async inspectPhaseOffers(workflow, phase = CASTING_PHASES.SAVES_READY) {
-    if (phase !== CASTING_PHASES.SAVES_READY) throw new Error("Unsupported late Metamagic phase.");
+    if (!LATE_PHASES.has(phase)) throw new Error("Unsupported late Metamagic phase.");
     if (!workflow) return null;
     const record = this.#byWorkflow.get(workflow);
     if (!record || ["rejected", "completed", "unconfirmed"].includes(record.state)) return null;
@@ -118,59 +132,77 @@ export class MetamagicCastingService {
   }
 
   /**
-   * Offer Item-owned late Metamagic choices at Midi preCheckSaves.
-   * This stage is explicitly preview-only; no debit and no save protection.
+   * Offer Item-owned late Metamagic choices at an awaited Midi workflow gate.
+   * Discovery is preview-only; payment and application remain one transaction.
    * Keep the accepted pre-cast CAT broker and native consumption unchanged.
    */
-  async late(workflow) {
-    if (!workflow || this.#lateDone.has(workflow)) return true;
-    if (this.#latePending.has(workflow)) return this.#latePending.get(workflow);
-    const pending = this.#latePreview(workflow);
-    this.#latePending.set(workflow, pending);
+  async late(workflow, phase = CASTING_PHASES.SAVES_READY) {
+    if (!LATE_PHASES.has(phase)) throw new Error("Unsupported late Metamagic phase.");
+    if (!workflow || this.#lateDone.get(workflow)?.has(phase)) return true;
+    const pendingByPhase = this.#latePending.get(workflow);
+    if (pendingByPhase?.has(phase)) return pendingByPhase.get(phase);
+    const pending = this.#latePreview(workflow, phase);
+    const currentPending = pendingByPhase ?? new Map();
+    currentPending.set(phase, pending);
+    this.#latePending.set(workflow, currentPending);
     try { return await pending; }
-    finally { this.#latePending.delete(workflow); this.#lateDone.add(workflow); }
+    finally {
+      currentPending.delete(phase);
+      if (!currentPending.size) this.#latePending.delete(workflow);
+      const done = this.#lateDone.get(workflow) ?? new Set();
+      done.add(phase);
+      this.#lateDone.set(workflow, done);
+    }
   }
 
-  async #latePreview(workflow) {
+  async #latePreview(workflow, phase) {
     const record = this.#byWorkflow.get(workflow);
     if (!record || !["unmodified", "selected", "native-prepared", "consumed", "committed"].includes(record.state)) return true;
     if (record.initiatorUserId !== game.user.id || (workflow.userId && workflow.userId !== game.user.id)) return true;
-    const first = await this.inspectPhaseOffers(workflow);
+    const first = await this.inspectPhaseOffers(workflow, phase);
     if (!first?.offers?.length) return true;
     const compiled = this.#declarations.compile(record.actor, this.#context(workflow));
     if (!this.#sameBase(compiled, record)) return true;
     let invoked = 0;
     let answer;
     let callbackResult;
+    let callbackError;
     let running = true;
     try {
       answer = await this.#executors.execute({
         actor: record.actor, sourceUuid: compiled.mainUuid, identity: compiled.mainIdentity,
         family: "metamagic", declaration: compiled.mainDeclaration, kind: "broker", phase: "begin",
         context: { actor: record.actor, workflow, initiatorUserId: record.initiatorUserId,
-          castingPhase: CASTING_PHASES.SAVES_READY,
+          castingPhase: phase,
           begin: async (source, chooser) => {
             invoked++;
             if (!running || invoked !== 1 || source?.uuid !== compiled.mainUuid
               || record.actor.items.get(source.id) !== source || typeof chooser !== "function")
               throw new Error("Late Metamagic broker must be started once from its base Item.");
-            callbackResult = await this.#chooseLate(record, chooser);
-            return callbackResult;
+            try {
+              callbackResult = await this.#chooseLate(record, chooser, phase);
+              return callbackResult;
+            } catch (error) {
+              callbackError = error;
+              throw error;
+            }
           }
         }
       });
       if (invoked !== 1 || answer !== callbackResult)
         throw new Error("Late Metamagic broker did not return its chooser result.");
+    } catch (error) {
+      throw callbackError ?? error;
     } finally { running = false; }
     return true;
   }
 
-  async #chooseLate(record, chooser) {
+  async #chooseLate(record, chooser, phase) {
     const workflow = record.workflow;
-    const original = await this.inspectPhaseOffers(workflow);
+    const original = await this.inspectPhaseOffers(workflow, phase);
     if (!original?.offers.length) return { outcome: "decline", selectedIds: [] };
     const response = await chooser({
-      phase: CASTING_PHASES.SAVES_READY, closeOutcome: "decline",
+      phase, closeOutcome: "decline",
       casting: original.casting, offers: original.offers, resource: original.resource,
       selectionLimit: Math.max(1, original.selectionRemaining)
     });
@@ -186,7 +218,7 @@ export class MetamagicCastingService {
     }
     const current = this.#declarations.compile(record.actor, this.#context(workflow));
     if (!this.#sameBase(current, record)) throw new Error("Base Metamagic declaration changed while choosing.");
-    const fresh = await this.inspectPhaseOffers(workflow);
+    const fresh = await this.inspectPhaseOffers(workflow, phase);
     if (!fresh || fresh.selectionRemaining < ids.length) throw new Error("Metamagic selection allowance changed while choosing.");
     const pool = record.actor.items.get(record.resourceId);
     const selected = [];
@@ -203,7 +235,7 @@ export class MetamagicCastingService {
     const selections = [];
     for (const option of selected) {
       const selection = await this.#optionResult(option, "select", record, {
-        castingPhase: CASTING_PHASES.SAVES_READY, transactionStage: "selection"
+        castingPhase: phase, transactionStage: "selection"
       });
       if (selection?.outcome !== "confirm") continue;
       if (selection.payload === undefined) throw new Error(option.label + " did not return a late-selection payload.");
@@ -214,22 +246,25 @@ export class MetamagicCastingService {
     const applications = [];
     for (const entry of selections) {
       const application = await this.#optionResult(entry.option, "apply", record, {
-        castingPhase: CASTING_PHASES.SAVES_READY, transactionStage: "prepare-application",
+        castingPhase: phase, transactionStage: "prepare-application",
         payload: clone(entry.payload)
       });
       applications.push({ option: entry.option, payload: entry.payload,
-        application: this.#validateLateApplication(record, entry.option, application) });
+        application: this.#validateLateApplication(record, entry.option, application, phase) });
     }
 
     const debit = await this.#debitLate(record, cost);
+    const damageRollbacks = [];
     try {
-      this.#applyLateApplications(record, applications);
+      await this.#applyLateApplications(record, applications, damageRollbacks);
     } catch (error) {
       this.#clearLateSaveProtection(record.workflow, { removeSuperSavers: true });
       // A compatibility utility failure must not prevent the existing SP refund.
-      let cleanupError;
+      const cleanupErrors = [];
       try { this.#saveDisadvantage.rollback(record.workflow); }
-      catch (failure) { cleanupError = failure; }
+      catch (failure) { cleanupErrors.push(failure); }
+      try { await this.#rollbackDamageRollMutations(record.workflow, damageRollbacks); }
+      catch (failure) { cleanupErrors.push(failure); }
       const refunded = await this.#refundLate(record, debit);
       if (!refunded) {
         record.lateRefundStatus = "failed";
@@ -239,21 +274,25 @@ export class MetamagicCastingService {
       record.lateRefundStatus = "refunded-after-application-failure";
       this.#remember(record);
       throw new Error("Late Metamagic application failed; Sorcery Points were restored. " + error.message
-        + (cleanupError ? " Save modifier cleanup also failed: " + cleanupError.message : ""));
+        + (cleanupErrors.length ? " Application cleanup also failed: "
+          + cleanupErrors.map(failure => failure.message).join("; ") : ""));
     }
 
     record.selected.push(...applications.map(entry => clone(entry.option)));
     record.totalCost += cost;
     record.lateDebits ??= [];
     record.lateDebits.push(clone(debit));
-    record.lateSelection = {
-      phase: CASTING_PHASES.SAVES_READY, status: "paid-applied",
+    const lateSelection = {
+      phase, status: "paid-applied",
       options: applications.map(entry => ({
         id: entry.option.id, label: entry.option.label, sourceUuid: entry.option.sourceUuid,
         cost: entry.option.cost, payload: clone(entry.payload)
       })),
       totalCost: cost
     };
+    record.lateSelection = lateSelection;
+    record.lateSelections ??= [];
+    record.lateSelections.push(clone(lateSelection));
     delete record.latePreview;
     record.state = "committed";
     record.committedAt ??= new Date().toISOString();
@@ -266,9 +305,46 @@ export class MetamagicCastingService {
     return { outcome: "confirm", selectedIds: applications.map(entry => entry.option.id) };
   }
 
-  #validateLateApplication(record, option, application) {
+  #validateLateApplication(record, option, application, phase) {
     if (!application || typeof application !== "object" || Array.isArray(application)) {
       throw new Error(option.label + " did not return a declarative late application.");
+    }
+    if (application.damageRollMutation) {
+      if (phase !== CASTING_PHASES.DAMAGE_MUTABLE) {
+        throw new Error(option.label + " requested a damage-roll mutation outside the damage-mutable phase.");
+      }
+      if (application.saveDisadvantage || application.saveProtection) {
+        throw new Error(option.label + " combined incompatible late applications.");
+      }
+      const request = application.damageRollMutation;
+      if (!request || typeof request !== "object" || Array.isArray(request) || request.operation !== "retag") {
+        throw new Error(option.label + " returned an unsupported damage-roll mutation.");
+      }
+      const damageType = request.damageType;
+      if (typeof damageType !== "string" || !/^[a-z][a-z0-9-]*$/.test(damageType)) {
+        throw new Error(option.label + " returned an invalid damage type.");
+      }
+      if (!this.#catSpell || typeof this.#catSpell.retagDamageRollsPreservingResults !== "function") {
+        throw new Error("CAT spell roll utilities are unavailable.");
+      }
+      if (typeof record.workflow.setDamageRolls !== "function") {
+        throw new Error("Midi workflow.setDamageRolls() is unavailable.");
+      }
+      const rolls = Array.isArray(record.workflow.damageRolls) && record.workflow.damageRolls.length
+        ? record.workflow.damageRolls
+        : record.workflow.damageRoll ? [record.workflow.damageRoll] : [];
+      if (!rolls.length) throw new Error(option.label + " found no damage rolls to mutate.");
+      const indexes = request.indexes == null ? rolls.map((_, index) => index) : request.indexes;
+      if (!Array.isArray(indexes) || !indexes.length || new Set(indexes).size !== indexes.length
+        || indexes.some(index => !Number.isSafeInteger(index) || index < 0 || index >= rolls.length
+          || !rolls[index] || !rolls[index].options || typeof rolls[index].options !== "object"
+          || Array.isArray(rolls[index].options))) {
+        throw new Error(option.label + " returned invalid damage-roll indexes.");
+      }
+      return { damageRollMutation: { operation: "retag", damageType, indexes: [...indexes] } };
+    }
+    if (phase !== CASTING_PHASES.SAVES_READY) {
+      throw new Error(option.label + " returned no supported damage-mutable application.");
     }
     if (application.saveDisadvantage && !application.saveProtection) {
       return {
@@ -340,12 +416,32 @@ export class MetamagicCastingService {
       && Number(current?.system?.uses?.value) === debit.beforeAvailable;
   }
 
-  #applyLateApplications(record, applications) {
+  async #applyLateApplications(record, applications, damageRollbacks) {
     for (const entry of applications) {
       const request = entry.application.saveProtection;
       if (request) this.#installLateSaveProtection(record.workflow, request.tokenUuids);
       if (entry.application.saveDisadvantage) this.#saveDisadvantage.install(record, entry.application.saveDisadvantage);
+      const mutation = entry.application.damageRollMutation;
+      if (mutation) {
+        const rolls = Array.isArray(record.workflow.damageRolls) && record.workflow.damageRolls.length
+          ? record.workflow.damageRolls
+          : [record.workflow.damageRoll];
+        const before = mutation.indexes.map(index => ({ index, type: rolls[index].options.type }));
+        await this.#catSpell.retagDamageRollsPreservingResults(record.workflow, mutation.damageType,
+          { indexes: mutation.indexes });
+        damageRollbacks.push({ rolls, before });
+      }
     }
+  }
+
+  async #rollbackDamageRollMutations(workflow, states) {
+    if (!states.length) return;
+    for (const state of [...states].reverse()) {
+      for (const entry of state.before) {
+        if (state.rolls[entry.index]?.options) state.rolls[entry.index].options.type = entry.type;
+      }
+    }
+    await workflow.setDamageRolls(states[0].rolls);
   }
 
   #installLateSaveProtection(workflow, tokenUuids) {
