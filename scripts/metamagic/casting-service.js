@@ -14,6 +14,7 @@ const itemUpdateMatches = (item, path, expected) => path === "system.properties"
   : JSON.stringify(property(item, path)) === JSON.stringify(expected);
 const workflowFrom = args => args.flatMap(value => [value, value?.workflow, value?.config?.workflow, value?.usage?.workflow])
   .find(value => value?.actor && value?.activity);
+const isActivityOverTime = workflow => Boolean(workflow?.workflowOptions?.overTimeEffectUuid);
 
 /** Coordinates Item-provided options. It contains no option rules or names. */
 export class MetamagicCastingService {
@@ -56,6 +57,7 @@ export class MetamagicCastingService {
       const workflow = workflowFrom(args);
       try {
         await this.#saveDisadvantage.prepareOverTime(workflow);
+        if (isActivityOverTime(workflow)) return true;
         return await this.late(workflow);
       } catch (error) {
         Logger.warn("Late Metamagic transaction failed; spell saves continue normally.", error);
@@ -416,7 +418,7 @@ export class MetamagicCastingService {
   }
 
   async begin(workflow, options = {}) {
-    if (!workflow) return true;
+    if (!workflow || isActivityOverTime(workflow)) return true;
     if (this.#starting.has(workflow)) return this.#starting.get(workflow);
     const existing = this.#byWorkflow.get(workflow);
     if (existing) return existing.preparing ?? existing.state !== "rejected";
@@ -1138,3 +1140,4 @@ export class MetamagicCastingService {
     this.#remember(record);
   }
 }
+

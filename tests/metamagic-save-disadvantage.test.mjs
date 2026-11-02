@@ -149,3 +149,33 @@ test("ActivityOverTime bridge uses only its exact stamped effect and target", as
   await service.prepareOverTime(unrelated);
   assert.deepEqual(modifiers(unrelated), {});
 });
+
+test("ActivityOverTime repeats bridge disadvantage without opening a Metamagic transaction", async () => {
+  const f = fixture();
+  await f.service.begin(f.workflow);
+  await f.service.late(f.workflow);
+  const ongoing = effect(f, "ongoing");
+  await f.service.complete(f.workflow);
+  const repeat = {
+    ...f.workflow,
+    workflowOptions: { overTimeEffectUuid: ongoing.uuid },
+    hitTargets: new Set([f.chosen])
+  };
+  const handlers = new Map();
+  const previous = globalThis.Hooks;
+  globalThis.Hooks = { on(name, callback) { handlers.set(name, callback); return name; }, off() {} };
+  try {
+    let lateCalls = 0;
+    f.service.late = async () => { lateCalls += 1; return true; };
+    f.service.initialize();
+    assert.equal(await handlers.get("midi-qol.preTargetingV2")(repeat), true);
+    assert.equal(f.service.get(repeat), null);
+    assert.equal(await handlers.get("midi-qol.preCheckSaves")(repeat), true);
+    assert.equal(lateCalls, 0);
+    assert.equal(modifiers(repeat).chosen[0].type, "dis");
+  } finally {
+    f.service.shutdown();
+    globalThis.Hooks = previous;
+  }
+});
+
