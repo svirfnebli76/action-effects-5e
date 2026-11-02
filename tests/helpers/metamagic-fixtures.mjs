@@ -23,7 +23,7 @@ function setPath(subject, path, value) {
   for (const key of keys) subject = subject[key] ??= {};
   subject[leaf] = copy(value);
 }
-export function setup({ range = { value: 30, units: "ft", override: false }, available = 4, uuid = "Actor.caster", ac5e = null, sourceBacked = false, spellProperties = null } = {}) {
+export function setup({ range = { value: 30, units: "ft", override: false }, available = 4, uuid = "Actor.caster", ac5e = null, sourceBacked = false, spellProperties = null, catSpell = null } = {}) {
   const { collections, registry } = declarationsFixture({ ac5e });
   const actor = { uuid, isOwner: true, items: new Items() };
   const writes = [];
@@ -141,7 +141,8 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   const executors = new CatDeclarationMacroAdapter({ catAccessor: () => cat });
   const cards = [];
   const service = new MetamagicCastingService({ declarations, executors,
-    cards: { async upsertContribution(subject, contribution) { cards.push(copy(contribution)); return { updated: true }; } } });
+    cards: { async upsertContribution(subject, contribution) { cards.push(copy(contribution)); return { updated: true }; } },
+    catSpell });
   const api = { prompts: { async chooseBroker(request) {
     prompts.push(request);
     const selected = await chooser(request);
