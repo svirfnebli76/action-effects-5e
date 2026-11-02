@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CastingPhaseService, CASTING_PHASES } from "../scripts/casting/casting-phase-service.js";
 
+globalThis.foundry = { utils: { randomID: () => "casting-phase-test" } };
+
 function hooksFixture() {
   const handlers = new Map();
   globalThis.Hooks = {
@@ -47,18 +49,22 @@ test("casting phase hooks expose semantic phases and cancellation safety", async
   });
   service.initialize();
 
-  assert.equal(handlers.size, 4);
+  assert.equal(handlers.size, 5);
   const w = workflow();
   assert.equal(await handlers.get("midi-qol.preTargetingV2")(w), false,
     "pre-cast is cancellation-safe");
   assert.equal(await handlers.get("midi-qol.premades.postPreambleComplete")(w), true,
     "later phases cannot unwind an already-progressed cast");
+  w.targets = new Set(["Leader", "Raven"]);
+  w.hitTargets = new Set(["Leader", "Raven"]);
+  assert.equal(await handlers.get("midi-qol.preCheckSaves")(w), true);
   assert.equal(await handlers.get("midi-qol.hitsChecked")(w), true);
   assert.equal(await handlers.get("midi-qol.preDamageRollComplete")(w), true);
 
   assert.deepEqual(seen.map(entry => entry.phase), [
     CASTING_PHASES.PRE_CAST,
     CASTING_PHASES.POST_TARGETING,
+    CASTING_PHASES.SAVES_READY,
     CASTING_PHASES.ATTACK_RESOLVED,
     CASTING_PHASES.DAMAGE_MUTABLE
   ]);
@@ -67,6 +73,9 @@ test("casting phase hooks expose semantic phases and cancellation safety", async
   assert.equal(seen[0].facts.isCasterTurn, true);
   assert.equal(seen[0].facts.castLevel, 4);
   assert.equal(seen[0].facts.baseSpellLevel, 3);
+  assert.equal(seen[2].facts.targetCount, 2);
+  assert.equal(seen[2].facts.hitTargetCount, 2);
+  assert.equal(seen[2].cancelSafe, false);
 
   service.shutdown();
   assert.equal(handlers.size, 0);

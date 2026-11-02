@@ -4,6 +4,7 @@ import { Logger } from "../core/logger.js";
 export const CASTING_PHASES = Object.freeze({
   PRE_CAST: "pre-cast",
   POST_TARGETING: "post-targeting",
+  SAVES_READY: "saves-ready",
   ATTACK_RESOLVED: "attack-resolved",
   DAMAGE_MUTABLE: "damage-mutable"
 });
@@ -59,6 +60,8 @@ export class CastingPhaseService {
 
     on("midi-qol.preTargetingV2", CASTING_PHASES.PRE_CAST, true);
     on("midi-qol.premades.postPreambleComplete", CASTING_PHASES.POST_TARGETING, false);
+    // The final hit targets are present when Midi awaits this hook.
+    on("midi-qol.preCheckSaves", CASTING_PHASES.SAVES_READY, false);
     on("midi-qol.hitsChecked", CASTING_PHASES.ATTACK_RESOLVED, false);
     on("midi-qol.preDamageRollComplete", CASTING_PHASES.DAMAGE_MUTABLE, false);
   }
@@ -225,6 +228,8 @@ export class CastingPhaseService {
       casterTokenUuid: workflow.token?.document?.uuid ?? workflow.token?.uuid ?? null,
       sourceItemUuid: workflow.item?.uuid ?? workflow.activity?.item?.uuid ?? null,
       sourceActivityId: workflow.activity?.id ?? null,
+      targetCount: workflow.targets?.size ?? 0,
+      hitTargetCount: workflow.hitTargets?.size ?? 0,
       activationType: workflow.activity?.activation?.type ?? workflow.activity?.system?.activation?.type ?? null,
       baseSpellLevel: Number.isFinite(baseLevel) ? baseLevel : null,
       castLevel: Number.isFinite(castLevel) ? castLevel : null,

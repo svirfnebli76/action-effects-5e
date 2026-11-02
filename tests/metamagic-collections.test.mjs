@@ -218,7 +218,7 @@ test("a missing option macro is explained as unavailable and cannot be forced in
   delete f.option.flags.cat;
   f.setChooser(async request => {
     assert.equal(request.choices[0].disabled, true);
-    assert.match(request.choices[0].detail, /Configure exactly one/);
+    assert.match(request.choices[0].reasons[0], /Configure exactly one/);
     return "distant-spell";
   });
   await assert.rejects(f.service.begin(f.workflow), /Invalid modifier selection/);
@@ -373,11 +373,10 @@ test("the Item broker enforces combined affordability and the runtime rejects co
     const script = available === 1 ? distant.replace("{ activityUpdates: updates }", "{ activityUpdates: { 'duration.value': 2 } }") : distant;
     f.install(other, "Distant Spell", "option", script);
     f.main.flags[scope].metamagic.declarations.push(copy(definitions.combination));
-    f.setChooser(async request => {
-      const index = f.prompts.length;
-      if (index === 2) assert.equal(request.choices[0].disabled, available === 1);
-      return index === 1 ? "distant-spell" : "another-option";
-    });
+    f.setChooser(async () => ({
+      outcome: "confirm",
+      selectedIds: ["distant-spell", "another-option"]
+    }));
     await assert.rejects(f.service.begin(f.workflow), available === 1 ? /Combined option cost/ : /Conflicting/);
     assert.equal(f.pool.system.uses.value, available);
     assert.equal(f.activity.range.value, 30);

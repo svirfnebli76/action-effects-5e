@@ -27,6 +27,21 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   const { collections, registry } = declarationsFixture({ ac5e });
   const actor = { uuid, isOwner: true, items: new Items() };
   const writes = [];
+  actor.performBulkUpdate = async ({ item = [] } = {}) => {
+    for (const update of item) {
+      const target = actor.items.get(update._id);
+      if (!target) continue;
+      for (const [path, value] of Object.entries(update)) {
+        if (path === "_id") continue;
+        setPath(target, path, value);
+      }
+      if (target.system?.uses && Number.isFinite(Number(target.system.uses.max))
+        && Number.isFinite(Number(target.system.uses.spent))) {
+        target.system.uses.value = Number(target.system.uses.max) - Number(target.system.uses.spent);
+      }
+    }
+    return [];
+  };
   const add = (id, records, system = {}) => {
     const item = { id, uuid: `${uuid}.Item.${id}`, actor, name: id, type: "feat", system,
       flags: records ? { [scope]: { metamagic: envelope(copy(records)) } } : {},
@@ -98,7 +113,8 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   }
   const activity = activityClone();
   const workflow = { id: "Activity.mutable", actor, item: activity.item, activity, userId: null,
-    token: { document: { uuid: "Scene.scene.Token.caster" } }, targets: new Set() };
+    token: { document: { uuid: "Scene.scene.Token.caster" } }, targets: new Set(), hitTargets: new Set(),
+    superSavers: new Set(), checkSculptOrCarefulSpells() { return false; } };
   const calls = [];
   const prompts = [];
   let chooser = async () => "distant-spell";
@@ -126,7 +142,13 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   const cards = [];
   const service = new MetamagicCastingService({ declarations, executors,
     cards: { async upsertContribution(subject, contribution) { cards.push(copy(contribution)); return { updated: true }; } } });
-  const api = { prompts: { async choose(request) { prompts.push(request); return chooser(request); } },
+  const api = { prompts: { async chooseBroker(request) {
+    prompts.push(request);
+    const selected = await chooser(request);
+    if (selected && typeof selected === "object") return selected;
+    if (selected == null || selected === "__finish") return { outcome: "decline", selectedIds: [] };
+    return { outcome: "confirm", selectedIds: [selected] };
+  } },
     metamagic: { getCasting: workflow => service.get(workflow) } };
   const consume = () => {
     assert.equal(service.prepareNative(activity), true);

@@ -291,7 +291,7 @@ test("runtime hook wiring is idempotent and synchronous vetoes remain synchronou
     const f = setup();
     f.service.initialize();
     f.service.initialize();
-    assert.equal(handlers.size, 9);
+    assert.equal(handlers.size, 12);
     await f.service.begin(f.workflow);
     const native = f.activityClone(f.workflow.activity);
     assert.equal(handlers.get("dnd5e.preUseActivity")(native), true);
@@ -588,4 +588,240 @@ return data.respond(document, macroName, result);
     if (previous === undefined) delete globalThis[captureKey];
     else globalThis[captureKey] = previous;
   }
+});
+
+
+test("read-only save-ready offer inspection retains the casting after pre-cast decline", async () => {
+  const f = setup();
+  const declaration = { ...structuredClone(definitions.distant), id: "careful-probe", phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" } };
+  const late = f.add("late", [declaration]);
+  f.install(late, "Careful Probe", "option",
+    'if (document.uuid === data.sourceItemUuid && macroName === data.execution.name && data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
+  f.setChooser(async () => null);
+  assert.equal(await f.service.begin(f.workflow), true);
+  const before = f.service.get(f.workflow);
+  assert.equal(before.state, "unmodified");
+  const result = await f.service.inspectPhaseOffers(f.workflow);
+  assert.equal(result.phase, "saves-ready");
+  assert.equal(result.casting.castingId, before.castingId);
+  assert.equal(result.selectionRemaining, 1);
+  assert.deepEqual(result.offers.map(entry => entry.id), ["careful-probe"]);
+  assert.equal(result.offers[0].disabled, false);
+  assert.equal(result.resource.current, 4);
+  assert.equal(f.pool.system.uses.value, 4);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.service.get(f.workflow).state, "unmodified");
+  assert.equal(await f.service.inspectPhaseOffers(null), null);
+  await assert.rejects(f.service.inspectPhaseOffers(f.workflow, "invalid"), /Unsupported late/);
+});
+
+test("save-ready inspection preserves already-used per-casting Metamagic capacity", async () => {
+  const f = setup();
+  const declaration = { ...structuredClone(definitions.distant), id: "careful-probe", phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" } };
+  const late = f.add("late", [declaration]);
+  f.install(late, "Careful Probe", "option",
+    'if (document.uuid === data.sourceItemUuid && macroName === data.execution.name && data?.phase === "offer") return data.respond(document, macroName, {eligible: true});');
+  await f.service.begin(f.workflow);
+  const castingId = f.service.get(f.workflow).castingId;
+  const result = await f.service.inspectPhaseOffers(f.workflow);
+  assert.equal(result.casting.castingId, castingId);
+  assert.equal(result.selectionRemaining, 0);
+  assert.equal(result.offers.length, 1);
+  assert.equal(result.offers[0].disabled, true);
+  assert.match(result.offers[0].reason, /selection limit/);
+  assert.equal(f.pool.system.uses.value, 4);
+});
+
+
+test("existing Metamagic broker is reused at saves-ready and stores Item-owned late payload", async () => {
+  const f = setup();
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase === "consumed") return data.respond(document, macroName, true);',
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async ({phase}) => phase === "saves-ready"',
+    '  ? ({outcome:"confirm", selectedIds:["careful-probe"]})',
+    '  : ({outcome:"decline", selectedIds:[]}));',
+    'return data.respond(document, macroName, result);'
+  ].join("\n");
+  const late = f.add("late", [{
+    ...structuredClone(definitions.distant), id: "careful-probe",
+    phases: ["saves-ready"], execution: { interface: "cat-embedded", name: "Careful Probe" }
+  }]);
+  f.install(late, "Careful Probe", "option", [
+    'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
+    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
+    'if (data.phase === "select") return data.respond(document, macroName, {',
+    '  outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.friend"]}',
+    '});',
+    'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids,automaticSuccess:true,superSaver:true}});'
+  ].join("\n"));
+  f.setChooser(async () => null);
+  const friend = { document: { uuid: "Scene.test.Token.friend" } };
+  f.workflow.targets = f.workflow.hitTargets = new Set([friend]);
+  assert.equal(await f.service.begin(f.workflow), true);
+  const initial = f.service.get(f.workflow);
+  assert.equal(await f.service.late(f.workflow), true);
+  assert.equal(await f.service.late(f.workflow), true);
+  const record = f.service.get(f.workflow);
+  assert.equal(record.castingId, initial.castingId);
+  assert.equal(record.state, "committed");
+  assert.deepEqual(record.selected.map(entry => entry.id), ["careful-probe"]);
+  assert.deepEqual(record.lateSelection.options[0].payload.protectedTokenUuids, ["Scene.test.Token.friend"]);
+  assert.equal(record.lateSelection.status, "paid-applied");
+  assert.equal(record.totalCost, 1);
+  assert.equal(record.nativeDebit, null);
+  assert.equal(f.pool.system.uses.value, 3);
+  assert.equal(f.calls.filter(c => c.kind === "broker" && c.phase === "begin").length, 2);
+  assert.equal(f.calls.filter(c => c.phase === "select").length, 1);
+});
+
+test("save-ready does not invoke broker when no learned option declares that phase", async () => {
+  const f = setup();
+  f.setChooser(async () => null);
+  await f.service.begin(f.workflow);
+  assert.equal(await f.service.late(f.workflow), true);
+  assert.equal(f.calls.filter(c => c.kind === "broker" && c.phase === "begin").length, 1);
+  assert.equal(f.service.get(f.workflow).latePreview, undefined);
+  assert.equal(f.pool.system.uses.value, 4);
+});
+
+
+test("save-ready broker keeps a valid positive UI capacity when earlier Metamagic exhausted the allowance", async () => {
+  const f = setup();
+  const capture = "__ae5eLateCapacityProbe";
+  const previous = globalThis[capture];
+
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async request => {',
+    '  if (request.phase === "saves-ready") globalThis.__ae5eLateCapacityProbe = request;',
+    '  return request.phase === "saves-ready"',
+    '    ? {outcome:"decline", selectedIds:[]}',
+    '    : {outcome:"confirm", selectedIds:["distant-spell"]};',
+    '});',
+    'return data.respond(document, macroName, result);'
+  ].join("\n");
+
+  const late = f.add("late", [{
+    ...structuredClone(definitions.distant),
+    id: "careful-probe",
+    phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" }
+  }]);
+
+  f.install(late, "Careful Probe", "option",
+    'if (document.uuid === data.sourceItemUuid && macroName === data.execution.name && data.phase === "offer") return data.respond(document, macroName, {eligible:true});');
+
+  try {
+    await f.service.begin(f.workflow);
+    await f.service.late(f.workflow);
+    const request = globalThis[capture];
+    assert.equal(request.selectionLimit, 1);
+    assert.equal(request.offers.length, 1);
+    assert.equal(request.offers[0].disabled, true);
+    assert.match(request.offers[0].reason, /selection limit/);
+  } finally {
+    if (previous === undefined) delete globalThis[capture];
+    else globalThis[capture] = previous;
+  }
+});
+
+
+test("paid save-ready Careful selection debits one point and arms save protection", async () => {
+  const f = setup({ available: 4 });
+
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase === "consumed") return data.respond(document, macroName, true);',
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async ({phase}) => phase === "saves-ready"',
+    '  ? ({outcome:"confirm", selectedIds:["careful-probe"]})',
+    '  : ({outcome:"decline", selectedIds:[]}));',
+    'return data.respond(document, macroName, result);'
+  ].join("\n");
+
+  const late = f.add("late", [{
+    ...structuredClone(definitions.distant),
+    id: "careful-probe",
+    phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" }
+  }]);
+
+  f.install(late, "Careful Probe", "option", [
+    'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
+    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
+    'if (data.phase === "select") return data.respond(document, macroName, {outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.friend"]}});',
+    'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids, automaticSuccess:true, superSaver:true}});'
+  ].join("\n"));
+
+  const friend = { document: { uuid: "Scene.test.Token.friend" } };
+  const enemy = { document: { uuid: "Scene.test.Token.enemy" } };
+
+  f.workflow.targets = new Set([friend, enemy]);
+  f.workflow.hitTargets = new Set([friend, enemy]);
+  f.setChooser(async () => null);
+
+  await f.service.begin(f.workflow);
+  assert.equal(await f.service.late(f.workflow), true);
+
+  const record = f.service.get(f.workflow);
+
+  assert.equal(f.pool.system.uses.value, 3);
+  assert.equal(record.state, "committed");
+  assert.equal(record.totalCost, 1);
+  assert.equal(record.lateDebits[0].owner, "ae5e-late");
+  assert.equal(record.lateSelection.status, "paid-applied");
+  assert.deepEqual(record.selected.map(entry => entry.id), ["careful-probe"]);
+
+  assert.equal(f.workflow.checkSculptOrCarefulSpells(friend), true);
+  assert.equal(f.workflow.checkSculptOrCarefulSpells(enemy), false);
+  assert.equal(f.workflow.superSavers.has(friend), true);
+  assert.equal(f.workflow.superSavers.has(enemy), false);
+
+  f.service.restoreLateSaveProtection(f.workflow);
+
+  assert.equal(f.workflow.checkSculptOrCarefulSpells(friend), false);
+  assert.equal(f.workflow.superSavers.has(friend), true);
+});
+
+test("invalid Careful protected target is rejected before any late payment", async () => {
+  const f = setup({ available: 4 });
+
+  f.main.flags.cat.embeddedMacros[0].macros[0].macro = [
+    'if (data?.phase !== "begin") return;',
+    'const result = await data.context.begin(document, async ({phase}) => phase === "saves-ready"',
+    '  ? ({outcome:"confirm", selectedIds:["careful-probe"]})',
+    '  : ({outcome:"decline", selectedIds:[]}));',
+    'return data.respond(document, macroName, result);'
+  ].join("\n");
+
+  const late = f.add("late", [{
+    ...structuredClone(definitions.distant),
+    id: "careful-probe",
+    phases: ["saves-ready"],
+    execution: { interface: "cat-embedded", name: "Careful Probe" }
+  }]);
+
+  f.install(late, "Careful Probe", "option", [
+    'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
+    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
+    'if (data.phase === "select") return data.respond(document, macroName, {outcome:"confirm", payload:{protectedTokenUuids:["Scene.test.Token.unknown"]}});',
+    'if (data.phase === "apply") return data.respond(document, macroName, {saveProtection:{tokenUuids:data.context.payload.protectedTokenUuids, automaticSuccess:true, superSaver:true}});'
+  ].join("\n"));
+
+  f.workflow.hitTargets = new Set([
+    { document: { uuid: "Scene.test.Token.friend" } }
+  ]);
+
+  f.setChooser(async () => null);
+  await f.service.begin(f.workflow);
+
+  await assert.rejects(
+    f.service.late(f.workflow),
+    /No unique response from 'Metamagic Broker'/
+  );
+
+  assert.equal(f.pool.system.uses.value, 4);
+  assert.equal(f.workflow.superSavers.size, 0);
 });

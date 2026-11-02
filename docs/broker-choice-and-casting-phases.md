@@ -10,6 +10,7 @@ Items and family consumers remain responsible for those decisions.
 
 - `PRE_CAST` / `pre-cast`
 - `POST_TARGETING` / `post-targeting`
+- `SAVES_READY` / `saves-ready` (awaited `midi-qol.preCheckSaves`; no cancellation)
 - `ATTACK_RESOLVED` / `attack-resolved`
 - `DAMAGE_MUTABLE` / `damage-mutable`
 
@@ -129,3 +130,11 @@ affordability wording.
 
 v0.4.5.40 does not add option-specific late-phase execution rules. The generic
 phase dispatcher is the reusable trigger foundation for later Item integrations.
+
+## B5.2 save-ready foundation (v0.4.5.52)
+
+This release adds a generic save-ready phase, finalized target/hit counts,
+and a read-only Metamagic phase-offer inspector. It deliberately does not
+activate a late chooser or charge points after native spell consumption.
+Those require a separately validated late-phase transaction contract.
+Careful Spell's item-owned selection and B4 protection remain forthcoming.

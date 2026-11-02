@@ -51,6 +51,8 @@ test("public AE5E API exposes the CAT metadata context-menu live test", () => {
     selectionIndicator: service,
     externalPromptBridge: service,
     choicePrompts: service,
+    brokerChoicePrompts: service,
+    castingPhases: service,
     crosshairs: service,
     reactionRegistry: service,
     reactionAuthority: service,
