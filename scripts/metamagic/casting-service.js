@@ -1140,4 +1140,3 @@ export class MetamagicCastingService {
     this.#remember(record);
   }
 }
-
