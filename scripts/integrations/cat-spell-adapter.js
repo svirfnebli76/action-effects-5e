@@ -68,6 +68,8 @@ export class CatSpellAdapter {
     rollUtilityCalls: 0,
     damageRollRebuildCalls: 0,
     damageRollRetagCalls: 0,
+    damageDieRerollCalls: 0,
+    damageDieRerollRollbacks: 0,
     appliedDamageUtilityCalls: 0,
     genericUtilityCalls: 0,
     fallbacks: 0,
@@ -421,6 +423,95 @@ export class CatSpellAdapter {
         type: rolls[index]?.options?.type ?? null
       }))
     };
+  }
+
+  /**
+   * Reroll selected active die results in-place. The original result objects
+   * remain in their DiceTerm history as inactive/rerolled entries, replacement
+   * results are produced by Foundry's native DiceTerm.roll(), and the existing
+   * root DamageRoll objects recompute their cached totals without rebuilding.
+   *
+   * @param {object} workflow Live Midi workflow.
+   * @param {object} options
+   * @param {{rollIndex:number, dieIndex:number, resultIndex:number}[]} options.dice
+   */
+  async rerollDamageDicePreservingHistory(workflow, { dice = [] } = {}) {
+    if (!workflow) throw new TypeError("rerollDamageDicePreservingHistory requires a Midi workflow.");
+    if (typeof workflow.setDamageRolls !== "function") {
+      throw new Error("Midi workflow.setDamageRolls() is unavailable; cannot commit rerolled damage dice.");
+    }
+    if (!Array.isArray(dice) || !dice.length) {
+      throw new TypeError("rerollDamageDicePreservingHistory requires selected dice.");
+    }
+
+    const rolls = Array.isArray(workflow.damageRolls) && workflow.damageRolls.length
+      ? workflow.damageRolls
+      : workflow.damageRoll
+        ? [workflow.damageRoll]
+        : [];
+    const snapshots = new Map();
+    const changedRolls = new Set();
+    const snapshot = (rollIndex, dieIndex, roll, die) => {
+      const key = `${rollIndex}:${dieIndex}`;
+      if (!snapshots.has(key)) snapshots.set(key, {
+        rollIndex,
+        dieIndex,
+        roll,
+        die,
+        total: roll._total,
+        results: die.results.map(result => ({ reference: result, values: { ...result } }))
+      });
+    };
+    const state = { rolls, before: [] };
+
+    try {
+      for (const selection of dice) {
+        const roll = rolls[selection.rollIndex];
+        const die = roll?.dice?.[selection.dieIndex];
+        const result = die?.results?.[selection.resultIndex];
+        if (!roll || typeof roll._evaluateTotal !== "function" || !die
+          || typeof die.roll !== "function" || !Array.isArray(die.results)
+          || !result || result.active === false) {
+          throw new Error("A selected damage die is no longer available to reroll.");
+        }
+        snapshot(selection.rollIndex, selection.dieIndex, roll, die);
+        result.active = false;
+        result.rerolled = true;
+        const replacement = await die.roll();
+        if (!replacement || !Number.isFinite(Number(replacement.result))) {
+          throw new Error("Foundry did not return a valid replacement die result.");
+        }
+        if (!die.results.includes(replacement)) die.results.push(replacement);
+        if (replacement.active === undefined) replacement.active = true;
+        changedRolls.add(roll);
+      }
+      state.before = [...snapshots.values()];
+      for (const roll of changedRolls) roll._total = roll._evaluateTotal();
+      this.#stats.damageDieRerollCalls += 1;
+      this.#record("rerollDamageDicePreservingHistory", { dice: dice.map(selection => ({ ...selection })) });
+      await workflow.setDamageRolls(rolls);
+      return { ...state, dice: dice.map(selection => ({ ...selection })) };
+    } catch (error) {
+      state.before = [...snapshots.values()];
+      this.restoreRerolledDamageDice(state, { count: false });
+      this.#recordError("rerollDamageDicePreservingHistory", error);
+      throw error;
+    }
+  }
+
+  /** Restore a reroll state without committing it; the casting transaction commits once after all rollbacks. */
+  restoreRerolledDamageDice(state, { count = true } = {}) {
+    if (!state || !Array.isArray(state.before)) throw new TypeError("A valid damage-die reroll state is required.");
+    for (const entry of [...state.before].reverse()) {
+      if (!entry?.die || !Array.isArray(entry.die.results) || !entry.roll) continue;
+      for (const saved of entry.results) {
+        for (const key of Object.keys(saved.reference)) delete saved.reference[key];
+        Object.assign(saved.reference, saved.values);
+      }
+      entry.die.results.splice(0, entry.die.results.length, ...entry.results.map(saved => saved.reference));
+      entry.roll._total = entry.total;
+    }
+    if (count) this.#stats.damageDieRerollRollbacks += 1;
   }
 
   hasDuplicateDie(...args) { return this.#callRoll("hasDuplicateDie", args); }
