@@ -16,6 +16,10 @@ const workflowFrom = args => args.flatMap(value => [value, value?.workflow, valu
   .find(value => value?.actor && value?.activity);
 const isActivityOverTime = workflow => Boolean(workflow?.workflowOptions?.overTimeEffectUuid);
 const LATE_PHASES = new Set([CASTING_PHASES.SAVES_READY, CASTING_PHASES.DAMAGE_MUTABLE]);
+const optionSelectionCost = option => Number.isSafeInteger(option?.declaration?.selectionCost)
+  ? option.declaration.selectionCost
+  : 1;
+const selectionCost = options => options.reduce((sum, option) => sum + optionSelectionCost(option), 0);
 
 /** Coordinates Item-provided options. It contains no option rules or names. */
 export class MetamagicCastingService {
@@ -110,11 +114,12 @@ export class MetamagicCastingService {
     if (!this.#sameBase(current, record)) return null;
     const available = await this.#offers(current, record, phase);
     const selected = new Set(record.selected.map(entry => entry.id));
-    const selectionRemaining = Math.max(0, current.selectionLimit - record.selected.length);
+    const selectionUsed = selectionCost(record.selected);
+    const selectionRemaining = Math.max(0, current.selectionLimit - selectionUsed);
     const offers = available.map(entry => {
       const block = selected.has(entry.id)
         ? "This Metamagic was already used on this casting."
-        : selectionRemaining === 0
+        : optionSelectionCost(entry) > selectionRemaining
           ? "The Metamagic selection limit for this casting has been reached."
           : null;
       return block ? { ...entry, disabled: true, reason: block, reasons: [...entry.reasons, block] } : entry;
@@ -126,6 +131,7 @@ export class MetamagicCastingService {
       resource: { itemId: current.resourceId, current: Number(pool?.system?.uses?.value),
         max: Number(pool?.system?.uses?.max) },
       selectionLimit: current.selectionLimit,
+      selectionUsed,
       selectionRemaining,
       offers: clone(offers)
     };
@@ -211,26 +217,30 @@ export class MetamagicCastingService {
       : { outcome: response?.outcome ?? "decline", selectedIds: response?.selectedIds ?? [] };
     if (decision.outcome !== "confirm") return { outcome: "decline", selectedIds: [] };
     const ids = decision.selectedIds;
-    if (!Array.isArray(ids) || !ids.length || ids.length > original.selectionRemaining
-      || new Set(ids).size !== ids.length
-      || ids.some(id => !original.offers.some(o => o.id === id && !o.disabled))) {
+    const originalSelections = Array.isArray(ids)
+      ? ids.map(id => original.offers.find(option => option.id === id && !option.disabled))
+      : [];
+    if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length
+      || originalSelections.some(option => !option)
+      || selectionCost(originalSelections) > original.selectionRemaining) {
       throw new Error("Late Metamagic selection is no longer valid.");
     }
     const current = this.#declarations.compile(record.actor, this.#context(workflow));
     if (!this.#sameBase(current, record)) throw new Error("Base Metamagic declaration changed while choosing.");
     const fresh = await this.inspectPhaseOffers(workflow, phase);
-    if (!fresh || fresh.selectionRemaining < ids.length) throw new Error("Metamagic selection allowance changed while choosing.");
+    if (!fresh) throw new Error("Metamagic selection allowance changed while choosing.");
     const pool = record.actor.items.get(record.resourceId);
     const selected = [];
-    let cost = 0;
+    let potentialCost = 0;
     for (const id of ids) {
       const option = fresh.offers.find(o => o.id === id && !o.disabled);
       const originallyOffered = original.offers.find(o => o.id === id);
       if (!option || !this.#sameOption(option, originallyOffered)) throw new Error("Late Metamagic option changed while choosing.");
-      cost += option.cost;
+      potentialCost += option.cost;
       selected.push(option);
     }
-    if (cost > Number(pool?.system?.uses?.value)) throw new Error("Sorcery Points changed; choose Metamagic again.");
+    if (selectionCost(selected) > fresh.selectionRemaining) throw new Error("Metamagic selection allowance changed while choosing.");
+    if (potentialCost > Number(pool?.system?.uses?.value)) throw new Error("Sorcery Points changed; choose Metamagic again.");
 
     const selections = [];
     for (const option of selected) {
@@ -242,6 +252,7 @@ export class MetamagicCastingService {
       selections.push({ option, payload: clone(selection.payload) });
     }
     if (!selections.length) return { outcome: "decline", selectedIds: [] };
+    const cost = selections.reduce((sum, entry) => sum + entry.option.cost, 0);
 
     const applications = [];
     for (const entry of selections) {
@@ -317,15 +328,9 @@ export class MetamagicCastingService {
         throw new Error(option.label + " combined incompatible late applications.");
       }
       const request = application.damageRollMutation;
-      if (!request || typeof request !== "object" || Array.isArray(request) || request.operation !== "retag") {
+      if (!request || typeof request !== "object" || Array.isArray(request)
+        || !["retag", "reroll-dice"].includes(request.operation)) {
         throw new Error(option.label + " returned an unsupported damage-roll mutation.");
-      }
-      const damageType = request.damageType;
-      if (typeof damageType !== "string" || !/^[a-z][a-z0-9-]*$/.test(damageType)) {
-        throw new Error(option.label + " returned an invalid damage type.");
-      }
-      if (!this.#catSpell || typeof this.#catSpell.retagDamageRollsPreservingResults !== "function") {
-        throw new Error("CAT spell roll utilities are unavailable.");
       }
       if (typeof record.workflow.setDamageRolls !== "function") {
         throw new Error("Midi workflow.setDamageRolls() is unavailable.");
@@ -334,14 +339,51 @@ export class MetamagicCastingService {
         ? record.workflow.damageRolls
         : record.workflow.damageRoll ? [record.workflow.damageRoll] : [];
       if (!rolls.length) throw new Error(option.label + " found no damage rolls to mutate.");
-      const indexes = request.indexes == null ? rolls.map((_, index) => index) : request.indexes;
-      if (!Array.isArray(indexes) || !indexes.length || new Set(indexes).size !== indexes.length
-        || indexes.some(index => !Number.isSafeInteger(index) || index < 0 || index >= rolls.length
-          || !rolls[index] || !rolls[index].options || typeof rolls[index].options !== "object"
-          || Array.isArray(rolls[index].options))) {
-        throw new Error(option.label + " returned invalid damage-roll indexes.");
+
+      if (request.operation === "retag") {
+        const damageType = request.damageType;
+        if (typeof damageType !== "string" || !/^[a-z][a-z0-9-]*$/.test(damageType)) {
+          throw new Error(option.label + " returned an invalid damage type.");
+        }
+        if (!this.#catSpell || typeof this.#catSpell.retagDamageRollsPreservingResults !== "function") {
+          throw new Error("CAT spell roll utilities are unavailable.");
+        }
+        const indexes = request.indexes == null ? rolls.map((_, index) => index) : request.indexes;
+        if (!Array.isArray(indexes) || !indexes.length || new Set(indexes).size !== indexes.length
+          || indexes.some(index => !Number.isSafeInteger(index) || index < 0 || index >= rolls.length
+            || !rolls[index] || !rolls[index].options || typeof rolls[index].options !== "object"
+            || Array.isArray(rolls[index].options))) {
+          throw new Error(option.label + " returned invalid damage-roll indexes.");
+        }
+        return { damageRollMutation: { operation: "retag", damageType, indexes: [...indexes] } };
       }
-      return { damageRollMutation: { operation: "retag", damageType, indexes: [...indexes] } };
+
+      if (!this.#catSpell || typeof this.#catSpell.rerollDamageDicePreservingHistory !== "function"
+        || typeof this.#catSpell.restoreRerolledDamageDice !== "function") {
+        throw new Error("CAT spell die-reroll utilities are unavailable.");
+      }
+      const dice = request.dice;
+      const identities = Array.isArray(dice)
+        ? dice.map(entry => `${entry?.rollIndex}:${entry?.dieIndex}:${entry?.resultIndex}`)
+        : [];
+      if (!Array.isArray(dice) || !dice.length || new Set(identities).size !== dice.length
+        || dice.some(entry => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) return true;
+          const { rollIndex, dieIndex, resultIndex } = entry;
+          if (![rollIndex, dieIndex, resultIndex].every(value => Number.isSafeInteger(value) && value >= 0)) return true;
+          const roll = rolls[rollIndex];
+          const die = roll?.dice?.[dieIndex];
+          const result = die?.results?.[resultIndex];
+          return !roll || typeof roll._evaluateTotal !== "function" || !Array.isArray(roll.dice)
+            || !die || typeof die.roll !== "function" || !Array.isArray(die.results)
+            || !Number.isFinite(Number(die.faces)) || Number(die.faces) < 1
+            || !result || !Number.isFinite(Number(result.result)) || result.active === false;
+        })) {
+        throw new Error(option.label + " returned invalid damage-die selections.");
+      }
+      return { damageRollMutation: { operation: "reroll-dice", dice: dice.map(entry => ({
+        rollIndex: entry.rollIndex, dieIndex: entry.dieIndex, resultIndex: entry.resultIndex
+      })) } };
     }
     if (phase !== CASTING_PHASES.SAVES_READY) {
       throw new Error(option.label + " returned no supported damage-mutable application.");
@@ -426,10 +468,16 @@ export class MetamagicCastingService {
         const rolls = Array.isArray(record.workflow.damageRolls) && record.workflow.damageRolls.length
           ? record.workflow.damageRolls
           : [record.workflow.damageRoll];
-        const before = mutation.indexes.map(index => ({ index, type: rolls[index].options.type }));
-        await this.#catSpell.retagDamageRollsPreservingResults(record.workflow, mutation.damageType,
-          { indexes: mutation.indexes });
-        damageRollbacks.push({ rolls, before });
+        if (mutation.operation === "retag") {
+          const before = mutation.indexes.map(index => ({ index, type: rolls[index].options.type }));
+          await this.#catSpell.retagDamageRollsPreservingResults(record.workflow, mutation.damageType,
+            { indexes: mutation.indexes });
+          damageRollbacks.push({ operation: "retag", rolls, before });
+        } else {
+          const state = await this.#catSpell.rerollDamageDicePreservingHistory(record.workflow,
+            { dice: mutation.dice });
+          damageRollbacks.push({ operation: "reroll-dice", ...state });
+        }
       }
     }
   }
@@ -437,8 +485,12 @@ export class MetamagicCastingService {
   async #rollbackDamageRollMutations(workflow, states) {
     if (!states.length) return;
     for (const state of [...states].reverse()) {
-      for (const entry of state.before) {
-        if (state.rolls[entry.index]?.options) state.rolls[entry.index].options.type = entry.type;
+      if (state.operation === "reroll-dice") {
+        this.#catSpell.restoreRerolledDamageDice(state);
+      } else {
+        for (const entry of state.before) {
+          if (state.rolls[entry.index]?.options) state.rolls[entry.index].options.type = entry.type;
+        }
       }
     }
     await workflow.setDamageRolls(states[0].rolls);
@@ -762,8 +814,11 @@ export class MetamagicCastingService {
     }
     if (!["confirm", "decline"].includes(decision.outcome)) throw new Error("Invalid modifier chooser outcome.");
     const selectedIds = decision.outcome === "confirm" ? decision.selectedIds : [];
+    const selectedOffers = Array.isArray(selectedIds)
+      ? selectedIds.map(id => offers.find(offer => offer.id === id && !offer.disabled))
+      : [];
     if (!Array.isArray(selectedIds) || new Set(selectedIds).size !== selectedIds.length
-      || selectedIds.length > compiled.selectionLimit || selectedIds.some(id => !offers.some(offer => offer.id === id && !offer.disabled))) {
+      || selectedOffers.some(option => !option) || selectionCost(selectedOffers) > compiled.selectionLimit) {
       throw new Error("Invalid modifier selection.");
     }
     if (!selectedIds.length) {
@@ -773,8 +828,12 @@ export class MetamagicCastingService {
     }
     // Re-read after awaiting the chooser: grants, attunement, prices and pool may have changed.
     const current = this.#declarations.compile(record.actor, this.#context(record.workflow));
-    if (!this.#sameBase(current, record) || selectedIds.length > current.selectionLimit) throw new Error("Caster declarations changed while choosing.");
+    if (!this.#sameBase(current, record)) throw new Error("Caster declarations changed while choosing.");
     const fresh = await this.#offers(current, record);
+    const currentSelections = selectedIds.map(id => fresh.find(entry => entry.id === id));
+    if (currentSelections.some(option => !option) || selectionCost(currentSelections) > current.selectionLimit) {
+      throw new Error("Caster declarations changed while choosing.");
+    }
     for (const id of selectedIds) {
       const option = fresh.find(entry => entry.id === id);
       const offered = offers.find(entry => entry.id === id);
@@ -984,7 +1043,7 @@ export class MetamagicCastingService {
       return this.#veto(record, "The point pool is missing or no longer affordable; cast again.");
     }
     const current = this.#declarations.compile(record.actor, this.#context(record.workflow));
-    if (!this.#sameBase(current, record) || record.selected.length > current.selectionLimit
+    if (!this.#sameBase(current, record) || selectionCost(record.selected) > current.selectionLimit
       || record.selected.some(selected => !current.options.some(option => option.id === selected.id
         && this.#sameOption(option, selected)))) {
       return this.#veto(record, "Option access or price changed during native spell configuration; cast again.");

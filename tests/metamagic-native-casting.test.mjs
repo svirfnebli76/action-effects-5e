@@ -728,6 +728,35 @@ test("save-ready broker keeps a valid positive UI capacity when earlier Metamagi
   }
 });
 
+test("pre-cast capacity uses declaration selectionCost instead of the number of selected options", async () => {
+  const f = setup();
+  const zeroCapacity = f.add("zero-capacity", [{
+    ...structuredClone(definitions.distant),
+    id: "zero-capacity-probe",
+    selectionCost: 0,
+    execution: { interface: "cat-embedded", name: "Zero Capacity Probe" }
+  }]);
+  f.install(zeroCapacity, "Zero Capacity Probe", "option", [
+    'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
+    'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
+    'if (data.phase === "prepare") return data.respond(document, macroName, {',
+    '  itemUpdates:{"system.duration.value":1,"system.duration.units":"minute"}',
+    '});'
+  ].join("\n"));
+  f.setChooser(async () => ({
+    outcome: "confirm",
+    selectedIds: ["distant-spell", "zero-capacity-probe"]
+  }));
+
+  assert.equal(await f.service.begin(f.workflow), true);
+  assert.deepEqual(f.service.get(f.workflow).selected.map(option => option.id), [
+    "distant-spell",
+    "zero-capacity-probe"
+  ]);
+  assert.equal(f.consume(), 2);
+  assert.equal(f.pool.system.uses.value, 2);
+});
+
 
 test("paid save-ready Careful selection debits one point and arms save protection", async () => {
   const f = setup({ available: 4 });
