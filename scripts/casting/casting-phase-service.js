@@ -6,7 +6,8 @@ export const CASTING_PHASES = Object.freeze({
   POST_TARGETING: "post-targeting",
   SAVES_READY: "saves-ready",
   ATTACK_RESOLVED: "attack-resolved",
-  DAMAGE_MUTABLE: "damage-mutable"
+  DAMAGE_MUTABLE: "damage-mutable",
+  DAMAGE_PRESENTED: "damage-presented"
 });
 
 const KNOWN_PHASES = new Set(Object.values(CASTING_PHASES));
@@ -183,7 +184,7 @@ export class CastingPhaseService {
       return workflow.attackRoll ?? workflow.attackRolls?.at?.(-1)
         ?? asArray(args).find(value => value?.dice || value?.terms) ?? workflow;
     }
-    if (phase === CASTING_PHASES.DAMAGE_MUTABLE) {
+    if ([CASTING_PHASES.DAMAGE_MUTABLE, CASTING_PHASES.DAMAGE_PRESENTED].includes(phase)) {
       return workflow.damageRoll ?? workflow.damageRolls?.at?.(-1)
         ?? asArray(args).find(value => value?.dice || value?.terms) ?? workflow;
     }
@@ -237,3 +238,4 @@ export class CastingPhaseService {
     };
   }
 }
+

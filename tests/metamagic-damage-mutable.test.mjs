@@ -11,10 +11,16 @@ const damageDeclaration = {
   execution: { interface: "cat-embedded", name: "Damage Probe" }
 };
 
+const rerollDeclaration = {
+  ...structuredClone(damageDeclaration),
+  phases: [CASTING_PHASES.DAMAGE_PRESENTED],
+  selectionCost: 0
+};
+
 const brokerScript = [
   'if (data?.phase === "consumed") return data.respond(document, macroName, true);',
   'if (data?.phase !== "begin") return;',
-  'const result = await data.context.begin(document, async ({phase}) => phase === "damage-mutable"',
+  'const result = await data.context.begin(document, async ({phase}) => ["damage-mutable","damage-presented"].includes(phase)',
   '  ? ({outcome:"confirm", selectedIds:["damage-probe"]})',
   '  : ({outcome:"decline", selectedIds:[]}));',
   'return data.respond(document, macroName, result);'
@@ -40,6 +46,24 @@ const rerollScript = [
   '    {rollIndex:1, dieIndex:0, resultIndex:0}',
   '  ]}',
   '});',
+  'if (data.phase === "apply") return data.respond(document, macroName, {',
+  '  damageRollMutation:{operation:"reroll-dice", dice:data.context.payload.dice}',
+  '});'
+].join("\n");
+
+const presentationAwareRerollScript = [
+  'if (document.uuid !== data.sourceItemUuid || macroName !== data.execution.name) return;',
+  'if (data.phase === "offer") return data.respond(document, macroName, {eligible:true});',
+  'if (data.phase === "select") {',
+  '  if (data.context.workflow.damageRolls[0].dice[0].results[0].hidden !== true)',
+  '    throw new Error("damage was not presented");',
+  '  return data.respond(document, macroName, {',
+  '    outcome:"confirm", payload:{dice:[',
+  '      {rollIndex:0, dieIndex:0, resultIndex:0},',
+  '      {rollIndex:1, dieIndex:0, resultIndex:0}',
+  '    ]}',
+  '  });',
+  '}',
   'if (data.phase === "apply") return data.respond(document, macroName, {',
   '  damageRollMutation:{operation:"reroll-dice", dice:data.context.payload.dice}',
   '});'
@@ -91,7 +115,7 @@ function damageFixture({ failCommit = false } = {}) {
 function rerollFixture({ failCommit = false, script = rerollScript } = {}) {
   const f = setup({ catSpell: new CatSpellAdapter() });
   f.main.flags.cat.embeddedMacros[0].macros[0].macro = brokerScript;
-  const option = f.add("damage", [damageDeclaration]);
+  const option = f.add("damage", [rerollDeclaration]);
   f.install(option, "Damage Probe", "option", script);
   f.setChooser(async () => null);
   const fire = fakeRoll([fakeDie([8, 2], [1])], "fire");
@@ -166,7 +190,7 @@ test("damage roll commit failure restores the original type and late payment", a
   assert.equal(f.service.get(f.workflow).lateRefundStatus, "refunded-after-application-failure");
 });
 
-test("damage-mutable broker rerolls only selected dice and preserves discarded result history", async () => {
+test("damage-presented broker rerolls only selected dice and preserves discarded result history", async () => {
   const f = rerollFixture();
   await f.service.begin(f.workflow);
   const fireIdentity = f.fire;
@@ -174,7 +198,7 @@ test("damage-mutable broker rerolls only selected dice and preserves discarded r
   const originalFire = f.fire.dice[0].results[0];
   const originalCold = f.cold.dice[0].results[0];
 
-  await f.service.late(f.workflow, CASTING_PHASES.DAMAGE_MUTABLE);
+  await f.service.late(f.workflow, CASTING_PHASES.DAMAGE_PRESENTED);
 
   assert.equal(f.workflow.damageRolls[0], fireIdentity);
   assert.equal(f.workflow.damageRolls[1], coldIdentity);
@@ -194,7 +218,7 @@ test("invalid selected damage die is rejected before payment", async () => {
   await f.service.begin(f.workflow);
 
   await assert.rejects(
-    f.service.late(f.workflow, CASTING_PHASES.DAMAGE_MUTABLE),
+    f.service.late(f.workflow, CASTING_PHASES.DAMAGE_PRESENTED),
     /invalid damage-die selections/
   );
   assert.equal(f.pool.system.uses.value, 4);
@@ -209,7 +233,7 @@ test("damage die commit failure restores result identity, history, total, and la
   await f.service.begin(f.workflow);
 
   await assert.rejects(
-    f.service.late(f.workflow, CASTING_PHASES.DAMAGE_MUTABLE),
+    f.service.late(f.workflow, CASTING_PHASES.DAMAGE_PRESENTED),
     /Sorcery Points were restored.*damage commit failed/
   );
   assert.deepEqual(f.fire.dice[0].results, originalFireResults);
@@ -223,6 +247,46 @@ test("damage die commit failure restores result identity, history, total, and la
   assert.equal(f.cold.total, 6);
   assert.equal(f.pool.system.uses.value, 4);
   assert.equal(f.service.get(f.workflow).lateRefundStatus, "refunded-after-application-failure");
+});
+
+test("damage hook presents original dice before opening the damage-presented broker", async () => {
+  const handlers = new Map();
+  const previousHooks = globalThis.Hooks;
+  const previousMidiQOL = globalThis.MidiQOL;
+  globalThis.Hooks = {
+    on(name, callback) { handlers.set(name, callback); return name; },
+    off(name) { handlers.delete(name); }
+  };
+  let f;
+  try {
+    f = rerollFixture({ script: presentationAwareRerollScript });
+    let presentations = 0;
+    globalThis.MidiQOL = {
+      async displayDSNForRoll(rolls, rollType, defaultRollMode, saveDisplay, actor) {
+        presentations += 1;
+        assert.equal(rollType, "damageRoll");
+        assert.equal(actor, f.actor);
+        for (const roll of rolls) for (const die of roll.dice) {
+          for (const result of die.results) result.hidden = true;
+        }
+      }
+    };
+    f.service.initialize();
+    await f.service.begin(f.workflow);
+
+    assert.equal(await handlers.get("midi-qol.preDamageRollComplete")(f.workflow), true);
+
+    assert.equal(presentations, 2);
+    assert.equal(f.fire.dice[0].results[0].hidden, true);
+    assert.equal(f.fire.dice[0].results.at(-1).hidden, true);
+    assert.equal(f.cold.dice[0].results[0].hidden, true);
+    assert.equal(f.cold.dice[0].results.at(-1).hidden, true);
+    assert.equal(f.service.get(f.workflow).lateSelection.phase, CASTING_PHASES.DAMAGE_PRESENTED);
+  } finally {
+    f?.service.shutdown();
+    globalThis.Hooks = previousHooks;
+    globalThis.MidiQOL = previousMidiQOL;
+  }
 });
 
 test("zero-selection-cost late option remains available after an ordinary Metamagic selection", async () => {
@@ -317,3 +381,4 @@ test("damage hook fails open for ActivityOverTime workflows without opening the 
     globalThis.Hooks = previous;
   }
 });
+

@@ -13,6 +13,7 @@ Items and family consumers remain responsible for those decisions.
 - `SAVES_READY` / `saves-ready` (awaited `midi-qol.preCheckSaves`; no cancellation)
 - `ATTACK_RESOLVED` / `attack-resolved`
 - `DAMAGE_MUTABLE` / `damage-mutable`
+- `DAMAGE_PRESENTED` / `damage-presented` (original damage dice have been presented; no cancellation)
 
 Register a consumer with:
 
@@ -138,3 +139,4 @@ and a read-only Metamagic phase-offer inspector. It deliberately does not
 activate a late chooser or charge points after native spell consumption.
 Those require a separately validated late-phase transaction contract.
 Careful Spell's item-owned selection and B4 protection remain forthcoming.
+
