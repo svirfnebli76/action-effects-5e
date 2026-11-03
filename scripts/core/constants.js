@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.5.58";
+export const MODULE_VERSION = "0.4.5.59";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -430,4 +430,3 @@ export const HOOKS = Object.freeze({
   SPELL_MODIFIER_SESSION_COMPLETE: `${MODULE_ID}.spellModifierSessionComplete`,
   REGION_CELL_OCCUPANCY_TRANSITION: `${MODULE_ID}.regionCellOccupancyTransition`
 });
-

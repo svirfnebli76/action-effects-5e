@@ -204,6 +204,39 @@ test("advisories and reasons render in separate semantic boxes with advisories f
   await pending;
 });
 
+test("structured dice previews render Foundry die silhouettes, colors, values, and escaped tooltips", async () => {
+  const { open } = setupDialog();
+  const { pending, dialog } = await open({
+    choices: [{
+      id: "one",
+      label: "One",
+      description: "Reroll selected damage dice.",
+      dicePreview: {
+        label: "Rolled damage:",
+        dice: [
+          { faces: 10, value: 8, color: "#e65c34", tooltip: "Fire d10: 8" },
+          { faces: 6, value: 3, color: "#79cfff", tooltip: 'Cold d6: 3 <unsafe>' },
+          { faces: 3, value: 2, color: "#9ca3af", tooltip: "Generic d3: 2" }
+        ]
+      }
+    }]
+  });
+
+  const html = dialog.host.html;
+  assert.ok(html.includes("ae5e-broker-dice-preview"));
+  assert.ok(html.includes("Rolled damage:"));
+  assert.ok(html.includes("/icons/svg/d10-grey.svg"));
+  assert.ok(html.includes("/icons/svg/d6-grey.svg"));
+  assert.ok(html.includes("--ae5e-die-color:#e65c34"));
+  assert.ok(html.includes("ae5e-die-result is-generic"));
+  assert.ok(html.includes("ae5e-die-result-value\">8<"));
+  assert.ok(html.includes("Cold d6: 3 &lt;unsafe&gt;"));
+  assert.ok(!html.includes("Cold d6: 3 <unsafe>"));
+
+  await dialog.close();
+  await pending;
+});
+
 test("temporary resource/capacity blocks render as reasons, not advisories", async () => {
   const { open } = setupDialog();
   const { pending, dialog } = await open({

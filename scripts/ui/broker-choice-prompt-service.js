@@ -147,6 +147,56 @@ function validOpacity(value) {
   return Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
+function validateDicePreview(preview) {
+  if (preview == null) return { valid: true };
+  if (!isPlainObject(preview)) return { valid: false, reason: "invalid-dice-preview" };
+
+  const allowedPreviewFields = new Set(["label", "dice"]);
+  if (Object.keys(preview).some(field => !allowedPreviewFields.has(field))) {
+    return { valid: false, reason: "invalid-dice-preview-field" };
+  }
+  if (typeof preview.label !== "string" || !preview.label.trim()) {
+    return { valid: false, reason: "invalid-dice-preview-label" };
+  }
+  if (!Array.isArray(preview.dice) || preview.dice.length < 1 || preview.dice.length > 100) {
+    return { valid: false, reason: "invalid-dice-preview-dice" };
+  }
+
+  const allowedDieFields = new Set(["faces", "value", "color", "tooltip"]);
+  for (const die of preview.dice) {
+    if (!isPlainObject(die) || Object.keys(die).some(field => !allowedDieFields.has(field))) {
+      return { valid: false, reason: "invalid-dice-preview-die" };
+    }
+    if (!Number.isSafeInteger(die.faces) || die.faces < 2 || die.faces > 1000) {
+      return { valid: false, reason: "invalid-dice-preview-faces" };
+    }
+    if (!Number.isSafeInteger(die.value) || die.value < 1 || die.value > die.faces) {
+      return { valid: false, reason: "invalid-dice-preview-value" };
+    }
+    if (!validHexColor(die.color)) {
+      return { valid: false, reason: "invalid-dice-preview-color" };
+    }
+    if (typeof die.tooltip !== "string" || !die.tooltip.trim()) {
+      return { valid: false, reason: "invalid-dice-preview-tooltip" };
+    }
+  }
+
+  return { valid: true };
+}
+
+function normalizeDicePreview(preview) {
+  if (preview == null) return null;
+  return {
+    label: String(preview.label).trim(),
+    dice: preview.dice.map(die => ({
+      faces: Number(die.faces),
+      value: Number(die.value),
+      color: String(die.color),
+      tooltip: String(die.tooltip).trim()
+    }))
+  };
+}
+
 function validatePresentation(presentation) {
   if (presentation == null) return { valid: true };
   if (!isPlainObject(presentation)) return { valid: false, reason: "invalid-presentation" };
@@ -324,6 +374,8 @@ export class BrokerChoicePromptService {
       if (!Number.isSafeInteger(selectionCost) || selectionCost < 0) return { valid: false, reason: "invalid-selection-cost" };
       if (choice.description != null && typeof choice.description !== "string") return { valid: false, reason: "invalid-description" };
       if (choice.costLabel != null && typeof choice.costLabel !== "string") return { valid: false, reason: "invalid-cost-label" };
+      const dicePreviewValidation = validateDicePreview(choice.dicePreview);
+      if (!dicePreviewValidation.valid) return dicePreviewValidation;
       for (const field of ["acceptances", "advisories", "reasons"]) {
         if (choice[field] !== undefined && (!Array.isArray(choice[field])
           || choice[field].some(value => typeof value !== "string" || !value.trim()))) {
@@ -366,6 +418,7 @@ export class BrokerChoicePromptService {
       id: String(choice.id).trim(),
       label: String(choice.label).trim(),
       description: choice.description == null ? "" : String(choice.description),
+      dicePreview: normalizeDicePreview(choice.dicePreview),
       cost: Number(choice.cost ?? 0),
       costLabel: choice.costLabel == null ? String(choice.cost ?? 0) : String(choice.costLabel),
       selectionCost: Number(choice.selectionCost ?? 1),
@@ -497,6 +550,7 @@ export class BrokerChoicePromptService {
       id: String(choice.id),
       label: String(choice.label),
       description: choice.description == null ? "" : String(choice.description),
+      dicePreview: normalizeDicePreview(choice.dicePreview),
       cost: Number(choice.cost ?? 0),
       costLabel: choice.costLabel == null ? String(choice.cost ?? 0) : String(choice.costLabel),
       selectionCost: Number(choice.selectionCost ?? 1),
@@ -592,6 +646,26 @@ export class BrokerChoicePromptService {
         + "</div>";
     };
 
+    const dicePreviewHtml = preview => {
+      if (!preview) return "";
+      const supportedFaces = new Set([4, 6, 8, 10, 12, 20]);
+      const dice = preview.dice.map(die => {
+        const supported = supportedFaces.has(die.faces);
+        const style = "--ae5e-die-color:" + die.color + ";"
+          + (supported ? "--ae5e-die-icon:url('/icons/svg/d" + die.faces + "-grey.svg');" : "");
+        return '<span class="ae5e-die-result' + (supported ? "" : " is-generic") + '"'
+          + ' style="' + this.#escapeAttr(style) + '"'
+          + ' title="' + this.#escapeAttr(die.tooltip) + '"'
+          + ' aria-label="' + this.#escapeAttr(die.tooltip) + '">'
+          + '<span class="ae5e-die-result-value">' + this.#escape(String(die.value)) + "</span>"
+          + "</span>";
+      }).join("");
+      return '<span class="ae5e-broker-dice-preview">'
+        + '<span class="ae5e-broker-dice-preview-label">' + this.#escape(preview.label) + "</span>"
+        + '<span class="ae5e-broker-dice-preview-results">' + dice + "</span>"
+        + "</span>";
+    };
+
     const optionHtml = choice => {
       const checked = selected.has(choice.id);
       const temporarilyBlocked = !choice.disabled && !checked && !canAdd(choice);
@@ -619,6 +693,7 @@ export class BrokerChoicePromptService {
         + '<span class="ae5e-broker-option-cost">' + this.#escape(choice.costLabel) + "</span>"
         + "</span>"
         + (choice.description ? '<span class="ae5e-broker-option-description">' + this.#escape(choice.description) + "</span>" : "")
+        + dicePreviewHtml(choice.dicePreview)
         + statusHtml(acceptances, "acceptance")
         + statusHtml(advisories, "advisory")
         + statusHtml(reasons, "reason")

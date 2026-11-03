@@ -1,5 +1,10 @@
-Warning: truncated output (original token count: 68831)
-Total output lines: 1868
+# v0.4.5.59 - Generic broker dice previews
+
+- Adds an optional, structured `dicePreview` field to generic broker choices so Item-owned offers can show evaluated die results without injecting raw HTML.
+- Validates, normalizes, controller-routes, and safely renders die faces, values, colors, and tooltips using Foundry's built-in d4/d6/d8/d10/d12/d20 silhouettes, with a generic fallback for unusual die sizes.
+- Keeps the preview display-only: broker selection, resource projection, confirmation, and option application remain unchanged.
+- Preserves Item ownership of preview wording, damage-type colors, and die data; AE5E contains no Empowered Spell rules or option-name branches.
+- Adds focused request-validation, socket-transport, safe-rendering, and Metamagic offer-preservation coverage. No Item declarations, embedded CAT macros, artwork, or compendium content are included in AE5E.
 
 # v0.4.5.58 — Post-presentation Metamagic damage gate
 
@@ -781,7 +786,464 @@ Total output lines: 1868
 - Added sparse bounded cell-state persistence, arbitrary generic states, local/world transforms, token-volume overlap, large-token/depth handling, exact positive-overlap boundary semantics, and Region/source-local translation/elevation/rotation support.
 - Added `RegionOccupancyService` so ordinary Regions continue using Foundry containment while cell-backed Regions use AE5E 3D occupancy for final rules decisions. No global `TokenDocument.testInsideRegion()` override is used.
 - Integrated cell occupancy with persistent-area entry interruption so inactive→ACTIVE transitions can be detected inside one broad Region, including burned/open passages and re-entry into later ACTIVE cells.
-- Added generic cell-aware movement-cost classification using Foundry's complete snapped route; inacti…18831 tokens truncated…low-context handling so Item/Activity identity can be resolved from the cloned workflow payload or AA's secondary animation context. AA diagnostics now annotate transient claim id/reason without mutating the source Item/Activity.
+- Added generic cell-aware movement-cost classification using Foundry's complete snapped route; inactive/GONE steps retain normal movement cost while qualifying ACTIVE steps can receive an Item-selected modifier. Existing AE5E movement modifiers can compose through assigned modifier slots.
+- Added native Token-attached Region occupancy tracking for stationary targets swept by source translation, elevation, or rotation. Foundry v14 `updateToken` timing is handled by evaluating the after-state from the pre-update transform plus accepted pending `changes`.
+- Added Region-cell foundation, containment, movement, terrain, attachment, Web-like 4×4×4 dynamic-destruction, concurrency, lifecycle, console-reporting, and live-acceptance test coverage.
+- Corrected live-acceptance target-role binding so Foundry/module document creation order cannot shuffle low/high/rotation reporter identities.
+- Removed the obsolete legacy `web-service.js`, `web-region-behavior-type.js`, and `web-automation.test.mjs`; Web-specific production runtime remains prohibited.
+- Compendiums and assets are unchanged.
+
+## 0.4.3.29 — Ongoing-effect Midi workflow result identity
+
+- Corrected generic ongoing-effect result de-duplication for Midi-QOL 14 Activity workflows. Midi can expose the same Activity UUID through `workflow.id` on every use, so AE5E no longer treats that value as a per-execution identity.
+- AE5E now assigns a private per-workflow-object `executionId`. Midi's duplicate completion hooks for one live workflow share that ID and still collapse to one authority result, while a later use of the same Activity receives a new ID and is processed independently.
+- Removed all `workflow.saveRolls` access from `OngoingEffectService`. The deprecated Midi getter is replaced by `workflow.tokenSaves`, with Map/collection/plain-object support, while normal `saves` / `failedSaves` remain authoritative for success/failure classification.
+- Avoided the deprecated Midi `workflow.uuid` getter in ongoing-effect payload/serialization paths; `workflow.id` is retained only as diagnostic metadata and is not used for new live de-duplication.
+- Added regression coverage for repeated failure/failure/success executions of the same Activity ID, duplicate completion hooks for one execution, `tokenSaves` roll extraction, and fail-closed guards proving neither deprecated getter is touched.
+- No persistent-area entry-interruption, movement, Region, CAT, compendium, or asset behavior changed.
+
+## 0.4.3.28 — Persistent-area entry interruption — Region-crossing snap correction
+
+- Corrected the generic entry-position planner after live Foundry v14 diagnostics proved that a long drag can report an unsnapped geometric Region checkpoint (for example `x=3349`) and then skip the first complete grid position in its supplied pending waypoints (jumping directly to `x=3200`).
+- When an opted-in traversed movement first crosses into a Region at an unsnapped point, AE5E now asks Foundry `TokenDocument#getSnappedPosition()` to resolve that exact crossing to the native grid position, verifies the resulting token placement with `TokenDocument#testInsideRegion()`, and inserts the verified snapped position into the replay route before the next supplied waypoint. Tiny forward probes along the actual movement vector are used only as snap tie-breakers.
+- AE5E does not infer a one-square pixel offset, assume a 100 px grid, or perform Web-specific geometry. Foundry remains authoritative for both snapping and Region containment.
+- The successful v0.4.3.27 architecture is otherwise unchanged: planning still occurs through the proven `preMoveToken` path, the original movement is cancelled before commit and replayed once through native `Scene.moveTokens()`, interaction holds discard additional movement rather than queue it, and Region Activities continue through the existing CAT/Midi-QOL workflow bridge.
+- One-step keyboard entry remains on its already-native destination; true teleport-style movement remains destination-based and does not fabricate traversal.
+- Replaced the optimistic long-drag fixture with the exact live diagnostic shape (`3500 -> 3351 -> 3349` followed by pending `3200 -> 3100`) and added regression coverage proving AE5E inserts `3300` as the first complete interior checkpoint instead of incorrectly selecting `3200`.
+- Repository gate: **240/240 PASS**; syntax check: **98 JavaScript files PASS** before packaging.
+
+## 0.4.3.27 — Persistent-area entry interruption — native preMove planning
+
+- Reworked the opt-in persistent-area entry-interruption planner around Foundry v14's live `preMoveToken` movement data after live diagnostics proved normal canvas drag and keyboard movement bypass `TokenDocument#move`, `Scene#moveTokens`, `startMovement`, and `planToken` before reaching AE5E.
+- Removed the failed v0.4.3.26 `TokenDocument#move` planning wrapper and its wrapper-specific diagnostics. Entry planning now runs as a high-priority consumer of AE5E's existing `MovementService`, so the same native pre-movement path seen by the established Entangle/Grapple infrastructure is authoritative.
+- For traversed movement, AE5E reads Foundry's already-expanded native `passed`/`pending` route, preserves existing Region/terminal checkpoints, and promotes the earliest already-native snapped token position inside each opted-in owning Region to an explicit checkpoint. It does not infer a pixel offset or use the obsolete v0.4.3.25 next-pending-waypoint policy.
+- The original UI movement is cancelled before commit and replayed once through native `Scene.moveTokens()` on the next event-loop task, matching the proven coordinated-relationship movement translation pattern. The replay carries an explicit movement ID and AE5E movement context so checkpoint continuations remain recursion-safe even when custom operation options are not exposed on Foundry's movement payload.
+- Added a preflight interaction hold before the replay starts. Additional movement requests are discarded rather than queued while the entry interaction is in flight; the exact planned replay is allowed through by its plan ID. The existing Region-event hold remains responsible for the Activity-resolution interval.
+- Persistent-area Region events now recover entry-plan metadata from `MovementService` movement contexts instead of assuming `movement.updateOptions` preserves custom metadata. Activity execution remains unchanged and continues through `ActivityExecutionService` / CAT / Midi-QOL; no substitute save/check/damage workflow was added.
+- Ordinary untagged drag/keyboard movement is normalized to voluntary only for post-workflow `stopOn` semantics; Region entry detection itself remains agency-neutral. Teleport-style movement still resolves at its real destination and is not converted into traversed squares.
+- Added live-diagnostic-shaped regression coverage for the observed `3349` unsnapped Region boundary followed by native `3300`, `3200`, and terminal positions, one-step keyboard entry, teleport destination entry, no recursive replay planning, movement-context recovery, and one native `Scene.moveTokens()` replay.
+- Repository gate: **239/239 PASS**; syntax check: **98 JavaScript files PASS** before packaging.
+
+## 0.4.3.26 — Persistent-area entry interruption
+
+- Added generic, opt-in persistent-area `movement.entryInterruption = true` infrastructure for `TOKEN_MOVE_IN` handlers. Item recipes can require a Region-triggered Activity to resolve at the earliest native snapped token position inside the owning Region before the original movement continues.
+- Entry planning is performed before Foundry starts the original `TokenDocument.move()` operation. AE5E inserts an explicit checkpoint into that same native route and preserves Foundry's original movement Promise rather than stopping and relaunching the Token.
+- Traversed movement uses Foundry's public `TokenDocument#getCompleteMovementPath()` and `TokenDocument#testInsideRegion()` semantics. True teleport-style movement is never treated as traversal; an entry interruption resolves at the real teleport destination.
+- Added a short-lived, interaction-scoped movement hold. Once an opted-in Region entry is claimed, subsequent movement instructions for that Token are discarded until the configured Activity and its outcome operations finish. Only the exact already-planned movement may continue to its interior checkpoint while the hold is active.
+- The temporary hold is stronger than the existing voluntary-movement restriction because it prevents all new movement agencies from racing an unresolved Region interaction. After resolution, normal agency rules resume; persistent voluntary restrictions continue to use the established Entangle-derived movement policy.
+- Region Activities still execute exclusively through the existing `ActivityExecutionService` / CAT / Midi-QOL workflow bridge. Entry interruption adds no substitute saves, checks, attacks, damage rolls, or Midi workflow logic.
+- Added client synchronization for interaction holds through the existing AE5E Socketlib service and fail-safe expiry/cleanup so a failed or abandoned interaction cannot permanently strand Token movement.
+- Removed the experimental v0.4.3.25 `pauseAt: "nextSnappedWaypoint"` stop-and-relaunch approach completely. There is no `nextSnappedWaypoint`, `pauseAt`, or settlement-relaunch runtime in this build.
+- The capability remains strictly opt-in to `action-effects-5e.persistent-area` RegionBehaviors. Unrelated Foundry, Midi-QOL, CPR, Gambit's, and other third-party Region behaviors are not enrolled by AE5E.
+- Added regression coverage for long-drag first-interior checkpoint planning, one-step keyboard entry, non-traversing teleport entry, opt-in isolation, all-agency temporary holds, exact planned-route bypass, one-and-only-one Activity execution at the interior checkpoint, failure-operation-before-unlock ordering, and removal of the v0.4.3.25 experimental policy.
+
+## 0.4.3.24
+
+- Added the generic persistent-area `tokenCenterInOwnerRegion` event qualifier. Item-authored recipes can require that a token's final movement destination/current center still lies inside the owning Region before an event consumes a combat-turn or occupancy gate.
+- The qualifier uses AE5E's existing Foundry-derived `EnvironmentGeometryService`; it does not introduce spell-specific geometry or movement rules.
+- Event qualification runs before gate claim so an exiting path that produces a native `TOKEN_MOVE_WITHIN` event cannot consume a later legitimate same-turn trigger.
+- Updated the dev-only Web Item validator to require the authoritative Escape Web helper Activity to target `Self`. The validator reports authoring state only and never repairs compendium content.
+- Removed inert legacy `WebService` / `WebRegionBehaviorType` source and their obsolete development/recovery tests from the package. Production AE5E remains free of Web-specific runtime rules.
+- The authoritative `packs/` and `assets/` trees are preserved byte-for-byte from the user-supplied v0.4.3.23 baseline, including the intentional hidden Escape Web helper authoring change.
+
+## 0.4.3.23
+
+- Fixed generic persistent-area occupancy re-entry idempotency so a gate that is reset on Region exit receives a fresh Activity-execution claim on the next occupancy.
+- No Web-specific runtime rules were added; the correction applies to all persistent-area recipes using occupancy gating.
+
+## 0.4.3.22
+
+- Fixed ongoing-effect configuration validation so an explicitly supplied non-compendium `templateUuid` reports `invalid-template-uuid` instead of the less precise `missing-grant-source`.
+- Added an offline regression test covering template UUID validation versus the alternate `sourceActivity` grant source.
+- No persistent-area, Web, Item, pack, or asset behavior changed.
+
+# 0.4.3.21 — Startup wiring correction
+
+- Fixed a startup-blocking `TestHarness` constructor wiring regression introduced during the persistent-area infrastructure cleanup.
+- `persistentAreaEvents` and `persistentAreaLifecycle` are now explicitly accepted by `TestHarness` before being forwarded to the environmental test suite.
+- Added a startup-wiring regression test so this class of top-level module-evaluation failure is caught before packaging.
+- No Web rules, persistent-area behavior, compendium content, packs, or assets changed.
+
+# 0.4.3.20 — Persistent-area infrastructure cleanup — Checkpoint 5
+
+- Finalized the generic persistent-area infrastructure audit after removing Web-specific production runtime in Checkpoint 4.
+- Rebuilt Web source-Item validation as **dev/test tooling only** (`scripts/dev/web-item-validator.js`). Production AE5E remains unaware of Web spell rules.
+- The dev validator now requires `target.override = true` and `target.prompt = false` on Cast Web, Web Save, and Burning Web Damage, validates the explicit external Escape Web helper, and contains no Legacy Escape Web Activity fallback.
+- Expanded the live environmental foundation gate to verify the generic persistent-area RegionBehavior registration, event/lifecycle authority socket handlers, lifecycle initialization, and generic recipe validation.
+- Removed the provisional Web On Use macro from the module package. Web macro authoring remains intentionally deferred until this infrastructure build passes live Foundry acceptance.
+- Replaced stale current README/Web setup guidance with the finalized AE5E-vs-Item architecture boundary and current acceptance commands. Historical release notes remain in this changelog.
+- Added automated boundary coverage ensuring Web validation remains under dev/test tooling and `api.web` cannot return.
+- Compendium packs and assets are intentionally unchanged.
+
+# 0.4.3.19 — Persistent-area Web migration checkpoint
+
+- Migrated the recoverable Web ItemMacro to generic AE5E persistent-area infrastructure. The Item now declares its own save triggers, restraint template, Escape helper configuration, native difficult-terrain request, concentration dependency, Region geometry, and presentation.
+- Extended generic persistent-area event recipes with owned-effect conditions and outcome operations that compose the Checkpoint 2 event runtime with the Checkpoint 3 lifecycle service. Context substitution is limited to generic Region/behavior/token identifiers.
+- Added a generic Foundry-core `modifyMovementCost` RegionBehavior builder. AE5E does not calculate difficult-terrain movement.
+- Removed the production `WebService`, `WebRegionBehaviorType`, `api.web`, Web RegionBehavior registration/manifest type, Web runtime constants, Web socket operations, and Web-specific environmental initialization.
+- The authoritative Escape Web helper remains Item-selected; the Web macro stamps compatibility metadata onto its runtime restraint through the generic effect-patch facility.
+- Web-specific live validator tooling is intentionally deferred to the final audit checkpoint so it can be rebuilt as dev-only validation against the new Item-authored contract.
+
+## 0.4.3.18 — Persistent-area architecture cleanup checkpoint 3
+
+- Adds generic `PersistentAreaLifecycleService` beside the existing Web runtime; Web migration remains intentionally deferred to checkpoint 4.
+- Item automations can clone an exact Transfer-disabled Active Effect template embedded on a source Item onto a target Actor through GM/socket authority, stamp deterministic owner/effect metadata, omit lifecycle-owned serialized fields such as `duration`, and pass generic effect patches/metadata.
+- Runtime effects are idempotent by exact owner document UUID plus Item-authored effect key, so overlapping persistent areas remain independent while repeated application for one area reuses the existing effect.
+- Generic cleanup removes all effects owned by a deleted Region/document across both world Actors and unlinked synthetic Token Actors; a primary-GM `deleteRegion` hook performs the same cleanup automatically.
+- Generic runtime-effect creation can propagate the existing AE5E ongoing-action configuration and voluntary-movement-restriction configuration without knowing the spell/feature that supplied them.
+- Adds generic Midi-QOL concentration-dependent binding for arbitrary dependent documents using source Actor/Item UUIDs. AE5E does not recreate concentration mechanics.
+- Added architecture/regression coverage proving the lifecycle source contains no Web-specific activity/effect/helper names, exact source-Item template cloning, serialized-duration omission, overlapping-owner isolation, synthetic-Actor cleanup, Region-deletion cleanup, ongoing-action propagation, movement-restriction propagation, public-API wiring, and Midi concentration binding.
+- Repository gate: **236/236 PASS**; syntax check: **98 JavaScript files PASS**.
+- `web-service.js` and `web-region-behavior-type.js` remain byte-for-byte unchanged from checkpoint 2 / v0.4.3.13 behavior. Compendium `packs/` and `assets/` remain byte-for-byte unchanged.
+
+## 0.4.3.17 — Persistent-area architecture cleanup checkpoint 2
+
+- Adds a new generic `action-effects-5e.persistent-area` Foundry RegionBehavior and `PersistentAreaEventService` while leaving the accepted Web v0.4.3.13 runtime implementation untouched.
+- Item automations can author declarative Region-event recipes that select native Foundry Region events, execute configured D&D5e Activities through the existing CAT/Midi authority bridge, apply generic combat-turn or continuous-occupancy gates, and optionally pause/stop voluntary movement from a configured Activity outcome.
+- The generic recipe runtime contains no Web spell names, Web save timing, restraint/effect rules, damage, terrain, animation, or flammability policy. Web migration is intentionally deferred to a later cleanup checkpoint.
+- Occupancy-gated recipes automatically subscribe to `TOKEN_EXIT` so the reusable gate can reset when a token leaves the Region. Movement pausing uses only the native event's own movement payload and never borrows stale Token movement history.
+- Added generic regression coverage using a fictional persistent area for event selection, combat-turn gating, exploration occupancy gating/reset, CAT/Midi Activity execution, and voluntary-movement interruption.
+- Repository gate: **230/230 PASS**; syntax check: **97 JavaScript files PASS**.
+- `web-service.js` and `web-region-behavior-type.js` are byte-for-byte unchanged from v0.4.3.13. Compendium `packs/` and `assets/` are also byte-for-byte unchanged.
+
+## 0.4.3.13 — Web restraint/helper lifecycle hardening
+
+- Fixed Web Region teardown for unlinked/synthetic Token Actors. Region-specific restraint cleanup now scans both world Actors and Token Actors across scenes, deduplicated by Actor UUID, so ending concentration removes `Restrained by Web` from the actual live Actor that owns it.
+- Removed WebService's redundant direct `ensureGrant()` call after creating a runtime restraint. Generic `OngoingEffectService` `createActiveEffect` lifecycle handling is now the single owner of Escape Web helper provisioning, eliminating the observed double-provisioning race.
+- Hardened ongoing-action grant idempotency by the exact parent Active Effect UUID. Concurrent `ensureGrant()` requests for one effect are serialized, and an already-present helper carrying the same `sourceEffectUuid` is reused and relinked instead of duplicated. Separate overlapping Web restraints retain separate helper Items because their runtime Active Effect UUIDs differ.
+- Hardened parent-effect teardown so every helper Item whose `ongoingActionGrant.sourceEffectUuid` matches the deleted effect is removed. This safely cleans duplicate/orphan helper Items produced by older races without touching helpers owned by another simultaneous Web.
+- Added regression coverage for synthetic Token Actor Region cleanup, concurrent helper provisioning, source-effect grant reuse, duplicate-helper teardown, and overlapping-Web isolation.
+- Repository gate: **225/225 PASS**; syntax check: **95 JavaScript files PASS**.
+- No Item, compendium, macro, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.12.
+
+## 0.4.3.12 — Web runtime restraint duration sanitation
+
+- Fixed failed Web saves that reached `Restrained by Web` creation but were rejected by MidiActiveEffect validation. D&D5e 5.3.x can serialize an indefinite source Active Effect through `toObject(false)` as `duration.value = Infinity`; Midi requires an explicit duration value to be an integer.
+- Web runtime restraint cloning now removes serialized duration metadata before embedding the effect on the target Actor. The restraint remains indefinite and is owned entirely by the authoritative Web Region/concentration/escape/burn lifecycle rather than a fixed timer.
+- Added regression coverage that reproduces the observed `duration.value = Infinity` payload and verifies the embedded runtime restraint carries no duration payload while preserving its normal Web flags and behavior.
+- Repository gate: **221/221 PASS**; syntax check: **95 JavaScript files PASS**.
+- No Item, compendium, macro, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.11.
+
+## 0.4.3.11 — Authority-safe environmental Activity execution
+
+- Fixed the Web Region Activity bridge to preserve resolved TokenDocuments when calling CAT `workflowUtils.completeActivityUse()`. CAT derives Midi target UUIDs from `target.uuid`; converting targets to canvas Token placeables could leave that UUID unavailable and prevent the Web Save workflow from resolving.
+- Activity execution is now pinned to the already-authoritative primary GM by default when AE5E calls CAT. An explicitly supplied `userId` is still preserved. This prevents CAT from implicitly choosing the caster actor's first owner and routing a Region-triggered environmental workflow away from the authority client.
+- Added regression coverage for real TokenDocument/placeable target shapes, authority-GM CAT execution, explicit `userId` preservation, and the existing idempotency/fail-closed contracts.
+- Synchronized the recoverable `docs/item-macros/web-2024-premium.txt` source and setup documentation to the accepted fixed-square Entangle-style Web targeting implementation. This is documentation/recovery source only; no compendium Item is written by the release.
+- Repository gate: **220/220 PASS**; syntax check: **95 JavaScript files PASS**.
+- No Item, compendium, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.10.
+
+## 0.4.3.10 — Web Region layer visibility
+
+- Web Regions now explicitly use Foundry v14 `CONST.REGION_VISIBILITY.LAYER`, making the authoritative 20-foot Region visible whenever a GM activates the Regions layer while keeping the Region outline out of normal Token-layer play.
+- Web Regions remain `locked: true`, preserving protection from accidental drag/resize/edit operations while AE5E continues to mutate geometry and delete the Region programmatically.
+- Added regression coverage for the persisted Region visibility and lock contract. Repository gate: **218/218 PASS**; syntax check: **95 JavaScript files PASS**.
+- No Item, compendium, or asset content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from the supplied v0.4.3.9 baseline.
+
+## 0.4.3.9 — Web external-helper validator correction
+
+- Corrected `validateWebItem()` / `WebService.validateSourceItem()` so a non-spell authoritative Escape Web helper is judged by **effective D&D5e consumption**, not by the inert `consumption.spellSlot` schema boolean retained on non-spell Activities. Real consumption targets still fail validation, and spell-based helper Activities that can actually consume a slot still fail closed.
+- Added regression coverage for the real hidden-compendium Feature-helper shape (`spellSlot: true` but no effective spell-slot consumption) plus a negative spell-helper case.
+- No Item or compendium content is created, modified, migrated, or published by this release. All `packs/` and `assets/` files remain byte-for-byte unchanged from v0.4.3.8.
+
+## 0.4.3.8 — Item-supplied delayed ongoing-action infrastructure
+
+- Aligns Web's delayed restraint/escape lifecycle with the established Grapple ownership model: the Item automation supplies the authoritative helper-Item configuration while AE5E remains lifecycle infrastructure.
+- `WebService.create()` / `commitCast()` now accept optional `restraintOngoingAction` configuration, validate it through the generic ongoing-effect service, and persist it on the authoritative Web Region so it survives the delay between casting and a later failed Web save.
+- Runtime `Restrained by Web` effects receive the Region-carried ongoing-action configuration before AE5E's generic grant service creates the helper Item. The editable source Active Effect no longer needs hidden AE5E authoring flags for the preferred v0.4.3.8 path.
+- External compendium helper configuration takes precedence over legacy source-effect metadata. Pre-v0.4.3.8 source-effect and source-Activity-derived Escape Web fallbacks remain supported for backward compatibility.
+- `validateWebItem()` now accepts `escapeTemplateUuid` so the preferred source-Item contract can validate an authoritative hidden-compendium Escape Web helper without requiring a redundant Escape Web Activity on the spell.
+- Updated the recoverable Web setup/macro documentation to keep the helper UUID in Item automation rather than AE5E runtime constants.
+- Added regression coverage for Region configuration persistence, delayed runtime-effect stamping, invalid-config fail-closed behavior, commit pass-through, legacy fallback preservation, and external-helper Item validation.
+- Repository gate: **217/217 PASS**; syntax check: **95 JavaScript files PASS**.
+- No compendium or asset content is modified by this patch.
+
+## 0.4.3.7 — Web live acceptance hardening
+
+- Fixes AE5E tagged geometry normalization so token footprints always include canonical broad-phase bounds.
+- Makes the D&D5e 5.3.x Web terrain acceptance check ignore system-derived movement actions such as Jump when validating the stored 2x core movement cost.
+- Makes the live Web burn-away test deterministic against the event-driven timer service instead of racing the update hook against an explicit `processDue()` call.
+- Disables Premium Sequencer rendering for off-scene mechanics fixtures so infrastructure tests do not attempt to render BLFX assets.
+- Adds regression coverage for tagged geometry without precomputed bounds.
+
+## 0.4.3.6 — D&D5e 5.3.x Web terrain compatibility
+
+- Fixed the first live Web acceptance failure on D&D5e 5.3.3: that system version does not register the later system-specific `difficultTerrain` RegionBehavior subtype, so Foundry rejected the Web Region before creation.
+- Web now chooses its native movement-cost behavior from the active runtime configuration. When D&D5e provides semantic `difficultTerrain`, AE5E uses it with `types: ["web"]`; otherwise AE5E uses Foundry v14 core `modifyMovementCost`.
+- The core fallback reads the active `ModifyMovementCostRegionBehaviorType` schema / `CONFIG.Token.movement.actions`, assigns a 2x difficulty to each non-derived movement action, and leaves derived actions for Foundry to calculate. This preserves normal difficult-terrain stacking such as crawling.
+- Expanded deterministic regression coverage for the D&D5e 5.3.x core fallback and the later semantic D&D5e path.
+- Expanded live Foundation/Web acceptance to verify that the chosen terrain behavior subtype is actually registered on the running client and that the persisted terrain data represents a 2x movement cost.
+- Hardened the live Web suite so a Region-creation failure reports the creation error directly rather than cascading into a null-document `update` exception.
+- Repository gate: **212/212 PASS**; syntax check: **95 JavaScript files PASS**.
+- Existing assets, compendium packs, source Web ItemMacro, and CAT Item automation versions are unchanged.
+
+## 0.4.3.5 — Web 2024 automation (development checkpoint)
+
+- Added the first production **Web 2024** Region automation layer on top of the accepted v0.4.3.4 Environmental framework. Each cast is represented by one authoritative 20-foot Foundry Region with native D&D5e Web difficult terrain, AE5E Web lifecycle behavior, and the Web Flammable profile.
+- Added 5-foot logical Web-cell ignition state inside the single Region. Fire can ignite individual cells, persistent one-round timers burn those cells away, and completed cells become Region holes rather than separate Regions.
+- Added native Web Region events for first entry/start-of-turn Dexterity saves, per-turn gating, Restrained-by-Web runtime effect ownership, automatic exit cleanup, and burning-cell start-of-turn damage.
+- Web entry failures stop voluntary movement after the real save resolves, while forced/compelled/passenger/administrative movement is not stopped by AE5E.
+- Added Midi concentration-dependent binding so deleting the caster's concentration effect deletes the Web Region through the established Midi/D&D5e dependent-document lifecycle.
+- Added reusable Activity execution and source-Activity-derived ongoing-action support needed by Web Save, Burning Web Damage, and Escape Web while preserving CAT/Midi roll pipelines.
+- Expanded automated regression coverage for cast-time nonmovement entry suppression, voluntary versus forced entry behavior, same-turn save gating, Region-specific restraint cleanup, burning-cell turn-start damage, concentration binding, Region/cell geometry, and escape-grant infrastructure.
+- Stage 1 repository gate: **197/197 PASS**; syntax check: **95 JavaScript files PASS**.
+- **Stage 2 — Activity execution + Item contract:** hardened the authority Activity bridge so unresolved explicit targets fail closed, targeted execution never falls back to a GM client's incidental target state when CAT `completeActivityUse` is unavailable, and transient CAT/Midi failures release their idempotency claims for safe retry.
+- Expanded `validateWebItem()` / `WebService.validateSourceItem()` into an automated source-Item contract covering 2024 rules metadata, level/school/casting time/duration/components, 60-foot range, 20-foot cube targeting, a Utility **Cast Web** Activity, Dexterity **Web Save** using the caster spell DC, Action **Escape Web** using Strength (Athletics), exactly 2d4 Fire **Burning Web Damage**, no accidental resource/spell-slot re-consumption on automation Activities, no direct effect application from those Activities, a Transfer-disabled Restrained template, and AE5E AA suppression.
+- Stage 2 repository gate: **202/202 PASS**; syntax check: **95 JavaScript files PASS**. This remains a recoverable development checkpoint; Premium casting visuals and final Item setup are completed in later v0.4.3.5 stages.
+- **Stage 3 — Premium placement + casting:** added `WebService.placeCast()` with a deliberately tiny invisible functional anchor, 60-foot range enforcement, grid-vertex snapping, fixed 20-foot Eskie rectangle presentation, `collectTargets: false`, manual live token-center targeting, authoritative confirmation targeting, hidden-token privacy for players, and deterministic target restoration on cancel/commit.
+- Added `WebService.commitCast()` and `playCastAnimation()`. The adapted Premium sequence preserves Eskie's yellow casting loops, conjuration buildup, orb/shield buildup, impact, and layered BLFX Web while giving every cast unique effect names. Persistent Web layers are `mask(region)` + `tieToDocuments(region)` so presentation follows the one authoritative Region.
+- Added the exact thin ItemMacro development source at `docs/item-macros/web-2024-premium.txt`. The macro uses only **Before Item Roll** and **After Active Effects**, delegates mechanics to AE5E, restores temporary placement targets before the normal Utility workflow continues, and performs no custom rolling or document mutation.
+- Added automated regression coverage for fixed-size Eskie/functional crosshair decoupling, live and confirmed target collection, cancellation restoration, Premium sequence composition, Region masking/tie ownership, commit/concentration/visual integration, and ItemMacro syntax/delegation.
+- Stage 3 repository gate: **208/208 PASS**; syntax check: **95 JavaScript files PASS**.
+- **Stage 4 — final integration hardening:** Web now stores its presentation mode on the authoritative Region, primary-GM Region geometry updates explicitly refresh the Region-masked persistent Web presentation, and `commitCast()` fails closed by deleting a newly created Region if it cannot be bound to the caster's concentration effect. This prevents orphan Web Regions and makes burned-hole visual refresh deterministic rather than relying on a renderer retaining a live Region mask reference.
+- The source-Item validator now also rejects a Cast Web Activity that would open the native D&D5e target/template prompt; the descriptive 20-foot cube remains on the spell Item while AE5E owns functional/Eskie placement.
+- The shared ItemMacro now explicitly gates itself to the **Cast Web** Activity so AE5E-triggered **Web Save**, **Escape Web**, and **Burning Web Damage** workflows can use the same source Item without reopening the placement crosshair.
+- Added `docs/web-2024-setup.md` as the recoverable authoring/acceptance contract for the source Item.
+- Final repository gate: **210/210 PASS**; syntax check: **95 JavaScript files PASS**.
+- Existing compendium packs and assets remain unchanged from v0.4.3.4.
+
+## 0.4.3.4 — automated Midi fire-bridge acceptance
+
+- Added a focused **Midi fire bridge** live acceptance suite and folded it into the preferred one-command Environmental gate. The suite creates temporary native v14 Region fixtures, runs representative untouched Midi workflow data through the exact runtime adapter processing path, verifies Region reactions/state, and cleans all fixtures automatically.
+- Automated bridge coverage now verifies native Region area fire, raw fire exposure when final target damage is zero, mixed slashing+fire weapon impacts, attack misses, multi-target/multi-impact fire, non-attack targeted fire, spatially ambiguous fail-closed behavior, unresolved declared-area fail-closed behavior, and the isolated MeasuredTemplate compatibility boundary.
+- `MidiEnvironmentAdapter.processWorkflow()` now exposes the exact interpret-and-emit path used by the global `midi-qol.DamageRollComplete` observer. The observer itself still runs asynchronously and source Items remain untouched; the public method exists so AE5E can test the full bridge without synthetically broadcasting a Midi hook to unrelated third-party listeners.
+- Added focused console runner `api.tests.environment.runMidiFire()` / `runEnvironmentalMidiFireTest()`. `api.tests.environment.runAll()` now executes **Foundation + Midi fire bridge + Live lifecycle + Performance**.
+- Repository gate for this patch: **186/186 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or monster action was changed.
+
+## 0.4.3.3 — semantic Region-hole de-duplication
+
+- Fixed the final live Environmental acceptance failure where Foundry v14 could persist an equivalent rectangle hole using a different pivot/anchor source representation. AE5E now de-duplicates rectangle mutations by canonical world-space corner geometry instead of serialized RectangleShapeData fields.
+- Rectangle semantic comparison is anchor-independent, ignores serialization-only grid flags when the resulting footprint is identical, supports rotation, and uses a small numeric normalization tolerance for Foundry round-trips.
+- Added regression coverage for equivalent pivot/anchor representations and rotated rectangle footprints.
+- Repository gate for this patch: **185/185 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or environmental source Item was changed.
+
+## 0.4.3.2 — Foundry v14 rectangle round-trip hardening
+
+- Fixed the remaining live Environmental lifecycle failure where a repeated 5-foot Region hole could be appended after the first hole had been persisted by Foundry v14. The root cause was Foundry v14's RectangleShapeData schema: rectangle `(x, y)` is the shape pivot and `anchorX`/`anchorY` locate the rectangle around that pivot, while AE5E's concise rectangle helper was still emitting the older top-left-style source. Foundry migrated that source during persistence, so the same logical hole no longer compared equal on the next interaction.
+- `EnvironmentGeometryService.createRectangle()` now preserves AE5E's public top-left `x/y` calling convention while emitting the current Foundry v14 rectangle source explicitly: centered pivot, `anchorX: 0.5`, `anchorY: 0.5`, and `gridBased: false`. Rectangle normalization now understands native v14 anchors and rotates around the native pivot.
+- Hole de-duplication now runs Foundry's native Shape DataModel migration step (`migrateDataSafe`) before `cleanData()` when available. This also protects future environmental profiles which submit concise/legacy rectangle source instead of using AE5E's helper.
+- Added regression coverage for current-schema v14 rectangle emission/footprint and for de-duplicating a legacy concise rectangle against its persisted v14 anchored equivalent.
+- Repository gate for this patch: **183/183 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or environmental source Item was changed.
+
+## 0.4.3.1 — Environmental live-lifecycle persistence hardening
+
+- Fixed the v0.4.3.0 live Foundry acceptance failure where completed environmental timers could remain in `flags.action-effects-5e.environment.timers`. Foundry v14 Document updates merge object fields by default, so omitting a consumed timer key did not delete it. Environmental flag writes now use Foundry v14's supported `_replace(...)` forced-replacement operator, ensuring timer cancellation is atomic with the accompanying state mutation and preventing expired timers from repeatedly re-firing.
+- Hardened the timing service so a timer already executing is never re-armed by a Region update hook while its handler is in flight.
+- Fixed repeated Region-hole requests being appended again after Foundry persisted/cleaned the shape. Hole de-duplication now canonicalizes shapes through Foundry v14's native Shape DataModel `cleanData()` path when available, so schema-added rectangle defaults such as anchor/grid fields do not make an existing hole appear different from the concise AE5E source shape.
+- Added deterministic regression coverage for Foundry forced-replacement timer cancellation and for de-duplicating a concise hole request against a Foundry-cleaned persisted rectangle.
+- Repository gate for this patch: **181/181 PASS**; syntax check: **92 JavaScript files PASS**.
+- No compendium Item, CAT automation version, asset, spell, weapon, or environmental source Item was changed.
+
+## 0.4.3.0 — Region-native Environmental Interaction foundation
+
+- Added the generic **AE5E Environmental Interaction framework** for Foundry v14 Scene Regions. Persistent environmental state is Region-authoritative; Measured Templates exist only behind a compatibility geometry adapter.
+- Added the module subtype **AE5E — Flammable** (`action-effects-5e.flammable`) using Foundry's native `RegionBehaviorType`/`documentTypes` extension mechanism. The behavior declares that a Region can receive fire interactions and selects a material reaction profile.
+- Added capability and material-profile registries so future environmental behaviors such as Meltable, Freezable, Dispersible, and Corrodible can use the same dispatcher, geometry, authority, timing, and mutation services without becoming Web-specific infrastructure.
+- Added normalized Region-first geometry for points, Regions, Eskie/functional crosshair inputs, rectangles, polygons, circles/ellipses, cones, and rays. Positive Region shapes and `hole` shapes are evaluated together, and reusable batched Region mutation can carve holes without splitting one environmental effect into many Regions.
+- Added a cached, event-invalidated environmental Region index. Ordinary non-fire Midi workflows reject on damage type before touching the Region index; no environmental polling or animation-frame document writes are used.
+- Added a global Midi-QOL fire interpreter on `midi-qol.DamageRollComplete`. Normal Items remain untouched: area fire snapshots v14 Region geometry when available; successful fire attacks use impact locations; non-attack targeted fire uses target locations; misses and spatially unresolved area sources fail closed instead of guessing. Raw fire components are used rather than final HP loss, so target resistance/immunity does not erase environmental fire exposure.
+- Added primary-GM environmental authority, idempotency keys, bounding-box prefiltering, precise geometry intersections, per-Region batched mutations, persistent environmental state, and diagnostics/performance counters.
+- Added persistent **event-driven environmental timers**. Timer records live on Regions, survive primary-GM/browser handoff, support real-time, Foundry world-time, and combat-position deadlines, and use one-shot timers or Foundry update hooks rather than polling.
+- Added public `ae5e.environment` APIs for event emission, fire emission, capability/profile registration, Region/Eskie/MeasuredTemplate geometry normalization, timing handlers, and subsystem diagnostics.
+- Added a preferred one-command GM console acceptance runner, `api.tests.environment.runAll()`, which automatically executes foundation, live lifecycle, cleanup, and performance gates and prints one consolidated PASS/FAIL summary. Focused environmental runners remain available for failure isolation.
+- Added GM live acceptance gates: `runEnvironmentalFoundationTest`, `runEnvironmentalLiveLifecycleTest`, and `runEnvironmentalPerformanceTest`. The lifecycle test creates one Flammable Region, persists reaction state, carves a 5-foot hole, verifies the carved space stops reacting, verifies idempotency, executes a persistent one-shot timer, and cleans the fixture.
+- Added deterministic Node regression coverage for registries, Region holes, the MeasuredTemplate compatibility boundary, batched state/hole/timer mutation, timing deadlines, non-fire early exit, untouched fire weapon workflows, misses, native Region area fire, and raw-fire handling. Repository gate: **179/179 PASS**; syntax check: **92 JavaScript files PASS**.
+- Existing compendium packs and assets are unchanged from v0.4.2.9. No Fireball, Fire Bolt, Scorching Ray, fire weapon, monster action, or other source Item was modified.
+
+## 0.4.2.9 — CAT option clearing and editor status polish
+
+- Fixed **Edit Item Options → `{}`** so an empty configuration explicitly deletes the existing `flags.action-effects-5e.cat.configSchema` object instead of being swallowed by Foundry object-merge semantics.
+- CAT user preference values under `flags.cat.config.*` remain untouched when authored options are cleared.
+- Increased AE5E CAT authoring status/validation borders from 1 px to **3 px**.
+- Added a small amount of vertical spacing between the JSON editor, status block, and action buttons.
+- Added regression coverage for clearing an existing authored schema with `{}`.
+
+## 0.4.2.8 — CAT configuration editor layout correction
+
+- Reworked the **Edit CAT Configuration Data** form layout after live visual acceptance found Foundry v14 form styling constraining the JSON textarea into a narrow field beside its label/help text.
+- The CAT Configuration Data editor now occupies its own full-width row beneath the Item context summary. Its label, help text, and JSON textarea are grouped in a dedicated full-width block, and the textarea explicitly fills the available dialog width.
+- Expanded the JSON editor to a **25-line authoring viewport**. Longer CAT payloads now scroll vertically inside the editor instead of requiring the textarea or dialog to be manually resized. Manual textarea resizing is disabled so the authoring window remains predictable.
+- The editor is capped against the available viewport height so smaller displays can still keep the dialog usable while retaining an internal scrollbar.
+- No CAT schema, authoring, registration, Item metadata, compendium content, or runtime automation behavior changed in this patch.
+
+## 0.4.2.7 — In-Foundry CAT configuration-data authoring
+
+- Added a second GM-only AE5E public-compendium context command, **Edit Item Options**, alongside the accepted **Edit Item Version** workflow. It is available only on Items in AE5E's explicit public CAT compendium allowlist; World Items, foreign packs, and AE5E Administrative remain excluded.
+- Added the centered/movable **Edit CAT Configuration Data — <Item>** editor. The editor loads the Item's current CAT option definitions as formatted JSON, accepts pasted JSON generated during Item development, validates it before writing, and is non-mutating until Save.
+- CAT option definitions are stored on the canonical Item at `flags.action-effects-5e.cat.configSchema`. This is intentionally separate from CAT's installed/user preference values at `flags.cat.config.*`.
+- Added JSON-safe validation for CAT configuration descriptors, including core CAT field types, type-appropriate defaults, static `select`/`select-many` choices, dangerous key rejection, and clear malformed-JSON errors. `{}` is the supported no-options payload.
+- Extended permanent CAT public-compendium registration to read each authored Item's stored configuration schema and pass it to CAT through `configs2014` / `configs2024`. Invalid stored option data now fails closed and defers the pack instead of registering malformed configuration.
+- Saving configuration data immediately refreshes AE5E's CAT public registration. If the pack is otherwise publication-ready, the options become live in CAT without a Foundry reload or a new AE5E package.
+- Added public authoring APIs for reading, validating, parsing, and writing CAT configuration data plus `ae5e.tests.runCatConfigurationAuthoringTest()` for read-only live acceptance.
+- Extended the accepted CAT metadata bootstrap to preserve the user-confirmed Entangle publication (`entangle`, 2024, automation `1.0.0`) across this package transition; Misty Step remains preserved at `1.0.0`.
+- Repository syntax/regression gate: **166/166 PASS**. Compendium pack files and assets are unchanged from v0.4.2.6.
+
+## 0.4.2.6 — First-use identifier proposal hardening
+
+- Fixed **Edit Item Version** first-use identifier population for scratch-created D&D5e Items that carry generic/type-like placeholder identifiers such as `spell`, `feat`, or `item`. An unpublished Item now proposes a stable slug from its Item name instead (for example, Entangle → `entangle`).
+- Existing meaningful identifiers remain unchanged. Already-published AE5E CAT identifiers are also preserved when the editor is reopened, so opening the editor never silently rewrites an established CAT identity.
+- The proposed first-use identifier remains editable before Publish, and the existing ruleset/provider/version workflow is unchanged.
+- Added deterministic regression coverage for missing identifiers, generic scratch identifiers, preservation of published identifiers, and a live acceptance assertion matching the observed Entangle (`spell` → `entangle`) case.
+- Compendium content and assets are unchanged from v0.4.2.5.
+
+## 0.4.2.4 — AE5E compendium Item version editor
+
+- Added a GM-only **Edit Item Version** right-click context option for Items displayed inside AE5E's approved public compendiums. The option is not offered for World Items, foreign compendiums, or the internal AE5E Administrative pack.
+- Added a centered/movable CAT metadata editor. Item Name and Item Type are read-only; Identifier is pre-filled (or proposed from the Item name when missing); Ruleset is selectable between 2014 and 2024; Automation Provider is supplied by AE5E; Automation Version is pre-filled from the Item or defaults to 1.0.0 on first publication.
+- Opening the editor is read-only. Save/Publish writes only the selected identifier/ruleset plus AE5E CAT source/version metadata through the accepted production authoring service.
+- CAT metadata authoring now safely unlocks and re-locks locked compendium packs around the write, so normal module-compendium locking does not block the authoring workflow.
+- Added runtime CAT public-registration refresh after a metadata save. Packs can therefore move from deferred to registered, and automation version changes become visible to CAT, without creating or installing another AE5E module release.
+- Existing protections remain: GM-only writes, strict SemVer, required identifier/rules/type validation, and refusal to overwrite another CAT provider's ownership.
+- Added `ae5e.authoring.cat.openEditor()`, `getEditorDraft()`, `isEligiblePack()`, context-menu diagnostics, and `ae5e.interoperability.cat.registration.refreshPublicCompendiums()`.
+- Added automated coverage for context-menu eligibility, first-use field population, editable identifier/ruleset authoring, compendium lock restoration, and no-reload CAT registration refresh. Repository regression suite: **156/156 PASS**.
+- Compendium pack data and assets are unchanged from v0.4.2.3. Canonical Misty Step remains CAT automation version 1.0.0.
+
+## 0.4.2.5 — CAT Item Version Editor hardening
+
+- Exposed `ae5e.tests.runCatMetadataContextMenuTest()` through the public AE5E test API.
+- Added a GM startup bootstrap for the already-accepted canonical Misty Step CAT metadata (`action-effects-5e` / `1.0.0`) when a packaged compendium arrives without the live-authored flags. This is a one-item recovery bridge, not the normal authoring path; future Item metadata continues to be managed through **Edit Item Version**.
+- Added CAT public-registration reconciliation so AE5E can repair runtime CAT registry drift without a module reload.
+- Added a delayed post-`catReady` reconciliation check and a public `ae5e.interoperability.cat.registration.reconcilePublicCompendiums()` diagnostic/repair API.
+- CAT public-registration live acceptance now reconciles CAT runtime state before asserting published Item presence.
+- Compendium content and assets remain unchanged from v0.4.2.4.
+
+## 0.4.2.3 — Permanent CAT public-compendium registration
+
+- Promoted `CatAutomationRegistry` from source-only registration to permanent public-compendium publication after CAT's `catReady` lifecycle. Registration uses CAT's public `registerAutomationCompendium()` API and the established explicit AE5E public-pack allowlist.
+- Added a fail-closed, pack-atomic readiness gate. A non-empty public pack is registered only when every Item has a valid identifier, 2014/2024 ruleset, Item type, `flags.cat.automation.source = "action-effects-5e"`, and a SemVer CAT automation version. This prevents unfinished Items from being published under CAT's fallback version `0`.
+- Empty public packs are skipped cleanly; incomplete packs are reported as deferred; missing packs and registration failures are surfaced separately in diagnostics. `AE5E Administrative` remains outside the allowlist and is never published.
+- Expanded `ae5e.interoperability.cat.registration.getStatus()` / `getStats()` with permanent-registration stage, allowlist, registered/deferred/empty/missing pack reporting, readiness and registration counters, and registered Item counts.
+- Updated the live CAT acceptance gate to wait for asynchronous public registration, verify all published versions are authored SemVer values, verify deferred packs remain unregistered, verify Administrative exclusion, and verify canonical 2014 Misty Step is permanently registered at automation version `1.0.0`.
+- The authoritative v0.4.2.2 interim package supplied after live acceptance is the compendium/asset baseline for this release. Its accepted canonical Misty Step CAT source/version metadata is retained. No additional compendium Item is stamped or migrated by v0.4.2.3.
+- Added deterministic regressions for ready/deferred/empty/missing public-pack classification, internal-pack exclusion, fail-closed invalid metadata behavior, idempotent registration, source-registration failure, and CAT pack-registration failure handling.
+- The CAT Medkit Configuration-tab width/overflow issue remains tracked separately; AE5E does not apply a production CSS workaround.
+
+## 0.4.2.2 — CAT metadata authoring and validation foundation
+
+- Added the production CAT metadata authoring service exposed at `ae5e.authoring.cat`. It validates canonical Item identity metadata, writes only `flags.cat.automation.source = "action-effects-5e"` and `flags.cat.automation.version`, and requires strict SemVer-style automation versions such as `1.0.0`.
+- Added safe version bumping through `ae5e.authoring.cat.setMetadata(itemOrUuid, { version })`. The operation is GM-only, validates `system.identifier`, `system.source.rules` (`2014` or `2024`), and Item `type` before writing, and refuses to overwrite an Item already owned by a different CAT automation source.
+- Added non-mutating Item and compendium auditing through `auditItem()`, `auditPack()`, and `auditPublicPacks()`. The public-pack allowlist contains AE5E's spell packs plus `Actions - Common`; `AE5E Administrative` is explicitly excluded and remains internal.
+- Added authoring diagnostics through `ae5e.authoring.cat.getStatus()` / `getStats()` and `ae5e.authoring.cat.isValidVersion()` / `validateItem()` for build-time validation.
+- Added `ae5e.tests.runCatMetadataAuthoringTest()` as a GM/browser-console acceptance gate. It audits the real canonical Item/pack read-only, creates a disposable World Item, stamps and bumps CAT metadata through the production API, verifies malformed versions are rejected, verifies Item data/config/effects/activities are preserved, then deletes the fixture.
+- Added deterministic Node regressions for SemVer validation, core metadata validation, safe source/version stamping, preservation of CAT configuration and AE5E payload data, foreign-source protection, GM-only writes, pack auditing, and the explicit public/internal pack boundary.
+- This release does **not** stamp or migrate any existing compendium Item and does **not** register public Item automations with CAT yet. All 66 compendium pack files and all assets remain unchanged from v0.4.2.1.
+- The CAT Medkit Configuration-tab width/overflow issue observed during live configuration testing is intentionally not patched by AE5E in this release; CAT's configuration data path itself passed the prior 22/22 live acceptance test.
+
+## 0.4.2.1 — CAT automation-provider foundation
+
+- Started the v0.4.2 branch with Coven's Automation Toolkit (CAT) as a required AE5E dependency. `module.json` now requires CAT 0.0.8+ and CAT is included in AE5E runtime dependency validation rather than being treated as a recommended module.
+- Added a dedicated `CatAutomationRegistry` integration boundary. It installs one `catReady` listener during AE5E init and, after CAT finishes its own startup registration, registers the provider display name `Action Effects 5E` through CAT's public `registerSourceName` API.
+- This foundation release intentionally registers **zero Item automations**. Misty Step and the public compendium packs remain untouched until the source/dependency lifecycle is accepted in live Foundry.
+- Added CAT provider diagnostics at `ae5e.interoperability.cat.registration.getStatus()` / `getStats()`, including CAT API capability detection, source-registration verification, stage identity, and the current count of AE5E automations visible in CAT.
+- Added `ae5e.tests.runCatIntegrationFoundationTest()` as a mostly automated Foundry/browser-console acceptance gate. It verifies the required CAT relationship and minimum version metadata, dependency validation, `catReady` observation, the public registration API surface, exact source registration, zero Item registrations, error-free initialization, and duplicate-initialization idempotence.
+- Added deterministic development regressions for source registration timing, idempotent initialization, and fail-closed behavior when CAT's source-registration API is unavailable.
+- Existing movement, CAT teleport semantics, Spell Modifier Engine utilities, relationships, displacement, Socketlib routes, assets, and compendium contents are unchanged. No compendium was regenerated, migrated, or overwritten.
+
+## 0.4.1.22 — Atomic batch forced displacement
+
+- Added `ae5e.displacement.pushBatch()` for GM-authoritative, single-operation forced Push movement of multiple targets.
+- Batch planning uses one scene snapshot and fixed-point dependency resolution: moving participants may vacate space for one another, while a participant that cannot move becomes a solid obstruction for the remaining plans.
+- Batch Push uses strict all-token collision semantics regardless of disposition, preserves wall/path validation, and retains the existing farthest-legal partial-stop behavior.
+- Legal targets are committed through one `Scene.moveTokens()` operation so their animations begin together. Any incomplete member triggers no-cost administrative rollback of the committed group.
+- Batch transactions remain `traverse` / `forced` / `none`, preserving real path geometry without consuming movement from `TokenDocument.movementHistory`.
+- Added deterministic coverage for one-operation multi-target commits and strict nonhostile-token blocking. The complete repository suite is **139/139 PASS**.
+
+## 0.4.1.21 — Grapple orbit and ledger integrity hardening
+
+- Fixed the Rotate Target → Drag movement-ledger failure discovered after v0.4.1.20. Grapple translation now runs a GM-authoritative movement-ledger integrity guard immediately before coordinated voluntary Grapple drag movement, in addition to the existing Grapple-start reconciliation.
+- Strengthened inactive-ledger cleanup for the v0.4.1.20 upgrade boundary. When Foundry is not recording movement, Grapple integrity callers may clear any non-empty native movement history even if its endpoint is already aligned, removing aligned synthetic orbit residue without carrying obsolete movement cost forward. When Foundry is actively recording movement, stale repair still preserves the exact movement already spent.
+- Grapple orbit now spends normal measured movement on the Leader only while Foundry/D&D5e is actively recording that Token's movement history. Outside active movement recording, the Follower still completes its no-cost passenger shell step but AE5E does not create a synthetic Leader movement-spend entry.
+- Replaced speculative mouse-wheel orbit queuing with a strict single-in-flight shell-step lock. Once one Shift/Ctrl-wheel orbit step is accepted, further wheel input for that Grapple relationship is ignored until the GM-authoritative movement, cost accounting or rollback, and local Follower animation have fully settled. The next fresh wheel input is then planned from live positions.
+- Added orbit diagnostics for `ignoredOrbitInputs`, `grappleOrbitSpendSkips`, and `inputLocked`, and movement diagnostics for `grappleLedgerGuards` / `lastGrappleLedgerGuard`.
+- Preserved v0.4.1.20 rapid Grapple-drag locking, v0.4.1.18 Friendly/Hostile passenger following, v0.4.1.17 2× voluntary drag cost, zero-cost Follower movement, nonhostile endpoint grace rollback, Release/Escape lifecycle behavior, and teleport semantics.
+- Added/updated deterministic regressions for strict aligned inactive-ledger cleanup, pre-drag ledger guarding, out-of-combat orbit no-spend behavior, active-recording orbit spending, and rapid wheel input suppression/unlock. The complete repository suite is **137/137 PASS**.
+- Compendium pack contents and assets are preserved unchanged from the authoritative v0.4.1.20 package. No Unarmed Strike/Grapple Item macro changes are included in this release.
+
+## 0.4.1.20 — Grapple movement hardening
+
+- Added Grapple-start movement-ledger reconciliation. Before a Grapple relationship is persisted, AE5E waits for any active Token movement animation to settle, compares the Leader's authoritative Token position to the endpoint of Foundry/D&D5e `TokenDocument.movementHistory`, and leaves healthy/empty history untouched.
+- If that endpoint is stale while Foundry is actively recording movement, AE5E clears the invalid positional history, re-anchors the ledger at the Leader's actual Token position, and preserves the exact movement already spent as one verified same-position AE5E movement-spend entry. If movement history is not currently being recorded, stale history is cleared without carrying obsolete cost forward.
+- Grapple creation fails closed if a stale ledger cannot be reconciled and verified. AE5E no longer allows a known stale origin to survive into the first linked move where Foundry could misclassify an ordinary walk as teleport-like movement and detach the Grapple. A failed reconciliation attempts to restore the exact pre-check history before returning the error.
+- Added Grapple-only rapid movement serialization (Option A). While a player-originated coordinated Grapple movement is still in flight for a Leader, any additional manual movement input for that same Leader is cancelled silently instead of being queued or sent to the GM with a stale origin. Unrelated Tokens and non-Grapple relationships do not use this local lock.
+- The Grapple leader lock now remains held through the complete GM-authoritative group operation, including Leader/Follower Token animation settlement, movement accounting, and relationship lifecycle work. The next movement input is accepted normally after the authoritative request returns.
+- Hardened the GM relationship movement socket boundary: an unexpected overlapping request now returns a structured `leader-busy` result, and a request whose origin became stale before validation returns `stale-origin`, instead of surfacing the normal timing race as an uncaught Socketlib exception.
+- Added deterministic regressions for active-turn stale-ledger re-anchoring with cost preservation, out-of-turn stale-history clearing, healthy-ledger no-op behavior, Grapple creation reconciliation/fail-closed behavior, Grapple-only rapid-input suppression, and post-completion unlock. The complete repository suite is **135/135 PASS**.
+- The v0.4.1.18 compendiums and assets were preserved unchanged. No Unarmed Strike/Grapple Item macro changes were required. v0.4.1.19 remains withdrawn and is not a release base.
+
+## 0.4.1.18 — Grapple passenger drag constraints
+
+- Fixed player-controlled Grapple dragging where the Leader move reached GM authority but the generated Follower move could fail before any Token update, causing the relationship lifecycle to tear down the Grapple and its temporary Items.
+- Generated relationship Follower/passenger instructions now explicitly bypass the Follower's own movement-cost budget with per-instruction `constrainOptions.ignoreCost = true`. This preserves the established rule that passenger translation is spatially real but costs the Follower no movement, including when the Grappled condition leaves the Follower with Speed 0.
+- Updated Grapple Follower collision preflight for D&D5e 5.3 token blocking. AE5E first isolates walls/environment with `ignoreTokens: true`, then applies its own relationship-aware creature-space checks before allowing the generated Follower instruction to bypass native token blocking.
+- The simultaneously vacating relationship Leader is excluded from Follower body obstruction, so an opposed-disposition grappled target may legally trail into the grappler's vacated square during the coordinated `Scene.moveTokens()` transaction.
+- Other hostile creatures still hard-block the translated Follower route, and a Follower may not finish in another non-participant creature's occupied space. The Leader's own movement instruction retains native D&D5e wall, token, and movement-cost constraints.
+- Added focused regressions for a Speed-0/opposed-disposition Grapple passenger and for a genuine third-party hostile obstruction. The complete repository suite is **127/127 PASS**.
+- The Unarmed Strike/Grapple Item macros, compendiums, and assets were not changed, regenerated, migrated, or overwritten in this release.
+
+## 0.4.1.17 — Grapple movement cost accounting
+
+- Added a reusable relationship movement-cost policy and assigned the `grapple` policy automatically to real `GRAPPLE` relationships and existing grapple-follower fixtures. Existing non-grapple relationships default to `none`.
+- Voluntary positional movement that carries one or more grapple followers now costs the leader **2× the native Foundry/D&D5e movement cost**. AE5E applies the surcharge through temporary hidden final-cost modifier slots, so the multiplier wraps the movement cost Foundry actually measured rather than substituting a flat distance value. Multiple grapple followers do not stack additional multipliers.
+- Grapple follower/passenger translation remains no-cost to the follower. Forced movement, teleportation, administrative/no-resource movement, and other non-voluntary movement do not receive the grapple drag surcharge.
+- Orbital grapple rotation now spends **normal movement** on the grappler using AE5E's existing GM-authoritative non-positional movement ledger. The charge is the follower's measured shell-step travel distance while the follower's generated positional move remains no-cost.
+- Orbit movement spending is rollback-safe. If the follower move fails before completion, or AE5E later reverses the orbit after the nonhostile endpoint grace period, the exact synthetic movement-spend receipt is refunded.
+- Added grapple movement-cost diagnostics to relationship movement/rotation stats and exported `RELATIONSHIP_MOVEMENT_COST_POLICIES` through `ae5e.constants`.
+- Added focused regressions for the 2× drag modifier, forced/teleport/no-resource exclusions, normal-cost orbit spending, follower no-cost accounting, and grace-period spend rollback. The complete repository suite is **125/125 PASS**.
+- No compendium or asset contents were changed, regenerated, migrated, or overwritten in this release.
+
+## 0.4.1.16 — Relationship lifecycle grants
+
+- Added opt-in relationship lifecycle ownership without changing legacy `sourceUuid` semantics. A relationship can now explicitly bind its `sourceUuid` to an Active Effect using `lifecycle.sourceEffect`; ordinary relationships that use `sourceUuid` for Tokens, Items, or other provenance remain non-owning.
+- Added bidirectional relationship ↔ source-effect cleanup. With source-effect lifecycle enabled, deleting the linked Active Effect removes the persisted relationship, while every normal AE5E relationship-removal path deletes the linked source effect. This includes direct Release-style removal, teleport detach, break-distance detach, collision/detachment flows, and token cleanup because they converge on the relationship service's centralized removal path.
+- Added generic relationship-owned participant Item grants through `lifecycle.participantItemGrants`. Each grant clones an Item template onto either the relationship `leader` or `follower`, persists the granted Item UUID with the relationship, and stamps the clone with `flags.action-effects-5e.relationshipGrant` including the relationship id, role, participant, leader/follower UUIDs, source-effect UUID, and template UUID.
+- Relationship-owned Item grants are deleted whenever the owning relationship ends. Grant creation is transactional with relationship persistence: if relationship persistence fails, newly cloned grant Items are rolled back.
+- Preserved the existing GM-authoritative Socketlib removal route. A player who owns the relationship leader can invoke `ae5e.relationships.remove(id)` (for example from a temporary `Release Grapple` Item), while privileged relationship/effect/grant cleanup executes on the GM.
+- Added startup reconciliation for lifecycle relationships whose required source Active Effect disappeared while AE5E was offline; those stale relationships are removed through the same centralized cleanup path.
+- Added `ae5e.relationships.getGrantConfig(item)`, `getLifecycleStats()`, exported lifecycle constants, and the live Foundry acceptance entry point `ae5e.tests.runRelationshipLifecycleGrantTest()`.
+- Added five focused lifecycle regressions covering relationship-owned leader grants, relationship→effect cleanup, effect→relationship cleanup, legacy `sourceUuid` compatibility, source-effect validation, and player→GM removal routing. The complete repository suite is **121/121 PASS**.
+- No compendium or asset contents were changed, regenerated, migrated, or overwritten in this release.
+
+## 0.4.1.15 — Non-positional movement history write-gate fix
+
+- Fixed the live Foundry failure discovered by the v0.4.1.14 acceptance test. Foundry v14 deliberately removes `_movementHistory` from ordinary Token updates inside `TokenDocument#preUpdateMovement`, so v0.4.1.14's spend write was silently discarded before verification and no receipt could be committed.
+- Updated AE5E's centralized non-positional movement bridge to use Foundry's own explicit movement-history write gate: history-only updates now carry `isUndo: true`, `diff: false`, and `animate: false`, matching the gate used by Foundry's native `revertRecordedMovement()` implementation while leaving Token position untouched. Item/Activity macros still never write `_movementHistory` directly.
+- Applied the same protected history-write path to spend rollback, verification-failure cleanup, and the live acceptance test's fail-safe restoration.
+- Strengthened the Node fixture to reproduce Foundry's direct-history-write protection: ordinary `_movementHistory` updates are now stripped unless the explicit undo gate is present. This converts the exact v0.4.1.14 live failure into a deterministic regression instead of allowing a mock-only false positive.
+- The focused movement-spend suite is now **6/6 PASS** and the complete repository suite is **116/116 PASS**.
+- No compendium contents were changed, regenerated, migrated, or overwritten in this release.
+
+## 0.4.1.14 — Non-positional movement spending
+
+- Added reusable `ae5e.movement.spend(token, amount, { reason })` infrastructure for rules that consume movement without changing token position, such as standing from Prone. Successful spends return a versioned receipt containing the exact committed movement-history delta.
+- Added `ae5e.movement.rollbackSpend(receipt)`. Rollback removes only the synthetic spend identified by that receipt and preserves later native movement records; repeated rollback is safely idempotent once the receipt is no longer present.
+- Centralized the narrow Foundry v14 compatibility bridge needed to persist a measured same-position cost into the authoritative `TokenDocument.movementHistory` ledger. Item/Activity macros no longer need to read or mutate private movement-history storage themselves. Every spend verifies both the exact requested cost delta and the committed receipt entry before returning; verification failure removes the synthetic entry and throws instead of silently consuming the calling rule effect.
+- Added GM-authoritative Socketlib routing for spend and rollback. Player calls send only the Token UUID, numeric amount, reason, user id, and plain receipt data; the GM re-resolves the live Token and verifies ownership before changing the movement ledger.
+- Added per-token serialization so overlapping AE5E spend/rollback requests cannot overwrite one another, plus spend diagnostics at `ae5e.movement.getSpendStats()`.
+- Added `ae5e.tests.runNonPositionalMovementSpendTest()` for live Foundry acceptance. It verifies the socket surface, exact 15-foot ledger delta, receipt persistence, zero positional movement, successful rollback, and exact history restoration.
+- Added five deterministic Node regressions for exact spend/rollback behavior, preservation of later movement, player-to-GM routing, ownership rejection, and idempotent rollback. The repository development suite is **115/115 PASS**.
+- No compendium contents were changed, regenerated, migrated, or overwritten in this release.
+
+## 0.4.1.13 — Remote choice prompt infrastructure
+
+- Added generic `ae5e.prompts.choose()` infrastructure for small controller-owned decisions such as a Shove defender choosing Strength or Dexterity. Callers provide Actor/token context plus plain choice descriptors; the API returns only the selected choice id or `null`.
+- Added centralized controller resolution. AE5E prefers an active non-GM owner of the target Actor, falls back to the primary active GM when no player owner is online, and can reroute a remote prompt to an active GM if the selected player disconnects while the prompt is open.
+- Added the Socketlib handler `prompts.choose`. Live Actor, Token, Workflow, or other document objects are never transported through Socketlib; only UUIDs and JSON-serializable prompt data cross the boundary.
+- Integrated the existing semantic `responder` selection-indicator role so the target token carries the amber `#ff9f1c` indicator for the full DialogV2 lifetime with guaranteed cleanup.
+- Routed the existing selection-indicator Sequencer notification sound through Foundry's `interface` audio channel via `.audioChannel("interface")`.
+- Added `ae5e.prompts.resolveController()`, `validateChoiceRequest()`, and `getStats()` diagnostics, plus Foundry foundation/interactive test entry points.
+- Added four focused Node regressions covering request validation, active-player-owner routing, offline-owner GM fallback, socket-safe result transport, responder indicator ownership, and mid-prompt disconnect rerouting. The repository development suite is **110/110 PASS**.
+- No compendium contents were changed, regenerated, migrated, or overwritten in this release.
+
+## 0.4.1.12 — Transient Automated Animations workflow ownership
+
+- Retained AE5E's existing Automated Animations 7.0.22+ arbitration integration: synchronous ownership still sets `clonedData.stopWorkflow` immediately, while ownership requiring asynchronous resolution continues to use AA's supported `clonedData.deferrals` seam.
+- Added transient, workflow-scoped animation ownership for one-shot Item/Activity execution. Item macros can now suppress AA for a specific Activity without writing persistent Item or Active Effect flags.
+- Added `ae5e.animationOwnership.withAutomatedAnimationsSuppressed(scope, callback)` as the preferred scoped API, plus lower-level claim/release helpers and active-claim diagnostics. Claims are always released by the scoped helper in `finally`, including when the wrapped Activity throws or rejects.
+- Transient matching is Activity-specific when an Activity is supplied. Stable Item and Activity UUID/ID identity is used so sibling Activities on the same Item (for example Attack, Shove, and Grapple) are not broadly suppressed.
+- Extended AA workflow-context handling so Item/Activity identity can be resolved from the cloned workflow payload or AA's secondary animation context. AA diagnostics now annotate transient claim id/reason without mutating the source Item/Activity.
 - Persistent `flags.action-effects-5e.animation.automatedAnimations = "suppress"`, origin-chain inheritance, same-Actor status ownership, and child-policy stamping remain unchanged for persistent effects such as Entangled.
 - No new Socketlib path is required. Transient claims are client-local runtime state surrounding the initiating Activity execution and perform no privileged document updates.
 - Added focused regression coverage for Activity isolation, non-persistence, cleanup on success/failure, AA adapter suppression, and secondary-context identity matching. The repository development suite is **106/106 PASS**.
@@ -1411,4 +1873,3 @@ Total output lines: 1868
 - Made ongoing granted-Item cleanup idempotent against concurrent/socketed deletion races.
 - Added a deterministic live mandatory-save success test using a temporary DC -100 fixture so CAT/D&D5e/Midi must return the real success branch.
 - Added assertions for live workflow DC propagation, parent ActiveEffect removal, and child granted-Item cleanup on success.
-

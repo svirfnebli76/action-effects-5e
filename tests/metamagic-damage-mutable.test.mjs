@@ -211,6 +211,29 @@ test("damage-presented broker rerolls only selected dice and preserves discarded
   assert.equal(f.pool.system.uses.value, 3);
 });
 
+test("damage-presented offers preserve Item-owned structured dice previews for the broker", async () => {
+  const preview = {
+    label: "Rolled damage:",
+    dice: [
+      { faces: 10, value: 8, color: "#e65c34", tooltip: "Fire d10: 8" },
+      { faces: 6, value: 6, color: "#79cfff", tooltip: "Cold d6: 6" }
+    ]
+  };
+  const script = rerollScript.replace(
+    "{eligible:true}",
+    JSON.stringify({ eligible: true, dicePreview: preview })
+  );
+  const f = rerollFixture({ script });
+  await f.service.begin(f.workflow);
+
+  const inspection = await f.service.inspectPhaseOffers(
+    f.workflow,
+    CASTING_PHASES.DAMAGE_PRESENTED
+  );
+
+  assert.deepEqual(inspection.offers[0].dicePreview, preview);
+});
+
 test("invalid selected damage die is rejected before payment", async () => {
   const f = rerollFixture({
     script: rerollScript.replace('{rollIndex:1, dieIndex:0, resultIndex:0}', '{rollIndex:1, dieIndex:0, resultIndex:99}')
@@ -381,4 +404,3 @@ test("damage hook fails open for ActivityOverTime workflows without opening the 
     globalThis.Hooks = previous;
   }
 });
-

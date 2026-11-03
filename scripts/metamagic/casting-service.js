@@ -808,6 +808,7 @@ export class MetamagicCastingService {
         eligible,
         affordable,
         description: typeof result?.description === "string" ? result.description : option.declaration.tooltip,
+        dicePreview: result?.dicePreview ?? null,
         disabled: !eligible || !affordable,
         reason,
         reasons,
@@ -1339,4 +1340,3 @@ export class MetamagicCastingService {
     this.#remember(record);
   }
 }
-
