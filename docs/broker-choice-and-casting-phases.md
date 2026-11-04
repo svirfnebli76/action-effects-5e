@@ -11,7 +11,7 @@ Items and family consumers remain responsible for those decisions.
 - `PRE_CAST` / `pre-cast`
 - `POST_TARGETING` / `post-targeting`
 - `SAVES_READY` / `saves-ready` (awaited `midi-qol.preCheckSaves`; no cancellation)
-- `ATTACK_RESOLVED` / `attack-resolved`
+- `ATTACK_RESOLVED` / `attack-resolved` (awaited `midi-qol.hitsChecked`; the original attack roll has been presented and hit targets have been evaluated, but Midi has not displayed the final hit/miss result)
 - `DAMAGE_MUTABLE` / `damage-mutable`
 - `DAMAGE_PRESENTED` / `damage-presented` (original damage dice have been presented; no cancellation)
 
@@ -147,3 +147,41 @@ and a read-only Metamagic phase-offer inspector. It deliberately does not
 activate a late chooser or charge points after native spell consumption.
 Those require a separately validated late-phase transaction contract.
 Careful Spell's item-owned selection and B4 protection remain forthcoming.
+
+## Generic late attack-roll mutation (v0.4.5.60)
+
+An Item-owned option declared for `attack-resolved` may return this application
+after its own offer and selection logic confirms:
+
+```js
+{
+  attackRollMutation: {
+    operation: "reroll-die",
+    dieIndex: 0,
+    resultIndex: 0
+  }
+}
+```
+
+AE5E validates that the indexes identify an evaluated d20 result on the current
+attack Roll. The result may be active or inactive, allowing the Item to choose
+either original d20 when advantage or disadvantage is present. AE5E marks the
+selected result as rerolled history, obtains one replacement through Foundry's
+native `DiceTerm.roll()`, reapplies native die modifiers, recomputes the same
+Roll's total, commits it with Midi's `workflow.setAttackRoll()`, and calls
+`workflow.checkHits()` with reactions and target On Use macros suppressed for
+the reassessment. Only the fresh replacement is sent to Midi's Dice So Nice
+presenter.
+
+The mutation, resource debit, and application remain one transaction. Any
+failure restores the original result objects and flags, total, Midi attack-roll
+state, hit assessment, and late resource debit. Repeated hook delivery for the
+same Roll is deduplicated; a distinct later attack Roll in the same workflow is
+a distinct late event. Once an option has been selected for that casting, the
+existing declaration transaction prevents the same option from being selected
+again.
+
+AE5E does not decide whether an attack is a spell attack, whether it missed,
+which d20 should be selected, how the result is described, or whether the
+option can accompany another selection. Those remain Item-owned offer,
+selection, presentation, declaration-cost, and `selectionCost` decisions.

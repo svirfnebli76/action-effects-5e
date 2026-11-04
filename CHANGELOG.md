@@ -1,3 +1,12 @@
+# v0.4.5.60 - Generic late attack-die rerolls
+
+- Activates Metamagic's generic `attack-resolved` transaction at Midi-QOL's awaited `hitsChecked` boundary, after the original attack roll is visible but before Midi displays the final hit or miss.
+- Adds an Item-driven `attackRollMutation` contract for rerolling one selected evaluated d20 result while preserving the original Roll, DiceTerm, result identity, and reroll history.
+- Reapplies Foundry's native die modifiers so either d20 may be selected under advantage or disadvantage, commits through `workflow.setAttackRoll()`, and asks Midi to reassess hit targets without repeating reactions or target On Use macros.
+- Presents only the fresh replacement through Midi's Dice So Nice bridge, and restores the exact original attack state, hit assessment, and Sorcery Point debit if mutation or presentation fails.
+- Deduplicates the gate per attack Roll rather than per casting, allowing an Item-owned option declined on one attack to participate in a later attack while preventing a used option from being selected twice.
+- Keeps all eligibility, miss detection, wording, dice previews, selection rules, cost, stacking policy, and option identity in Item declarations and CAT macros. No option-specific rules, Items, macros, artwork, assets, or compendium content are included in AE5E.
+
 # v0.4.5.59 - Generic broker dice previews
 
 - Adds an optional, structured `dicePreview` field to generic broker choices so Item-owned offers can show evaluated die results without injecting raw HTML.

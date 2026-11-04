@@ -17,6 +17,7 @@ const workflowFrom = args => args.flatMap(value => [value, value?.workflow, valu
 const isActivityOverTime = workflow => Boolean(workflow?.workflowOptions?.overTimeEffectUuid);
 const LATE_PHASES = new Set([
   CASTING_PHASES.SAVES_READY,
+  CASTING_PHASES.ATTACK_RESOLVED,
   CASTING_PHASES.DAMAGE_MUTABLE,
   CASTING_PHASES.DAMAGE_PRESENTED
 ]);
@@ -37,6 +38,7 @@ export class MetamagicCastingService {
   #hooks = [];
   #latePending = new WeakMap();
   #lateDone = new WeakMap();
+  #attackRollIds = new WeakMap();
   #lateSaveProtection = new WeakMap();
   #damagePresentationActive = new WeakSet();
   #saveDisadvantage;
@@ -65,6 +67,17 @@ export class MetamagicCastingService {
     on("dnd5e.postActivityConsumption", (activity, usage, message) => this.recordConsumption(activity, message));
     on("dnd5e.postUseActivity", activity => this.observeNative(activity));
     on("midi-qol.premades.postPreambleComplete", (...args) => this.commit(workflowFrom(args)));
+    on("midi-qol.hitsChecked", async (...args) => {
+      const workflow = workflowFrom(args);
+      if (isActivityOverTime(workflow)) return true;
+      try {
+        return await this.late(workflow, CASTING_PHASES.ATTACK_RESOLVED);
+      } catch (error) {
+        Logger.warn("Attack-stage Metamagic transaction failed; spell attack resolution continues normally.", error);
+        globalThis.ui?.notifications?.error?.("AE5E: " + (error?.message ?? "Attack-stage Metamagic transaction failed."));
+        return true;
+      }
+    });
     on("midi-qol.preCheckSaves", async (...args) => {
       const workflow = workflowFrom(args);
       try {
@@ -154,21 +167,35 @@ export class MetamagicCastingService {
    */
   async late(workflow, phase = CASTING_PHASES.SAVES_READY) {
     if (!LATE_PHASES.has(phase)) throw new Error("Unsupported late Metamagic phase.");
-    if (!workflow || this.#lateDone.get(workflow)?.has(phase)) return true;
+    if (!workflow) return true;
+    const eventKey = this.#lateEventKey(workflow, phase);
+    if (!eventKey || this.#lateDone.get(workflow)?.has(eventKey)) return true;
     const pendingByPhase = this.#latePending.get(workflow);
-    if (pendingByPhase?.has(phase)) return pendingByPhase.get(phase);
+    if (pendingByPhase?.has(eventKey)) return pendingByPhase.get(eventKey);
     const pending = this.#latePreview(workflow, phase);
     const currentPending = pendingByPhase ?? new Map();
-    currentPending.set(phase, pending);
+    currentPending.set(eventKey, pending);
     this.#latePending.set(workflow, currentPending);
     try { return await pending; }
     finally {
-      currentPending.delete(phase);
+      currentPending.delete(eventKey);
       if (!currentPending.size) this.#latePending.delete(workflow);
       const done = this.#lateDone.get(workflow) ?? new Set();
-      done.add(phase);
+      done.add(eventKey);
       this.#lateDone.set(workflow, done);
     }
+  }
+
+  #lateEventKey(workflow, phase) {
+    if (phase !== CASTING_PHASES.ATTACK_RESOLVED) return phase;
+    const roll = workflow.attackRoll ?? workflow.attackRolls?.at?.(-1) ?? null;
+    if (!roll || (typeof roll !== "object" && typeof roll !== "function")) return null;
+    let id = this.#attackRollIds.get(roll);
+    if (!id) {
+      id = randomId();
+      this.#attackRollIds.set(roll, id);
+    }
+    return `${phase}:${id}`;
   }
 
   async #latePreview(workflow, phase) {
@@ -177,6 +204,7 @@ export class MetamagicCastingService {
     if (record.initiatorUserId !== game.user.id || (workflow.userId && workflow.userId !== game.user.id)) return true;
     const first = await this.inspectPhaseOffers(workflow, phase);
     if (!first?.offers?.length) return true;
+    if (phase === CASTING_PHASES.ATTACK_RESOLVED && !first.offers.some(offer => !offer.disabled)) return true;
     const compiled = this.#declarations.compile(record.actor, this.#context(workflow));
     if (!this.#sameBase(compiled, record)) return true;
     let invoked = 0;
@@ -234,6 +262,22 @@ export class MetamagicCastingService {
       throw new Error("Midi-QOL's damage-roll presentation service is unavailable.");
     }
     await midi.displayDSNForRoll(rolls, "damageRoll", undefined, undefined, workflow.actor);
+    return true;
+  }
+
+  /** Present only unshown attack-die results, normally a fresh reroll result. */
+  async #presentAttackRoll(workflow) {
+    const roll = workflow?.attackRoll ?? workflow?.attackRolls?.at?.(-1) ?? null;
+    if (!roll) throw new Error("No attack roll is available for presentation.");
+    const hasUnpresented = (roll.dice ?? []).some(die => (die?.results ?? [])
+      .some(result => result?.hidden !== true && result?.rerolled !== true));
+    if (!hasUnpresented) return true;
+
+    const midi = globalThis.game?.modules?.get?.("midi-qol")?.api ?? globalThis.MidiQOL;
+    if (typeof midi?.displayDSNForRoll !== "function") {
+      throw new Error("Midi-QOL's attack-roll presentation service is unavailable.");
+    }
+    await midi.displayDSNForRoll(roll, "attackRollD20", undefined, undefined, workflow.actor);
     return true;
   }
 
@@ -300,8 +344,9 @@ export class MetamagicCastingService {
 
     const debit = await this.#debitLate(record, cost);
     const damageRollbacks = [];
+    const attackRollbacks = [];
     try {
-      await this.#applyLateApplications(record, applications, damageRollbacks);
+      await this.#applyLateApplications(record, applications, damageRollbacks, attackRollbacks);
     } catch (error) {
       this.#clearLateSaveProtection(record.workflow, { removeSuperSavers: true });
       // A compatibility utility failure must not prevent the existing SP refund.
@@ -309,6 +354,8 @@ export class MetamagicCastingService {
       try { this.#saveDisadvantage.rollback(record.workflow); }
       catch (failure) { cleanupErrors.push(failure); }
       try { await this.#rollbackDamageRollMutations(record.workflow, damageRollbacks); }
+      catch (failure) { cleanupErrors.push(failure); }
+      try { await this.#rollbackAttackRollMutations(attackRollbacks); }
       catch (failure) { cleanupErrors.push(failure); }
       const refunded = await this.#refundLate(record, debit);
       if (!refunded) {
@@ -354,11 +401,42 @@ export class MetamagicCastingService {
     if (!application || typeof application !== "object" || Array.isArray(application)) {
       throw new Error(option.label + " did not return a declarative late application.");
     }
+    if (application.attackRollMutation) {
+      if (phase !== CASTING_PHASES.ATTACK_RESOLVED) {
+        throw new Error(option.label + " requested an attack-roll mutation outside the attack-resolved phase.");
+      }
+      if (application.damageRollMutation || application.saveDisadvantage || application.saveProtection) {
+        throw new Error(option.label + " combined incompatible late applications.");
+      }
+      const request = application.attackRollMutation;
+      if (!request || typeof request !== "object" || Array.isArray(request)
+        || request.operation !== "reroll-die") {
+        throw new Error(option.label + " returned an unsupported attack-roll mutation.");
+      }
+      if (typeof record.workflow.setAttackRoll !== "function" || typeof record.workflow.checkHits !== "function") {
+        throw new Error("Midi attack-roll commit and hit-reassessment services are unavailable.");
+      }
+      if (!this.#catSpell || typeof this.#catSpell.rerollAttackDiePreservingHistory !== "function"
+        || typeof this.#catSpell.restoreRerolledAttackDie !== "function") {
+        throw new Error("CAT spell attack-die reroll utilities are unavailable.");
+      }
+      const roll = record.workflow.attackRoll ?? record.workflow.attackRolls?.at?.(-1) ?? null;
+      const { dieIndex, resultIndex } = request;
+      const die = roll?.dice?.[dieIndex];
+      const result = die?.results?.[resultIndex];
+      if (![dieIndex, resultIndex].every(value => Number.isSafeInteger(value) && value >= 0)
+        || !roll || typeof roll._evaluateTotal !== "function" || !Array.isArray(roll.dice)
+        || !die || Number(die.faces) !== 20 || typeof die.roll !== "function" || !Array.isArray(die.results)
+        || !result || !Number.isFinite(Number(result.result))) {
+        throw new Error(option.label + " returned an invalid attack-die selection.");
+      }
+      return { attackRollMutation: { operation: "reroll-die", dieIndex, resultIndex } };
+    }
     if (application.damageRollMutation) {
       if (![CASTING_PHASES.DAMAGE_MUTABLE, CASTING_PHASES.DAMAGE_PRESENTED].includes(phase)) {
         throw new Error(option.label + " requested a damage-roll mutation outside a supported damage phase.");
       }
-      if (application.saveDisadvantage || application.saveProtection) {
+      if (application.attackRollMutation || application.saveDisadvantage || application.saveProtection) {
         throw new Error(option.label + " combined incompatible late applications.");
       }
       const request = application.damageRollMutation;
@@ -499,7 +577,7 @@ export class MetamagicCastingService {
       && Number(current?.system?.uses?.value) === debit.beforeAvailable;
   }
 
-  async #applyLateApplications(record, applications, damageRollbacks) {
+  async #applyLateApplications(record, applications, damageRollbacks, attackRollbacks) {
     for (const entry of applications) {
       const request = entry.application.saveProtection;
       if (request) this.#installLateSaveProtection(record.workflow, request.tokenUuids);
@@ -523,6 +601,15 @@ export class MetamagicCastingService {
           }
         }
       }
+      const attackMutation = entry.application.attackRollMutation;
+      if (attackMutation) {
+        const state = await this.#catSpell.rerollAttackDiePreservingHistory(record.workflow, {
+          dieIndex: attackMutation.dieIndex,
+          resultIndex: attackMutation.resultIndex
+        });
+        attackRollbacks.push(state);
+        await this.#presentAttackRoll(record.workflow);
+      }
     }
   }
 
@@ -538,6 +625,12 @@ export class MetamagicCastingService {
       }
     }
     await workflow.setDamageRolls(states[0].rolls);
+  }
+
+  async #rollbackAttackRollMutations(states) {
+    for (const state of [...states].reverse()) {
+      await this.#catSpell.restoreRerolledAttackDie(state);
+    }
   }
 
   #installLateSaveProtection(workflow, tokenUuids) {

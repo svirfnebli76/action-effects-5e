@@ -70,6 +70,8 @@ export class CatSpellAdapter {
     damageRollRetagCalls: 0,
     damageDieRerollCalls: 0,
     damageDieRerollRollbacks: 0,
+    attackDieRerollCalls: 0,
+    attackDieRerollRollbacks: 0,
     appliedDamageUtilityCalls: 0,
     genericUtilityCalls: 0,
     fallbacks: 0,
@@ -512,6 +514,126 @@ export class CatSpellAdapter {
       entry.roll._total = entry.total;
     }
     if (count) this.#stats.damageDieRerollRollbacks += 1;
+  }
+
+  /**
+   * Reroll one result from an evaluated attack-roll d20 in place. This keeps
+   * the original Roll, DiceTerm and result objects for Foundry/Midi history,
+   * reapplies native die modifiers (including keep-high/keep-low), commits the
+   * same Roll through Midi, and asks Midi to reassess hit targets without
+   * repeating reactions or target On Use macros.
+   */
+  async rerollAttackDiePreservingHistory(workflow, { dieIndex, resultIndex } = {}) {
+    if (!workflow) throw new TypeError("rerollAttackDiePreservingHistory requires a Midi workflow.");
+    if (typeof workflow.setAttackRoll !== "function" || typeof workflow.checkHits !== "function") {
+      throw new Error("Midi attack-roll commit and hit-reassessment services are unavailable.");
+    }
+    if (![dieIndex, resultIndex].every(value => Number.isSafeInteger(value) && value >= 0)) {
+      throw new TypeError("rerollAttackDiePreservingHistory requires a selected die result.");
+    }
+
+    const roll = workflow.attackRoll ?? workflow.attackRolls?.at?.(-1) ?? null;
+    const die = roll?.dice?.[dieIndex];
+    const result = die?.results?.[resultIndex];
+    if (!roll || typeof roll._evaluateTotal !== "function" || !Array.isArray(roll.dice)
+      || !die || Number(die.faces) !== 20 || typeof die.roll !== "function" || !Array.isArray(die.results)
+      || !result || !Number.isFinite(Number(result.result))) {
+      throw new Error("The selected attack die is no longer available to reroll.");
+    }
+
+    const state = {
+      workflow,
+      roll,
+      die,
+      total: roll._total,
+      results: die.results.map(entry => ({ reference: entry, values: { ...entry } })),
+      dieIndex,
+      resultIndex
+    };
+
+    try {
+      // Existing results have already been presented. Keeping them hidden lets
+      // Midi/DSN animate only the fresh replacement after this mutation.
+      for (const existing of die.results) existing.hidden = true;
+      result.active = false;
+      result.rerolled = true;
+      const replacement = await die.roll();
+      if (!replacement || !Number.isFinite(Number(replacement.result))) {
+        throw new Error("Foundry did not return a valid replacement attack-die result.");
+      }
+      if (!die.results.includes(replacement)) die.results.push(replacement);
+
+      // Rebuild the candidate set before native kh/kl and other modifiers run.
+      // Rerolled history remains inactive and cannot contribute to the total.
+      for (const candidate of die.results) {
+        if (candidate.rerolled === true) {
+          candidate.active = false;
+          continue;
+        }
+        candidate.active = true;
+        delete candidate.discarded;
+      }
+      if (typeof die._evaluateModifiers === "function") await die._evaluateModifiers();
+      else if (Array.isArray(die.modifiers) && die.modifiers.length) {
+        throw new Error("Foundry's attack-die modifier evaluator is unavailable.");
+      }
+
+      roll._total = roll._evaluateTotal();
+      await workflow.setAttackRoll(roll);
+      await this.#reassessAttackHits(workflow);
+      this.#stats.attackDieRerollCalls += 1;
+      this.#record("rerollAttackDiePreservingHistory", { dieIndex, resultIndex });
+      return state;
+    } catch (error) {
+      this.#restoreAttackDieState(state);
+      let rollbackError = null;
+      try {
+        await workflow.setAttackRoll(roll);
+        await this.#reassessAttackHits(workflow);
+      } catch (failure) {
+        rollbackError = failure;
+      }
+      this.#recordError("rerollAttackDiePreservingHistory", error);
+      if (rollbackError) {
+        throw new Error(`${error.message} Attack-roll restoration also failed: ${rollbackError.message}`);
+      }
+      throw error;
+    }
+  }
+
+  /** Restore and recommit a previously rerolled attack die. */
+  async restoreRerolledAttackDie(state, { count = true } = {}) {
+    if (!state?.workflow || !state?.roll || !state?.die || !Array.isArray(state.results)) {
+      throw new TypeError("A valid attack-die reroll state is required.");
+    }
+    this.#restoreAttackDieState(state);
+    await state.workflow.setAttackRoll(state.roll);
+    await this.#reassessAttackHits(state.workflow);
+    if (count) this.#stats.attackDieRerollRollbacks += 1;
+  }
+
+  #restoreAttackDieState(state) {
+    for (const saved of state.results) {
+      for (const key of Object.keys(saved.reference)) delete saved.reference[key];
+      Object.assign(saved.reference, saved.values);
+    }
+    state.die.results.splice(0, state.die.results.length, ...state.results.map(saved => saved.reference));
+    state.roll._total = state.total;
+  }
+
+  async #reassessAttackHits(workflow) {
+    const hadOptions = Boolean(workflow.workflowOptions);
+    const options = workflow.workflowOptions ??= {};
+    const hadNoReaction = Object.hasOwn(options, "noProvokeReaction");
+    const previousNoReaction = options.noProvokeReaction;
+    options.noProvokeReaction = true;
+    try {
+      await workflow.checkHits({ noTargetOnUseMacro: true });
+    } finally {
+      if (hadNoReaction) options.noProvokeReaction = previousNoReaction;
+      else delete options.noProvokeReaction;
+      if (!hadOptions && !Object.keys(options).length) delete workflow.workflowOptions;
+    }
   }
 
   hasDuplicateDie(...args) { return this.#callRoll("hasDuplicateDie", args); }
