@@ -13,6 +13,7 @@ Items and family consumers remain responsible for those decisions.
 - `SAVES_READY` / `saves-ready` (awaited `midi-qol.preCheckSaves`; no cancellation)
 - `ATTACK_RESOLVED` / `attack-resolved`
 - `DAMAGE_MUTABLE` / `damage-mutable`
+- `DAMAGE_PRESENTED` / `damage-presented` (original damage dice have been presented; no cancellation)
 
 Register a consumer with:
 
@@ -54,6 +55,10 @@ include:
     id,
     label,
     description,
+    dicePreview: {
+      label: "Rolled damage:",
+      dice: [{ faces, value, color, tooltip }]
+    },
     cost,
     costLabel,
     selectionCost,
@@ -107,6 +112,10 @@ overrides are optional; omitted fields retain AE5E defaults. Font sizes are
 numeric pixel values from 8 through 48, font weights are 100-900 in 100-step
 increments, colors are 3- or 6-digit hex values, and opacity values are 0-1.
 Status text remains escaped plain text; this API does not allow arbitrary HTML.
+The optional dice preview is also structured rather than raw HTML. It supports
+one through 100 validated die results, uses Foundry's built-in silhouettes for
+d4/d6/d8/d10/d12/d20, and falls back to a generic circular face for other die
+sizes. The caller owns the preview label, color, and tooltip text.
 
 The chooser projects resource usage locally while checkboxes change. It does not
 write resources. Confirmation is revalidated against the declared generic

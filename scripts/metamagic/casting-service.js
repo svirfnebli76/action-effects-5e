@@ -15,7 +15,11 @@ const itemUpdateMatches = (item, path, expected) => path === "system.properties"
 const workflowFrom = args => args.flatMap(value => [value, value?.workflow, value?.config?.workflow, value?.usage?.workflow])
   .find(value => value?.actor && value?.activity);
 const isActivityOverTime = workflow => Boolean(workflow?.workflowOptions?.overTimeEffectUuid);
-const LATE_PHASES = new Set([CASTING_PHASES.SAVES_READY, CASTING_PHASES.DAMAGE_MUTABLE]);
+const LATE_PHASES = new Set([
+  CASTING_PHASES.SAVES_READY,
+  CASTING_PHASES.DAMAGE_MUTABLE,
+  CASTING_PHASES.DAMAGE_PRESENTED
+]);
 const optionSelectionCost = option => Number.isSafeInteger(option?.declaration?.selectionCost)
   ? option.declaration.selectionCost
   : 1;
@@ -34,6 +38,7 @@ export class MetamagicCastingService {
   #latePending = new WeakMap();
   #lateDone = new WeakMap();
   #lateSaveProtection = new WeakMap();
+  #damagePresentationActive = new WeakSet();
   #saveDisadvantage;
   #catSpell;
 
@@ -76,7 +81,12 @@ export class MetamagicCastingService {
       const workflow = workflowFrom(args);
       if (isActivityOverTime(workflow)) return true;
       try {
-        return await this.late(workflow, CASTING_PHASES.DAMAGE_MUTABLE);
+        await this.late(workflow, CASTING_PHASES.DAMAGE_MUTABLE);
+        const presented = await this.inspectPhaseOffers(workflow, CASTING_PHASES.DAMAGE_PRESENTED);
+        if (!presented?.offers?.length) return true;
+        await this.#presentDamageRolls(workflow);
+        this.#damagePresentationActive.add(workflow);
+        return await this.late(workflow, CASTING_PHASES.DAMAGE_PRESENTED);
       } catch (error) {
         Logger.warn("Damage-stage Metamagic transaction failed; spell damage continues normally.", error);
         globalThis.ui?.notifications?.error?.("AE5E: " + (error?.message ?? "Damage-stage Metamagic transaction failed."));
@@ -203,6 +213,30 @@ export class MetamagicCastingService {
     return true;
   }
 
+  /**
+   * Present evaluated damage before a post-presentation late phase. Midi's
+   * presenter awaits Dice So Nice and marks the shown results as hidden from
+   * later DSN passes. A subsequent in-place reroll adds fresh, unhidden result
+   * objects which this same presenter can animate independently.
+   */
+  async #presentDamageRolls(workflow) {
+    const rolls = Array.isArray(workflow?.damageRolls) && workflow.damageRolls.length
+      ? workflow.damageRolls
+      : workflow?.damageRoll ? [workflow.damageRoll] : [];
+    if (!rolls.length) throw new Error("No damage rolls are available for presentation.");
+
+    const hasUnpresented = rolls.some(roll => (roll?.dice ?? []).some(die =>
+      (die?.results ?? []).some(result => result?.active !== false && result?.hidden !== true)));
+    if (!hasUnpresented) return true;
+
+    const midi = globalThis.game?.modules?.get?.("midi-qol")?.api ?? globalThis.MidiQOL;
+    if (typeof midi?.displayDSNForRoll !== "function") {
+      throw new Error("Midi-QOL's damage-roll presentation service is unavailable.");
+    }
+    await midi.displayDSNForRoll(rolls, "damageRoll", undefined, undefined, workflow.actor);
+    return true;
+  }
+
   async #chooseLate(record, chooser, phase) {
     const workflow = record.workflow;
     const original = await this.inspectPhaseOffers(workflow, phase);
@@ -321,8 +355,8 @@ export class MetamagicCastingService {
       throw new Error(option.label + " did not return a declarative late application.");
     }
     if (application.damageRollMutation) {
-      if (phase !== CASTING_PHASES.DAMAGE_MUTABLE) {
-        throw new Error(option.label + " requested a damage-roll mutation outside the damage-mutable phase.");
+      if (![CASTING_PHASES.DAMAGE_MUTABLE, CASTING_PHASES.DAMAGE_PRESENTED].includes(phase)) {
+        throw new Error(option.label + " requested a damage-roll mutation outside a supported damage phase.");
       }
       if (application.saveDisadvantage || application.saveProtection) {
         throw new Error(option.label + " combined incompatible late applications.");
@@ -331,6 +365,13 @@ export class MetamagicCastingService {
       if (!request || typeof request !== "object" || Array.isArray(request)
         || !["retag", "reroll-dice"].includes(request.operation)) {
         throw new Error(option.label + " returned an unsupported damage-roll mutation.");
+      }
+      const requiredPhase = request.operation === "retag"
+        ? CASTING_PHASES.DAMAGE_MUTABLE
+        : CASTING_PHASES.DAMAGE_PRESENTED;
+      if (phase !== requiredPhase) {
+        throw new Error(option.label + " returned a " + request.operation
+          + " mutation during the wrong damage phase.");
       }
       if (typeof record.workflow.setDamageRolls !== "function") {
         throw new Error("Midi workflow.setDamageRolls() is unavailable.");
@@ -386,7 +427,7 @@ export class MetamagicCastingService {
       })) } };
     }
     if (phase !== CASTING_PHASES.SAVES_READY) {
-      throw new Error(option.label + " returned no supported damage-mutable application.");
+      throw new Error(option.label + " returned no supported damage-phase application.");
     }
     if (application.saveDisadvantage && !application.saveProtection) {
       return {
@@ -477,6 +518,9 @@ export class MetamagicCastingService {
           const state = await this.#catSpell.rerollDamageDicePreservingHistory(record.workflow,
             { dice: mutation.dice });
           damageRollbacks.push({ operation: "reroll-dice", ...state });
+          if (this.#damagePresentationActive.has(record.workflow)) {
+            await this.#presentDamageRolls(record.workflow);
+          }
         }
       }
     }
@@ -764,6 +808,7 @@ export class MetamagicCastingService {
         eligible,
         affordable,
         description: typeof result?.description === "string" ? result.description : option.declaration.tooltip,
+        dicePreview: result?.dicePreview ?? null,
         disabled: !eligible || !affordable,
         reason,
         reasons,

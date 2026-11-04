@@ -50,6 +50,13 @@ test("generic broker request validates structured choice/status/resource data", 
       id: "one",
       label: "Option One",
       description: "Item-owned description.",
+      dicePreview: {
+        label: "Rolled damage:",
+        dice: [
+          { faces: 10, value: 8, color: "#e65c34", tooltip: "Fire d10: 8" },
+          { faces: 10, value: 3, color: "#e65c34", tooltip: "Fire d10: 3" }
+        ]
+      },
       cost: 1,
       costLabel: "1 Resource",
       selectionCost: 1,
@@ -61,6 +68,46 @@ test("generic broker request validates structured choice/status/resource data", 
   assert.equal(service.validateRequest({ ...request, closeOutcome: "cancel" }).reason, "invalid-close-outcome");
   assert.equal(service.validateRequest({ ...request, choices: [...request.choices, request.choices[0]] }).reason, "duplicate-choice-id");
   assert.equal(service.validateRequest({ ...request, resource: { current: 8, max: 7, summary: "bad" } }).reason, "invalid-resource");
+  assert.equal(service.validateRequest({
+    ...request,
+    choices: [{ ...request.choices[0], dicePreview: { label: "Rolled damage:", dice: [] } }]
+  }).reason, "invalid-dice-preview-dice");
+  assert.equal(service.validateRequest({
+    ...request,
+    choices: [{
+      ...request.choices[0],
+      dicePreview: {
+        label: "Rolled damage:",
+        dice: [{ faces: 10, value: 11, color: "#e65c34", tooltip: "Invalid" }]
+      }
+    }]
+  }).reason, "invalid-dice-preview-value");
+});
+
+test("broker forwards a normalized, structured dice preview without accepting raw HTML", async () => {
+  const { service, socket } = setup({ outcome: "decline", selectedIds: [] });
+  const dicePreview = {
+    label: "Rolled damage:",
+    dice: [
+      { faces: 6, value: 4, color: "#79cfff", tooltip: "Cold d6: 4" },
+      { faces: 10, value: 8, color: "#e65c34", tooltip: "Fire d10: 8" }
+    ]
+  };
+
+  await service.choose({
+    title: "Feature Broker",
+    choices: [{ id: "one", label: "Option One", dicePreview }]
+  });
+
+  assert.deepEqual(socket.calls[0].payload.choices[0].dicePreview, dicePreview);
+  assert.equal(service.validateRequest({
+    title: "Feature Broker",
+    choices: [{
+      id: "one",
+      label: "Option One",
+      dicePreview: { ...dicePreview, html: "<img onerror=alert(1)>" }
+    }]
+  }).reason, "invalid-dice-preview-field");
 });
 
 test("generic broker returns explicit confirm/decline/abort outcomes without feature wording", async () => {
