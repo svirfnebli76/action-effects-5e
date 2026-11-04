@@ -167,8 +167,9 @@ AE5E validates that the indexes identify an evaluated d20 result on the current
 attack Roll. The result may be active or inactive, allowing the Item to choose
 either original d20 when advantage or disadvantage is present. AE5E marks the
 selected result as rerolled history, obtains one replacement through Foundry's
-native `DiceTerm.roll()`, reapplies native die modifiers, recomputes the same
-Roll's total, commits it with Midi's `workflow.setAttackRoll()`, and calls
+native `DiceTerm.roll()`, reapplies native die modifiers or D&D5e's D20Roll
+`advantageMode`, recomputes the same Roll's total, commits it with Midi's
+`workflow.setAttackRoll()`, and calls
 `workflow.checkHits()` with reactions and target On Use macros suppressed for
 the reassessment. Only the fresh replacement is sent to Midi's Dice So Nice
 presenter.

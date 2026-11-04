@@ -48,7 +48,7 @@ const optionScript = [
   '});'
 ].join("\n");
 
-function fakeDie(values, replacements, { keep = null, selected = 0 } = {}) {
+function fakeDie(values, replacements, { keep = null, selected = 0, advantageMode = null } = {}) {
   const results = values.map((result, index) => ({
     result,
     active: keep ? index === selected : true,
@@ -57,6 +57,7 @@ function fakeDie(values, replacements, { keep = null, selected = 0 } = {}) {
   }));
   return {
     faces: 20,
+    options: advantageMode === null ? {} : { advantageMode },
     modifiers: keep ? [keep] : [],
     results,
     replacements: [...replacements],
@@ -101,6 +102,7 @@ function attackFixture({
   values = [7],
   replacements = [12],
   keep = null,
+  advantageMode = null,
   selected = 0,
   resultIndex = 0,
   broker = brokerScript,
@@ -112,7 +114,7 @@ function attackFixture({
   const option = f.add("attack", [attackDeclaration]);
   f.install(option, "Attack Reroll Probe", "option", optionScript.replace("resultIndex:0", `resultIndex:${resultIndex}`));
   f.setChooser(async () => null);
-  const die = fakeDie(values, replacements, { keep, selected });
+  const die = fakeDie(values, replacements, { keep, selected, advantageMode });
   const roll = fakeRoll(die);
   const target = { uuid: "Scene.scene.Token.target", actor: { uuid: "Actor.target" } };
   f.workflow.targets = new Set([target]);
@@ -202,6 +204,78 @@ test("advantage or disadvantage may reroll an inactive d20 and reapplies native 
     assert.equal(f.die.results[0].active, false);
     assert.equal(f.die.results[2].active, true);
     assert.equal(f.roll.total, 27);
+  } finally {
+    globalThis.MidiQOL = previousMidiQOL;
+  }
+});
+
+test("D&D5e disadvantage keeps only the lower candidate after an attack-die reroll", async () => {
+  const previousMidiQOL = globalThis.MidiQOL;
+  try {
+    globalThis.MidiQOL = {
+      async displayDSNForRoll(roll) {
+        for (const die of roll.dice) for (const result of die.results) result.hidden = true;
+      }
+    };
+    const f = attackFixture({
+      values: [20, 5],
+      replacements: [9],
+      advantageMode: -1,
+      selected: 1,
+      resultIndex: 1
+    });
+    f.die.results[0].active = false;
+    f.die.results[0].discarded = true;
+    f.die.results[1].active = true;
+    delete f.die.results[1].discarded;
+    f.roll._total = 13;
+    f.workflow.attackTotal = 13;
+    await f.service.begin(f.workflow);
+
+    await f.service.late(f.workflow, CASTING_PHASES.ATTACK_RESOLVED);
+
+    assert.deepEqual(f.die.results.map(result => result.result), [20, 5, 9]);
+    assert.deepEqual(f.die.results.map(result => result.active), [false, false, true]);
+    assert.equal(f.die.results[0].discarded, true);
+    assert.equal(f.die.results[1].rerolled, true);
+    assert.equal(f.roll.total, 17);
+    assert.equal(f.workflow.attackTotal, 17);
+  } finally {
+    globalThis.MidiQOL = previousMidiQOL;
+  }
+});
+
+test("D&D5e advantage keeps only the higher candidate after an attack-die reroll", async () => {
+  const previousMidiQOL = globalThis.MidiQOL;
+  try {
+    globalThis.MidiQOL = {
+      async displayDSNForRoll(roll) {
+        for (const die of roll.dice) for (const result of die.results) result.hidden = true;
+      }
+    };
+    const f = attackFixture({
+      values: [17, 4],
+      replacements: [10],
+      advantageMode: 1,
+      selected: 0,
+      resultIndex: 0
+    });
+    f.die.results[0].active = true;
+    delete f.die.results[0].discarded;
+    f.die.results[1].active = false;
+    f.die.results[1].discarded = true;
+    f.roll._total = 25;
+    f.workflow.attackTotal = 25;
+    await f.service.begin(f.workflow);
+
+    await f.service.late(f.workflow, CASTING_PHASES.ATTACK_RESOLVED);
+
+    assert.deepEqual(f.die.results.map(result => result.result), [17, 4, 10]);
+    assert.deepEqual(f.die.results.map(result => result.active), [false, false, true]);
+    assert.equal(f.die.results[0].rerolled, true);
+    assert.equal(f.die.results[1].discarded, true);
+    assert.equal(f.roll.total, 18);
+    assert.equal(f.workflow.attackTotal, 18);
   } finally {
     globalThis.MidiQOL = previousMidiQOL;
   }

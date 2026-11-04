@@ -563,8 +563,9 @@ export class CatSpellAdapter {
       }
       if (!die.results.includes(replacement)) die.results.push(replacement);
 
-      // Rebuild the candidate set before native kh/kl and other modifiers run.
-      // Rerolled history remains inactive and cannot contribute to the total.
+      // Rebuild the candidate set before advantage/disadvantage and other
+      // modifiers run. Rerolled history remains inactive and cannot
+      // contribute to the total.
       for (const candidate of die.results) {
         if (candidate.rerolled === true) {
           candidate.active = false;
@@ -573,7 +574,28 @@ export class CatSpellAdapter {
         candidate.active = true;
         delete candidate.discarded;
       }
-      if (typeof die._evaluateModifiers === "function") await die._evaluateModifiers();
+
+      // D&D5e's D20Roll represents advantage/disadvantage with an
+      // advantageMode option (and formulas such as 2d20dis), rather than a
+      // native Foundry kh/kl modifier. Re-evaluating generic modifiers alone
+      // therefore leaves both d20 candidates active and adds them together.
+      // Select exactly one candidate using D&D5e's mode when it is present.
+      const rawAdvantageMode = die.options?.advantageMode ?? roll.options?.advantageMode;
+      const advantageMode = Number(rawAdvantageMode);
+      if (Number.isFinite(advantageMode) && advantageMode !== 0) {
+        const candidates = die.results.filter(candidate => candidate.rerolled !== true);
+        if (!candidates.length) throw new Error("The attack roll has no remaining d20 candidate.");
+        const chosen = candidates.reduce((best, candidate) => {
+          if (!best) return candidate;
+          if (advantageMode > 0) return Number(candidate.result) > Number(best.result) ? candidate : best;
+          return Number(candidate.result) < Number(best.result) ? candidate : best;
+        }, null);
+        for (const candidate of candidates) {
+          candidate.active = candidate === chosen;
+          if (candidate === chosen) delete candidate.discarded;
+          else candidate.discarded = true;
+        }
+      } else if (typeof die._evaluateModifiers === "function") await die._evaluateModifiers();
       else if (Array.isArray(die.modifiers) && die.modifiers.length) {
         throw new Error("Foundry's attack-die modifier evaluator is unavailable.");
       }
