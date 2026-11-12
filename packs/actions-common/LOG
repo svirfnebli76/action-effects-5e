@@ -1,3 +1,7 @@
-2026/11/02-21:43:22.316 73ec Recovering log #361
-2026/11/02-21:43:22.318 73ec Delete type=0 #361
-2026/11/02-21:43:22.318 73ec Delete type=3 #360
+2026/11/10-20:40:30.383 3b3c Recovering log #371
+2026/11/10-20:40:30.386 3b3c Delete type=0 #371
+2026/11/10-20:40:30.386 3b3c Delete type=3 #370
+2026/11/12-08:59:19.756 a448 Level-0 table #375: started
+2026/11/12-08:59:19.756 a448 Level-0 table #375: 0 bytes OK
+2026/11/12-08:59:19.757 a448 Delete type=0 #373
+2026/11/12-08:59:19.758 a448 Manual compaction at level-0 from '!items!ppGrayHuPUJMowO4' @ 72057594037927935 : 1 .. '!items.effects!ppGrayHuPUJMowO4.w7fuXpJWxanwMtM0' @ 0 : 0; will stop at (end)
