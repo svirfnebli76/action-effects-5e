@@ -565,7 +565,7 @@ test("relationship service persists and reindexes leader/follower relationships"
   assert.equal(relationship.alliedEndpointPolicy, RELATIONSHIP_ALLIED_ENDPOINT_POLICIES.GRACE);
   assert.equal(relationship.alliedEndpointGraceMs, RELATIONSHIP_ALLIED_ENDPOINT_GRACE_MS);
   assert.equal(scene.getFlag("action-effects-5e", "relationships").length, 1);
-  assert.equal(socket.handlers.size, 4, "RelationshipService should register create/remove/updateGeometry/cleanup handlers.");
+  assert.equal(socket.handlers.size, 5, "RelationshipService should register create/remove/updateGeometry/cleanup/notification handlers.");
 
   const updated = await service.updateGeometry(relationship.id, { coordinationDistance: 10, breakDistance: 15 });
   assert.equal(updated.coordinationDistance, 10);

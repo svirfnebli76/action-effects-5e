@@ -26,6 +26,9 @@ import { RelationshipMovementService } from "./relationships/relationship-moveme
 import { RelationshipRotationService } from "./relationships/relationship-rotation-service.js";
 import { RelationshipLinkObstructionService } from "./relationships/relationship-link-obstruction-service.js";
 import { RelativeTokenRelationshipService } from "./relationships/relative-token-relationship-service.js";
+import { RelationshipDistanceProviderService } from "./relationships/relationship-distance-provider-service.js";
+import { RelationshipCoverProviderService } from "./relationships/relationship-cover-provider-service.js";
+import { RelationshipConstraintService } from "./relationships/relationship-constraint-service.js";
 import { DisplacementDirectionService } from "./displacement/displacement-direction-service.js";
 import { MovementObstructionService } from "./displacement/movement-obstruction-service.js";
 import { DisplacementPlanner } from "./displacement/displacement-planner.js";
@@ -216,7 +219,7 @@ const spellModifiers = new SpellModifierEngine({
   authority: reactionAuthority
 });
 const spellModifierEvents = new SpellModifierEventAdapter({ engine: spellModifiers, authority: reactionAuthority });
-const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator });
+const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAuthority, catSpell, selectionIndicator, relationships });
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const activityCards = new ActivityCardService();
 const chatCardAdapter = new ChatCardAdapter();
@@ -340,6 +343,8 @@ const displacementBatch = new BatchDisplacementService({
   planner: displacementPlanner
 });
 const relationshipLinkObstructions = new RelationshipLinkObstructionService({ relativeRelationships });
+const relationshipDistanceProviders = new RelationshipDistanceProviderService();
+const relationshipCoverProviders = new RelationshipCoverProviderService();
 const relationshipMovement = new RelationshipMovementService({
   socket,
   relationships,
@@ -356,6 +361,12 @@ const relationshipRotation = new RelationshipRotationService({
   spending: movementSpending,
   relativeRelationships,
   linkObstructions: relationshipLinkObstructions
+});
+const relationshipConstraints = new RelationshipConstraintService({
+  relationships,
+  movement,
+  distanceProviders: relationshipDistanceProviders,
+  coverProviders: relationshipCoverProviders
 });
 const tests = new TestHarness({
   dependencies,
@@ -400,6 +411,9 @@ const tests = new TestHarness({
   relationshipLifecycle,
   relationshipMovement,
   relationshipRotation,
+  relationshipConstraints,
+  relationshipDistanceProviders,
+  relationshipCoverProviders,
   relativeRelationships,
   relationshipLinkObstructions,
   displacement,
@@ -627,6 +641,7 @@ Hooks.once("ready", async () => {
   await relationshipLifecycle.initialize();
   relationshipMovement.initialize();
   relationshipRotation.initialize();
+  relationshipConstraints.initialize();
   movement.initialize();
   persistentAreaEntryInterruption.initialize();
   regionCellAttachments.initialize();

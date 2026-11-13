@@ -1,6 +1,7 @@
 import {
   MODULE_ID,
   ONGOING_ACTION_EFFECT_FLAG,
+  ONGOING_ACTION_ECONOMY_TYPES,
   ONGOING_ACTION_ITEM_FLAG,
   ONGOING_ACTION_TIMINGS,
   ONGOING_ACTION_PROMPT_TIMEOUT_MS,
@@ -42,6 +43,7 @@ export class OngoingEffectService {
   #authority;
   #catSpell;
   #selectionIndicator;
+  #relationships;
   #initialized = false;
   #hooks = [];
   #combatState = new Map();
@@ -70,11 +72,12 @@ export class OngoingEffectService {
     lastEvent: null
   };
 
-  constructor({ socket, authority, catSpell, selectionIndicator }) {
+  constructor({ socket, authority, catSpell, selectionIndicator, relationships = null }) {
     this.#socket = socket;
     this.#authority = authority;
     this.#catSpell = catSpell;
     this.#selectionIndicator = selectionIndicator;
+    this.#relationships = relationships;
 
     socket.register("ongoingEffects.createGrant", (effectUuid) => this.ensureGrant(effectUuid));
     socket.register("ongoingEffects.removeGrant", (effectUuid, grantedItemUuid = null) => this.removeGrant(effectUuid, grantedItemUuid));
@@ -158,6 +161,35 @@ export class OngoingEffectService {
     }
     if (config.suppressPromptWhenUnusable !== undefined && typeof config.suppressPromptWhenUnusable !== "boolean") {
       return { valid: false, reason: "invalid-suppress-prompt-when-unusable" };
+    }
+    if (config.targetTokenUuids !== undefined && (
+      !Array.isArray(config.targetTokenUuids)
+      || config.targetTokenUuids.some((uuid) => typeof uuid !== "string" || !uuid.includes(".Token."))
+    )) {
+      return { valid: false, reason: "invalid-target-token-uuids" };
+    }
+    if (config.indicatorTokenUuid !== undefined && (
+      typeof config.indicatorTokenUuid !== "string" || !config.indicatorTokenUuid.includes(".Token.")
+    )) {
+      return { valid: false, reason: "invalid-indicator-token-uuid" };
+    }
+    if (config.requiredRelationshipId !== undefined && (
+      typeof config.requiredRelationshipId !== "string" || !config.requiredRelationshipId.trim()
+    )) {
+      return { valid: false, reason: "invalid-required-relationship-id" };
+    }
+    if (config.actionEconomy !== undefined) {
+      if (!config.actionEconomy || typeof config.actionEconomy !== "object" || Array.isArray(config.actionEconomy)) {
+        return { valid: false, reason: "invalid-action-economy" };
+      }
+      if (!Object.values(ONGOING_ACTION_ECONOMY_TYPES).includes(config.actionEconomy.type)) {
+        return { valid: false, reason: "invalid-action-economy-type" };
+      }
+      for (const key of ["requireAvailable", "markUsed"]) {
+        if (config.actionEconomy[key] !== undefined && typeof config.actionEconomy[key] !== "boolean") {
+          return { valid: false, reason: `invalid-action-economy-${key}` };
+        }
+      }
     }
     return { valid: true };
   }
@@ -350,7 +382,7 @@ export class OngoingEffectService {
     if (!config) return { prompted: false, reason: "no-config" };
     const actor = effect.parent;
     if (config.suppressPromptWhenUnusable === true) {
-      const usability = this.getActivityUsability(item, config.activityIdentifier ?? null);
+      const usability = this.getActivityUsability(item, config.activityIdentifier ?? null, config);
       if (!usability.usable) {
         this.#stats.promptsSuppressedUnusable += 1;
         this.#record("prompt-suppressed-unusable", {
@@ -375,14 +407,15 @@ export class OngoingEffectService {
       timeoutMs: mandatory ? Number(config.timeoutMs ?? ONGOING_ACTION_PROMPT_TIMEOUT_MS) : 0,
       claimKey,
       promptText: config.promptText ?? null,
-      indicatorRole: config.indicatorRole ?? SELECTION_INDICATOR_ROLES.ORIGINATOR
+      indicatorRole: config.indicatorRole ?? SELECTION_INDICATOR_ROLES.ORIGINATOR,
+      indicatorTokenUuid: config.indicatorTokenUuid ?? null
     };
     this.#stats.prompts += 1;
     this.#record("prompt", { ...payload, userId });
     return this.#socket.executeAsUser("ongoingEffects.prompt", userId, payload);
   }
 
-  getActivityUsability(item, identifier = null) {
+  getActivityUsability(item, identifier = null, config = {}) {
     const activity = this.#resolveActivity(item, identifier);
     if (!activity) return { usable: false, reason: "activity-unavailable", activity: null };
     if (activity.canUse === false) {
@@ -433,6 +466,18 @@ export class OngoingEffectService {
       }
     }
 
+    const actionEconomy = config?.actionEconomy ?? null;
+    if (actionEconomy?.type === ONGOING_ACTION_ECONOMY_TYPES.BONUS_ACTION
+      && actionEconomy.requireAvailable !== false
+      && this.#hasUsedBonusAction(actor)) {
+      return {
+        usable: false,
+        reason: "bonus-action-used",
+        activityUuid: activity.uuid ?? activity.id ?? null,
+        activationType
+      };
+    }
+
     return {
       usable: true,
       reason: "usable",
@@ -444,7 +489,6 @@ export class OngoingEffectService {
 
   async executeGrantedItem(itemOrUuid, effectOrUuid = null, { claimKey = null } = {}) {
     if (claimKey && this.#claims.has(claimKey)) return { executed: false, reason: "already-claimed" };
-    if (claimKey) this.#claims.add(claimKey);
     const item = typeof itemOrUuid === "string" ? await fromUuid(itemOrUuid) : itemOrUuid;
     if (!item) return { executed: false, reason: "item-unavailable" };
     const grant = this.getGrantConfig(item);
@@ -453,21 +497,46 @@ export class OngoingEffectService {
       return { executed: false, reason: "effect-mismatch" };
     }
 
+    let effect = typeof effectOrUuid === "object" ? effectOrUuid : null;
+    if (!effect && effectUuid) {
+      try { effect = await fromUuid(effectUuid); } catch { /* unavailable result below */ }
+    }
+    if (!effect) return { executed: false, reason: "effect-unavailable" };
+    const config = this.getEffectConfig(effect);
+    if (!config) return { executed: false, reason: "effect-config-unavailable" };
+    if (config.requiredRelationshipId) {
+      const relationship = this.#relationships?.get?.(config.requiredRelationshipId) ?? null;
+      if (!relationship) return { executed: false, reason: "required-relationship-unavailable" };
+    }
+
     const activity = this.#resolveActivity(item, grant?.activityIdentifier);
+    const usability = this.getActivityUsability(item, grant?.activityIdentifier, config);
+    if (!usability.usable) return { executed: false, reason: "activity-unusable", usability };
+    const targetResult = await this.#executionTargets(item.actor, config.targetTokenUuids);
+    if (!targetResult.valid) return { executed: false, reason: targetResult.reason };
+    if (claimKey) this.#claims.add(claimKey);
     this.#stats.executions += 1;
     this.#record("execute", { itemUuid: item.uuid, effectUuid, activityUuid: activity?.uuid ?? null });
 
     if (activity && this.#catSpell?.getStatus?.().active && this.#catSpell.getStatus().capabilities?.completeActivityUse) {
-      const targets = this.#selfTargets(item.actor);
-      const workflow = await this.#catSpell.completeActivityUse(activity, targets, {});
+      const workflow = await this.#catSpell.completeActivityUse(activity, targetResult.targets, {});
+      await this.#markActionEconomyUsed(item.actor, config.actionEconomy, workflow);
       return { executed: true, via: "cat", workflow };
     }
     if (typeof activity?.use === "function") {
-      const workflow = await activity.use({});
+      const workflow = await activity.use({
+        targets: targetResult.targets,
+        targetUuids: [...targetResult.targetUuids]
+      });
+      await this.#markActionEconomyUsed(item.actor, config.actionEconomy, workflow);
       return { executed: true, via: "activity", workflow };
     }
     if (typeof item.use === "function") {
-      const workflow = await item.use({});
+      const workflow = await item.use({
+        targets: targetResult.targets,
+        targetUuids: [...targetResult.targetUuids]
+      });
+      await this.#markActionEconomyUsed(item.actor, config.actionEconomy, workflow);
       return { executed: true, via: "item", workflow };
     }
     return { executed: false, reason: "no-execution-method" };
@@ -648,7 +717,8 @@ export class OngoingEffectService {
     const execute = async () => this.#serializeExecutionResult(
       await this.executeGrantedItem(itemUuid, effectUuid, { claimKey })
     );
-    const token = this.#tokenForActorUuid(payload?.actorUuid);
+    const token = await this.#tokenForUuid(payload?.indicatorTokenUuid)
+      ?? this.#tokenForActorUuid(payload?.actorUuid);
     let indicatorId = null;
     try {
       if (token) indicatorId = await this.#selectionIndicator?.acquire?.({
@@ -1001,6 +1071,59 @@ export class OngoingEffectService {
     };
   }
 
+  #midiApi() {
+    return globalThis.MidiQOL ?? globalThis.game?.modules?.get?.("midi-qol")?.api ?? null;
+  }
+
+  #hasUsedBonusAction(actor) {
+    if (!actor) return false;
+    try {
+      const value = this.#midiApi()?.hasUsedBonusAction?.(actor);
+      return value === true;
+    } catch (error) {
+      Logger.debug("Midi Bonus Action availability could not be read; ongoing action remains available.", error);
+      return false;
+    }
+  }
+
+  async #markActionEconomyUsed(actor, actionEconomy, workflow) {
+    if (actionEconomy?.type !== ONGOING_ACTION_ECONOMY_TYPES.BONUS_ACTION || actionEconomy.markUsed === false) return false;
+    if (workflow === false || workflow?.aborted === true || workflow?.cancelled === true) return false;
+    const setUsed = this.#midiApi()?.setBonusActionUsed;
+    if (typeof setUsed !== "function") return false;
+    try {
+      await setUsed(actor);
+      return true;
+    } catch (error) {
+      Logger.warn("Midi could not mark the ongoing action's Bonus Action as used.", error);
+      return false;
+    }
+  }
+
+  async #executionTargets(actor, configuredUuids) {
+    if (!Array.isArray(configuredUuids) || !configuredUuids.length) {
+      const targets = this.#selfTargets(actor);
+      return {
+        valid: true,
+        targets,
+        targetUuids: new Set([...targets].map((target) => target?.document?.uuid ?? target?.uuid).filter(Boolean))
+      };
+    }
+
+    const targets = new Set();
+    const targetUuids = new Set();
+    for (const uuid of configuredUuids) {
+      let document = null;
+      try { document = await fromUuid(uuid); } catch { /* invalid result below */ }
+      if (!document || document.documentName !== "Token") {
+        return { valid: false, reason: "target-token-unavailable", targetUuid: uuid };
+      }
+      targets.add(document.object ?? document);
+      targetUuids.add(document.uuid ?? uuid);
+    }
+    return { valid: true, targets, targetUuids };
+  }
+
   #selfTargets(actor) {
     const token = actor?.getActiveTokens?.(true, true)?.[0] ?? actor?.getActiveTokens?.()?.[0] ?? null;
     return token ? new Set([token]) : new Set();
@@ -1009,6 +1132,16 @@ export class OngoingEffectService {
   #tokenForActorUuid(actorUuid) {
     if (!actorUuid || !canvas?.ready) return null;
     return canvas.tokens?.placeables?.find(token => token.actor?.uuid === actorUuid) ?? null;
+  }
+
+  async #tokenForUuid(tokenUuid) {
+    if (!tokenUuid) return null;
+    try {
+      const document = await fromUuid(tokenUuid);
+      return document?.object ?? null;
+    } catch {
+      return null;
+    }
   }
 
   #escape(value) {

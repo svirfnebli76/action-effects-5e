@@ -305,7 +305,7 @@ export class RelationshipLifecycleService {
       if (documentName(source) !== "ActiveEffect") missingSourceIds.push(relationship.id);
     }
     if (missingSourceIds.length) {
-      await relationships.removeManyAsGM(missingSourceIds);
+      await relationships.removeManyAsGM(missingSourceIds, { silent: true, reason: "source-effect-unavailable" });
       this.#stats.reconciledRelationshipsRemoved += missingSourceIds.length;
     }
     return { removed: missingSourceIds.length };
@@ -325,7 +325,10 @@ export class RelationshipLifecycleService {
     if (!ids.length) return;
 
     try {
-      await relationships.removeManyAsGM(ids);
+      await relationships.removeManyAsGM(ids, {
+        reason: "source-effect-deleted",
+        details: { effectUuid: effect.uuid }
+      });
       this.#stats.sourceEffectBreaks += ids.length;
     } catch (error) {
       this.#stats.cleanupErrors += 1;
