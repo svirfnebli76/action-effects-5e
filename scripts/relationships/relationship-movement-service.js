@@ -13,6 +13,7 @@ import {
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
+import { isPhysicalRelationship } from "./relationship-class.js";
 import { RelationshipMovementPlanner } from "./relationship-movement-planner.js";
 import { RelationshipDistance } from "./relationship-distance.js";
 import { RelationshipMovementCostPolicy } from "./relationship-movement-cost-policy.js";
@@ -105,7 +106,7 @@ export class RelationshipMovementService {
       initialized: this.#initialized,
       indexedTokens: this.#consumerRemovers.size,
       indexedReceiptTokens: this.#receiptConsumerRemovers.size,
-      indexedLeaderReceipts: new Set(this.#relationships.list().map((relationship) => relationship.leaderUuid)).size,
+      indexedLeaderReceipts: new Set(this.#relationships.list().filter(isPhysicalRelationship).map((relationship) => relationship.leaderUuid)).size,
       movementReceipts: this.#movementReceipts.size,
       queuedRequests: this.#queuedMovementIds.size,
       queuedExternalSyncs: this.#queuedSyncIds.size,
@@ -179,11 +180,11 @@ export class RelationshipMovementService {
       const tokenUuids = new Set();
       if (leaderUuid) {
         tokenUuids.add(leaderUuid);
-        for (const relationship of this.#relationships.getForLeader(leaderUuid)) {
+        for (const relationship of this.#relationships.getForLeader(leaderUuid).filter(isPhysicalRelationship)) {
           tokenUuids.add(relationship.followerUuid);
         }
       } else {
-        for (const relationship of this.#relationships.list()) {
+        for (const relationship of this.#relationships.list().filter(isPhysicalRelationship)) {
           tokenUuids.add(relationship.leaderUuid);
           tokenUuids.add(relationship.followerUuid);
         }
@@ -283,7 +284,7 @@ export class RelationshipMovementService {
     const leader = scene?.tokens?.get?.(leaderId);
     if (!(leader instanceof foundry.documents.TokenDocument)) return wrapped(instructions, options);
 
-    const relationships = this.#relationships.getForLeader(leader.uuid);
+    const relationships = this.#relationships.getForLeader(leader.uuid).filter(isPhysicalRelationship);
     if (!relationships.length) return wrapped(instructions, options);
 
     const method = leaderInstruction?.method ?? options?.method ?? "api";
@@ -697,7 +698,7 @@ export class RelationshipMovementService {
 
   #reconcileConsumers() {
     const involved = new Set();
-    for (const relationship of this.#relationships.list()) {
+    for (const relationship of this.#relationships.list().filter(isPhysicalRelationship)) {
       involved.add(relationship.leaderUuid);
       involved.add(relationship.followerUuid);
     }
@@ -798,7 +799,7 @@ export class RelationshipMovementService {
     if (metadata.bypassRelationshipLock === true && game.user?.isGM) return true;
     if (!this.#positionChanged(transaction.origin, transaction.destination)) return true;
 
-    const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid);
+    const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid).filter(isPhysicalRelationship);
     const blockingRelationship = followerRelationships.find((relationship) => relationship.followerCanSelfMove === false);
     if (blockingRelationship
       && transaction.pathType !== PATH_TYPES.TELEPORT
@@ -812,7 +813,7 @@ export class RelationshipMovementService {
       return false;
     }
 
-    const leaderRelationships = this.#relationships.getForLeader(transaction.subjectUuid);
+    const leaderRelationships = this.#relationships.getForLeader(transaction.subjectUuid).filter(isPhysicalRelationship);
     if (!leaderRelationships.length) return true;
 
     // Let API/undo/paste callers finish their own promise. The after phase then
@@ -900,7 +901,7 @@ export class RelationshipMovementService {
 
     const lifecycleKey = transaction.subpathId ?? transaction.movementId;
     const terminalSubpath = RelationshipMovementPlanner.isTerminalSubpathMovement(context?.movement);
-    const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid);
+    const followerRelationships = this.#relationships.getForFollower(transaction.subjectUuid).filter(isPhysicalRelationship);
     if (followerRelationships.length && transaction.pathType === PATH_TYPES.TELEPORT) {
       // A checkpointed teleport (or another module which models teleportation as
       // multiple Foundry movement operations) may produce several after-hooks for
@@ -963,7 +964,7 @@ export class RelationshipMovementService {
       return true;
     }
 
-    if (!this.#relationships.getForLeader(transaction.subjectUuid).length) return true;
+    if (!this.#relationships.getForLeader(transaction.subjectUuid).some(isPhysicalRelationship)) return true;
 
     // Foundry splits an external route at explicit checkpoints. Non-terminal
     // operations can already expose future pending waypoints, but the live leader
@@ -1084,7 +1085,7 @@ export class RelationshipMovementService {
     if (duplicate) return duplicate;
 
     try {
-      const allRelationships = this.#relationships.getForLeader(leader.uuid);
+      const allRelationships = this.#relationships.getForLeader(leader.uuid).filter(isPhysicalRelationship);
       if (!allRelationships.length) {
         return { completed: false, message: "The token relationship no longer exists." };
       }
@@ -1292,7 +1293,7 @@ export class RelationshipMovementService {
     if (duplicate) return duplicate;
 
     try {
-      const relationships = this.#relationships.getForLeader(leader.uuid);
+      const relationships = this.#relationships.getForLeader(leader.uuid).filter(isPhysicalRelationship);
       if (!relationships.length) return { completed: true, results: {}, detachedRelationshipIds: [] };
 
       const isTeleport = normalized.pathType === PATH_TYPES.TELEPORT;
@@ -1489,7 +1490,7 @@ export class RelationshipMovementService {
     }
 
     this.#movementReceipts.delete(request.originalMovementId);
-    const relationships = this.#relationships.getForFollower(follower.uuid);
+    const relationships = this.#relationships.getForFollower(follower.uuid).filter(isPhysicalRelationship);
     const detachedRelationshipIds = relationships.map((relationship) => relationship.id);
     if (detachedRelationshipIds.length) await this.#relationships.removeManyAsGM(detachedRelationshipIds);
 
@@ -1529,8 +1530,8 @@ export class RelationshipMovementService {
 
     const requestedIds = Array.isArray(request.relationshipIds) ? new Set(request.relationshipIds) : null;
     const relationships = [
-      ...this.#relationships.getForLeader(movedToken.uuid),
-      ...this.#relationships.getForFollower(movedToken.uuid)
+      ...this.#relationships.getForLeader(movedToken.uuid).filter(isPhysicalRelationship),
+      ...this.#relationships.getForFollower(movedToken.uuid).filter(isPhysicalRelationship)
     ].filter((relationship, index, entries) => (
       relationship.sceneId === scene.id
       && (!requestedIds || requestedIds.has(relationship.id))

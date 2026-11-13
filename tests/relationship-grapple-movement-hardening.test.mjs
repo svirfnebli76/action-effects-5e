@@ -98,13 +98,14 @@ class FakeMovement {
   }
 }
 
-function makeRelationship({ leader, follower, type = "grapple", attachmentMode = "grappleFollower" }) {
+function makeRelationship({ leader, follower, type = "grapple", attachmentMode = "grappleFollower", relationshipClass = undefined }) {
   return {
     id: "relationship-1",
     leaderUuid: leader.uuid,
     followerUuid: follower.uuid,
     type,
     attachmentMode,
+    relationshipClass,
     followerCanSelfMove: false,
     followRotation: false,
     teleportPolicy: "detach",
@@ -149,11 +150,11 @@ function movementContext({ leader, movementId, destination = { x: 100, y: 0, ele
   };
 }
 
-function fixture({ type = "grapple", attachmentMode = "grappleFollower" } = {}) {
+function fixture({ type = "grapple", attachmentMode = "grappleFollower", relationshipClass = undefined } = {}) {
   const scene = { id: "scene" };
   const leader = new FakeTokenDocument({ id: "leader", scene });
   const follower = new FakeTokenDocument({ id: "follower", scene });
-  const relationship = makeRelationship({ leader, follower, type, attachmentMode });
+  const relationship = makeRelationship({ leader, follower, type, attachmentMode, relationshipClass });
   const relationships = {
     list: () => [relationship],
     getForLeader: (uuid) => uuid === leader.uuid ? [relationship] : [],
@@ -221,5 +222,13 @@ test("non-grapple relationship movement does not engage the Grapple-only local l
   assert.equal(f.socket.moveCalls.length, 1);
   f.socket.resolveNext();
   await waitForTimer();
+  f.service.shutdown();
+});
+
+test("observational relationships never register physical movement consumers", () => {
+  const f = fixture({ type: "tether", attachmentMode: "adjacentFollower", relationshipClass: "observational" });
+  assert.equal(f.movement.handlerFor(f.leader.uuid), null);
+  assert.equal(f.movement.handlerFor(f.follower.uuid), null);
+  assert.equal(f.movement.consumers.size, 0);
   f.service.shutdown();
 });

@@ -17,6 +17,7 @@ import {
 } from "../core/constants.js";
 import { duplicateSafely, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
+import { isPhysicalRelationship } from "./relationship-class.js";
 import { RelationshipOrbitPlanner } from "./relationship-orbit-planner.js";
 import { RelationshipGeometryService } from "./relationship-geometry-service.js";
 import { RelationshipMovementCostPolicy } from "./relationship-movement-cost-policy.js";
@@ -579,13 +580,13 @@ export class RelationshipRotationService {
     if (transaction.metadata?.relationshipOrbit === true && transaction.generatedBy === MODULE_ID) return;
     if (RelationshipOrbitPlanner.positionsEqual(transaction.origin, transaction.destination)) return;
 
-    for (const relationship of this.#relationships.getForLeader(transaction.subjectUuid)) {
+    for (const relationship of this.#relationships.getForLeader(transaction.subjectUuid).filter(isPhysicalRelationship)) {
       if (this.#rotationPolicy(relationship) === RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER) {
         this.#clearPendingNonhostileOverlap(relationship.id, "leader-translated");
         this.#resetRelationship(relationship.id, "leader-translated");
       }
     }
-    for (const relationship of this.#relationships.getForFollower(transaction.subjectUuid)) {
+    for (const relationship of this.#relationships.getForFollower(transaction.subjectUuid).filter(isPhysicalRelationship)) {
       if (this.#rotationPolicy(relationship) === RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER) {
         this.#clearPendingNonhostileOverlap(relationship.id, "follower-translated");
         this.#resetRelationship(relationship.id, "follower-translated");
@@ -1703,7 +1704,7 @@ export class RelationshipRotationService {
   }
 
   #orbitRelationshipsForLeader(leaderUuid) {
-    return this.#relationships.getForLeader(leaderUuid)
+    return this.#relationships.getForLeader(leaderUuid).filter(isPhysicalRelationship)
       .filter((relationship) => this.#rotationPolicy(relationship) === RELATIONSHIP_ROTATION_POLICIES.ORBIT_FOLLOWER);
   }
 

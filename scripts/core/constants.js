@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.5.61";
+export const MODULE_VERSION = "0.4.5.62";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -165,6 +165,9 @@ export const ONGOING_ACTION_PROMPT_TIMEOUT_MS = 10_000;
 export const ONGOING_ACTION_TIMINGS = Object.freeze({
   TURN_START: "turnStart",
   TURN_END: "turnEnd"
+});
+export const ONGOING_ACTION_ECONOMY_TYPES = Object.freeze({
+  BONUS_ACTION: "bonusAction"
 });
 
 export const METAMAGIC_TURN_CASTING_SCHEMA_VERSION = 1;
@@ -339,6 +342,40 @@ export const RELATIONSHIP_TYPES = Object.freeze({
   TETHER: "tether",
   ATTACHED_EFFECT: "attachedEffect",
   TEST: "test"
+});
+
+// Relationship class is an execution boundary, not item-specific rules.
+// Existing persisted records predate this field and are always interpreted as
+// physical so Grapple/Unarmed Strike behavior remains unchanged.
+export const RELATIONSHIP_CLASSES = Object.freeze({
+  PHYSICAL: "physical",
+  OBSERVATIONAL: "observational"
+});
+
+export const RELATIONSHIP_CONSTRAINT_TYPES = Object.freeze({
+  MAXIMUM_DISTANCE: "maximumDistance",
+  COVER: "cover"
+});
+
+export const RELATIONSHIP_CONSTRAINT_STATES = Object.freeze({
+  CLEAR: "clear",
+  BROKEN: "broken",
+  UNKNOWN: "unknown"
+});
+
+export const RELATIONSHIP_DISTANCE_PROVIDERS = Object.freeze({
+  CENTER_3D: "center3d"
+});
+
+export const RELATIONSHIP_COVER_PROVIDERS = Object.freeze({
+  MIDI: "midi",
+  FOUNDRY: "foundry",
+  SIMPLE_COVER: "simplecover5e",
+  LEVELS_AUTO_COVER: "levelsautocover"
+});
+
+export const RELATIONSHIP_COVER_THRESHOLDS = Object.freeze({
+  TOTAL: "total"
 });
 
 export const ATTACHMENT_MODES = Object.freeze({

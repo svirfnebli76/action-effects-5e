@@ -8,6 +8,7 @@ import {
   RELATIONSHIP_COORDINATION_POLICIES,
   RELATIONSHIP_FORCED_LEADER_MOVEMENT_POLICIES,
   RELATIONSHIP_LINK_OBSTRUCTION_POLICIES,
+  RELATIONSHIP_CLASSES,
   RELATIONSHIP_MOVEMENT_COST_POLICIES,
   RELATIONSHIP_ROTATION_POLICIES,
   RELATIONSHIP_TYPES,
@@ -16,6 +17,12 @@ import {
 } from "../core/constants.js";
 import { duplicateSafely, nowIso, randomId } from "../core/utils.js";
 import { Logger } from "../core/logger.js";
+import {
+  isPhysicalRelationship,
+  relationshipClassOf,
+  withRelationshipClassDefault
+} from "./relationship-class.js";
+import { normalizeRelationshipConstraints } from "./relationship-constraint-model.js";
 
 export class RelationshipService {
   #socket;
@@ -73,23 +80,38 @@ export class RelationshipService {
     return relationship ? duplicateSafely(relationship) : null;
   }
 
-  getForLeader(leaderUuid) {
+  getForLeader(leaderUuid, { relationshipClass = null } = {}) {
     return [...(this.#followersByLeader.get(leaderUuid) ?? [])]
       .map((id) => this.get(id))
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((relationship) => !relationshipClass || relationshipClassOf(relationship) === relationshipClass);
   }
 
-  getForFollower(followerUuid) {
+  getForFollower(followerUuid, { relationshipClass = null } = {}) {
     return [...(this.#relationshipsByFollower.get(followerUuid) ?? [])]
       .map((id) => this.get(id))
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((relationship) => !relationshipClass || relationshipClassOf(relationship) === relationshipClass);
   }
 
-  list({ sceneId = null, type = null } = {}) {
+  list({ sceneId = null, type = null, relationshipClass = null } = {}) {
     return [...this.#relationships.values()]
       .filter((relationship) => !sceneId || relationship.sceneId === sceneId)
       .filter((relationship) => !type || relationship.type === type)
+      .filter((relationship) => !relationshipClass || relationshipClassOf(relationship) === relationshipClass)
       .map((relationship) => duplicateSafely(relationship));
+  }
+
+  getPhysicalForLeader(leaderUuid) {
+    return this.getForLeader(leaderUuid, { relationshipClass: RELATIONSHIP_CLASSES.PHYSICAL });
+  }
+
+  getPhysicalForFollower(followerUuid) {
+    return this.getForFollower(followerUuid, { relationshipClass: RELATIONSHIP_CLASSES.PHYSICAL });
+  }
+
+  listPhysical(filter = {}) {
+    return this.list({ ...filter, relationshipClass: RELATIONSHIP_CLASSES.PHYSICAL });
   }
 
   async create(data) {
@@ -154,15 +176,20 @@ export class RelationshipService {
       relationship.leaderUuid === normalized.leaderUuid
       && relationship.followerUuid === normalized.followerUuid
       && relationship.type === normalized.type
+      && relationshipClassOf(relationship) === normalized.relationshipClass
     ));
     if (duplicate) throw new Error(`Relationship '${duplicate.id}' already links these tokens.`);
 
-    const existingFollower = this.getForFollower(normalized.followerUuid);
-    if (existingFollower.length) {
-      throw new Error(`Follower token is already controlled by relationship '${existingFollower[0].id}'.`);
-    }
-    if (this.getForFollower(normalized.leaderUuid).length || this.getForLeader(normalized.followerUuid).length) {
-      throw new Error("Relationship chains and cycles are not supported by the current Action Effects 5E relationship model.");
+    // Exclusivity, chains, and cycles are physical-control rules. Observational
+    // relationships do not control either participant and may overlap freely.
+    if (isPhysicalRelationship(normalized)) {
+      const existingFollower = this.getPhysicalForFollower(normalized.followerUuid);
+      if (existingFollower.length) {
+        throw new Error(`Follower token is already controlled by relationship '${existingFollower[0].id}'.`);
+      }
+      if (this.getPhysicalForFollower(normalized.leaderUuid).length || this.getPhysicalForLeader(normalized.followerUuid).length) {
+        throw new Error("Relationship chains and cycles are not supported by the current Action Effects 5E physical relationship model.");
+      }
     }
 
     if (this.#isGrappleRelationship(normalized)) {
@@ -295,8 +322,10 @@ export class RelationshipService {
   }
 
   #isGrappleRelationship(relationship = {}) {
-    return relationship?.type === RELATIONSHIP_TYPES.GRAPPLE
-      || relationship?.attachmentMode === ATTACHMENT_MODES.GRAPPLE_FOLLOWER;
+    return isPhysicalRelationship(relationship) && (
+      relationship?.type === RELATIONSHIP_TYPES.GRAPPLE
+      || relationship?.attachmentMode === ATTACHMENT_MODES.GRAPPLE_FOLLOWER
+    );
   }
 
   async #reconcileGrappleLeaderLedger({ leaderUuid, requestingUserId }) {
@@ -343,6 +372,14 @@ export class RelationshipService {
     const type = Object.values(RELATIONSHIP_TYPES).includes(data.type)
       ? data.type
       : RELATIONSHIP_TYPES.TEST;
+    if (data.relationshipClass !== undefined && !Object.values(RELATIONSHIP_CLASSES).includes(data.relationshipClass)) {
+      throw new Error(`Relationship class '${data.relationshipClass}' is not supported.`);
+    }
+    const relationshipClass = data.relationshipClass ?? RELATIONSHIP_CLASSES.PHYSICAL;
+    const constraints = normalizeRelationshipConstraints(data.constraints);
+    if (relationshipClass !== RELATIONSHIP_CLASSES.OBSERVATIONAL && constraints.length) {
+      throw new Error("Relationship constraints require relationshipClass 'observational'.");
+    }
     const attachmentMode = Object.values(ATTACHMENT_MODES).includes(data.attachmentMode)
       ? data.attachmentMode
       : ATTACHMENT_MODES.ADJACENT_FOLLOWER;
@@ -376,6 +413,8 @@ export class RelationshipService {
       leaderUuid: leader.uuid,
       followerUuid: follower.uuid,
       type,
+      relationshipClass,
+      constraints,
       attachmentMode,
       followerCanSelfMove: data.followerCanSelfMove ?? false,
       followElevation: data.followElevation ?? true,
@@ -488,7 +527,9 @@ export class RelationshipService {
 
     for (const relationship of this.#getSceneRelationships(scene)) {
       if (!relationship?.id || !relationship.leaderUuid || !relationship.followerUuid) continue;
-      this.#index(Object.freeze(duplicateSafely(relationship)));
+      // Apply the compatibility default in memory only. Persisted legacy
+      // records remain untouched until they are intentionally updated.
+      this.#index(Object.freeze(withRelationshipClassDefault(duplicateSafely(relationship))));
     }
 
     Hooks.callAll(HOOKS.RELATIONSHIPS_REINDEXED, scene.id);

@@ -1,6 +1,14 @@
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
+# v0.4.5.62 - Generic observational relationships and ongoing-action targeting
+
+- Adds an explicit relationship class boundary: every existing/legacy relationship remains `physical`, while new `observational` relationships are nonexclusive and cannot enter movement, rotation, collision, obstruction, or movement-cost handling.
+- Adds reusable, primary-GM observational constraints for center-to-center 3D maximum distance and Total Cover, including full-route movement sampling and re-evaluation after wall, door, Region, Level, token-geometry, and canvas changes.
+- Follows Midi-QOL's live cover-calculator selection on every evaluation. Simple Cover 5e and Levels Auto Cover are queried through their public APIs; unavailable or failed selected providers fall back only to Foundry sight-wall geometry and never to the other installed cover module.
+- Extends the generic ongoing-action service with explicit target and selection-indicator Token UUIDs, live relationship preflight, Midi Bonus Action availability checks, and post-use Bonus Action marking.
+- Preserves relationship-owned Active Effect cleanup, Grapple ledger reconciliation, Unarmed Strike/Grapple physical exclusivity, and all existing ongoing actions. No spell names, Witch Bolt rules, Items, CAT macros, assets, or compendium content are included.
+
 # v0.4.5.61 - D&D5e attack reroll advantage-mode correction
 
 - Corrects generic late d20 rerolls for D&D5e attack Rolls made with advantage or disadvantage. D&D5e stores this state as `advantageMode`, so the replacement is now compared with the other eligible d20 and exactly one result contributes to the recomputed total.
