@@ -4,6 +4,7 @@ import { fixture as declarationsFixture, envelope } from "./declaration-fixtures
 import { MetamagicDeclarationService } from "../../scripts/metamagic/declaration-service.js";
 import { MetamagicCastingService } from "../../scripts/metamagic/casting-service.js";
 import { CatDeclarationMacroAdapter, declarationActorPass } from "../../scripts/integrations/cat-declaration-macro-adapter.js";
+import { SaveProtectionApplicationService } from "../../scripts/save-protection/application-service.js";
 
 export const scope = "action-effects-5e";
 export const copy = value => structuredClone(value);
@@ -139,10 +140,11 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
   } } } };
   const declarations = new MetamagicDeclarationService({ collections });
   const executors = new CatDeclarationMacroAdapter({ catAccessor: () => cat });
+  const saveProtection = new SaveProtectionApplicationService();
   const cards = [];
   const service = new MetamagicCastingService({ declarations, executors,
     cards: { async upsertContribution(subject, contribution) { cards.push(copy(contribution)); return { updated: true }; } },
-    catSpell });
+    catSpell, saveProtection });
   const api = { prompts: { async chooseBroker(request) {
     prompts.push(request);
     const selected = await chooser(request);
@@ -164,7 +166,8 @@ export function setup({ range = { value: 30, units: "ft", override: false }, ava
     service.recordConsumption(activity, { data: { system: { deltas: { item: { [pool.id]: [{ keyPath: "system.uses.spent", delta: amount }] } } } } });
     return amount;
   };
-  return { actor, add, main, option, pool, original, activity, activityClone, workflow, cards, service, declarations, executors, collections, registry,
+  return { actor, add, main, option, pool, original, activity, activityClone, workflow, cards, service,
+    saveProtection, declarations, executors, collections, registry,
     calls, prompts, writes, install, consume, setChooser(fn) { chooser = fn; } };
 }
 

@@ -39,16 +39,17 @@ export class MetamagicCastingService {
   #latePending = new WeakMap();
   #lateDone = new WeakMap();
   #attackRollIds = new WeakMap();
-  #lateSaveProtection = new WeakMap();
   #damagePresentationActive = new WeakSet();
   #saveDisadvantage;
+  #saveProtection;
   #catSpell;
 
-  constructor({ declarations, cards, executors, socket = null, catSpell = null }) {
+  constructor({ declarations, cards, executors, socket = null, catSpell = null, saveProtection = null }) {
     this.#declarations = declarations;
     this.#cards = cards;
     this.#executors = executors;
     this.#saveDisadvantage = new SaveDisadvantageService({ socket });
+    this.#saveProtection = saveProtection;
     this.#catSpell = catSpell;
   }
 
@@ -107,7 +108,6 @@ export class MetamagicCastingService {
       }
     });
     on("midi-qol.premades.postApplyDynamicEffects", (...args) => this.#persistSaveDisadvantage(workflowFrom(args)));
-    on("midi-qol.postCheckSaves", (...args) => this.restoreLateSaveProtection(workflowFrom(args)));
     on("midi-qol.RollComplete", (...args) => this.complete(workflowFrom(args)));
     on("midi-qol.premades.postRollFinished", (...args) => this.complete(workflowFrom(args)));
   }
@@ -345,12 +345,17 @@ export class MetamagicCastingService {
     const debit = await this.#debitLate(record, cost);
     const damageRollbacks = [];
     const attackRollbacks = [];
+    const saveProtectionClaims = [];
     try {
-      await this.#applyLateApplications(record, applications, damageRollbacks, attackRollbacks);
+      await this.#applyLateApplications(record, applications, damageRollbacks, attackRollbacks,
+        saveProtectionClaims);
     } catch (error) {
-      this.#clearLateSaveProtection(record.workflow, { removeSuperSavers: true });
       // A compatibility utility failure must not prevent the existing SP refund.
       const cleanupErrors = [];
+      for (const claim of [...saveProtectionClaims].reverse()) {
+        try { this.#saveProtection.rollback(record.workflow, claim); }
+        catch (failure) { cleanupErrors.push(failure); }
+      }
       try { this.#saveDisadvantage.rollback(record.workflow); }
       catch (failure) { cleanupErrors.push(failure); }
       try { await this.#rollbackDamageRollMutations(record.workflow, damageRollbacks); }
@@ -528,18 +533,12 @@ export class MetamagicCastingService {
     if (saveProtection.automaticSuccess !== true || saveProtection.superSaver !== true) {
       throw new Error(option.label + " requested unsupported save-protection semantics.");
     }
-    const candidates = new Map([...(record.workflow.hitTargets ?? record.workflow.targets ?? [])]
-      .map(token => [token?.document?.uuid ?? token?.uuid, token]).filter(([uuid]) => Boolean(uuid)));
-    if (tokenUuids.some(uuid => !candidates.has(uuid))) {
-      throw new Error(option.label + " attempted to protect a creature outside the finalized affected targets.");
-    }
-    if (typeof record.workflow.checkSculptOrCarefulSpells !== "function") {
-      throw new Error("Midi-QOL save-protection API is unavailable on this workflow.");
-    }
-    const superSavers = record.workflow.superSavers;
-    if (superSavers != null && (typeof superSavers.add !== "function" || typeof superSavers.has !== "function"
-      || typeof superSavers.delete !== "function")) throw new Error("Midi-QOL super-saver collection is incompatible.");
-    return { saveProtection: { tokenUuids: [...tokenUuids], automaticSuccess: true, superSaver: true } };
+    if (!this.#saveProtection) throw new Error("AE5E save-protection service is unavailable.");
+    return {
+      saveProtection: this.#saveProtection.validate(record.workflow, {
+        tokenUuids: [...tokenUuids], automaticSuccess: true, superSaver: true
+      }, { label: option.label })
+    };
   }
 
   async #debitLate(record, amount) {
@@ -577,10 +576,14 @@ export class MetamagicCastingService {
       && Number(current?.system?.uses?.value) === debit.beforeAvailable;
   }
 
-  async #applyLateApplications(record, applications, damageRollbacks, attackRollbacks) {
+  async #applyLateApplications(record, applications, damageRollbacks, attackRollbacks, saveProtectionClaims) {
     for (const entry of applications) {
       const request = entry.application.saveProtection;
-      if (request) this.#installLateSaveProtection(record.workflow, request.tokenUuids);
+      if (request) {
+        saveProtectionClaims.push(this.#saveProtection.install(record.workflow, request, {
+          label: entry.option.label
+        }));
+      }
       if (entry.application.saveDisadvantage) this.#saveDisadvantage.install(record, entry.application.saveDisadvantage);
       const mutation = entry.application.damageRollMutation;
       if (mutation) {
@@ -633,45 +636,8 @@ export class MetamagicCastingService {
     }
   }
 
-  #installLateSaveProtection(workflow, tokenUuids) {
-    let state = this.#lateSaveProtection.get(workflow);
-    if (!state) {
-      const original = workflow.checkSculptOrCarefulSpells;
-      const protectedUuids = new Set();
-      state = { original, protectedUuids, addedSuperSavers: new Set() };
-      workflow.checkSculptOrCarefulSpells = function(target, ...args) {
-        const uuid = target?.document?.uuid ?? target?.uuid;
-        if (uuid && protectedUuids.has(uuid)) return true;
-        return original.call(this, target, ...args);
-      };
-      this.#lateSaveProtection.set(workflow, state);
-    }
-    const candidates = new Map([...(workflow.hitTargets ?? workflow.targets ?? [])]
-      .map(token => [token?.document?.uuid ?? token?.uuid, token]).filter(([uuid]) => Boolean(uuid)));
-    workflow.superSavers ??= new Set();
-    for (const uuid of tokenUuids) {
-      const token = candidates.get(uuid);
-      state.protectedUuids.add(uuid);
-      if (!workflow.superSavers.has(token)) {
-        workflow.superSavers.add(token);
-        state.addedSuperSavers.add(token);
-      }
-    }
-  }
-
   restoreLateSaveProtection(workflow) {
-    this.#clearLateSaveProtection(workflow, { removeSuperSavers: false });
-    return true;
-  }
-
-  #clearLateSaveProtection(workflow, { removeSuperSavers = false } = {}) {
-    const state = this.#lateSaveProtection.get(workflow);
-    if (!state) return;
-    if (workflow?.checkSculptOrCarefulSpells && state.original) workflow.checkSculptOrCarefulSpells = state.original;
-    if (removeSuperSavers && workflow?.superSavers) {
-      for (const token of state.addedSuperSavers) workflow.superSavers.delete(token);
-    }
-    this.#lateSaveProtection.delete(workflow);
+    return this.#saveProtection?.restore(workflow) ?? false;
   }
 
   async #notifyLateConsumption(record, options, debit) {

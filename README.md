@@ -14,6 +14,11 @@ AE5E includes an opt-in, casting-scoped Midi Target Confirmation customization s
 
 Action Effects 5E (AE5E) provides reusable D&D5e automation infrastructure for Foundry VTT. Individual Items remain responsible for their own game rules; AE5E provides generic capabilities that multiple unrelated automations can reuse.
 
+Resource-free class features that protect finalized spell-save targets can use
+the [Item-owned save-protection provider contract](docs/save-protection-provider-contract.md).
+It is independent from Metamagic while sharing the same validated Midi-QOL
+automatic-save and super-saver application layer.
+
 Metamagic Development 3 follows the [approved build/test plan](docs/metamagic-approved-build-and-test-plan.md)
 and [handoff](docs/metamagic-development-3-handoff.md). **v0.4.5.41** fixes the broker chooser opening error by using configured Foundry DialogV2 actions, while preserving Item-owned wording, selection limits, and phase-aware cancellation. The verified declaration editor remains connected to CAT Embedded Item macros. The base Item owns the
 chooser; option Items own their rules. Learned options are discovered from the

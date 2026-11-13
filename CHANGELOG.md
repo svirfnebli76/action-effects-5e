@@ -1,6 +1,14 @@
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
+# v0.4.5.64 - Generic Item-owned save protection
+
+- Adds a versioned `save-protection` declaration family and a dedicated CAT Called-event feature pass so independently owned class-feature Items can participate at the awaited `saves-ready` boundary without pretending to be Metamagic.
+- Adds a generic casting-local save-protection service that validates finalized affected targets, composes automatic-save and super-saver claims, and restores Midi-QOL's workflow method after saves while retaining the damage-resolution state.
+- Isolates claims by provider so rollback of one feature cannot remove another feature's protection, then moves Careful Spell's existing late transaction onto the shared service without changing its Item-owned eligibility, selection, cost, or presentation.
+- Exposes read-only declaration reconciliation plus validated install, rollback, restore, diagnostics, and recent-result APIs for Item-owned providers. No spell or class-feature names, rule-specific limits, visibility rules, CAT macros, assets, or compendium content are added to AE5E.
+- Preserves the v0.4.5.62-v0.4.5.63 observational relationship, ongoing-action, Witch Bolt tether, break-reason, notification, and chat-card infrastructure unchanged.
+
 # v0.4.5.63 - Observable relationship break reasons and presentation
 
 - Adds reusable observational constraints for geometric line of sight and participant status IDs, including automatic re-evaluation when Active Effects create, update, or remove statuses.

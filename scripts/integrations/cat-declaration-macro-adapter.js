@@ -1,7 +1,9 @@
 import { duplicateSafely, randomId } from "../core/utils.js";
 
 export const DECLARATION_MACRO_PASSES = Object.freeze({
-  broker: "ae5eDeclarationBroker", option: "ae5eDeclarationOption"
+  broker: "ae5eDeclarationBroker",
+  option: "ae5eDeclarationOption",
+  feature: "ae5eDeclarationFeature"
 });
 export const declarationActorPass = kind => `actor${DECLARATION_MACRO_PASSES[kind][0].toUpperCase()}${DECLARATION_MACRO_PASSES[kind].slice(1)}`;
 

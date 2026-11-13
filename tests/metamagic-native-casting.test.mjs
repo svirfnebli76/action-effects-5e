@@ -291,7 +291,7 @@ test("runtime hook wiring is idempotent and synchronous vetoes remain synchronou
     const f = setup();
     f.service.initialize();
     f.service.initialize();
-    assert.equal(handlers.size, 14);
+    assert.equal(handlers.size, 13);
     await f.service.begin(f.workflow);
     const native = f.activityClone(f.workflow.activity);
     assert.equal(handlers.get("dnd5e.preUseActivity")(native), true);

@@ -82,9 +82,13 @@ import { CatDeclarationMacroAdapter } from "./integrations/cat-declaration-macro
 import { DeclarationFamilyRegistry } from "./declarations/family-registry.js";
 import { DeclarationCollectionService } from "./declarations/collection-service.js";
 import { registerMetamagicFamily } from "./declarations/metamagic-family.js";
+import { registerSaveProtectionFamily } from "./declarations/save-protection-family.js";
 import { ItemOptionsAuthoringService } from "./authoring/item-options-authoring-service.js";
 import { MetamagicCastingService } from "./metamagic/casting-service.js";
 import { MetamagicTurnCastingService } from "./metamagic/turn-casting-service.js";
+import { SaveProtectionDeclarationService } from "./save-protection/declaration-service.js";
+import { SaveProtectionApplicationService } from "./save-protection/application-service.js";
+import { SaveProtectionFeatureService } from "./save-protection/feature-service.js";
 import { SneakAttackDeclarationParser } from "./sneak-attack/declaration-parser.js";
 import { SneakAttackDaeDeclarationService } from "./sneak-attack/dae-declaration-service.js";
 import { SneakAttackDeclarationService } from "./sneak-attack/declaration-service.js";
@@ -132,6 +136,7 @@ const catMetadataAuthoring = new CatMetadataAuthoringService();
 const catConfigurationAuthoring = new CatConfigurationAuthoringService();
 const declarationFamilies = new DeclarationFamilyRegistry();
 registerMetamagicFamily(declarationFamilies);
+registerSaveProtectionFamily(declarationFamilies);
 const itemDeclarations = new DeclarationCollectionService({ registry: declarationFamilies, ac5e: ac5eEligibility });
 const itemOptionsAuthoring = new ItemOptionsAuthoringService({ collections: itemDeclarations, configurationAuthoring: catConfigurationAuthoring });
 const catMetadataContextMenu = new CatMetadataContextMenuService({
@@ -226,8 +231,17 @@ const chatCardAdapter = new ChatCardAdapter();
 const resultsCards = new ResultsCardService();
 const metamagicDeclarations = new MetamagicDeclarationService({ collections: itemDeclarations });
 const declarationMacros = new CatDeclarationMacroAdapter();
+const saveProtectionDeclarations = new SaveProtectionDeclarationService({ collections: itemDeclarations });
+const saveProtectionApplications = new SaveProtectionApplicationService();
+const saveProtectionFeatures = new SaveProtectionFeatureService({
+  phases: castingPhases,
+  declarations: saveProtectionDeclarations,
+  executors: declarationMacros,
+  applications: saveProtectionApplications
+});
 const metamagicCasting = new MetamagicCastingService({ declarations: metamagicDeclarations,
-  cards: chatCardAdapter, executors: declarationMacros, socket, catSpell });
+  cards: chatCardAdapter, executors: declarationMacros, socket, catSpell,
+  saveProtection: saveProtectionApplications });
 const metamagicTurnCasting = new MetamagicTurnCastingService({
   phases: castingPhases,
   declarations: metamagicDeclarations
@@ -504,6 +518,9 @@ const api = new ActionEffects5eApi({
   metamagicDeclarations,
   metamagicCasting,
   metamagicTurnCasting,
+  saveProtectionDeclarations,
+  saveProtectionApplications,
+  saveProtectionFeatures,
   activityCards,
   chatCardAdapter,
   resultsCards,
@@ -659,6 +676,8 @@ Hooks.once("ready", async () => {
   spellModifierEvents.initialize();
   targetConfirmationAdapter.initialize();
   targetScaling.initialize();
+  saveProtectionApplications.initialize();
+  saveProtectionFeatures.initialize();
   castingPhases.initialize();
   metamagicTurnCasting.initialize();
   metamagicCasting.initialize();

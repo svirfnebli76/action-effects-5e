@@ -112,6 +112,9 @@ export class ActionEffects5eApi {
     metamagicDeclarations,
     metamagicCasting,
     metamagicTurnCasting,
+    saveProtectionDeclarations,
+    saveProtectionApplications,
+    saveProtectionFeatures,
     activityCards,
     chatCardAdapter,
     resultsCards,
@@ -478,6 +481,17 @@ export class ActionEffects5eApi {
       getTurnCasting: (actor, options) => metamagicTurnCasting.get(actor, options),
       inspectTurnCasting: (actor, options) => metamagicTurnCasting.inspect(actor, options),
       getTurnCastingStatus: () => metamagicTurnCasting.getStatus()
+    });
+
+    this.saveProtection = Object.freeze({
+      readDeclaration: item => saveProtectionDeclarations.read(item),
+      reconcile: (actor, context) => saveProtectionDeclarations.compile(actor, context),
+      validate: (workflow, request, options) => saveProtectionApplications.validate(workflow, request, options),
+      install: (workflow, request, options) => saveProtectionApplications.install(workflow, request, options),
+      rollback: (workflow, claim) => saveProtectionApplications.rollback(workflow, claim),
+      restore: workflow => saveProtectionApplications.restore(workflow),
+      getRecent: () => saveProtectionFeatures.getRecent(),
+      getStatus: () => saveProtectionFeatures.getStatus()
     });
 
     this.activities = Object.freeze({
