@@ -24,6 +24,25 @@ import {
 } from "./relationship-class.js";
 import { normalizeRelationshipConstraints } from "./relationship-constraint-model.js";
 
+function escapeHtml(value) {
+  const text = String(value ?? "");
+  if (globalThis.foundry?.utils?.escapeHTML) return foundry.utils.escapeHTML(text);
+  return text.replace(/[&<>"']/g, character => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+  })[character]);
+}
+
+function safeImagePath(value) {
+  const candidate = typeof value === "string" ? value.trim() : "";
+  if (!candidate) return null;
+  if (/^\/\//.test(candidate)
+    || (/^[a-z][a-z0-9+.-]*:/i.test(candidate) && !/^https?:\/\//i.test(candidate))
+    || /[\u0000-\u001f<>]/.test(candidate)) {
+    throw new Error("Relationship breakPresentation image must be a safe HTTP(S) or relative path.");
+  }
+  return candidate;
+}
+
 export class RelationshipService {
   #socket;
   #lifecycle;
@@ -45,6 +64,7 @@ export class RelationshipService {
     this.#socket.register("relationships.remove", this.#removeAsGM.bind(this));
     this.#socket.register("relationships.updateGeometry", this.#updateGeometryAsGM.bind(this));
     this.#socket.register("relationships.cleanupToken", this.#cleanupTokenAsGM.bind(this));
+    this.#socket.register("relationships.breakNotification", this.#showBreakNotification.bind(this));
   }
 
   async initialize() {
@@ -147,9 +167,9 @@ export class RelationshipService {
    * Remove relationships during a GM-authorized internal module operation.
    * This is intentionally not exposed through the public API.
    */
-  async removeManyAsGM(ids) {
+  async removeManyAsGM(ids, context = {}) {
     this.#assertExecutingAsGM();
-    return this.#removeManyPersisted(new Set(ids));
+    return this.#removeManyPersisted(new Set(ids), context);
   }
 
   async updateGeometryAsGM(id, changes = {}) {
@@ -231,7 +251,7 @@ export class RelationshipService {
     if (!relationship) return false;
 
     await this.#validateRequestingUser(requestingUserId, relationship.leaderUuid);
-    return (await this.#removeManyPersisted(new Set([id]))) > 0;
+    return (await this.#removeManyPersisted(new Set([id]), { reason: "manual-removal", silent: true })) > 0;
   }
 
 
@@ -284,10 +304,13 @@ export class RelationshipService {
       ...(this.#relationshipsByFollower.get(tokenUuid) ?? [])
     ]);
 
-    return this.#removeManyPersisted(ids);
+    return this.#removeManyPersisted(ids, {
+      reason: "participant-unavailable",
+      details: { tokenUuid }
+    });
   }
 
-  async #removeManyPersisted(ids) {
+  async #removeManyPersisted(ids, context = {}) {
     const affectedScenes = new Map();
     const removed = [];
 
@@ -314,7 +337,8 @@ export class RelationshipService {
       if (this.#lifecycle) {
         await this.#lifecycle.cleanupRemovedRelationship(relationship);
       }
-      Hooks.callAll(HOOKS.RELATIONSHIP_REMOVED, duplicateSafely(relationship));
+      if (context?.silent !== true) await this.#presentBreak(relationship, context);
+      Hooks.callAll(HOOKS.RELATIONSHIP_REMOVED, duplicateSafely(relationship), duplicateSafely(context));
       Logger.debug("Removed relationship", relationship);
     }
 
@@ -406,6 +430,7 @@ export class RelationshipService {
           follower
         })
       : (data.lifecycle ? duplicateSafely(data.lifecycle) : null);
+    const breakPresentation = this.#normalizeBreakPresentation(data.breakPresentation, leader);
 
     return Object.freeze({
       id,
@@ -455,6 +480,7 @@ export class RelationshipService {
       breakDistance,
       sourceUuid,
       lifecycle,
+      breakPresentation,
       metadata: duplicateSafely(data.metadata ?? {}),
       createdBy: data.createdBy ?? game.user.id,
       createdAt: data.createdAt ?? nowIso()
@@ -480,6 +506,93 @@ export class RelationshipService {
       alliedEndpointPolicy: policy,
       alliedEndpointGraceMs: graceMs
     };
+  }
+
+  #normalizeBreakPresentation(value, leader) {
+    if (value === null || value === undefined) return null;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError("Relationship breakPresentation must be an object.");
+    }
+    const requestedMessages = value.messages ?? {};
+    if (!requestedMessages || typeof requestedMessages !== "object" || Array.isArray(requestedMessages)) {
+      throw new TypeError("Relationship breakPresentation messages must be an object.");
+    }
+    const messages = {};
+    for (const [reason, message] of Object.entries(requestedMessages)) {
+      const key = String(reason ?? "").trim();
+      const text = String(message ?? "").trim();
+      if (!key || !text) throw new Error("Relationship breakPresentation messages require non-empty reason keys and text.");
+      messages[key] = text;
+    }
+    if (!Object.keys(messages).length) {
+      throw new Error("Relationship breakPresentation requires at least one reason message.");
+    }
+    const controllerActorUuid = String(value.controllerActorUuid ?? leader?.actor?.uuid ?? "").trim() || null;
+    return Object.freeze({
+      ui: value.ui !== false,
+      chat: value.chat !== false,
+      title: String(value.title ?? "Relationship Ended").trim() || "Relationship Ended",
+      img: safeImagePath(value.img),
+      controllerActorUuid,
+      messages: Object.freeze(messages)
+    });
+  }
+
+  #breakMessage(relationship, context = {}) {
+    const messages = relationship?.breakPresentation?.messages ?? null;
+    if (!messages || !context?.reason) return null;
+    const status = context?.details?.status;
+    const exact = status ? `${context.reason}:${status}` : null;
+    return (exact ? messages[exact] : null) ?? messages[context.reason] ?? null;
+  }
+
+  async #presentBreak(relationship, context = {}) {
+    const presentation = relationship?.breakPresentation;
+    const message = this.#breakMessage(relationship, context);
+    if (!presentation || !message) return false;
+    const payload = {
+      message,
+      controllerActorUuid: presentation.controllerActorUuid
+    };
+    if (presentation.ui !== false) {
+      try {
+        if (typeof this.#socket.executeForEveryone === "function") {
+          await this.#socket.executeForEveryone("relationships.breakNotification", payload);
+        } else {
+          await this.#showBreakNotification(payload);
+        }
+      } catch (error) {
+        Logger.warn("Relationship break UI notification failed.", error);
+        await this.#showBreakNotification(payload);
+      }
+    }
+    if (presentation.chat !== false && globalThis.ChatMessage?.create) {
+      try {
+        const image = presentation.img
+          ? `<img src="${escapeHtml(presentation.img)}" alt="" width="36" height="36">`
+          : "";
+        await ChatMessage.create({
+          speaker: { alias: "Action Effects 5E" },
+          content: `<section class="ae5e-relationship-break"><header class="card-header flexrow">${image}<h3>${escapeHtml(presentation.title)}</h3></header><div class="card-content"><p>${escapeHtml(message)}</p></div></section>`
+        });
+      } catch (error) {
+        Logger.warn("Relationship break chat card failed.", error);
+      }
+    }
+    return true;
+  }
+
+  async #showBreakNotification(payload = {}) {
+    const message = String(payload?.message ?? "").trim();
+    if (!message) return false;
+    if (!game.user?.isGM && payload.controllerActorUuid) {
+      let actor = null;
+      try { actor = await fromUuid(payload.controllerActorUuid); } catch { /* unavailable */ }
+      const owner = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+      if (!actor?.testUserPermission?.(game.user, owner)) return false;
+    }
+    globalThis.ui?.notifications?.info?.(message);
+    return true;
   }
 
 

@@ -7,6 +7,7 @@ import {
 import { duplicateSafely } from "../core/utils.js";
 
 const VALID_COVER_PROVIDERS = new Set(Object.values(RELATIONSHIP_COVER_PROVIDERS));
+const VALID_PARTICIPANTS = new Set(["leader", "follower"]);
 
 function providerId(value, fallback, { knownOnly = false } = {}) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -54,6 +55,32 @@ export function normalizeRelationshipConstraints(constraints = []) {
         ...common,
         threshold,
         provider: providerId(source.provider, RELATIONSHIP_COVER_PROVIDERS.MIDI, { knownOnly: true })
+      });
+    }
+
+    if (type === RELATIONSHIP_CONSTRAINT_TYPES.LINE_OF_SIGHT) {
+      return Object.freeze({
+        ...common,
+        provider: RELATIONSHIP_COVER_PROVIDERS.FOUNDRY
+      });
+    }
+
+    if (type === RELATIONSHIP_CONSTRAINT_TYPES.STATUS) {
+      const participant = source.participant ?? "follower";
+      if (!VALID_PARTICIPANTS.has(participant)) {
+        throw new Error(`Relationship status constraint '${common.id}' has unsupported participant '${participant}'.`);
+      }
+      const statuses = Array.isArray(source.statuses)
+        ? [...new Set(source.statuses.map(status => String(status).trim()).filter(Boolean))]
+        : [];
+      if (!statuses.length) {
+        throw new Error(`Relationship status constraint '${common.id}' requires at least one status ID.`);
+      }
+      return Object.freeze({
+        ...common,
+        evaluateRoute: false,
+        participant,
+        statuses: Object.freeze(statuses)
       });
     }
 

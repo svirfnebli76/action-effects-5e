@@ -113,6 +113,20 @@ export class RelationshipCoverProviderService {
     };
   }
 
+  evaluateLineOfSight(context = {}) {
+    const result = this.#foundryGeometry({
+      ...context,
+      provider: RELATIONSHIP_COVER_PROVIDERS.FOUNDRY
+    });
+    if (result?.state === RELATIONSHIP_CONSTRAINT_STATES.UNKNOWN) return result;
+    const blocked = result?.state === RELATIONSHIP_CONSTRAINT_STATES.BROKEN;
+    return {
+      ...result,
+      lineOfSight: !blocked,
+      reason: blocked ? "line-of-sight-blocked" : "line-of-sight-clear"
+    };
+  }
+
   async #simpleCover({ scene, leader, follower, leaderPosition = null, followerPosition = null } = {}) {
     const api = moduleApi(RELATIONSHIP_COVER_PROVIDERS.SIMPLE_COVER);
     if (typeof api?.getCover !== "function") throw new Error("Simple Cover 5e API is unavailable.");
@@ -126,7 +140,9 @@ export class RelationshipCoverProviderService {
       target,
       scene,
       debug: false,
-      losCheck: true,
+      // Line of sight is a separate generic relationship constraint. Keeping
+      // this false lets callers distinguish Total Cover from lost sight.
+      losCheck: false,
       activity: null,
       includeEmbeddedCover: false
     });

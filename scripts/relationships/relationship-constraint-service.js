@@ -68,6 +68,9 @@ export class RelationshipConstraintService {
       if (![...POSITION_KEYS].some((key) => Object.prototype.hasOwnProperty.call(changes, key))) return;
       this.#queueTokenEvaluation(document?.uuid);
     });
+    for (const hook of ["createActiveEffect", "updateActiveEffect", "deleteActiveEffect"]) {
+      this.#listen(hook, (effect) => this.#queueActorEvaluation(effect?.parent?.actor ?? effect?.parent));
+    }
     this.#listen("canvasReady", (canvas) => this.#queueSceneEvaluation(canvas?.scene?.id ?? globalThis.canvas?.scene?.id ?? null));
     this.#reconcileConsumers();
   }
@@ -172,10 +175,10 @@ export class RelationshipConstraintService {
     for (const relationship of byId.values()) {
       const result = await this.evaluateRelationship(relationship, { movingTokenUuid: tokenUuid, route });
       results.push(result);
-      if (result.state === RELATIONSHIP_CONSTRAINT_STATES.BROKEN) broken.push(relationship.id);
+      if (result.state === RELATIONSHIP_CONSTRAINT_STATES.BROKEN) broken.push(result);
     }
     if (removeBroken && broken.length && this.#isAuthority()) {
-      this.#stats.removals += await this.#relationships.removeManyAsGM(broken);
+      this.#stats.removals += await this.#removeBroken(broken);
     }
     return results;
   }
@@ -190,10 +193,10 @@ export class RelationshipConstraintService {
     })) {
       const result = await this.evaluateRelationship(relationship);
       results.push(result);
-      if (result.state === RELATIONSHIP_CONSTRAINT_STATES.BROKEN) broken.push(relationship.id);
+      if (result.state === RELATIONSHIP_CONSTRAINT_STATES.BROKEN) broken.push(result);
     }
     if (removeBroken && broken.length && this.#isAuthority()) {
-      this.#stats.removals += await this.#relationships.removeManyAsGM(broken);
+      this.#stats.removals += await this.#removeBroken(broken);
     }
     return results;
   }
@@ -233,6 +236,41 @@ export class RelationshipConstraintService {
         followerPosition
       });
       return { constraintId: constraint.id, type: constraint.type, threshold: constraint.threshold, ...cover };
+    }
+
+    if (constraint.type === RELATIONSHIP_CONSTRAINT_TYPES.LINE_OF_SIGHT) {
+      const sight = await this.#coverProviders.evaluateLineOfSight({
+        scene,
+        leader,
+        follower,
+        leaderPosition,
+        followerPosition
+      });
+      return { constraintId: constraint.id, type: constraint.type, ...sight };
+    }
+
+    if (constraint.type === RELATIONSHIP_CONSTRAINT_TYPES.STATUS) {
+      const token = constraint.participant === "leader" ? leader : follower;
+      const activeStatuses = token?.actor?.statuses;
+      if (!activeStatuses || typeof activeStatuses.has !== "function") {
+        return {
+          constraintId: constraint.id,
+          type: constraint.type,
+          state: RELATIONSHIP_CONSTRAINT_STATES.UNKNOWN,
+          reason: "participant-status-unavailable",
+          participant: constraint.participant
+        };
+      }
+      const status = constraint.statuses.find(candidate => activeStatuses.has(candidate)) ?? null;
+      return {
+        constraintId: constraint.id,
+        type: constraint.type,
+        state: status ? RELATIONSHIP_CONSTRAINT_STATES.BROKEN : RELATIONSHIP_CONSTRAINT_STATES.CLEAR,
+        reason: status ? "participant-status-matched" : "participant-status-clear",
+        participant: constraint.participant,
+        status,
+        statuses: [...constraint.statuses]
+      };
     }
 
     return {
@@ -320,7 +358,7 @@ export class RelationshipConstraintService {
     globalThis.setTimeout(() => {
       void this.evaluateRelationship(relationship).then(async (result) => {
         if (result.state !== RELATIONSHIP_CONSTRAINT_STATES.BROKEN) return;
-        this.#stats.removals += await this.#relationships.removeManyAsGM([relationship.id]);
+        this.#stats.removals += await this.#removeBroken([result]);
       }).catch((error) => {
         Logger.warn("Initial relationship constraint evaluation failed open.", error);
       });
@@ -334,6 +372,43 @@ export class RelationshipConstraintService {
         Logger.warn("Relationship constraint token evaluation failed open.", error);
       });
     }, 0);
+  }
+
+  #queueActorEvaluation(actor) {
+    const actorUuid = actor?.uuid ?? null;
+    if (!actorUuid || !this.#isAuthority()) return;
+    globalThis.setTimeout(() => {
+      void (async () => {
+        const tokenUuids = new Set();
+        for (const relationship of this.#relationships.list({
+          relationshipClass: RELATIONSHIP_CLASSES.OBSERVATIONAL
+        })) {
+          for (const uuid of [relationship.leaderUuid, relationship.followerUuid]) {
+            let token = null;
+            try { token = await fromUuid(uuid); } catch { /* unavailable */ }
+            if (token?.actor?.uuid === actorUuid) tokenUuids.add(uuid);
+          }
+        }
+        for (const tokenUuid of tokenUuids) {
+          await this.evaluateForToken(tokenUuid, { removeBroken: true });
+        }
+      })().catch((error) => {
+        Logger.warn("Relationship status constraint evaluation failed open.", error);
+      });
+    }, 0);
+  }
+
+  async #removeBroken(results) {
+    let removed = 0;
+    for (const result of results) {
+      const failure = result?.constraints?.find(entry => entry?.state === RELATIONSHIP_CONSTRAINT_STATES.BROKEN)
+        ?? result;
+      removed += await this.#relationships.removeManyAsGM([result.relationshipId], {
+        reason: failure?.reason ?? "constraint-broken",
+        details: duplicateSafely(failure ?? {})
+      });
+    }
+    return removed;
   }
 
   #listen(hook, handler) {

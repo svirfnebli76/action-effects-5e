@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.5.62";
+export const MODULE_VERSION = "0.4.5.63";
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -354,7 +354,9 @@ export const RELATIONSHIP_CLASSES = Object.freeze({
 
 export const RELATIONSHIP_CONSTRAINT_TYPES = Object.freeze({
   MAXIMUM_DISTANCE: "maximumDistance",
-  COVER: "cover"
+  LINE_OF_SIGHT: "lineOfSight",
+  COVER: "cover",
+  STATUS: "status"
 });
 
 export const RELATIONSHIP_CONSTRAINT_STATES = Object.freeze({

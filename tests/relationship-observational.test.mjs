@@ -239,3 +239,113 @@ test("full-route distance evaluation catches an intermediate violation and remov
   assert.ok(results[0].sampleCount > 3, "long route legs should be sampled between supplied waypoints");
   assert.deepEqual(removed, [relationship.id]);
 });
+
+test("ordered line-of-sight and Dead-status constraints preserve distinct break reasons", async () => {
+  const f = fixture("los-and-status");
+  f.leaderA.actor = { uuid: "Actor.los-caster", statuses: new Set() };
+  f.target.actor = { uuid: "Actor.los-target", statuses: new Set(["dead"]) };
+  const contexts = [];
+  const relationship = {
+    id: "observed-status",
+    sceneId: f.scene.id,
+    leaderUuid: f.leaderA.uuid,
+    followerUuid: f.target.uuid,
+    relationshipClass: RELATIONSHIP_CLASSES.OBSERVATIONAL,
+    constraints: [
+      { id: "sight", type: RELATIONSHIP_CONSTRAINT_TYPES.LINE_OF_SIGHT, evaluateRoute: true },
+      { id: "dead", type: RELATIONSHIP_CONSTRAINT_TYPES.STATUS, participant: "follower", statuses: ["dead"], evaluateRoute: false }
+    ]
+  };
+  const relationships = {
+    get: id => id === relationship.id ? structuredClone(relationship) : null,
+    getForLeader: uuid => uuid === relationship.leaderUuid ? [structuredClone(relationship)] : [],
+    getForFollower: uuid => uuid === relationship.followerUuid ? [structuredClone(relationship)] : [],
+    list: () => [structuredClone(relationship)],
+    async removeManyAsGM(ids, context) { contexts.push({ ids: [...ids], context }); return ids.length; }
+  };
+  const movement = { registerConsumer: () => () => {} };
+  const distanceProviders = new RelationshipDistanceProviderService();
+  let sightBlocked = true;
+  const coverProviders = {
+    evaluate: async () => ({ state: RELATIONSHIP_CONSTRAINT_STATES.CLEAR }),
+    evaluateLineOfSight: async () => ({
+      state: sightBlocked ? RELATIONSHIP_CONSTRAINT_STATES.BROKEN : RELATIONSHIP_CONSTRAINT_STATES.CLEAR,
+      reason: sightBlocked ? "line-of-sight-blocked" : "line-of-sight-clear"
+    })
+  };
+  const service = new RelationshipConstraintService({ relationships, movement, distanceProviders, coverProviders });
+
+  let results = await service.evaluateForToken(f.target.uuid, { removeBroken: true });
+  assert.equal(results[0].constraints.length, 1, "LOS must short-circuit later status and cover constraints");
+  assert.equal(contexts[0].context.reason, "line-of-sight-blocked");
+
+  contexts.length = 0;
+  sightBlocked = false;
+  results = await service.evaluateForToken(f.target.uuid, { removeBroken: true });
+  assert.equal(results[0].constraints[1].reason, "participant-status-matched");
+  assert.equal(results[0].constraints[1].status, "dead");
+  assert.equal(contexts[0].context.reason, "participant-status-matched");
+  assert.equal(contexts[0].context.details.status, "dead");
+});
+
+test("relationship break presentation sends the configured UI notice and one chat card", async () => {
+  const f = fixture("break-presentation");
+  f.leaderA.actor = {
+    uuid: "Actor.break-caster",
+    testUserPermission: () => true
+  };
+  f.target.actor = { uuid: "Actor.break-target", statuses: new Set() };
+  documents.set(f.leaderA.actor.uuid, f.leaderA.actor);
+  const notifications = [];
+  const cards = [];
+  const previousUi = globalThis.ui;
+  const previousChatMessage = globalThis.ChatMessage;
+  globalThis.ui = { notifications: { info: message => notifications.push(message) } };
+  globalThis.ChatMessage = { create: async data => { cards.push(data); return data; } };
+  try {
+    const service = new RelationshipService({ socket: new FakeSocket() });
+    await service.initialize();
+    const relationship = await service.create({
+      leaderUuid: f.leaderA.uuid,
+      followerUuid: f.target.uuid,
+      type: "tether",
+      relationshipClass: RELATIONSHIP_CLASSES.OBSERVATIONAL,
+      constraints: [{ type: RELATIONSHIP_CONSTRAINT_TYPES.STATUS, participant: "follower", statuses: ["dead"] }],
+      breakPresentation: {
+        title: "Witch Bolt",
+        messages: {
+          "participant-status-matched:dead": "Witchbolt tether removed: Target has died"
+        }
+      }
+    });
+    assert.equal(relationship.constraints[0].evaluateRoute, false);
+    assert.equal(relationship.breakPresentation.controllerActorUuid, f.leaderA.actor.uuid);
+    await assert.rejects(
+      service.create({
+        leaderUuid: f.leaderA.uuid,
+        followerUuid: f.target.uuid,
+        type: "attachedEffect",
+        relationshipClass: RELATIONSHIP_CLASSES.OBSERVATIONAL,
+        constraints: [{ type: RELATIONSHIP_CONSTRAINT_TYPES.STATUS, statuses: ["dead"] }],
+        breakPresentation: {
+          img: "javascript:alert(1)",
+          messages: { "participant-status-matched:dead": "unsafe" }
+        }
+      }),
+      /safe HTTP\(S\) or relative path/i
+    );
+
+    await service.removeManyAsGM([relationship.id], {
+      reason: "participant-status-matched",
+      details: { status: "dead" }
+    });
+    assert.deepEqual(notifications, ["Witchbolt tether removed: Target has died"]);
+    assert.equal(cards.length, 1);
+    assert.match(cards[0].content, /Witchbolt tether removed: Target has died/);
+    service.shutdown();
+  } finally {
+    globalThis.ui = previousUi;
+    globalThis.ChatMessage = previousChatMessage;
+    documents.delete(f.leaderA.actor.uuid);
+  }
+});

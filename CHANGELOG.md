@@ -1,6 +1,14 @@
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
+# v0.4.5.63 - Observable relationship break reasons and presentation
+
+- Adds reusable observational constraints for geometric line of sight and participant status IDs, including automatic re-evaluation when Active Effects create, update, or remove statuses.
+- Separates geometric line-of-sight failure from authoritative-provider Total Cover so Item-owned presentation can report the correct reason with deterministic constraint ordering.
+- Adds optional relationship-owned break presentation with caller-supplied reason messages, controller-scoped UI notifications, and a single primary-GM chat card.
+- Propagates structured removal reasons for constraint failure, participant Token deletion, and source Active Effect deletion while preserving silent manual and startup reconciliation paths.
+- Keeps all spell names, wording, status choices, Items, CAT macros, and presentation assets caller-owned. Existing Unarmed Strike/Grapple physical relationships do not opt in and remain unchanged.
+
 # v0.4.5.62 - Generic observational relationships and ongoing-action targeting
 
 - Adds an explicit relationship class boundary: every existing/legacy relationship remains `physical`, while new `observational` relationships are nonexclusive and cannot enter movement, rotation, collision, obstruction, or movement-cost handling.
