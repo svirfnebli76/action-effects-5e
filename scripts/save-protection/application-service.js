@@ -19,7 +19,11 @@ export class SaveProtectionApplicationService {
 
   initialize() {
     if (this.#hooks.length) return;
-    const restore = workflow => this.restore(workflow);
+    // Midi treats an explicit false from post-workflow hooks as a veto. This
+    // cleanup listener is observational: restore() may report false when a
+    // prior hook already cleared the state, but that result must never escape
+    // into Midi's hook chain or RollFinished will be retried indefinitely.
+    const restore = workflow => { this.restore(workflow); };
     this.#hooks.push(["midi-qol.postCheckSaves", Hooks.on("midi-qol.postCheckSaves", restore)]);
     this.#hooks.push(["midi-qol.RollComplete", Hooks.on("midi-qol.RollComplete", restore)]);
     this.#hooks.push(["midi-qol.premades.postRollFinished",

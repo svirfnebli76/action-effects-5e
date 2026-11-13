@@ -92,8 +92,10 @@ test("cleanup hooks restore an installed override idempotently", () => {
     ]);
     const { subject, friend } = workflow();
     service.install(subject, request(friend));
-    assert.equal(handlers.get("midi-qol.postCheckSaves")(subject), true);
+    assert.equal(handlers.get("midi-qol.postCheckSaves")(subject), undefined);
     assert.equal(subject.checkSculptOrCarefulSpells(friend), false);
+    assert.equal(handlers.get("midi-qol.RollComplete")(subject), undefined);
+    assert.equal(handlers.get("midi-qol.premades.postRollFinished")(subject), undefined);
     service.shutdown();
     assert.equal(handlers.size, 0);
   } finally {

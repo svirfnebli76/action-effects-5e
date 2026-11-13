@@ -1,6 +1,12 @@
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
+# v0.4.5.65 - Non-vetoing save-protection cleanup
+
+- Prevents save-protection cleanup listeners from returning an internal `false` result to Midi-QOL's post-workflow hooks after another cleanup boundary has already restored the workflow.
+- Stops Midi-QOL `RollFinished` cleanup from being vetoed and retried, which previously produced an unbounded stream of duplicate saves/damage result cards after Sculpt Spells or Careful Spell protection.
+- Adds regression coverage proving repeated post-save, RollComplete, and postRollFinished cleanup calls remain idempotent and never return a workflow-veto value. No Item, CAT macro, declaration, compendium, Witch Bolt, or save-protection rule changes are included.
+
 # v0.4.5.64 - Generic Item-owned save protection
 
 - Adds a versioned `save-protection` declaration family and a dedicated CAT Called-event feature pass so independently owned class-feature Items can participate at the awaited `saves-ready` boundary without pretending to be Metamagic.
