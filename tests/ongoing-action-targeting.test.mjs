@@ -176,6 +176,26 @@ test("turn prompts carry the explicit selection-indicator token UUID", async () 
   assert.equal(f.calls.prompts[0].indicatorTokenUuid, "Scene.test.Token.caster");
 });
 
+test("turn-start prompts wait for Midi to clear the previous turn's Bonus Action marker", async () => {
+  const f = fixture();
+  f.effect.flags[MODULE_ID][ONGOING_ACTION_EFFECT_FLAG].suppressPromptWhenUnusable = true;
+  let bonusActionUsed = true;
+  MidiQOL.hasUsedBonusAction = () => {
+    f.calls.checked += 1;
+    return bonusActionUsed;
+  };
+  const reset = globalThis.setTimeout(() => { bonusActionUsed = false; }, 20);
+
+  const result = await f.service.promptForEffect(f.effect, f.item, {
+    combat: { id: "combat", round: 2, turn: 0 }
+  });
+  globalThis.clearTimeout(reset);
+
+  assert.equal(result.prompted, true);
+  assert.equal(f.calls.prompts.length, 1);
+  assert.ok(f.calls.checked >= 2);
+});
+
 test("ongoing-action config validates reusable targeting and action-economy fields", () => {
   const f = fixture();
   const base = { sourceActivity: { activityReference: "action" } };

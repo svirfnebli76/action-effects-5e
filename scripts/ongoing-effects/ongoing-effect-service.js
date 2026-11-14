@@ -38,6 +38,13 @@ function asArray(value) {
   return [];
 }
 
+const TURN_START_ACTION_ECONOMY_SETTLE_TIMEOUT_MS = 2_000;
+const TURN_START_ACTION_ECONOMY_SETTLE_INTERVAL_MS = 50;
+
+function wait(milliseconds) {
+  return new Promise(resolve => globalThis.setTimeout(resolve, milliseconds));
+}
+
 export class OngoingEffectService {
   #socket;
   #authority;
@@ -382,7 +389,18 @@ export class OngoingEffectService {
     if (!config) return { prompted: false, reason: "no-config" };
     const actor = effect.parent;
     if (config.suppressPromptWhenUnusable === true) {
-      const usability = this.getActivityUsability(item, config.activityIdentifier ?? null, config);
+      let usability = this.getActivityUsability(item, config.activityIdentifier ?? null, config);
+      // Foundry does not await async updateCombat listeners. Midi/Times Up can
+      // therefore still expose the previous turn's Bonus Action marker while
+      // AE5E is processing the new turn. Only at the turn-start prompt boundary,
+      // allow that authoritative Midi state a short period to settle, then read
+      // it again. Execution still performs its own immediate availability check.
+      if (!usability.usable
+        && usability.reason === "bonus-action-used"
+        && config.timing === ONGOING_ACTION_TIMINGS.TURN_START) {
+        await this.#awaitTurnStartBonusActionReset(actor);
+        usability = this.getActivityUsability(item, config.activityIdentifier ?? null, config);
+      }
       if (!usability.usable) {
         this.#stats.promptsSuppressedUnusable += 1;
         this.#record("prompt-suppressed-unusable", {
@@ -1084,6 +1102,14 @@ export class OngoingEffectService {
       Logger.debug("Midi Bonus Action availability could not be read; ongoing action remains available.", error);
       return false;
     }
+  }
+
+  async #awaitTurnStartBonusActionReset(actor) {
+    const deadline = Date.now() + TURN_START_ACTION_ECONOMY_SETTLE_TIMEOUT_MS;
+    while (this.#hasUsedBonusAction(actor) && Date.now() < deadline) {
+      await wait(TURN_START_ACTION_ECONOMY_SETTLE_INTERVAL_MS);
+    }
+    return !this.#hasUsedBonusAction(actor);
   }
 
   async #markActionEconomyUsed(actor, actionEconomy, workflow) {

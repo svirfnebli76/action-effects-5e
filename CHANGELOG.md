@@ -1,6 +1,13 @@
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
+# v0.4.5.66 - Turn-start action-economy settlement
+
+- Prevents reusable ongoing-action prompts from being suppressed by Midi-QOL's previous-turn Bonus Action marker during asynchronous combat-turn cleanup.
+- At the turn-start prompt boundary only, AE5E briefly waits for Midi's authoritative Bonus Action state to settle and then rechecks activity usability.
+- Keeps the existing immediate pre-execution availability check and post-success Bonus Action marking unchanged, so action-economy enforcement remains authoritative.
+- Adds no spell-specific rules or Item changes; existing physical relationships, including Unarmed Strike/Grapple, do not enter this path.
+
 # v0.4.5.65 - Non-vetoing save-protection cleanup
 
 - Prevents save-protection cleanup listeners from returning an internal `false` result to Midi-QOL's post-workflow hooks after another cleanup boundary has already restored the workflow.
