@@ -1,6 +1,16 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.5.65";
+export const MODULE_VERSION = "0.4.5.68";
+
+export const SUMMON_DECLARATION_SCHEMA_VERSION = 1;
+export const SUMMON_CONTEXT_SCHEMA_VERSION = 1;
+export const SUMMON_CONTEXT_FLAG = "summonContext";
+export const INITIATIVE_LINK_SCHEMA_VERSION = 1;
+export const INITIATIVE_LINK_FLAG = "initiativeLink";
+export const SUMMON_INITIATIVE_MODES = Object.freeze({
+  NONE: "none",
+  AFTER_SUMMONER: "after-summoner"
+});
 
 export const REQUIRED_MODULES = Object.freeze([
   "midi-qol",
@@ -467,5 +477,8 @@ export const HOOKS = Object.freeze({
   SPELL_MODIFIER_SESSION_CREATED: `${MODULE_ID}.spellModifierSessionCreated`,
   SPELL_MODIFIER_APPLIED: `${MODULE_ID}.spellModifierApplied`,
   SPELL_MODIFIER_SESSION_COMPLETE: `${MODULE_ID}.spellModifierSessionComplete`,
-  REGION_CELL_OCCUPANCY_TRANSITION: `${MODULE_ID}.regionCellOccupancyTransition`
+  REGION_CELL_OCCUPANCY_TRANSITION: `${MODULE_ID}.regionCellOccupancyTransition`,
+  SUMMON_CONTEXT_CREATED: `${MODULE_ID}.summonContextCreated`,
+  INITIATIVE_RECONCILED: `${MODULE_ID}.initiativeReconciled`
 });
+
