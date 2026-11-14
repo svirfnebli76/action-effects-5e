@@ -1,5 +1,3 @@
-2026/11/13-19:03:36.259 7fb8 Recovering log #388
-2026/11/13-19:03:36.259 7fb8 Level-0 table #390: started
-2026/11/13-19:03:36.262 7fb8 Level-0 table #390: 160400 bytes OK
-2026/11/13-19:03:36.264 7fb8 Delete type=0 #388
-2026/11/13-19:03:36.264 7fb8 Delete type=3 #387
+2026/11/14-13:39:46.734 abf8 Recovering log #391
+2026/11/14-13:39:46.736 abf8 Delete type=0 #391
+2026/11/14-13:39:46.736 abf8 Delete type=3 #389
