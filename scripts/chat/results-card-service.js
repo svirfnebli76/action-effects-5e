@@ -26,12 +26,13 @@ export const RESULTS_CARD_DEFAULT_STYLE = Object.freeze({
   saveDc: Object.freeze({ size: 12, weight: 500 }),
   damageHeading: Object.freeze({ size: 13, weight: 700 }),
   damageTargetName: Object.freeze({ size: 12, weight: 500 }),
-  damageAmount: Object.freeze({ size: 12, weight: 700 })
+  damageAmount: Object.freeze({ size: 12, weight: 700 }),
+  noticeText: Object.freeze({ size: 13, weight: 600 })
 });
 
 const TYPOGRAPHY = new Set([
   "title", "subtitle", "saveHeading", "saveTargetName", "saveTotal", "saveDc",
-  "damageHeading", "damageTargetName", "damageAmount"
+  "damageHeading", "damageTargetName", "damageAmount", "noticeText"
 ]);
 const GEOMETRY = new Set([
   "iconSize", "portraitSize", "saveSymbolSize", "rowMinHeight", "rowPadding",
@@ -151,6 +152,7 @@ export function normalizeResultsCard(request) {
   };
   if (request.saves !== undefined && !isObject(request.saves)) throw new Error("saves must be an object.");
   if (request.damage !== undefined && !isObject(request.damage)) throw new Error("damage must be an object.");
+  if (request.notice !== undefined && !isObject(request.notice)) throw new Error("notice must be an object.");
   const saves = request.saves ? {
     heading: text(request.saves.heading, "saves.heading", { max: 200 }),
     rows: saveRows(request.saves.rows)
@@ -159,10 +161,13 @@ export function normalizeResultsCard(request) {
     heading: text(request.damage.heading ?? "Damage Results", "damage.heading", { max: 200 }),
     rows: damageRows(request.damage.rows)
   } : null;
-  if (!saves?.rows.length && !damage?.rows.length) {
-    throw new Error("Results card must contain at least one save or damage row.");
+  const notice = request.notice ? {
+    text: text(request.notice.text, "notice.text", { required: true, max: 1000 })
+  } : null;
+  if (!notice && !saves?.rows.length && !damage?.rows.length) {
+    throw new Error("Results card must contain a notice, save row, or damage row.");
   }
-  return { schema: RESULTS_CARD_SCHEMA, header, saves, damage, style: resolveResultsCardStyle(request.style) };
+  return { schema: RESULTS_CARD_SCHEMA, header, notice, saves, damage, style: resolveResultsCardStyle(request.style) };
 }
 
 function cssVariables(style) {
@@ -182,13 +187,18 @@ export function renderResultsCard(snapshot) {
   if (snapshot?.schema !== RESULTS_CARD_SCHEMA) throw new Error("Unsupported results card schema.");
   const h = snapshot.header;
   const html = [
-    '<section class="ae5e-results-card" style="' + cssVariables(snapshot.style) + '">',
+    '<section class="ae5e-results-card' + (snapshot.notice ? ' ae5e-notice-card' : '')
+      + '" style="' + cssVariables(snapshot.style) + '">',
     '<div class="ae5e-results-header">',
     h.icon ? '<img class="ae5e-results-icon" src="' + escapeHtml(h.icon) + '" alt="">' : "",
     '<div class="ae5e-results-titles"><strong class="ae5e-results-title">' + escapeHtml(h.title) + '</strong>',
     h.subtitle ? '<span class="ae5e-results-subtitle">' + escapeHtml(h.subtitle) + '</span>' : "",
     '</div></div>'
   ];
+  if (snapshot.notice) {
+    html.push('<div class="ae5e-results-divider"></div><section class="ae5e-results-notice">',
+      '<p>' + escapeHtml(snapshot.notice.text) + '</p></section>');
+  }
   if (snapshot.saves?.rows.length) {
     html.push('<div class="ae5e-results-divider"></div><section class="ae5e-results-saves">');
     if (snapshot.saves.heading) html.push('<div class="ae5e-results-save-heading">' + escapeHtml(snapshot.saves.heading) + '</div>');
@@ -237,7 +247,7 @@ export class ResultsCardService {
     };
     if (request.speaker !== undefined) data.speaker = request.speaker;
     else if (typeof ChatMessage.getSpeaker === "function") {
-      data.speaker = ChatMessage.getSpeaker({ actor: request.workflow?.actor ?? request.item?.parent });
+      data.speaker = ChatMessage.getSpeaker({ actor: request.actor ?? request.workflow?.actor ?? request.item?.parent });
     }
     if (request.whisper !== undefined) {
       if (!Array.isArray(request.whisper) || request.whisper.some(id => typeof id !== "string" || !id)) {
@@ -251,5 +261,13 @@ export class ResultsCardService {
       data.blind = request.blind;
     }
     return ChatMessage.create(data);
+  }
+
+  async createNotice(request) {
+    if (!isObject(request)) throw new Error("Notice card request must be an object.");
+    return this.create({
+      ...request,
+      notice: { text: text(request.message, "message", { required: true, max: 1000 }) }
+    });
   }
 }

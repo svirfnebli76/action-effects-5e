@@ -147,8 +147,14 @@ const catMetadataContextMenu = new CatMetadataContextMenuService({
 });
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
+const resultsCards = new ResultsCardService();
 const relationshipLifecycle = new RelationshipLifecycleService({ relationshipsAccessor: () => relationships });
-const relationships = new RelationshipService({ socket, lifecycle: relationshipLifecycle, spending: movementSpending });
+const relationships = new RelationshipService({
+  socket,
+  lifecycle: relationshipLifecycle,
+  spending: movementSpending,
+  cards: resultsCards
+});
 const relativeRelationships = new RelativeTokenRelationshipService();
 const movement = new MovementService({ registry: movementRegistry, relationships, accounting: movementAccounting, catMovement, socket });
 const displacementDirections = new DisplacementDirectionService();
@@ -228,7 +234,6 @@ const ongoingEffects = new OngoingEffectService({ socket, authority: reactionAut
 const activities = new ActivityExecutionService({ socket, authority: reactionAuthority, catSpell });
 const activityCards = new ActivityCardService();
 const chatCardAdapter = new ChatCardAdapter();
-const resultsCards = new ResultsCardService();
 const metamagicDeclarations = new MetamagicDeclarationService({ collections: itemDeclarations });
 const declarationMacros = new CatDeclarationMacroAdapter();
 const saveProtectionDeclarations = new SaveProtectionDeclarationService({ collections: itemDeclarations });

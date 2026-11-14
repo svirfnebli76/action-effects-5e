@@ -1,6 +1,15 @@
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
+# v0.4.5.67 - Generic notice cards and native helper-card headers
+
+- Extends AE5E's existing immutable Results Card service with a reusable notice-only card body and validated typography.
+- Routes relationship-break chat presentation through the shared card service, derives the outer speaker from the configured controller Actor, and supports caller-owned title/subtitle/icon content.
+- Adds a validated Item-owned native usage-card header override with one 48-pixel icon, vertically centered title/subtitle text, and explicit collapsible behavior for reusable helper Activities.
+- Adds independent native-card layout slots for supplements, property pills, and recorded targets so Item-owned layouts can hide inherited details without removing live damage or Apply controls.
+- Keeps relationship and Activity callers responsible for every title, subtitle, icon, layout, and message; no spell names, tether rules, or fixed wording are included in AE5E.
+- Leaves controller-scoped UI notifications and relationship cleanup unchanged.
+
 # v0.4.5.66 - Turn-start action-economy settlement
 
 - Prevents reusable ongoing-action prompts from being suppressed by Midi-QOL's previous-turn Bonus Action marker during asynchronous combat-turn cleanup.
