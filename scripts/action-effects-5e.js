@@ -83,6 +83,11 @@ import { DeclarationFamilyRegistry } from "./declarations/family-registry.js";
 import { DeclarationCollectionService } from "./declarations/collection-service.js";
 import { registerMetamagicFamily } from "./declarations/metamagic-family.js";
 import { registerSaveProtectionFamily } from "./declarations/save-protection-family.js";
+import { registerSummonFamily } from "./declarations/summon-family.js";
+import { SummonDeclarationService } from "./summons/declaration-service.js";
+import { SummonContextService } from "./summons/context-service.js";
+import { InitiativeOrderingService } from "./initiative/ordering-service.js";
+import { InitiativeCoordinator } from "./initiative/coordinator.js";
 import { ItemOptionsAuthoringService } from "./authoring/item-options-authoring-service.js";
 import { MetamagicCastingService } from "./metamagic/casting-service.js";
 import { MetamagicTurnCastingService } from "./metamagic/turn-casting-service.js";
@@ -137,7 +142,9 @@ const catConfigurationAuthoring = new CatConfigurationAuthoringService();
 const declarationFamilies = new DeclarationFamilyRegistry();
 registerMetamagicFamily(declarationFamilies);
 registerSaveProtectionFamily(declarationFamilies);
+registerSummonFamily(declarationFamilies);
 const itemDeclarations = new DeclarationCollectionService({ registry: declarationFamilies, ac5e: ac5eEligibility });
+const summonDeclarations = new SummonDeclarationService({ collections: itemDeclarations });
 const itemOptionsAuthoring = new ItemOptionsAuthoringService({ collections: itemDeclarations, configurationAuthoring: catConfigurationAuthoring });
 const catMetadataContextMenu = new CatMetadataContextMenuService({
   authoring: catMetadataAuthoring,
@@ -197,6 +204,17 @@ const crosshairs3dPropagationEnvironment = new Crosshair3dFoundryPropagationEnvi
 });
 const reactionRegistry = new ReactionRegistry();
 const reactionAuthority = new ReactionAuthorityService({ socket });
+const initiativeOrdering = new InitiativeOrderingService();
+const initiativeCoordinator = new InitiativeCoordinator({
+  socket,
+  authority: reactionAuthority,
+  ordering: initiativeOrdering,
+  declarations: summonDeclarations
+});
+const summonContexts = new SummonContextService({
+  declarations: summonDeclarations,
+  initiative: initiativeCoordinator
+});
 const choicePrompts = new ChoicePromptService({ socket, selectionIndicator, authority: reactionAuthority });
 const brokerChoicePrompts = new BrokerChoicePromptService({
   socket,
@@ -526,6 +544,9 @@ const api = new ActionEffects5eApi({
   saveProtectionDeclarations,
   saveProtectionApplications,
   saveProtectionFeatures,
+  summonDeclarations,
+  summonContexts,
+  initiativeCoordinator,
   activityCards,
   chatCardAdapter,
   resultsCards,
@@ -671,6 +692,8 @@ Hooks.once("ready", async () => {
   await selectionIndicator.initialize();
   externalPromptBridge.initialize();
   await reactionAuthority.initialize();
+  initiativeCoordinator.initialize();
+  summonContexts.initialize();
   attachedAreaPropagation.initialize();
   environmentTiming.initialize();
   persistentAreaLifecycle.initialize();
@@ -700,3 +723,4 @@ Hooks.once("ready", async () => {
   Logger.info("Foundation ready. Console API:", `game.modules.get("${MODULE_ID}").api`);
   Hooks.callAll(HOOKS.READY, api);
 });
+

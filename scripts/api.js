@@ -88,6 +88,12 @@ import {
   SNEAK_ATTACK_USAGE_SCHEMA_VERSION,
   SNEAK_ATTACK_USAGE_FLAG,
   SNEAK_ATTACK_TRANSACTION_STATES,
+  SUMMON_CONTEXT_FLAG,
+  SUMMON_CONTEXT_SCHEMA_VERSION,
+  SUMMON_DECLARATION_SCHEMA_VERSION,
+  SUMMON_INITIATIVE_MODES,
+  INITIATIVE_LINK_FLAG,
+  INITIATIVE_LINK_SCHEMA_VERSION,
   TELEPORT_POLICIES
 } from "./core/constants.js";
 import { CROSSHAIR_3D_SHAPES } from "./crosshairs3d/geometry-service.js";
@@ -115,6 +121,9 @@ export class ActionEffects5eApi {
     saveProtectionDeclarations,
     saveProtectionApplications,
     saveProtectionFeatures,
+    summonDeclarations,
+    summonContexts,
+    initiativeCoordinator,
     activityCards,
     chatCardAdapter,
     resultsCards,
@@ -281,6 +290,12 @@ export class ActionEffects5eApi {
       SNEAK_ATTACK_USAGE_SCHEMA_VERSION,
       SNEAK_ATTACK_USAGE_FLAG,
       SNEAK_ATTACK_TRANSACTION_STATES,
+      SUMMON_DECLARATION_SCHEMA_VERSION,
+      SUMMON_CONTEXT_SCHEMA_VERSION,
+      SUMMON_CONTEXT_FLAG,
+      SUMMON_INITIATIVE_MODES,
+      INITIATIVE_LINK_SCHEMA_VERSION,
+      INITIATIVE_LINK_FLAG,
       REGION_AUTHORITY_FLAG,
       REGION_CELL_FLAG,
       REGION_CELL_SCHEMA_VERSION,
@@ -493,6 +508,18 @@ export class ActionEffects5eApi {
       restore: workflow => saveProtectionApplications.restore(workflow),
       getRecent: () => saveProtectionFeatures.getRecent(),
       getStatus: () => saveProtectionFeatures.getStatus()
+    });
+
+    this.summons = Object.freeze({
+      readDeclaration: item => summonDeclarations.read(item),
+      getContext: subject => summonContexts.getContext(subject),
+      getStats: () => summonContexts.getStats()
+    });
+
+    this.initiative = Object.freeze({
+      inspect: combat => initiativeCoordinator.inspect(combat),
+      reconcile: combat => initiativeCoordinator.requestReconcile(combat),
+      getStatus: () => initiativeCoordinator.getStatus()
     });
 
     this.activities = Object.freeze({
@@ -962,3 +989,4 @@ export class ActionEffects5eApi {
     Object.freeze(this);
   }
 }
+
