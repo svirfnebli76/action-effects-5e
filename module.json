@@ -2,7 +2,7 @@
   "id": "action-effects-5e",
   "title": "Action Effects 5E",
   "description": "Reusable D&D5e automation infrastructure and premade effects for Foundry VTT, including environmental Region interactions, the Spell Modifier Engine, Reaction Broker, forced displacement, movement, and coordinated token relationship frameworks.",
-  "version": "0.4.5.68",
+  "version": "0.4.5.69",
   "authors": [
     {
       "name": "Matthew Larrivee"
@@ -166,6 +166,18 @@
         "TRUSTED": "NONE",
         "ASSISTANT": "OWNER"
       }
+    },
+    {
+      "name": "ae5e-summoned-creatures",
+      "label": "AE5E Summoned Creatures",
+      "path": "packs/ae5e-summoned-creatures",
+      "type": "Actor",
+      "system": "dnd5e",
+      "ownership": {
+        "PLAYER": "OBSERVER",
+        "TRUSTED": "OBSERVER",
+        "ASSISTANT": "OWNER"
+      }
     }
   ],
   "packFolders": [
@@ -210,6 +222,15 @@
           "color": "#18cc46",
           "packs": [
             "class-features"
+          ],
+          "folders": []
+        },
+        {
+          "name": "Summons",
+          "sorting": "m",
+          "color": "#18cc46",
+          "packs": [
+            "ae5e-summoned-creatures"
           ],
           "folders": []
         }
