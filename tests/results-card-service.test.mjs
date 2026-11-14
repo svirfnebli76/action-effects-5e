@@ -31,6 +31,7 @@ test("results card defaults match approved compact Fireball layout", () => {
   assert.deepEqual(d.damageHeading, { size: 13, weight: 700 });
   assert.deepEqual(d.damageTargetName, { size: 12, weight: 500 });
   assert.deepEqual(d.damageAmount, { size: 12, weight: 700 });
+  assert.deepEqual(d.noticeText, { size: 13, weight: 600 });
   assert.notEqual(d, RESULTS_CARD_DEFAULT_STYLE);
 });
 test("partial style override retains defaults and does not mutate them", () => {
@@ -99,6 +100,39 @@ test("independent save or damage sections; zero damage and missing save totals",
   assert.equal(saveOnly.damage, null);
   assert.doesNotMatch(renderResultsCard(saveOnly), /class="ae5e-results-dc"/);
   assert.doesNotMatch(renderResultsCard(saveOnly), /class="ae5e-results-save-total"/);
+});
+test("notice-only cards use the shared header, styling, and escaped body", () => {
+  const snap = normalizeResultsCard({
+    header: { title: "Witch Bolt", icon: "icons/magic/lightning/bolt-blue.webp" },
+    notice: { text: "Caster/target no longer have line of sight & the tether ends." }
+  });
+  const html = renderResultsCard(snap);
+  assert.equal(snap.saves, null);
+  assert.equal(snap.damage, null);
+  assert.match(html, /class="ae5e-results-icon"/);
+  assert.match(html, /class="ae5e-results-notice"/);
+  assert.match(html, /ae5e-notice-card/);
+  assert.match(html, /line of sight &amp; the tether ends/);
+  assert.match(html, /--ae5e-results-notice-text-size:13px/);
+});
+test("notice card creation uses the same immutable results-card snapshot", async () => {
+  const oldChat = globalThis.ChatMessage, writes = [], actor = { name: "Collin A'Favor" };
+  globalThis.ChatMessage = {
+    getSpeaker: ({ actor: supplied }) => ({ alias: supplied.name }),
+    create: async data => { writes.push(data); return data; }
+  };
+  try {
+    const service = new ResultsCardService();
+    await service.createNotice({
+      header: { title: "Witch Bolt", icon: "icons/magic/lightning/bolt-blue.webp" },
+      message: "The tether ended.",
+      actor
+    });
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].flags["action-effects-5e"].resultsCard.notice.text, "The tether ended.");
+    assert.equal(writes[0].speaker.alias, "Collin A'Favor");
+    assert.match(writes[0].content, /ae5e-results-notice/);
+  } finally { globalThis.ChatMessage = oldChat; }
 });
 test("invalid damage fails before posting any chat message", async () => {
   const old = globalThis.ChatMessage, writes = [];

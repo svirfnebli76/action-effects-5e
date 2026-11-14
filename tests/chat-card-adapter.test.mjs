@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ChatCardAdapter, itemPresentation } from '../scripts/chat/chat-card-adapter.js';
+import { ChatCardAdapter, cardHeaderPresentation, itemPresentation, presentationHTML } from '../scripts/chat/chat-card-adapter.js';
 const M = 'action-effects-5e';
 class ForcedDeletion {}
 globalThis.foundry = { data: { operators: { ForcedDeletion } } };
@@ -15,6 +15,51 @@ test('activity overrides Item presentation; disabled activity does not inherit e
   assert.equal(itemPresentation(activity).hideCompletedControls,true);
   activity.flags[M].chatCard.schema=99;
   assert.equal(itemPresentation(activity),null);
+});
+test('Item-owned native card headers validate title, subtitle, icon and collapse policy', () => {
+  assert.deepEqual(cardHeaderPresentation({
+    title: 'Witch Bolt:', subtitle: 'Sustained Lightning',
+    icon: 'icons/magic/lightning/bolt-blue.webp', collapsible: false
+  }), {
+    title: 'Witch Bolt:', subtitle: 'Sustained Lightning',
+    icon: 'icons/magic/lightning/bolt-blue.webp', collapsible: false
+  });
+  assert.equal(cardHeaderPresentation({ title: 'Witch Bolt', icon: 'javascript:alert(1)' }), null);
+  assert.equal(cardHeaderPresentation({ title: '', subtitle: 'Sustained Lightning' }), null);
+  assert.equal(cardHeaderPresentation({ title: 'Witch Bolt', arbitraryCss: 'display:none' }), null);
+
+  const layout = '<div data-ae5e-slot="header"></div>';
+  const activity = { flags: { [M]: { chatCard: { schema: 1, enabled: true, layout,
+    header: { title: 'Witch Bolt:', subtitle: 'Sustained Lightning', icon: 'icons/svg/lightning.svg' } } } } };
+  assert.equal(itemPresentation(activity).header.title, 'Witch Bolt:');
+  activity.flags[M].chatCard.header.icon = 'data:image/svg+xml;base64,test';
+  assert.equal(itemPresentation(activity), null);
+});
+test('helper-card layouts accept separate supplements, properties, and targeting slots', () => {
+  const previousDocument = globalThis.document;
+  const node = slot => ({
+    tagName: 'DIV',
+    attributes: [{ name: 'data-ae5e-slot', value: slot }],
+    parentElement: null
+  });
+  const nodes = ['header', 'supplements', 'properties', 'targeting'].map(node);
+  globalThis.document = {
+    createElement() {
+      return {
+        innerHTML: "",
+        content: {
+          querySelectorAll: () => nodes
+        }
+      };
+    }
+  };
+  try {
+    assert.doesNotThrow(() => presentationHTML(
+      '<div data-ae5e-slot="header"></div><div data-ae5e-slot="supplements"></div>'
+        + '<div data-ae5e-slot="properties"></div><div data-ae5e-slot="targeting"></div>',
+      {}, { layout: true }
+    ));
+  } finally { globalThis.document = previousDocument; }
 });
 test('message resolution uses explicit ChatMessage or the owning workflow, never arbitrary parent lookup', () => {
   const adapter=new ChatCardAdapter();const message={documentName:'ChatMessage',id:'M'};

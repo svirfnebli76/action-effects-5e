@@ -215,6 +215,7 @@ export class ActionEffects5eApi {
       upsertContribution: (subject, contribution) => chatCardAdapter.upsertContribution(subject, contribution),
       removeContribution: (subject, id) => chatCardAdapter.removeContribution(subject, id),
       createResultsCard: options => resultsCards.create(options),
+      createNoticeCard: options => resultsCards.createNotice(options),
       getResultsCardDefaults: () => resultsCards.getDefaults()
     });
 

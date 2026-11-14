@@ -549,6 +549,41 @@
 /* Opted-in automatic save cards remain documents while their interim DOM is hidden. */
 .message.ae5e-card-interim { display: none !important; }
 
+/* Item-owned normalization for native D&D5e/Midi usage-card headers. */
+.message .message-content .card-header.ae5e-authored-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message .message-content .ae5e-authored-card-icon {
+  box-sizing: border-box;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  object-fit: cover;
+  border: 0;
+  border-radius: 4px;
+}
+.message .message-content .card-header.ae5e-authored-card-header .name-stacked {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  align-self: stretch;
+}
+.message .message-content .card-header.ae5e-authored-card-header .title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.message .message-content .card-header.ae5e-authored-card-header .subtitle {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
 
 /* Independent, immutable-at-creation AE5E Results Cards (schema 1).
    All sizing variables are snapshotted as validated values on the message. */
@@ -559,6 +594,12 @@
   padding: 6px 0 10px;
   color: inherit;
   font-size: 13px;
+}
+.message:has(.ae5e-notice-card) .message-header > img,
+.message:has(.ae5e-notice-card) .message-header .message-sender > img,
+.message:has(.ae5e-notice-card) .message-header img.avatar,
+.message:has(.ae5e-notice-card) .message-header .message-avatar {
+  display: none !important;
 }
 .message .message-content .ae5e-results-header {
   display: flex;
@@ -595,6 +636,16 @@
 .message .message-content .ae5e-results-divider {
   border-top: 1px solid rgba(255,255,255,.15);
   min-height: 0;
+}
+.message .message-content .ae5e-results-notice {
+  padding: 0 8px;
+  font-size: var(--ae5e-results-notice-text-size, 13px);
+  font-weight: var(--ae5e-results-notice-text-weight, 600);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.message .message-content .ae5e-results-notice p {
+  margin: 0;
 }
 .message .message-content .ae5e-results-saves {
   display: flex;

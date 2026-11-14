@@ -34,9 +34,14 @@ function automaticSaves() {
   return Boolean(settings?.autoCheckSaves && settings.autoCheckSaves !== "none"
     && modes.every(mode => typeof mode === "string" && !["none", "chat"].includes(mode)));
 }
-const SLOTS = new Set(["header", "description", "flavor", "use", "attack", "hits", "saves", "damage", "utility", "outcome", "controls", "modifications"]);
+const SLOTS = new Set([
+  "header", "description", "flavor", "supplements", "properties", "targeting", "use",
+  "attack", "hits", "saves", "damage", "utility", "outcome", "controls", "modifications"
+]);
 const SELECTORS = {
   header: ".card-header", description: ".card-description", flavor: ".card-flavor",
+  supplements: ".supplement", properties: ".chat-card > .icon-row:has(.pills)",
+  targeting: "recorded-targets",
   attack: ".midi-qol-attack-roll", hits: ".midi-qol-hits-display",
   saves: ".midi-qol-saves-display",
   damage: ".midi-qol-damage-roll, .midi-qol-other-damage-roll, .midi-qol-bonus-damage-roll",
@@ -52,6 +57,34 @@ const escape = value => String(value ?? "").replace(/[&<>"']/g, character =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 const TAGS = new Set(["DIV", "SECTION", "P", "SPAN", "STRONG", "B", "EM", "I", "SMALL", "BR", "UL", "OL", "LI", "H3", "H4"]);
 const CSS = new Set(["display", "flex-direction", "align-items", "justify-content", "gap", "margin", "margin-top", "margin-bottom", "padding", "padding-top", "padding-bottom", "font-size", "font-weight", "line-height", "text-align", "color", "background-color", "border", "border-radius", "width", "max-width"]);
+
+function safeHeaderImage(value) {
+  const candidate = typeof value === "string" ? value.trim() : "";
+  if (!candidate) return "";
+  if (candidate.length > 1024 || /^\/\//.test(candidate)
+    || (/^[a-z][a-z0-9+.-]*:/i.test(candidate) && !/^https?:\/\//i.test(candidate))
+    || /[\u0000-\u001f<>]/.test(candidate)) return null;
+  return candidate;
+}
+
+/** Validated, Item-owned replacement for a native usage-card header. */
+export function cardHeaderPresentation(value) {
+  if (value === undefined || value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (Object.keys(value).some(key => !["title", "subtitle", "icon", "collapsible"].includes(key))) return null;
+  const title = typeof value.title === "string" ? value.title.trim() : "";
+  const subtitle = value.subtitle === undefined ? ""
+    : typeof value.subtitle === "string" ? value.subtitle.trim() : null;
+  const icon = safeHeaderImage(value.icon);
+  if (!title || title.length > 160 || subtitle === null || subtitle.length > 160 || icon === null
+    || (value.collapsible !== undefined && typeof value.collapsible !== "boolean")) return null;
+  return Object.freeze({
+    title,
+    subtitle,
+    icon,
+    collapsible: value.collapsible === true
+  });
+}
 
 /** Restricted presentation HTML only: no scripts, event handlers, URLs or global CSS. */
 export function presentationHTML(html, data = {}, { layout = false } = {}) {
@@ -98,11 +131,14 @@ export function itemPresentation(activity) {
   // Explicit disabled activity policy overrides the Item default too.
   const value = activity?.flags?.[MODULE_ID]?.[FLAG] ?? activity?.item?.flags?.[MODULE_ID]?.[FLAG];
   if (value?.schema !== 1 || value.enabled !== true || typeof value.layout !== "string") return null;
+  const header = cardHeaderPresentation(value.header);
+  if (value.header !== undefined && !header) return null;
   return { schema: 1, enabled: true, layout: value.layout,
     titlePrefix: typeof value.titlePrefix === "string" ? value.titlePrefix.slice(0, 160) : "",
     saveStyle: value.saveStyle === "target" ? "target" : "native",
     hideCompletedControls: value.hideCompletedControls === true,
-    hideUntilComplete: value.hideUntilComplete === true };
+    hideUntilComplete: value.hideUntilComplete === true,
+    ...(header ? { header } : {}) };
 }
 
 export class ChatCardAdapter {
@@ -245,12 +281,17 @@ export class ChatCardAdapter {
     if (policy.schema === 1 && policy.enabled === true && policy.layout) {
       fragment = presentationHTML(policy.layout, {}, { layout: true });
     }
+    const authoredHeader = cardHeaderPresentation(policy.header);
+    if (policy.header !== undefined && !authoredHeader) {
+      throw new Error("Invalid authored card header; native presentation retained.");
+    }
     const contributions = Object.values(policy.contributions ?? {}).map(value => ({
       ...value, fragment: presentationHTML(value.html)
     }));
     const snapshot = message.flags?.[MODULE_ID]?.activityCard;
     this.#deferInterim(message, html, policy, snapshot);
     if (html.querySelector(".ae5e-card-frame, .ae5e-card-contribution")) return;
+    if (authoredHeader) this.#applyAuthoredHeader(header, authoredHeader);
     let frame = null;
     if (fragment) {
       frame = document.createElement("div");
@@ -267,7 +308,9 @@ export class ChatCardAdapter {
       card.append(frame);
       const controls = frame.querySelector('[data-ae5e-slot="controls"]');
       if (controls) {
-        for (const node of cardControls(content)) {
+        const includeTargeting = !frame.querySelector('[data-ae5e-slot="targeting"]');
+        const includeProperties = !frame.querySelector('[data-ae5e-slot="properties"]');
+        for (const node of cardControls(content, { includeTargeting, includeProperties })) {
           if (hidden(node)) node.hidden = true;
           controls.append(node);
         }
@@ -294,6 +337,37 @@ export class ChatCardAdapter {
           tail.after(element);
         }
       }
+    }
+  }
+
+  #applyAuthoredHeader(header, presentation) {
+    const stack = header.querySelector(".name-stacked");
+    const title = stack?.querySelector(".title");
+    if (!stack || !title) throw new Error("Native usage-card header structure is unavailable.");
+
+    header.querySelectorAll(".item-icon, .activity-icon, .ae5e-authored-card-icon").forEach(icon => icon.remove());
+    if (presentation.icon) {
+      const icon = document.createElement("img");
+      icon.className = "ae5e-authored-card-icon";
+      icon.src = presentation.icon;
+      icon.alt = "";
+      stack.before(icon);
+    }
+    title.textContent = presentation.title;
+    let subtitle = stack.querySelector(".subtitle");
+    if (presentation.subtitle) {
+      if (!subtitle) {
+        subtitle = document.createElement("span");
+        subtitle.className = "subtitle";
+        stack.append(subtitle);
+      }
+      subtitle.textContent = presentation.subtitle;
+    } else subtitle?.remove();
+
+    header.classList.add("ae5e-authored-card-header");
+    if (!presentation.collapsible) {
+      header.removeAttribute("data-action");
+      header.querySelector(".chevron")?.remove();
     }
   }
 
@@ -388,8 +462,11 @@ function suppressPresentation(node) {
   node.classList.add("ae5e-card-suppressed");
 }
 
-function cardControls(content) {
-  return Array.from(content.querySelectorAll(".chat-card .icon-row, recorded-targets, effect-application, [data-action='midiApplyEffects']"));
+function cardControls(content, { includeTargeting = true, includeProperties = true } = {}) {
+  const iconRows = includeProperties ? ".chat-card .icon-row" : ".chat-card .icon-row:not(:has(.pills))";
+  const selectors = [iconRows, includeTargeting ? "recorded-targets" : null,
+    "effect-application", "[data-action='midiApplyEffects']"].filter(Boolean);
+  return Array.from(content.querySelectorAll(selectors.join(", ")));
 }
 
 function validId(id) {

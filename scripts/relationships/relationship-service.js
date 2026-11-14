@@ -47,6 +47,7 @@ export class RelationshipService {
   #socket;
   #lifecycle;
   #spending;
+  #cards;
   #relationships = new Map();
   #followersByLeader = new Map();
   #relationshipsByFollower = new Map();
@@ -56,10 +57,11 @@ export class RelationshipService {
   #updateSceneHook = null;
   #deleteSceneHook = null;
 
-  constructor({ socket, lifecycle = null, spending = null }) {
+  constructor({ socket, lifecycle = null, spending = null, cards = null }) {
     this.#socket = socket;
     this.#lifecycle = lifecycle;
     this.#spending = spending;
+    this.#cards = cards;
     this.#socket.register("relationships.create", this.#createAsGM.bind(this));
     this.#socket.register("relationships.remove", this.#removeAsGM.bind(this));
     this.#socket.register("relationships.updateGeometry", this.#updateGeometryAsGM.bind(this));
@@ -527,11 +529,17 @@ export class RelationshipService {
     if (!Object.keys(messages).length) {
       throw new Error("Relationship breakPresentation requires at least one reason message.");
     }
+    const title = String(value.title ?? "Relationship Ended").trim() || "Relationship Ended";
+    const subtitle = String(value.subtitle ?? "").trim();
+    if (title.length > 160 || subtitle.length > 160) {
+      throw new Error("Relationship breakPresentation title and subtitle must each be at most 160 characters.");
+    }
     const controllerActorUuid = String(value.controllerActorUuid ?? leader?.actor?.uuid ?? "").trim() || null;
     return Object.freeze({
       ui: value.ui !== false,
       chat: value.chat !== false,
-      title: String(value.title ?? "Relationship Ended").trim() || "Relationship Ended",
+      title,
+      subtitle,
       img: safeImagePath(value.img),
       controllerActorUuid,
       messages: Object.freeze(messages)
@@ -566,14 +574,24 @@ export class RelationshipService {
         await this.#showBreakNotification(payload);
       }
     }
-    if (presentation.chat !== false && globalThis.ChatMessage?.create) {
+    if (presentation.chat !== false) {
       try {
-        const image = presentation.img
-          ? `<img src="${escapeHtml(presentation.img)}" alt="" width="36" height="36">`
-          : "";
-        await ChatMessage.create({
-          speaker: { alias: "Action Effects 5E" },
-          content: `<section class="ae5e-relationship-break"><header class="card-header flexrow">${image}<h3>${escapeHtml(presentation.title)}</h3></header><div class="card-content"><p>${escapeHtml(message)}</p></div></section>`
+        if (typeof this.#cards?.createNotice !== "function") {
+          throw new Error("AE5E notice-card service is unavailable.");
+        }
+        let actor = null;
+        if (presentation.controllerActorUuid) {
+          try { actor = await fromUuid(presentation.controllerActorUuid); } catch { /* unavailable */ }
+        }
+        await this.#cards.createNotice({
+          actor,
+          header: {
+            title: presentation.title,
+            subtitle: presentation.subtitle,
+            icon: presentation.img ?? undefined
+          },
+          message,
+          ...(actor ? {} : { speaker: { alias: "Action Effects 5E" } })
         });
       } catch (error) {
         Logger.warn("Relationship break chat card failed.", error);

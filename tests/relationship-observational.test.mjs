@@ -299,11 +299,12 @@ test("relationship break presentation sends the configured UI notice and one cha
   const notifications = [];
   const cards = [];
   const previousUi = globalThis.ui;
-  const previousChatMessage = globalThis.ChatMessage;
   globalThis.ui = { notifications: { info: message => notifications.push(message) } };
-  globalThis.ChatMessage = { create: async data => { cards.push(data); return data; } };
   try {
-    const service = new RelationshipService({ socket: new FakeSocket() });
+    const service = new RelationshipService({
+      socket: new FakeSocket(),
+      cards: { createNotice: async request => { cards.push(request); return request; } }
+    });
     await service.initialize();
     const relationship = await service.create({
       leaderUuid: f.leaderA.uuid,
@@ -313,6 +314,7 @@ test("relationship break presentation sends the configured UI notice and one cha
       constraints: [{ type: RELATIONSHIP_CONSTRAINT_TYPES.STATUS, participant: "follower", statuses: ["dead"] }],
       breakPresentation: {
         title: "Witch Bolt",
+        subtitle: "Tether Removed",
         messages: {
           "participant-status-matched:dead": "Witchbolt tether removed: Target has died"
         }
@@ -341,11 +343,14 @@ test("relationship break presentation sends the configured UI notice and one cha
     });
     assert.deepEqual(notifications, ["Witchbolt tether removed: Target has died"]);
     assert.equal(cards.length, 1);
-    assert.match(cards[0].content, /Witchbolt tether removed: Target has died/);
+    assert.equal(cards[0].header.title, "Witch Bolt");
+    assert.equal(cards[0].header.subtitle, "Tether Removed");
+    assert.equal(cards[0].message, "Witchbolt tether removed: Target has died");
+    assert.equal(cards[0].actor, f.leaderA.actor);
+    assert.equal(cards[0].speaker, undefined);
     service.shutdown();
   } finally {
     globalThis.ui = previousUi;
-    globalThis.ChatMessage = previousChatMessage;
     documents.delete(f.leaderA.actor.uuid);
   }
 });
