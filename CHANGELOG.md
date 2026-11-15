@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 51836)
-Total output lines: 1475
-
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
@@ -804,7 +801,49 @@ Total output lines: 1891
 ## 0.4.4.5 — Action Effects 3D Crosshairs — uniform orbital steps and smooth MOVE handoff
 
 - Corrected remote Ctrl-wheel elevation so each accepted notch advances exactly one Scene grid-distance along the fixed-radius construction arc (`s = rθ`). This removes the large spatial jumps near zenith/nadir while preserving continuous 360° travel in either direction.
-- Corrected the ELEVATE/ROTATE → MOVE handoff. AE5E now preserves the accepted crosshair-to-…1836 tokens truncated…kflow-context handling so Item/Activity identity can be resolved from the cloned workflow payload or AA's secondary animation context. AA diagnostics now annotate transient claim id/reason without mutating the source Item/Activity.
+- Corrected the ELEVATE/ROTATE → MOVE handoff. AE5E now preserves the accepted crosshair-to-pointer XY offset when modifiers are released, so subsequent normal mouse movement translates smoothly from the authoritative 3D position instead of snapping the crosshair back under the physical cursor. Manual world-Z remains preserved.
+- Restored the established AE5E source-to-placement tracer used by Entangle/Fireball: Eskie `generic_01` line, `#4A4A4A` tint, 0.8 opacity, below Tokens. The retained tracer endpoint updates in place and is cleaned on confirm/cancel/error with the rest of the temporary placement presentation.
+- Added `elevationRadius` to accepted remote elevation revisions so live diagnostics can verify the exact orbital arc distance (`radius × phase delta`) for each accepted wheel notch.
+- Added deterministic regressions for constant one-grid orbital arc travel, smooth modifier-to-MOVE handoff, and retained non-destructive tracer updates.
+- Kept Self Cone/Ray pitch/apex behavior unchanged pending its dedicated live acceptance tests. No Checkpoint 3 propagation, persistent Region, compendium, or Item behavior was added or changed.
+
+## 0.4.4.4 — Action Effects 3D Crosshairs — cyclic remote elevation
+
+- Corrected remote construction-plane elevation so every Ctrl-wheel notch contributes the full one-grid-distance manipulation amount even when that step crosses zenith or nadir; unused distance is carried through the pole instead of being discarded by a clamp.
+- Remote construction-plane elevation now uses a cyclic 0–360° phase. Reverse input from phase 0 wraps into the previous quadrant rather than sticking at zero/±180°, and repeated travel may continue around the circle in either direction.
+- Added `elevationPhase` to accepted remote elevation revisions for flat live diagnostics; actual XY MOVE resets the temporary construction-plane phase as designed.
+- Kept Self Cone/Ray pitch/apex behavior unchanged pending its dedicated live acceptance tests.
+- Added deterministic regressions for pole carry-through, reverse-direction wrapping, repeated cyclic travel, and Ctrl release/re-entry.
+- No Checkpoint 3 propagation, persistent Region, compendium, or Item behavior was added or changed.
+
+## 0.4.4.3 — Action Effects 3D Crosshairs — Checkpoint 2 live acceptance corrections
+
+- Corrected remote ELEVATE construction-plane travel so Sphere/Prism-style remote placements continue naturally through vertical and onto the opposite side of the source instead of clamping at ±90 degrees. The retained arc survives Ctrl release/re-entry and resets when actual XY MOVE changes the placement plane.
+- Corrected accepted-state Eskie/Sequencer presentation flicker. Session-owned placement artwork is now transformed in place instead of calling Sequencer 4.2.x `EffectManager.updateEffects()`, whose update path destroys and reinitializes CanvasEffect media. If the required live transform capability is unavailable, AE5E falls back to its retained guide instead of repeatedly rebuilding the effect.
+- Corrected final-confirm synchronization so a click cannot reconcile an older hidden-carrier position over a newer still-resolving wheel revision. Confirmation now waits for the newest authoritative revision before final carrier reconciliation and commit.
+- Added deterministic regressions for through-vertical remote elevation across modifier release/re-entry, retained non-destructive visual updates, and confirmation while manipulation work is still pending.
+- No Checkpoint 3 propagation, persistent Region, compendium, or Item behavior was added or changed.
+
+## 0.4.4.2 — Action Effects 3D Crosshairs — live placement and targeting
+
+- Added the opt-in live `ae5e.crosshairs3d.show(...)` placement session on top of the v0.4.4.1 pure 3D geometry foundation. Existing `ae5e.crosshairs` Items remain unchanged.
+- Added session-scoped MOVE / ROTATE / ELEVATE controls: normal mouse movement controls XY, Shift + mouse wheel applies exact 5-degree yaw increments, and Ctrl + mouse wheel applies one Scene grid-distance elevation increment. Ctrl+Shift is intentionally non-operative, and all temporary input interception is cleaned up on confirm, cancel, or error.
+- Added accepted-revision targeting on every usable placement change using the locked gridded rules path: continuous 3D primitive -> affected 3D grid cells -> full Token 3D-volume positive overlap. Rapid input is coalesced without losing wheel notches, and stale async revisions cannot overwrite newer target state.
+- Added atomic accepted-state publication: target highlighting, AE5E guides, elevation labels, the hidden Sequencer carrier, and optional Eskie presentation advance only after the newest revision has resolved. Final confirmation waits for the newest authoritative revision before committing targets.
+- Added remote surface-following through Foundry v14 move surfaces, preferring a matching surface on the currently viewed Level as contextual guidance while keeping exact XYZ authoritative. After manual elevation, later XY movement preserves the selected absolute world-Z plane unless higher physical terrain requires an upward clamp.
+- Added true-3D range enforcement for remote placement. When a requested XY point exceeds range, AE5E solves the farthest legal horizontal placement while preserving the selected absolute Z plane and re-resolving physical surface elevation along the solve.
+- Added Self Cone/Ray 3D pitch controls with fixed centerline length, legal source-boundary apex resolution, endpoint elevation tracking, deterministic zero-roll Ray geometry, and opposite-apex handoff when pitch crosses through vertical.
+- Added retained accepted-state presentation: horizontal shapes may use Eskie artwork when available; pitched Cones switch to an AE5E-owned retained PIXI 3D guide; Ray XY projection shortens with pitch while preserving a W x W vertical footprint. Presentation failure falls back to the AE5E geometry guide rather than failing placement.
+- Added lightweight placement UI with current mode, current elevation, only the controls enabled for that placement, and the persistent Right Click to Cancel hint.
+- Added optional LOS validation against the resolved authoritative XYZ using the source Token vision API. The cursor remains free while accepted placement state is constrained to legal revisions.
+- Preserved hidden/Invisible target secrecy by performing no AE5E visibility filtering or disclosure UI: mechanically eligible Tokens can remain in the authoritative target set while Foundry/Midi presentation controls what the player can see.
+- Added deterministic regression coverage for live confirmation/cancel target ownership, exact wheel increments, rapid-input coalescing, Self pitch, vertical apex handoff, current-Level surface preference, absolute-Z range clamping, and retained Eskie/fallback visual behavior.
+- Checkpoint 2 deliberately does not yet implement live `Direct` / `Spread` obstruction propagation or persistent Region generation; those remain Checkpoint 3 work.
+
+## 0.4.4.1 — Action Effects 3D Crosshairs — geometry foundation
+
+- Began the Action Effects 3D Crosshairs major feature line as an opt-in foundation. Existing 2D/Eskie crosshair Items are unchanged and no live placement hooks are registered by this checkpoint.
+- Added pure authoritative 3D geometry for Prism/Cube, vertical Cylinder, Sphere, finite right Cone, sq…19595 tokens truncated…kflow-context handling so Item/Activity identity can be resolved from the cloned workflow payload or AA's secondary animation context. AA diagnostics now annotate transient claim id/reason without mutating the source Item/Activity.
 - Persistent `flags.action-effects-5e.animation.automatedAnimations = "suppress"`, origin-chain inheritance, same-Actor status ownership, and child-policy stamping remain unchanged for persistent effects such as Entangled.
 - No new Socketlib path is required. Transient claims are client-local runtime state surrounding the initiating Activity execution and perform no privileged document updates.
 - Added focused regression coverage for Activity isolation, non-persistence, cleanup on success/failure, AA adapter suppression, and secondary-context identity matching. The repository development suite is **106/106 PASS**.
