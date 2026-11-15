@@ -104,7 +104,7 @@ The suite validates the reusable infrastructure contracts and regression coverag
 
 Infrastructure builds must not modify `packs/` or `assets/` unless an isolated Item/asset publication is explicitly intended.
 
-AE5E v0.4.5.70 adds GM-only `Export Data` and `Import Data` options to individual
+AE5E v0.4.5.71 adds GM-only `Export Data` and `Import Data` options to individual
 Actor and Item compendium entries. Imports require an unlocked pack and present a
 protected-identity preview before replacing the selected record. The selected
 entry keeps its compendium UUID, folder, sort position, ownership, subtype, and

@@ -7,7 +7,7 @@ import {
   CAT_METADATA_CONTEXT_WRAPPER_TARGET
 } from "../scripts/authoring/cat-metadata-context-menu-service.js";
 
-function makeService({ isGM = true } = {}) {
+function makeService({ isGM = true, contextOptionExtensions = [] } = {}) {
   const registrations = [];
   const authoring = {
     isValidVersion: value => /^\d+\.\d+\.\d+$/.test(value),
@@ -36,7 +36,8 @@ function makeService({ isGM = true } = {}) {
     registry,
     gameAccessor: () => ({ user: { isGM } }),
     libWrapperAccessor: () => libWrapper,
-    fromUuidAccessor: async () => null
+    fromUuidAccessor: async () => null,
+    contextOptionExtensions
   });
   return { service, registrations };
 }
@@ -76,6 +77,24 @@ test("CAT metadata context service registers the Foundry v14 Compendium wrapper 
   assert.equal(registrations[0].moduleId, "action-effects-5e");
   assert.equal(registrations[0].target, CAT_METADATA_CONTEXT_WRAPPER_TARGET);
   assert.equal(registrations[0].type, "WRAPPER");
+});
+
+test("the registered wrapper applies additional AE5E compendium context extensions", () => {
+  const extensionCalls = [];
+  const extension = {
+    extendContextOptions(app, options) {
+      extensionCalls.push(app);
+      return [...options, { label: "Export Data" }, { label: "Import Data" }];
+    }
+  };
+  const { service, registrations } = makeService({ contextOptionExtensions: [extension] });
+  service.initialize();
+  const app = { collection: makePack("test.actors", "Actor") };
+  const options = registrations[0].fn.call(app, () => [{ label: "Base" }]);
+
+  assert.deepEqual(options.map(option => option.label), ["Base", "Export Data", "Import Data"]);
+  assert.deepEqual(extensionCalls, [app]);
+  assert.equal(registrations.length, 1);
 });
 
 test("context option appears only for GM in approved AE5E public compendiums", () => {

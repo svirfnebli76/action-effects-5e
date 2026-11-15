@@ -148,14 +148,15 @@ registerSummonFamily(declarationFamilies);
 const itemDeclarations = new DeclarationCollectionService({ registry: declarationFamilies, ac5e: ac5eEligibility });
 const summonDeclarations = new SummonDeclarationService({ collections: itemDeclarations });
 const itemOptionsAuthoring = new ItemOptionsAuthoringService({ collections: itemDeclarations, configurationAuthoring: catConfigurationAuthoring });
+const compendiumData = new CompendiumDataService();
+const compendiumDataContextMenu = new CompendiumDataContextMenuService({ dataService: compendiumData });
 const catMetadataContextMenu = new CatMetadataContextMenuService({
   authoring: catMetadataAuthoring,
   configurationAuthoring: catConfigurationAuthoring,
   itemOptionsAuthoring,
-  registry: catAutomationRegistry
+  registry: catAutomationRegistry,
+  contextOptionExtensions: [compendiumDataContextMenu]
 });
-const compendiumData = new CompendiumDataService();
-const compendiumDataContextMenu = new CompendiumDataContextMenuService({ dataService: compendiumData });
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const resultsCards = new ResultsCardService();
@@ -651,8 +652,12 @@ Hooks.once("init", () => {
   chatCardAdapter.initialize();
   catAutomationRegistry.initialize();
   sneakAttackDeclarations.initialize();
-  catMetadataContextMenu.initialize();
-  compendiumDataContextMenu.initialize();
+  const compendiumContextStatus = catMetadataContextMenu.initialize();
+  compendiumDataContextMenu.initialize({
+    sharedWrapperId: compendiumContextStatus.wrapperRegistered
+      ? compendiumContextStatus.wrapperId
+      : null
+  });
   movementAccounting.initialize();
   movementProtection.initialize();
   environmentBehaviors.initialize();

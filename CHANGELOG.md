@@ -1,6 +1,12 @@
 Warning: truncated output (original token count: 69595)
 Total output lines: 1891
 
+# v0.4.5.71 - Shared compendium context-menu registration
+
+- Routes AE5E's CAT authoring controls and protected Actor/Item data-transfer controls through one libWrapper registration for Foundry's compendium entry menu.
+- Prevents libWrapper from rejecting the data-transfer controls as a duplicate registration from the same module, restoring `Export Data` and `Import Data` on eligible entries.
+- Retains GM-only access, locked-pack export, unlocked-pack import, UUID protection, audit, confirmation, verification, and rollback behavior from v0.4.5.70.
+
 # v0.4.5.70 - Protected compendium Actor and Item data transfer
 
 - Adds GM-only `Export Data` and `Import Data` entry context options to Actor and Item compendiums. Export remains available while a pack is locked; import requires an unlocked pack.

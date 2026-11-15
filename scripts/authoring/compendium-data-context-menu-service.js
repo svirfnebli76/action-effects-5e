@@ -74,12 +74,14 @@ export class CompendiumDataContextMenuService {
   #selectFile;
   #initialized = false;
   #wrapperRegistered = false;
+  #sharedWrapper = false;
   #wrapperId = null;
   #lastError = null;
   #stats = {
     initializeCalls: 0,
     duplicateInitializeCalls: 0,
     wrapperRegistrations: 0,
+    sharedWrapperBindings: 0,
     wrapperRegistrationErrors: 0,
     contextMenusExtended: 0,
     exportClicks: 0,
@@ -101,13 +103,21 @@ export class CompendiumDataContextMenuService {
     this.#selectFile = typeof selectFileAccessor === "function" ? selectFileAccessor : selectJsonFile;
   }
 
-  initialize() {
+  initialize({ sharedWrapperId = null } = {}) {
     this.#stats.initializeCalls += 1;
     if (this.#initialized) {
       this.#stats.duplicateInitializeCalls += 1;
       return this.getStatus();
     }
     this.#initialized = true;
+    if (sharedWrapperId !== null && sharedWrapperId !== undefined) {
+      this.#wrapperId = sharedWrapperId;
+      this.#wrapperRegistered = true;
+      this.#sharedWrapper = true;
+      this.#stats.sharedWrapperBindings += 1;
+      Logger.info("Compendium Actor/Item data context menu joined AE5E's shared compendium wrapper.");
+      return this.getStatus();
+    }
     const libWrapper = this.#libWrapperAccessor();
     if (typeof libWrapper?.register !== "function") {
       this.#recordWrapperError(new Error("libWrapper is unavailable; AE5E compendium data context options could not be installed."));
@@ -213,6 +223,7 @@ export class CompendiumDataContextMenuService {
     return {
       initialized: this.#initialized,
       wrapperRegistered: this.#wrapperRegistered,
+      sharedWrapper: this.#sharedWrapper,
       wrapperId: this.#wrapperId,
       wrapperTarget: COMPENDIUM_DATA_CONTEXT_WRAPPER_TARGET,
       exportLabel: COMPENDIUM_EXPORT_CONTEXT_LABEL,

@@ -1,6 +1,6 @@
 export const MODULE_ID = "action-effects-5e";
 export const MODULE_TITLE = "Action Effects 5E";
-export const MODULE_VERSION = "0.4.5.70";
+export const MODULE_VERSION = "0.4.5.71";
 
 export const SUMMON_DECLARATION_SCHEMA_VERSION = 1;
 export const SUMMON_CONTEXT_SCHEMA_VERSION = 1;

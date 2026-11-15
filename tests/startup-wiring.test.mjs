@@ -24,12 +24,16 @@ test("restored chat messages reach both presentation services before ready", () 
     const seen = [];
     const activityCards = new ActivityCardService();
     const chatCardAdapter = new ChatCardAdapter();
+    const sharedCompendiumWrapper = { wrapperRegistered: true, wrapperId: 42 };
+    let compendiumDataInitialization = null;
     activityCards.render = (message, html) => seen.push(["activity", message, html]);
     chatCardAdapter.render = (message, html) => seen.push(["adapter", message, html]);
     const context = {
       Hooks: hooks, Logger: { log() {} }, registerSettings() {},
       MODULE_ID: "action-effects-5e", api: {}, game: { modules: new Map() },
-      activityCards, chatCardAdapter
+      activityCards, chatCardAdapter,
+      catMetadataContextMenu: { initialize: () => sharedCompendiumWrapper },
+      compendiumDataContextMenu: { initialize: options => { compendiumDataInitialization = options; } }
     };
     const init = entry.slice(entry.indexOf('Hooks.once("init"'), entry.indexOf('Hooks.once("setup"'));
     for (const [, service] of init.matchAll(/\b(\w+)\.initialize\(\)/g)) {
@@ -37,6 +41,8 @@ test("restored chat messages reach both presentation services before ready", () 
     }
     vm.runInNewContext(init, context);
     callbacks.get("init")();
+    assert.equal(compendiumDataInitialization.sharedWrapperId, 42,
+      "Actor/Item data controls must join AE5E's one registered compendium wrapper");
     const message = { flags: { "action-effects-5e": { chatCard: {
       contributions: { probe: { id: "probe", html: "<p>Persisted contribution</p>" } }
     } } } };

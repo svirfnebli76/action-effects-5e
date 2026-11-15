@@ -46,6 +46,20 @@ test("compendium data context service registers one Foundry v14 wrapper", () => 
   assert.equal(service.getStats().duplicateInitializeCalls, 1);
 });
 
+test("compendium data context service can share AE5E's existing wrapper without a duplicate registration", () => {
+  const { service, registrations } = makeService();
+  const first = service.initialize({ sharedWrapperId: 42 });
+  const second = service.initialize({ sharedWrapperId: 77 });
+
+  assert.equal(first.wrapperRegistered, true);
+  assert.equal(first.sharedWrapper, true);
+  assert.equal(first.wrapperId, 42);
+  assert.equal(second.wrapperId, 42);
+  assert.equal(registrations.length, 0);
+  assert.equal(service.getStats().sharedWrapperBindings, 1);
+  assert.equal(service.getStats().duplicateInitializeCalls, 1);
+});
+
 test("GM sees Import Data and Export Data on Actor and Item entries only", () => {
   const { service } = makeService({ isGM: true });
   const base = [{ label: "Base" }];

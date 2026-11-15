@@ -128,6 +128,7 @@ export class CatMetadataContextMenuService {
   #libWrapperAccessor;
   #fromUuid;
   #publicPackIds;
+  #contextOptionExtensions;
   #initialized = false;
   #wrapperRegistered = false;
   #wrapperId = null;
@@ -158,7 +159,8 @@ export class CatMetadataContextMenuService {
     gameAccessor = defaultGameAccessor,
     libWrapperAccessor = defaultLibWrapperAccessor,
     fromUuidAccessor = defaultFromUuid,
-    publicPackIds = CAT_PUBLIC_AUTOMATION_PACK_IDS
+    publicPackIds = CAT_PUBLIC_AUTOMATION_PACK_IDS,
+    contextOptionExtensions = []
   } = {}) {
     if (!authoring) throw new Error("CatMetadataContextMenuService requires a CAT metadata authoring service.");
     if (!configurationAuthoring) throw new Error("CatMetadataContextMenuService requires a CAT configuration authoring service.");
@@ -170,6 +172,11 @@ export class CatMetadataContextMenuService {
     this.#libWrapperAccessor = typeof libWrapperAccessor === "function" ? libWrapperAccessor : defaultLibWrapperAccessor;
     this.#fromUuid = typeof fromUuidAccessor === "function" ? fromUuidAccessor : defaultFromUuid;
     this.#publicPackIds = Object.freeze([...publicPackIds]);
+    if (!Array.isArray(contextOptionExtensions)
+      || contextOptionExtensions.some(extension => typeof extension?.extendContextOptions !== "function")) {
+      throw new Error("CatMetadataContextMenuService context option extensions must provide extendContextOptions().");
+    }
+    this.#contextOptionExtensions = Object.freeze([...contextOptionExtensions]);
   }
 
   initialize() {
@@ -193,7 +200,7 @@ export class CatMetadataContextMenuService {
         CAT_METADATA_CONTEXT_WRAPPER_TARGET,
         function ae5eCatMetadataContextWrapper(wrapped, ...args) {
           const baseOptions = wrapped(...args);
-          return service.extendContextOptions(this, baseOptions);
+          return service.extendAllContextOptions(this, baseOptions);
         },
         "WRAPPER"
       );
@@ -295,6 +302,14 @@ export class CatMetadataContextMenuService {
     }
 
     if (added) this.#stats.contextMenusExtended += 1;
+    return options;
+  }
+
+  extendAllContextOptions(app, baseOptions = []) {
+    let options = this.extendContextOptions(app, baseOptions);
+    for (const extension of this.#contextOptionExtensions) {
+      options = extension.extendContextOptions(app, options);
+    }
     return options;
   }
 
