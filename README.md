@@ -104,6 +104,15 @@ The suite validates the reusable infrastructure contracts and regression coverag
 
 Infrastructure builds must not modify `packs/` or `assets/` unless an isolated Item/asset publication is explicitly intended.
 
+AE5E v0.4.5.70 adds GM-only `Export Data` and `Import Data` options to individual
+Actor and Item compendium entries. Imports require an unlocked pack and present a
+protected-identity preview before replacing the selected record. The selected
+entry keeps its compendium UUID, folder, sort position, ownership, subtype, and
+provenance; existing embedded IDs and local references are audited, new
+Activities/Effects are permitted, and a failed verification automatically
+restores the pre-import snapshot. Export is read-only and remains available on
+locked packs.
+
 Historical release details are retained in `CHANGELOG.md`.
 
 ## v0.4.5.21 Activity chat-card infrastructure

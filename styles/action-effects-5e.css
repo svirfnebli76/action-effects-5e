@@ -1174,3 +1174,49 @@
   overflow-wrap: normal;
   line-height: 1.2;
 }
+
+/* Compendium Actor/Item data import preview. */
+.ae5e-compendium-data-preview {
+  display: grid;
+  gap: 10px;
+  max-height: min(650px, 70vh);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.ae5e-compendium-data-preview p { margin: 0; }
+.ae5e-data-preview-identity {
+  border: 1px solid color-mix(in srgb, #18cc46 55%, transparent);
+  border-radius: 6px;
+  padding: 8px;
+  background: color-mix(in srgb, #18cc46 10%, transparent);
+}
+.ae5e-data-preview-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.ae5e-data-preview-counts span {
+  border: 1px solid var(--color-border-light-2, rgba(150, 160, 180, .4));
+  border-radius: 5px;
+  padding: 6px;
+  text-align: center;
+}
+.ae5e-data-preview-section {
+  border: 1px solid var(--color-border-light-2, rgba(150, 160, 180, .4));
+  border-radius: 6px;
+  padding: 8px;
+}
+.ae5e-data-preview-section h3 { margin: 0 0 5px; font-size: 14px; }
+.ae5e-data-preview-section ul { margin: 0; padding-left: 20px; }
+.ae5e-data-preview-section li { overflow-wrap: anywhere; }
+.ae5e-data-preview-section[data-kind="error"],
+.ae5e-data-preview-blocked {
+  color: var(--ae5e-broker-reason-text-color, #f05b5b);
+}
+.ae5e-data-preview-section[data-kind="warning"],
+.ae5e-data-preview-deletion {
+  color: var(--ae5e-broker-advisory-text-color, #ff9f1c);
+}
+.ae5e-data-preview-section[data-kind="added"] { color: var(--ae5e-broker-acceptance-text-color, #18cc46); }
+.ae5e-data-preview-section[data-kind="removed"] { color: var(--ae5e-broker-reason-text-color, #f05b5b); }
+.ae5e-data-preview-blocked { font-weight: 700; }

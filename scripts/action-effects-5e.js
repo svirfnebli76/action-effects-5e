@@ -18,6 +18,8 @@ import { Ac5eEligibilityAdapter } from "./integrations/ac5e-eligibility-adapter.
 import { CatMetadataAuthoringService, isValidAutomationVersion } from "./authoring/cat-metadata-authoring-service.js";
 import { CatConfigurationAuthoringService } from "./authoring/cat-configuration-authoring-service.js";
 import { CatMetadataContextMenuService } from "./authoring/cat-metadata-context-menu-service.js";
+import { CompendiumDataService } from "./authoring/compendium-data-service.js";
+import { CompendiumDataContextMenuService } from "./authoring/compendium-data-context-menu-service.js";
 import { AnimationOwnershipService } from "./animations/animation-ownership-service.js";
 import { AutomatedAnimationsAdapter } from "./integrations/automated-animations-adapter.js";
 import { RelationshipService } from "./relationships/relationship-service.js";
@@ -152,6 +154,8 @@ const catMetadataContextMenu = new CatMetadataContextMenuService({
   itemOptionsAuthoring,
   registry: catAutomationRegistry
 });
+const compendiumData = new CompendiumDataService();
+const compendiumDataContextMenu = new CompendiumDataContextMenuService({ dataService: compendiumData });
 const animationOwnership = new AnimationOwnershipService();
 const automatedAnimations = new AutomatedAnimationsAdapter({ ownership: animationOwnership });
 const resultsCards = new ResultsCardService();
@@ -563,6 +567,8 @@ const api = new ActionEffects5eApi({
   catMetadataAuthoring,
   catConfigurationAuthoring,
   catMetadataContextMenu,
+  compendiumData,
+  compendiumDataContextMenu,
   animationOwnership,
   automatedAnimations,
   spellModifierRegistry,
@@ -646,6 +652,7 @@ Hooks.once("init", () => {
   catAutomationRegistry.initialize();
   sneakAttackDeclarations.initialize();
   catMetadataContextMenu.initialize();
+  compendiumDataContextMenu.initialize();
   movementAccounting.initialize();
   movementProtection.initialize();
   environmentBehaviors.initialize();

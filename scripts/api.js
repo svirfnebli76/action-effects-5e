@@ -140,6 +140,8 @@ export class ActionEffects5eApi {
     catMetadataAuthoring,
     catConfigurationAuthoring,
     catMetadataContextMenu,
+    compendiumData,
+    compendiumDataContextMenu,
     animationOwnership,
     automatedAnimations,
     spellModifierRegistry,
@@ -369,6 +371,17 @@ export class ActionEffects5eApi {
     });
 
     this.authoring = Object.freeze({
+      compendiumData: Object.freeze({
+        createExport: document => compendiumData.createExport(document),
+        exportDocument: document => compendiumData.exportDocument(document),
+        audit: (documentName, current, incoming, options) => compendiumData.audit(documentName, current, incoming, options),
+        prepareImport: (target, payload) => compendiumData.prepareImport(target, payload),
+        commitImport: prepared => compendiumData.commitImport(prepared),
+        getStatus: () => compendiumData.getStatus(),
+        getStats: () => compendiumData.getStats(),
+        getContextMenuStatus: () => compendiumDataContextMenu.getStatus(),
+        getContextMenuStats: () => compendiumDataContextMenu.getStats()
+      }),
       itemOptions: Object.freeze({
         canEdit: item => itemOptionsAuthoring.canEdit(item),
         createDraft: item => itemOptionsAuthoring.createDraft(item),
